@@ -1,0 +1,233 @@
+---
+description: React Query patterns and message-based communication for webview components
+globs:
+  - "src/webview/**"
+alwaysApply: false
+---
+
+# Webview Patterns
+
+Follow established patterns for React webview components, state management, and extension communication.
+
+## Rules
+
+- **Use React Query** - `useQuery` for data fetching, `useMutation` for mutations
+- **Message-based communication** - Use `WebviewMessages` constants for all message commands
+- **Promise-based messages** - Use the promise-based message system pattern
+- **Functional components** - Always use functional components with hooks
+- **Type-safe messages** - Define message types and use them consistently
+
+## Examples
+
+### ✅ Good - React Query for data
+
+```typescript
+const { data, isLoading, error } = useQuery({
+  queryKey: ['playwright-status'],
+  queryFn: async () => {
+    const message = await createMessagePromise(
+      vscode,
+      WebviewMessages.refreshStatus,
+      WebviewMessages.playwrightStatus
+    );
+    return message.status;
+  }
+});
+```
+
+### ❌ Bad - Manual state management
+
+```typescript
+const [status, setStatus] = useState(null);
+useEffect(() => {
+  vscode.postMessage({ command: 'refresh-status' });
+  // Manual state updates...
+}, []);
+```
+
+### ✅ Good - Using message constants
+
+```typescript
+import { WebviewMessages } from '../constants';
+
+vscode.postMessage({
+  command: WebviewMessages.refreshStatus
+});
+```
+
+### ❌ Bad - Magic strings
+
+```typescript
+vscode.postMessage({
+  command: 'refresh-status' // Don't use magic strings
+});
+```
+
+## Reference Files
+
+- `src/webview/App.tsx` - Complete React Query and message pattern example
+- `src/constants.ts` - `WebviewMessages` constants
+- `src/webview/components/PlaywrightStatus.tsx` - Component patterns
+
+## Message Communication Pattern
+
+### Promise-based Messages
+
+Use the promise-based message system for request/response:
+
+```typescript
+const createMessagePromise = (
+  vscode: VSCodeAPI,
+  command: string,
+  expectedResponseCommand: string
+): Promise<MessageData> => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('Request timeout'));
+    }, 10000);
+
+    pendingPromises.set(expectedResponseCommand, {
+      resolve: (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      reject: (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    });
+
+    vscode.postMessage({ command });
+  });
+};
+```
+
+### Message Handler
+
+Set up message listener to resolve promises:
+
+```typescript
+const handleMessage = useCallback((event: MessageEvent) => {
+  const message = event.data as MessageData;
+  const pending = pendingPromises.get(message.command);
+  if (pending) {
+    if (message.error) {
+      pending.reject(new Error(message.error));
+    } else {
+      pending.resolve(message);
+    }
+  }
+}, []);
+```
+
+## React Query Patterns
+
+### Query for Data Fetching
+
+```typescript
+const { data, isLoading, error } = useQuery({
+  queryKey: ['unique-key'],
+  queryFn: async () => {
+    // Fetch data via message
+    return await fetchData();
+  },
+  refetchInterval: false, // Or set interval if needed
+});
+```
+
+### Mutation for Actions
+
+```typescript
+const mutation = useMutation({
+  mutationFn: async (params: Params) => {
+    // Perform action via message
+    return await performAction(params);
+  },
+  onSuccess: () => {
+    // Invalidate queries or update cache
+    queryClient.invalidateQueries({ queryKey: ['related-key'] });
+  },
+});
+```
+
+### Query Client Usage
+
+```typescript
+const queryClient = useQueryClient();
+
+// Invalidate queries after mutations
+queryClient.invalidateQueries({ queryKey: ['playwright-status'] });
+
+// Update cache directly
+queryClient.setQueryData(['playwright-status'], newData);
+```
+
+## Component Structure
+
+### Functional Components
+
+```typescript
+interface ComponentProps {
+  status: PlaywrightStatus;
+  onSetup: (directory?: string) => void;
+}
+
+export const Component: React.FC<ComponentProps> = ({ status, onSetup }) => {
+  // Component logic
+  return <div>...</div>;
+};
+```
+
+### Hook Usage
+
+```typescript
+const Component = () => {
+  const queryClient = useQueryClient();
+  
+  const handleAction = useCallback(() => {
+    // Action logic
+  }, [dependencies]);
+
+  useEffect(() => {
+    // Side effects
+    return () => {
+      // Cleanup
+    };
+  }, [dependencies]);
+
+  return <div>...</div>;
+};
+```
+
+## Message Types
+
+Define message types for type safety:
+
+```typescript
+interface MessageData {
+  command: string;
+  status?: PlaywrightStatusData;
+  error?: string;
+  targetDirectory?: string;
+}
+```
+
+## Error Handling
+
+Handle errors in queries and mutations:
+
+```typescript
+const { error } = useQuery({
+  // ...
+});
+
+const mutation = useMutation({
+  mutationFn: async () => { /* ... */ },
+  onError: (error) => {
+    // Handle error
+  },
+});
+
+// Display errors
+{error && <div>Error: {error.message}</div>}
+```

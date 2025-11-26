@@ -1,0 +1,136 @@
+---
+description: Enforce declarative coding patterns using functional composition
+alwaysApply: true
+---
+
+# Declarative Code
+
+All code MUST be declarative. Prefer functional composition over imperative code.
+
+## Rules
+
+- **Use functional composition** - Prefer `pipe` and function composition over imperative code
+- **Use Effect's `pipe`** - For data transformations and side effect composition
+- **Prefer React Query hooks** - Use `useQuery` and `useMutation` over manual state management
+- **Use functional React patterns** - Hooks, composition, and pure components
+- **Avoid imperative mutations** - Prefer immutable updates and transformations
+
+## Examples
+
+### ✅ Good - Declarative with pipe
+
+```typescript
+pipe(
+  Effect.sync(() => getValue()),
+  Effect.map(value => transform(value)),
+  Effect.flatMap(transformed => process(transformed)),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+### ❌ Bad - Imperative code
+
+```typescript
+const value = getValue();
+const transformed = transform(value);
+await process(transformed);
+```
+
+### ✅ Good - React Query for state
+
+```typescript
+const { data, isLoading } = useQuery({
+  queryKey: ['playwright-status'],
+  queryFn: async () => await fetchStatus()
+});
+```
+
+### ❌ Bad - Manual state management
+
+```typescript
+const [status, setStatus] = useState(null);
+const [loading, setLoading] = useState(false);
+
+useEffect(() => {
+  setLoading(true);
+  fetchStatus().then(data => {
+    setStatus(data);
+    setLoading(false);
+  });
+}, []);
+```
+
+## Reference Files
+
+- `src/webview/App.tsx` - React Query patterns for declarative data fetching
+- `src/services/playwright-detector.ts` - Declarative Effect composition
+- `src/extension.ts` - Functional composition patterns
+
+## Effect Composition
+
+Use `pipe` for readable, declarative composition:
+
+```typescript
+pipe(
+  input,
+  Effect.sync(transform1),
+  Effect.flatMap(transform2),
+  Effect.map(transform3),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+Each step is clear and composable.
+
+## React Patterns
+
+### Functional Components
+
+Always use functional components with hooks:
+
+```typescript
+export const MyComponent: React.FC<Props> = ({ prop }) => {
+  const value = useMemo(() => compute(prop), [prop]);
+  return <div>{value}</div>;
+};
+```
+
+### Composition over Inheritance
+
+Compose components rather than extending them:
+
+```typescript
+const Button = ({ children, ...props }) => <button {...props}>{children}</button>;
+const IconButton = ({ icon, ...props }) => (
+  <Button {...props}>
+    <Icon name={icon} />
+  </Button>
+);
+```
+
+## Data Transformations
+
+Use `map` and `flatMap` for transformations:
+
+```typescript
+pipe(
+  Effect.succeed(data),
+  Effect.map(x => x * 2),
+  Effect.map(x => x + 1),
+  Effect.flatMap(x => x > 10 ? Effect.succeed(x) : Effect.fail('too small'))
+);
+```
+
+## Immutability
+
+Always return new objects/arrays, never mutate:
+
+```typescript
+// ✅ Good
+const newArray = [...oldArray, newItem];
+const newObject = { ...oldObject, newProp: value };
+
+// ❌ Bad
+oldArray.push(newItem);
+oldObject.newProp = value;
+```

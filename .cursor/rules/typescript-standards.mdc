@@ -1,0 +1,172 @@
+---
+description: TypeScript best practices and type safety standards
+alwaysApply: true
+---
+
+# TypeScript Standards
+
+Follow strict TypeScript practices for type safety and code quality.
+
+## Rules
+
+- **Use strict typing** - Avoid `any`, prefer explicit types
+- **Prefer interfaces** for object shapes
+- **Use `as const`** for literal types and readonly constants
+- **Export types** alongside implementations
+- **Use type inference** where it improves readability, but be explicit for public APIs
+
+## Examples
+
+### ✅ Good - Explicit interface
+
+```typescript
+export interface PackageInfo {
+  name: string;
+  path: string;
+  relativePath: string;
+  hasPlaywrightPackage: boolean;
+  hasPlaywrightConfig: boolean;
+  isConfigured: boolean;
+}
+```
+
+### ❌ Bad - Implicit any
+
+```typescript
+// Don't use any
+function processPackage(pkg: any) {
+  return pkg.name;
+}
+```
+
+### ✅ Good - as const for constants
+
+```typescript
+export const Commands = {
+  showView: 'clive.showView',
+  setupPlaywright: 'clive.setupPlaywright',
+} as const;
+```
+
+### ❌ Bad - Mutable constants
+
+```typescript
+// Don't allow mutation
+export const Commands = {
+  showView: 'clive.showView',
+};
+// Commands.showView = 'something else' // This would be allowed without as const
+```
+
+### ✅ Good - Exported types
+
+```typescript
+export interface PlaywrightStatus {
+  overallStatus: 'installed' | 'not_installed' | 'partial';
+  packages: PackageInfo[];
+  workspaceRoot: string;
+}
+
+export async function checkPlaywrightStatus(): Promise<PlaywrightStatus | null> {
+  // ...
+}
+```
+
+## Reference Files
+
+- `src/constants.ts` - `as const` usage for type-safe constants
+- `src/services/playwright-detector.ts` - Interface definitions and exports
+- `src/webview/App.tsx` - Type definitions for webview props
+
+## Type Patterns
+
+### Literal Types
+
+Use `as const` to create literal types:
+
+```typescript
+const status = 'installed' as const;
+// Type: 'installed' (not string)
+```
+
+### Union Types
+
+Use union types for constrained values:
+
+```typescript
+type Status = 'installed' | 'not_installed' | 'partial';
+```
+
+### Readonly Arrays/Objects
+
+Use `as const` with `Readonly` for immutable data:
+
+```typescript
+const readonlyArray = [1, 2, 3] as const;
+// Type: readonly [1, 2, 3]
+```
+
+## Interface vs Type
+
+Prefer `interface` for object shapes:
+
+```typescript
+// ✅ Good
+interface User {
+  name: string;
+  email: string;
+}
+
+// Use type for unions, intersections, or computed types
+type Status = 'active' | 'inactive';
+type UserWithId = User & { id: string };
+```
+
+## Generic Types
+
+Use generics for reusable types:
+
+```typescript
+interface ApiResponse<T> {
+  data: T;
+  error?: string;
+}
+```
+
+## Type Guards
+
+Use type guards for runtime type checking:
+
+```typescript
+function isPackageInfo(value: unknown): value is PackageInfo {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'name' in value &&
+    'path' in value
+  );
+}
+```
+
+## Avoid
+
+- ❌ `any` - Use `unknown` if type is truly unknown
+- ❌ `@ts-ignore` - Fix the type issue instead
+- ❌ Implicit any - Always provide explicit types for function parameters
+- ❌ Type assertions without validation - Use type guards instead
+
+## Public API Types
+
+Always export types for public APIs:
+
+```typescript
+// Export the type so consumers can use it
+export interface MyServiceResult {
+  success: boolean;
+  data: unknown;
+}
+
+export function myService(): Promise<MyServiceResult> {
+  // ...
+}
+```

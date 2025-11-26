@@ -1,0 +1,110 @@
+---
+description: Document project structure and file organization conventions
+alwaysApply: false
+---
+
+# Project Structure
+
+Follow the established project structure and file organization conventions.
+
+## Directory Structure
+
+```
+src/
+├── commands/          # VS Code command handlers
+├── components/        # React components
+│   └── ui/           # shadcn UI components
+├── constants.ts       # All magic strings and constants
+├── extension.ts       # Extension entry point
+├── lib/              # Pure utility functions
+├── services/         # Business logic and side effects
+├── views/            # Webview providers
+└── webview/          # React webview application
+    └── components/   # Webview-specific components
+```
+
+## File Placement Rules
+
+### Commands
+- **Location**: `src/commands/`
+- **Pattern**: One file per command group (e.g., `command-center.ts`)
+- **Registration**: All commands registered via `CommandCenter`
+- **Example**: `src/commands/command-center.ts`
+
+### Services
+- **Location**: `src/services/`
+- **Purpose**: Business logic, side effects, external integrations
+- **Pattern**: One service per domain (e.g., `playwright-detector.ts`, `playwright-setup.ts`)
+- **Example**: `src/services/playwright-detector.ts`
+
+### Views/Webview Providers
+- **Location**: `src/views/`
+- **Purpose**: VS Code webview lifecycle management
+- **Pattern**: One provider per view
+- **Example**: `src/views/clive-view-provider.ts`
+
+### Webview Components
+- **Location**: `src/webview/components/`
+- **Purpose**: React components used in webview
+- **Pattern**: One component per file, named components
+- **Example**: `src/webview/components/PlaywrightStatus.tsx`
+
+### UI Components
+- **Location**: `src/components/ui/`
+- **Purpose**: Reusable shadcn UI components
+- **Pattern**: One component per file, following shadcn conventions
+- **Example**: `src/components/ui/button.tsx`
+
+### Constants
+- **Location**: `src/constants.ts`
+- **Purpose**: All string literals, command IDs, view IDs, message commands
+- **Pattern**: Grouped by domain (Commands, Views, WebviewMessages)
+- **Example**: `src/constants.ts`
+
+### Utilities
+- **Location**: `src/lib/`
+- **Purpose**: Pure utility functions (no side effects)
+- **Pattern**: One file per utility domain
+- **Example**: `src/lib/utils.ts`
+
+## Naming Conventions
+
+- **Files**: kebab-case for services/utilities, PascalCase for components
+  - `playwright-detector.ts` ✅
+  - `PlaywrightStatus.tsx` ✅
+  - `command-center.ts` ✅
+
+- **Exports**: 
+  - Classes: PascalCase (`CommandCenter`, `CliveViewProvider`)
+  - Functions: camelCase (`checkPlaywrightStatus`, `setupPlaywright`)
+  - Constants: PascalCase (`Commands`, `Views`, `WebviewMessages`)
+
+## Import Paths
+
+Use path aliases defined in `tsconfig.json`:
+
+- `@/components` → `src/components`
+- `@/lib` → `src/lib`
+- `@/components/ui` → `src/components/ui`
+
+## Extension Entry Point
+
+- **File**: `src/extension.ts`
+- **Exports**: `activate()`, `deactivate()`
+- **Purpose**: Extension lifecycle management, initial setup
+
+## Adding New Features
+
+When adding new functionality:
+
+1. **Commands**: Add to `CommandCenter` in `src/commands/command-center.ts`
+2. **Constants**: Add IDs to `src/constants.ts`
+3. **Services**: Create new service file in `src/services/`
+4. **Components**: Add to `src/webview/components/` or `src/components/ui/`
+5. **Types**: Define in the service file or create shared types file if needed
+
+## Reference Files
+
+- `src/extension.ts` - Entry point structure
+- `src/constants.ts` - Constants organization
+- `src/commands/command-center.ts` - Command registration pattern
