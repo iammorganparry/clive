@@ -1,0 +1,110 @@
+---
+description: Enforce Effect-TS library usage for all side effects and declarative composition
+alwaysApply: true
+---
+
+# Effect Patterns
+
+All side effects MUST be handled using Effect-TS library. Use `pipe` and `Effect` for declarative side effect composition.
+
+## Rules
+
+- **Always use Effect** for side effects (file I/O, API calls, VS Code API calls)
+- **Use `pipe`** for composing Effect programs declaratively
+- **Prefer Effect combinators** over imperative code:
+  - `Effect.sync` for synchronous operations
+  - `Effect.promise` for Promise-based operations
+  - `Effect.flatMap` for chaining dependent effects
+  - `Effect.map` for transforming values
+- **Use `Runtime.runPromise`** for executing Effect programs at the boundary
+
+## Examples
+
+### ✅ Good - Using Effect with pipe
+
+```typescript
+import { Effect, Runtime, pipe } from "effect";
+
+pipe(
+  Effect.sync(() => {
+    console.log('Hello');
+  }),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+### ✅ Good - Chaining effects
+
+```typescript
+pipe(
+  Effect.sync(() => getWorkspaceRoot()),
+  Effect.flatMap((root) => 
+    Effect.promise(() => checkPlaywrightStatus(root))
+  ),
+  Effect.map((status) => processStatus(status)),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+### ❌ Bad - Imperative side effects
+
+```typescript
+// Don't use imperative code
+const workspaceRoot = vscode.workspace.workspaceFolders?.[0];
+const status = await checkPlaywrightStatus(workspaceRoot);
+processStatus(status);
+```
+
+## Reference Files
+
+- `src/extension.ts` - Effect usage in extension activation
+- `src/services/playwright-detector.ts` - Effect patterns for file operations
+- `src/views/clive-view-provider.ts` - Effect in message handling
+
+## Common Patterns
+
+### Synchronous Operations
+
+```typescript
+pipe(
+  Effect.sync(() => {
+    // synchronous code here
+    return value;
+  }),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+### Promise-based Operations
+
+```typescript
+pipe(
+  Effect.promise(async () => {
+    // async/await code here
+    return await someAsyncOperation();
+  }),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+### Conditional Effects
+
+```typescript
+pipe(
+  Effect.sync(() => getValue()),
+  Effect.flatMap((value) => 
+    value ? Effect.succeed(value) : Effect.fail(new Error('No value'))
+  ),
+  Runtime.runPromise(Runtime.defaultRuntime)
+);
+```
+
+## Effect Runtime
+
+Always use `Runtime.defaultRuntime` for executing effects:
+
+```typescript
+Runtime.runPromise(Runtime.defaultRuntime)(effectProgram)
+```
+
+This ensures consistent error handling and resource management.

@@ -1,0 +1,68 @@
+---
+description: Enforce shadcn/ui component usage for all UI components
+alwaysApply: true
+---
+
+# Component Standards
+
+All UI components MUST use shadcn/ui components. Do not create custom implementations when a shadcn component exists.
+
+## Rules
+
+- **Always use shadcn components** from `@/components/ui` instead of custom implementations
+- **Check existing components first** - see `src/components/ui/` for available components
+- **Add new shadcn components** using the shadcn CLI when needed, don't build from scratch
+- **Follow shadcn patterns** - use `cva` (class-variance-authority) for variants, `cn` utility for className merging
+
+## Examples
+
+### ✅ Good - Using shadcn Button
+
+```typescript
+import { Button } from "@/components/ui/button";
+
+export const MyComponent = () => {
+  return <Button variant="default">Click me</Button>;
+};
+```
+
+### ❌ Bad - Custom button implementation
+
+```typescript
+// Don't create custom buttons when shadcn Button exists
+export const MyComponent = () => {
+  return <button className="bg-blue-500 text-white px-4 py-2">Click me</button>;
+};
+```
+
+## Reference Files
+
+- `src/components/ui/button.tsx` - Example shadcn component implementation
+- `components.json` - shadcn configuration
+- `src/lib/utils.ts` - Contains `cn` utility
+
+## Adding New Components
+
+When you need a new UI component:
+
+1. Check if shadcn has it: https://ui.shadcn.com/docs/components
+2. Add it using: `npx shadcn@latest add [component-name]`
+3. Use it from `@/components/ui/[component-name]`
+
+## Component Variants
+
+Use shadcn's variant system with `cva`:
+
+```typescript
+const buttonVariants = cva(
+  "base-classes",
+  {
+    variants: {
+      variant: { default: "...", destructive: "..." },
+      size: { default: "...", sm: "...", lg: "..." }
+    }
+  }
+);
+```
+
+See `src/components/ui/button.tsx` for a complete example.

@@ -1,0 +1,109 @@
+---
+description: Enforce DRY (Don't Repeat Yourself) principles throughout the codebase
+alwaysApply: true
+---
+
+# DRY Principles
+
+Never repeat yourself. Extract reusable code, centralize constants, and avoid duplication.
+
+## Rules
+
+- **Centralize magic strings** - All string literals used as identifiers must be in `src/constants.ts`
+- **Extract reusable logic** - Create service functions for repeated operations
+- **Use shared types** - Define interfaces/types once and reuse them
+- **Centralize registration** - Use patterns like `CommandCenter` for centralized registration
+- **Avoid copy-paste** - If you're copying code, extract it to a shared function/component
+
+## Examples
+
+### ✅ Good - Using constants
+
+```typescript
+import { Commands } from '../constants';
+
+vscode.commands.registerCommand(Commands.showView, () => {
+  // ...
+});
+```
+
+### ❌ Bad - Magic strings
+
+```typescript
+// Don't use magic strings
+vscode.commands.registerCommand('clive.showView', () => {
+  // ...
+});
+```
+
+### ✅ Good - Extracted service function
+
+```typescript
+// src/services/playwright-detector.ts
+export async function checkPlaywrightStatus(): Promise<PlaywrightStatus> {
+  // reusable logic
+}
+```
+
+### ❌ Bad - Duplicated logic
+
+```typescript
+// Don't duplicate the same logic in multiple places
+// If you need the same functionality, extract it to a service
+```
+
+## Reference Files
+
+- `src/constants.ts` - All command IDs, view IDs, and message commands
+- `src/commands/command-center.ts` - Centralized command registration pattern
+- `src/services/playwright-detector.ts` - Reusable service functions
+
+## Constants Pattern
+
+All identifiers must be defined in `src/constants.ts`:
+
+```typescript
+export const Commands = {
+  showView: 'clive.showView',
+  setupPlaywright: 'clive.setupPlaywright',
+} as const;
+
+export const Views = {
+  mainView: 'clive.mainView',
+} as const;
+```
+
+Use `as const` to ensure type safety and prevent accidental mutations.
+
+## Service Extraction
+
+When you find yourself:
+- Copying code between files
+- Writing similar logic multiple times
+- Creating helper functions that could be reused
+
+Extract it to:
+- `src/services/` for business logic
+- `src/lib/` for pure utility functions
+- Shared components for UI patterns
+
+## Type Reuse
+
+Define types once and export them:
+
+```typescript
+// src/services/playwright-detector.ts
+export interface PackageInfo {
+  name: string;
+  path: string;
+  // ...
+}
+```
+
+Then import and reuse:
+
+```typescript
+import { PackageInfo } from '../services/playwright-detector';
+```
+
+Don't redefine the same interface in multiple files.
