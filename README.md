@@ -1,286 +1,299 @@
-# create-t3-turbo
+# Clive
 
-> [!NOTE]
->
-> create-t3-turbo now includes the option to use Tanstack Start for the web app!
+> Your AI-Powered Cypress Test Writer
 
-## Installation
+Clive is a VS Code extension that helps you set up and manage Cypress end-to-end testing in your projects. It provides an intuitive interface to detect Cypress installations, configure test files, and streamline your E2E testing workflow.
 
-> [!NOTE]
->
-> Make sure to follow the system requirements specified in [`package.json#engines`](./package.json#L4) before proceeding.
+## Features
 
-There are two ways of initializing an app using the `create-t3-turbo` starter. You can either use this repository as a template:
+- 🔍 **Automatic Cypress Detection** - Scans your workspace to detect Cypress installations across multiple packages
+- ⚙️ **One-Click Setup** - Automatically configures Cypress in your project with the correct package manager
+- 📝 **Config Management** - Updates Cypress configuration files with proper ignore patterns from `.gitignore`
+- 🎨 **Modern UI** - Beautiful webview interface built with React and Tailwind CSS
+- 🏗️ **Monorepo Support** - Works seamlessly with monorepos and multiple package structures
 
-![use-as-template](https://github.com/t3-oss/create-t3-turbo/assets/51714798/bb6c2e5d-d8b6-416e-aeb3-b3e50e2ca994)
+## Architecture
 
-or use Turbo's CLI to init your project (use PNPM as package manager):
+Clive is built as a monorepo using [Turborepo](https://turborepo.com) and contains:
 
-```bash
-npx create-turbo@latest -e https://github.com/t3-oss/create-t3-turbo
 ```
-
-## About
-
-Ever wondered how to migrate your T3 application into a monorepo? Stop right here! This is the perfect starter repo to get you running with the perfect stack!
-
-It uses [Turborepo](https://turborepo.com) and contains:
-
-```text
-.github
-  └─ workflows
-        └─ CI with pnpm cache setup
-.vscode
-  └─ Recommended extensions and settings for VSCode users
 apps
-  ├─ expo
-  │   ├─ Expo SDK 54
-  │   ├─ React Native 0.81 using React 19
-  │   ├─ Navigation using Expo Router
-  │   ├─ Tailwind CSS v4 using NativeWind v5
-  │   └─ Typesafe API calls using tRPC
-  ├─ nextjs
-  │   ├─ Next.js 15
-  │   ├─ React 19
-  │   ├─ Tailwind CSS v4
-  │   └─ E2E Typesafe API Server & Client
-  └─ tanstack-start
-      ├─ Tanstack Start v1 (rc)
-      ├─ React 19
-      ├─ Tailwind CSS v4
-      └─ E2E Typesafe API Server & Client
+  ├─ extension          # VS Code extension (main product)
+  └─ nextjs             # Next.js web application
 packages
-  ├─ api
-  │   └─ tRPC v11 router definition
-  ├─ auth
-  │   └─ Authentication using better-auth.
-  ├─ db
-  │   └─ Typesafe db calls using Drizzle & Supabase
-  └─ ui
-      └─ Start of a UI package for the webapp using shadcn-ui
+  ├─ api                # tRPC v11 router definition
+  ├─ auth               # Authentication using Better Auth
+  ├─ db                 # Database layer with Drizzle ORM & Supabase
+  └─ ui                 # Shared UI components (shadcn/ui)
 tooling
-  ├─ eslint
-  │   └─ shared, fine-grained, eslint presets
-  ├─ prettier
-  │   └─ shared prettier configuration
-  ├─ tailwind
-  │   └─ shared tailwind theme and configuration
-  └─ typescript
-      └─ shared tsconfig you can extend from
+  ├─ biome              # Shared Biome configuration
+  ├─ tailwind           # Shared Tailwind theme and configuration
+  └─ typescript         # Shared TypeScript configs
 ```
 
-> In this template, we use `@clive` as a placeholder for package names. As a user, you might want to replace it with your own organization or project name. You can use find-and-replace to change all the instances of `@clive` to something like `@my-company` or `@project-name`.
+## Tech Stack
+
+- **Package Manager**: pnpm with catalog dependencies
+- **Build System**: Turborepo
+- **Language**: TypeScript
+- **Linting/Formatting**: Biome
+- **Database**: Supabase Postgres (via Docker Compose)
+- **ORM**: Drizzle
+- **Auth**: Better Auth
+- **API**: tRPC
+- **UI**: React, Tailwind CSS v4, shadcn/ui
+- **Testing**: Cypress (E2E), Vitest (unit)
+- **Functional Programming**: Effect-TS
+
+## Prerequisites
+
+- **Node.js**: `^22.21.0`
+- **pnpm**: `^10.19.0`
+- **Docker**: For local database (optional)
 
 ## Quick Start
 
-> **Note**
-> The [db](./packages/db) package is preconfigured to use Supabase and is **edge-bound** with the [Vercel Postgres](https://github.com/vercel/storage/tree/main/packages/postgres) driver. If you're using something else, make the necessary modifications to the [schema](./packages/db/src/schema.ts) as well as the [client](./packages/db/src/index.ts) and the [drizzle config](./packages/db/drizzle.config.ts). If you want to switch to non-edge database driver, remove `export const runtime = "edge";` [from all pages and api routes](https://github.com/t3-oss/create-t3-turbo/issues/634#issuecomment-1730240214).
-
-To get it running, follow the steps below:
-
-### 1. Setup dependencies
-
-> [!NOTE]
->
-> While the repo does contain both a Next.js and Tanstack Start version of a web app, you can pick which one you like to use and delete the other folder before starting the setup.
+### 1. Install Dependencies
 
 ```bash
-# Install dependencies
-pnpm i
+pnpm install
+```
 
-# Configure environment variables
-# There is an `.env.example` in the root directory you can use for reference
-cp .env.example .env
+### 2. Setup Local Database (Optional)
 
+Start the Supabase Postgres database using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+This will start a Postgres database on `localhost:5432`. The default connection string is:
+
+```
+POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:5432/postgres
+```
+
+You can customize the password by setting the `POSTGRES_PASSWORD` environment variable:
+
+```bash
+export POSTGRES_PASSWORD=your-custom-password
+docker-compose up -d
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the root directory:
+
+```bash
+# Database
+POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:5432/postgres
+
+# Auth (for Next.js app)
+AUTH_GITHUB_CLIENT_ID=your-github-client-id
+AUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+```
+
+### 4. Setup Database Schema
+
+```bash
 # Push the Drizzle schema to the database
 pnpm db:push
+
+# Generate Better Auth schema
+pnpm auth:generate
 ```
 
-### 2. Generate Better Auth Schema
-
-This project uses [Better Auth](https://www.better-auth.com) for authentication. The auth schema needs to be generated using the Better Auth CLI before you can use the authentication features.
+### 5. Development
 
 ```bash
-# Generate the Better Auth schema
-pnpm --filter @clive/auth generate
+# Start all apps in watch mode
+pnpm dev
+
+# Start only Next.js app
+pnpm dev:next
+
+# Build all packages
+pnpm build
+
+# Run type checking
+pnpm typecheck
+
+# Format code
+pnpm format:fix
+
+# Lint code
+pnpm lint:fix
 ```
 
-This command runs the Better Auth CLI with the following configuration:
+## Development Workflow
 
-- **Config file**: `packages/auth/script/auth-cli.ts` - A CLI-only configuration file (isolated from src to prevent imports)
-- **Output**: `packages/db/src/auth-schema.ts` - Generated Drizzle schema for authentication tables
+### VS Code Extension Development
 
-The generation process:
+The extension is located in `apps/extension`. To develop:
 
-1. Reads the Better Auth configuration from `packages/auth/script/auth-cli.ts`
-2. Generates the appropriate database schema based on your auth setup
-3. Outputs a Drizzle-compatible schema file to the `@clive/db` package
+1. Open the workspace in VS Code
+2. Press `F5` to launch a new Extension Development Host window
+3. The extension will be active in the new window
 
-> **Note**: The `auth-cli.ts` file is placed in the `script/` directory (instead of `src/`) to prevent accidental imports from other parts of the codebase. This file is exclusively for CLI schema generation and should **not** be used directly in your application. For runtime authentication, use the configuration from `packages/auth/src/index.ts`.
+### Adding New Packages
 
-For more information about the Better Auth CLI, see the [official documentation](https://www.better-auth.com/docs/concepts/cli#generate).
+Use Turbo's generator to create new packages:
 
-### 3. Configure Expo `dev`-script
+```bash
+pnpm turbo gen init
+```
 
-#### Use iOS Simulator
+This will set up:
+- `package.json` with proper workspace configuration
+- `tsconfig.json` extending shared configs
+- `biome.json` for linting/formatting
+- Proper scripts for build, dev, format, lint, and typecheck
 
-1. Make sure you have XCode and XCommand Line Tools installed [as shown on expo docs](https://docs.expo.dev/workflow/ios-simulator).
+### Adding UI Components
 
-   > **NOTE:** If you just installed XCode, or if you have updated it, you need to open the simulator manually once. Run `npx expo start` from `apps/expo`, and then enter `I` to launch Expo Go. After the manual launch, you can run `pnpm dev` in the root directory.
-
-   ```diff
-   +  "dev": "expo start --ios",
-   ```
-
-2. Run `pnpm dev` at the project root folder.
-
-#### Use Android Emulator
-
-1. Install Android Studio tools [as shown on expo docs](https://docs.expo.dev/workflow/android-studio-emulator).
-
-2. Change the `dev` script at `apps/expo/package.json` to open the Android emulator.
-
-   ```diff
-   +  "dev": "expo start --android",
-   ```
-
-3. Run `pnpm dev` at the project root folder.
-
-### 4. Configuring Better-Auth to work with Expo
-
-In order to get Better-Auth to work with Expo, you must either:
-
-#### Deploy the Auth Proxy (RECOMMENDED)
-
-Better-auth comes with an [auth proxy plugin](https://www.better-auth.com/docs/plugins/oauth-proxy). By deploying the Next.js app, you can get OAuth working in preview deployments and development for Expo apps.
-
-By using the proxy plugin, the Next.js apps will forward any auth requests to the proxy server, which will handle the OAuth flow and then redirect back to the Next.js app. This makes it easy to get OAuth working since you'll have a stable URL that is publicly accessible and doesn't change for every deployment and doesn't rely on what port the app is running on. So if port 3000 is taken and your Next.js app starts at port 3001 instead, your auth should still work without having to reconfigure the OAuth provider.
-
-#### Add your local IP to your OAuth provider
-
-You can alternatively add your local IP (e.g. `192.168.x.y:$PORT`) to your OAuth provider. This may not be as reliable as your local IP may change when you change networks. Some OAuth providers may also only support a single callback URL for each app making this approach unviable for some providers (e.g. GitHub).
-
-### 5a. When it's time to add a new UI component
-
-Run the `ui-add` script to add a new UI component using the interactive `shadcn/ui` CLI:
+Add new shadcn/ui components using:
 
 ```bash
 pnpm ui-add
 ```
 
-When the component(s) has been installed, you should be good to go and start using it in your app.
+This runs the interactive shadcn CLI to add components to the `@clive/ui` package.
 
-### 5b. When it's time to add a new package
+## Project Structure
 
-To add a new package, simply run `pnpm turbo gen init` in the monorepo root. This will prompt you for a package name as well as if you want to install any dependencies to the new package (of course you can also do this yourself later).
+### Extension (`apps/extension`)
 
-The generator sets up the `package.json`, `tsconfig.json` and a `index.ts`, as well as configures all the necessary configurations for tooling around your package such as formatting, linting and typechecking. When the package is created, you're ready to go build out the package.
+- **`src/extension.ts`** - Extension entry point
+- **`src/commands/`** - VS Code command handlers
+- **`src/services/`** - Business logic (detector, setup, config updater)
+- **`src/views/`** - Webview provider
+- **`src/webview/`** - React webview UI
 
-## FAQ
+### Packages
 
-### Does the starter include Solito?
+- **`@clive/api`** - tRPC router definitions
+- **`@clive/auth`** - Better Auth configuration and utilities
+- **`@clive/db`** - Database schema and Drizzle client
+- **`@clive/ui`** - Shared UI components (shadcn/ui)
 
-No. Solito will not be included in this repo. It is a great tool if you want to share code between your Next.js and Expo app. However, the main purpose of this repo is not the integration between Next.js and Expo — it's the code splitting of your T3 App into a monorepo. The Expo app is just a bonus example of how you can utilize the monorepo with multiple apps but can just as well be any app such as Vite, Electron, etc.
+### Tooling
 
-Integrating Solito into this repo isn't hard, and there are a few [official templates](https://github.com/nandorojo/solito/tree/master/example-monorepos) by the creators of Solito that you can use as a reference.
+- **`@clive/biome-config`** - Shared Biome configuration
+- **`@clive/tailwind-config`** - Shared Tailwind theme
+- **`@clive/tsconfig`** - Shared TypeScript configurations
 
-### Does this pattern leak backend code to my client applications?
+## Code Quality
 
-No, it does not. The `api` package should only be a production dependency in the Next.js application where it's served. The Expo app, and all other apps you may add in the future, should only add the `api` package as a dev dependency. This lets you have full typesafety in your client applications, while keeping your backend code safe.
+### Linting & Formatting
 
-If you need to share runtime code between the client and server, such as input validation schemas, you can create a separate `shared` package for this and import it on both sides.
+This project uses [Biome](https://biomejs.dev) for both linting and formatting:
 
-## Deployment
+```bash
+# Check formatting and linting
+pnpm format
+pnpm lint
 
-### Next.js
+# Auto-fix issues
+pnpm format:fix
+pnpm lint:fix
+```
 
-#### Prerequisites
+### Type Safety
 
-> **Note**
-> Please note that the Next.js application with tRPC must be deployed in order for the Expo app to communicate with the server in a production environment.
+TypeScript is configured with strict mode. Run type checking:
 
-#### Deploy to Vercel
+```bash
+pnpm typecheck
+```
 
-Let's deploy the Next.js application to [Vercel](https://vercel.com). If you've never deployed a Turborepo app there, don't worry, the steps are quite straightforward. You can also read the [official Turborepo guide](https://vercel.com/docs/concepts/monorepos/turborepo) on deploying to Vercel.
+### Commit Messages
 
-1. Create a new project on Vercel, select the `apps/nextjs` folder as the root directory. Vercel's zero-config system should handle all configurations for you.
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) with commitlint. Commit messages must follow the format:
 
-2. Add your `POSTGRES_URL` environment variable.
+```
+<type>(<scope>): <subject>
 
-3. Done! Your app should successfully deploy. Assign your domain and use that instead of `localhost` for the `url` in the Expo app so that your Expo app can communicate with your backend when you are not in development.
+[optional body]
 
-### Auth Proxy
+[optional footer]
+```
 
-The auth proxy comes as a better-auth plugin. This is required for the Next.js app to be able to authenticate users in preview deployments. The auth proxy is not used for OAuth request in production deployments. The easiest way to get it running is to deploy the Next.js app to vercel.
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
-### Expo
+Scopes: `extension`, `webview`, `services`, `commands`, `views`, `docs`, `config`, `build`, `deps`
 
-Deploying your Expo application works slightly differently compared to Next.js on the web. Instead of "deploying" your app online, you need to submit production builds of your app to app stores, like [Apple App Store](https://www.apple.com/app-store) and [Google Play](https://play.google.com/store/apps). You can read the full [guide to distributing your app](https://docs.expo.dev/distribution/introduction), including best practices, in the Expo docs.
+## Database Management
 
-1. Make sure to modify the `getBaseUrl` function to point to your backend's production URL:
+### Drizzle Studio
 
-   <https://github.com/t3-oss/create-t3-turbo/blob/656965aff7db271e5e080242c4a3ce4dad5d25f8/apps/expo/src/utils/api.tsx#L20-L37>
+Open Drizzle Studio to view and manage your database:
 
-2. Let's start by setting up [EAS Build](https://docs.expo.dev/build/introduction), which is short for Expo Application Services. The build service helps you create builds of your app, without requiring a full native development setup. The commands below are a summary of [Creating your first build](https://docs.expo.dev/build/setup).
+```bash
+pnpm db:studio
+```
 
-   ```bash
-   # Install the EAS CLI
-   pnpm add -g eas-cli
+### Schema Changes
 
-   # Log in with your Expo account
-   eas login
+After modifying the schema in `packages/db/src/schema.ts`:
 
-   # Configure your Expo app
-   cd apps/expo
-   eas build:configure
-   ```
+```bash
+# Push changes to database
+pnpm db:push
+```
 
-3. After the initial setup, you can create your first build. You can build for Android and iOS platforms and use different [`eas.json` build profiles](https://docs.expo.dev/build-reference/eas-json) to create production builds or development, or test builds. Let's make a production build for iOS.
+## Docker Compose
 
-   ```bash
-   eas build --platform ios --profile production
-   ```
+The `docker-compose.yml` file provides a local Supabase Postgres instance for development.
 
-   > If you don't specify the `--profile` flag, EAS uses the `production` profile by default.
+### Commands
 
-4. Now that you have your first production build, you can submit this to the stores. [EAS Submit](https://docs.expo.dev/submit/introduction) can help you send the build to the stores.
+```bash
+# Start database
+docker-compose up -d
 
-   ```bash
-   eas submit --platform ios --latest
-   ```
+# Stop database
+docker-compose down
 
-   > You can also combine build and submit in a single command, using `eas build ... --auto-submit`.
+# Stop and remove volumes (⚠️ deletes all data)
+docker-compose down -v
 
-5. Before you can get your app in the hands of your users, you'll have to provide additional information to the app stores. This includes screenshots, app information, privacy policies, etc. _While still in preview_, [EAS Metadata](https://docs.expo.dev/eas/metadata) can help you with most of this information.
+# View logs
+docker-compose logs -f postgres
+```
 
-6. Once everything is approved, your users can finally enjoy your app. Let's say you spotted a small typo; you'll have to create a new build, submit it to the stores, and wait for approval before you can resolve this issue. In these cases, you can use EAS Update to quickly send a small bugfix to your users without going through this long process. Let's start by setting up EAS Update.
+### Connection String
 
-   The steps below summarize the [Getting started with EAS Update](https://docs.expo.dev/eas-update/getting-started/#configure-your-project) guide.
+The default connection string format is documented in `docker-compose.yml`. The `drizzle.config.ts` automatically handles port conversion from the pooler port (6543) to the direct port (5432).
 
-   ```bash
-   # Add the `expo-updates` library to your Expo app
-   cd apps/expo
-   pnpm expo install expo-updates
+## Scripts Reference
 
-   # Configure EAS Update
-   eas update:configure
-   ```
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start all apps in watch mode |
+| `pnpm dev:next` | Start only Next.js app |
+| `pnpm build` | Build all packages |
+| `pnpm typecheck` | Run TypeScript type checking |
+| `pnpm format` | Check code formatting |
+| `pnpm format:fix` | Auto-fix formatting issues |
+| `pnpm lint` | Check code linting |
+| `pnpm lint:fix` | Auto-fix linting issues |
+| `pnpm db:push` | Push database schema changes |
+| `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm auth:generate` | Generate Better Auth schema |
+| `pnpm ui-add` | Add new shadcn/ui component |
+| `pnpm clean` | Remove all node_modules |
+| `pnpm clean:workspaces` | Clean all workspace node_modules |
 
-7. Before we can send out updates to your app, you have to create a new build and submit it to the app stores. For every change that includes native APIs, you have to rebuild the app and submit the update to the app stores. See steps 2 and 3.
+## Contributing
 
-8. Now that everything is ready for updates, let's create a new update for `production` builds. With the `--auto` flag, EAS Update uses your current git branch name and commit message for this update. See [How EAS Update works](https://docs.expo.dev/eas-update/how-eas-update-works/#publishing-an-update) for more information.
+See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for detailed contribution guidelines.
 
-   ```bash
-   cd apps/expo
-   eas update --auto
-   ```
+## Documentation
 
-   > Your OTA (Over The Air) updates must always follow the app store's rules. You can't change your app's primary functionality without getting app store approval. But this is a fast way to update your app for minor changes and bug fixes.
+- [Development Guide](./docs/DEVELOPMENT.md) - Architecture and development patterns
+- [Testing Guide](./docs/TESTING.md) - Testing strategies and practices
+- [Contributing Guide](./docs/CONTRIBUTING.md) - How to contribute
 
-9. Done! Now that you have created your production build, submitted it to the stores, and installed EAS Update, you are ready for anything!
+## License
 
-## References
-
-The stack originates from [create-t3-app](https://github.com/t3-oss/create-t3-app).
-
-A [blog post](https://jumr.dev/blog/t3-turbo) where I wrote how to migrate a T3 app into this.
+MIT
