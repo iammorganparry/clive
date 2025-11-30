@@ -38,7 +38,7 @@ export function initAuth<
         redirectURI: `${options.productionUrl}/api/auth/callback/github`,
       },
     },
-    trustedOrigins: ["expo://"],
+    trustedOrigins: ["expo://", "vscode://"],
     onAPIError: {
       onError(error, ctx) {
         console.error("BETTER AUTH API ERROR", error, ctx);

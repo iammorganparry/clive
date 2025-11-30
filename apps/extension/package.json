@@ -9,6 +9,7 @@
   "categories": [
     "Other"
   ],
+  "type": "module",
   "activationEvents": [
     "onView:clive.mainView"
   ],
@@ -47,7 +48,13 @@
           "type": "webview"
         }
       ]
-    }
+    },
+    "uris": [
+      {
+        "scheme": "vscode",
+        "pattern": "clive.auth/callback"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
@@ -99,12 +106,14 @@
     "vitest": "^4.0.14"
   },
   "dependencies": {
+    "@clive/ui": "workspace:*",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "@tailwindcss/postcss": "^4.1.17",
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-query": "catalog:",
     "@vscode/webview-ui-toolkit": "^1.4.0",
+    "better-auth": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "effect": "^3.19.6",
