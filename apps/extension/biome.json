@@ -1,6 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.7/schema.json",
-  "extends": ["../../tooling/biome/biome.json"],
+  "extends": ["@clive/biome-config"],
   "files": {
     "ignore": ["dist/**", "out/**", "node_modules/**", ".vscode-test/**"]
   }
