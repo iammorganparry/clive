@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
+    "@clerk/nextjs": "catalog:",
     "@clive/auth": "workspace:*",
     "@clive/db": "workspace:*",
     "@clive/validators": "workspace:*",

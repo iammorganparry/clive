@@ -4,7 +4,7 @@ import {
 	updateTheme,
 	getCurrentTheme,
 	type ThemeInfo,
-} from './theme-service';
+} from './theme-service.js';
 
 describe('ThemeService', () => {
 	beforeEach(() => {

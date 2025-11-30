@@ -26,12 +26,14 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "push": "pnpm with-env drizzle-kit push",
+    "generate": "pnpm with-env drizzle-kit generate",
     "studio": "pnpm with-env drizzle-kit studio",
     "typecheck": "tsc --noEmit --emitDeclarationOnly false",
     "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
     "@vercel/postgres": "^0.10.0",
+    "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "drizzle-zod": "^0.8.3",
     "zod": "catalog:"
@@ -40,6 +42,7 @@
     "@biomejs/biome": "catalog:",
     "@clive/biome-config": "workspace:*",
     "@clive/tsconfig": "workspace:*",
+    "@types/node": "catalog:",
     "drizzle-kit": "^0.31.5",
     "typescript": "catalog:"
   }

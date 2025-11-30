@@ -9,8 +9,8 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z, ZodError } from "zod/v4";
+import type { auth } from "@clerk/nextjs/server";
 
-import type { Auth } from "@clive/auth";
 import { db } from "@clive/db/client";
 
 /**
@@ -26,17 +26,20 @@ import { db } from "@clive/db/client";
  * @see https://trpc.io/docs/server/context
  */
 
+type ContextResult = {
+  auth: ReturnType<typeof auth>;
+  userId: string | null;
+  db: typeof db;
+};
+
 export const createTRPCContext = async (opts: {
   headers: Headers;
-  auth: Auth;
-}) => {
-  const authApi = opts.auth.api;
-  const session = await authApi.getSession({
-    headers: opts.headers,
-  });
+  auth: ReturnType<typeof auth>;
+}): Promise<ContextResult> => {
+  const authResult = await opts.auth();
   return {
-    authApi,
-    session,
+    auth: opts.auth,
+    userId: authResult.userId,
     db,
   };
 };
@@ -71,7 +74,7 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
  * This is how you create new routers and subrouters in your tRPC API
  * @see https://trpc.io/docs/router
  */
-export const createTRPCRouter = t.router;
+export const createTRPCRouter: typeof t.router = t.router;
 
 /**
  * Middleware for timing procedure execution and adding an articifial delay in development.
@@ -103,26 +106,28 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
  * tRPC API. It does not guarantee that a user querying is authorized, but you
  * can still access user session data if they are logged in
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+const _publicProcedure = t.procedure.use(timingMiddleware);
+export const publicProcedure: typeof _publicProcedure = _publicProcedure;
 
 /**
  * Protected (authenticated) procedure
  *
  * If you want a query or mutation to ONLY be accessible to logged in users, use this. It verifies
- * the session is valid and guarantees `ctx.session.user` is not null.
+ * the session is valid and guarantees `ctx.userId` is not null.
  *
  * @see https://trpc.io/docs/procedures
  */
-export const protectedProcedure = t.procedure
+const _protectedProcedure = t.procedure
   .use(timingMiddleware)
   .use(({ ctx, next }) => {
-    if (!ctx.session?.user) {
+    if (!ctx.userId) {
       throw new TRPCError({ code: "UNAUTHORIZED" });
     }
     return next({
       ctx: {
-        // infers the `session` as non-nullable
-        session: { ...ctx.session, user: ctx.session.user },
+        // infers the `userId` as non-nullable
+        userId: ctx.userId,
       },
     });
   });
+export const protectedProcedure: typeof _protectedProcedure = _protectedProcedure;

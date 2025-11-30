@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
 	findGitignoreFiles,
 	getGitignorePatternsForCypress,
-} from './gitignore-reader';
+} from './gitignore-reader.js';
 
 describe('gitignore-reader', () => {
 	const tempDir = path.join(__dirname, '../../.test-temp-gitignore');
@@ -31,8 +31,10 @@ describe('gitignore-reader', () => {
 			const gitignorePath = path.join(tempDir, '.gitignore');
 			fs.writeFileSync(gitignorePath, 'node_modules\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			// Mock vscode.workspace.findFiles
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
@@ -43,7 +45,6 @@ describe('gitignore-reader', () => {
 			expect(result).toContain('.gitignore');
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should return empty array when no gitignore files exist', async () => {
@@ -73,8 +74,10 @@ describe('gitignore-reader', () => {
 			].join('\n');
 			fs.writeFileSync(gitignorePath, gitignoreContent);
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(gitignorePath),
@@ -89,10 +92,9 @@ describe('gitignore-reader', () => {
 			expect(result).toContain('build/**');
 			expect(result).toContain('*.log');
 			// Should not contain comments
-			expect(result.some((p) => p.includes('comment'))).toBe(false);
+			expect(result.some((p: string) => p.includes('comment'))).toBe(false);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should handle directory patterns ending with /', async () => {
@@ -100,8 +102,10 @@ describe('gitignore-reader', () => {
 			const gitignorePath = path.join(tempDir, '.gitignore');
 			fs.writeFileSync(gitignorePath, 'apps/nextjs/.next/\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(gitignorePath),
@@ -109,10 +113,9 @@ describe('gitignore-reader', () => {
 
 			const result = await getGitignorePatternsForCypress(workspaceRoot);
 
-			expect(result.some((p) => p.includes('.next'))).toBe(true);
+			expect(result.some((p: string) => p.includes('.next'))).toBe(true);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should handle patterns with leading slashes', async () => {
@@ -120,8 +123,10 @@ describe('gitignore-reader', () => {
 			const gitignorePath = path.join(tempDir, '.gitignore');
 			fs.writeFileSync(gitignorePath, '/dist\n/.next\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(gitignorePath),
@@ -130,12 +135,11 @@ describe('gitignore-reader', () => {
 			const result = await getGitignorePatternsForCypress(workspaceRoot);
 
 			// Leading slashes should be removed
-			expect(result.some((p) => p.startsWith('/'))).toBe(false);
-			expect(result.some((p) => p.includes('dist'))).toBe(true);
-			expect(result.some((p) => p.includes('.next'))).toBe(true);
+			expect(result.some((p: string) => p.startsWith('/'))).toBe(false);
+			expect(result.some((p: string) => p.includes('dist'))).toBe(true);
+			expect(result.some((p: string) => p.includes('.next'))).toBe(true);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should skip negation patterns', async () => {
@@ -143,8 +147,10 @@ describe('gitignore-reader', () => {
 			const gitignorePath = path.join(tempDir, '.gitignore');
 			fs.writeFileSync(gitignorePath, '*.log\n!important.log\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(gitignorePath),
@@ -153,10 +159,9 @@ describe('gitignore-reader', () => {
 			const result = await getGitignorePatternsForCypress(workspaceRoot);
 
 			expect(result).toContain('*.log');
-			expect(result.some((p) => p.includes('!important'))).toBe(false);
+			expect(result.some((p: string) => p.includes('!important'))).toBe(false);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should return empty array when no gitignore files exist', async () => {
@@ -179,8 +184,10 @@ describe('gitignore-reader', () => {
 			fs.writeFileSync(rootGitignore, 'node_modules\n');
 			fs.writeFileSync(packageGitignore, '.next\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(rootGitignore),
@@ -190,10 +197,9 @@ describe('gitignore-reader', () => {
 			const result = await getGitignorePatternsForCypress(workspaceRoot);
 
 			expect(result).toContain('node_modules');
-			expect(result.some((p) => p.includes('.next'))).toBe(true);
+			expect(result.some((p: string) => p.includes('.next'))).toBe(true);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 
 		it('should remove duplicate patterns', async () => {
@@ -201,8 +207,10 @@ describe('gitignore-reader', () => {
 			const gitignorePath = path.join(tempDir, '.gitignore');
 			fs.writeFileSync(gitignorePath, 'node_modules\nnode_modules\n');
 
-			// Set workspace folders for asRelativePath to work
-			vscode.workspace.workspaceFolders = [{ uri: workspaceRoot }];
+			// Mock workspace folders for asRelativePath to work
+			vi.spyOn(vscode.workspace, 'workspaceFolders', 'get').mockReturnValue([
+				{ uri: workspaceRoot, name: 'test', index: 0 },
+			]);
 
 			vi.spyOn(vscode.workspace, 'findFiles').mockResolvedValue([
 				vscode.Uri.file(gitignorePath),
@@ -210,11 +218,10 @@ describe('gitignore-reader', () => {
 
 			const result = await getGitignorePatternsForCypress(workspaceRoot);
 
-			const nodeModulesCount = result.filter((p) => p === 'node_modules').length;
+			const nodeModulesCount = result.filter((p: string) => p === 'node_modules').length;
 			expect(nodeModulesCount).toBe(1);
 
 			vi.restoreAllMocks();
-			vscode.workspace.workspaceFolders = undefined as any;
 		});
 	});
 });

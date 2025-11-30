@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
 	findCypressConfig,
 	updateCypressConfig,
-} from './cypress-config-updater';
+} from './cypress-config-updater.js';
 
 describe('cypress-config-updater', () => {
 	const tempDir = path.join(__dirname, '../../.test-temp-config');

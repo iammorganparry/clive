@@ -10,10 +10,8 @@
     "Other"
   ],
   "type": "module",
-  "activationEvents": [
-    "onView:clive.mainView"
-  ],
-  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "main": "./dist/extension.cjs",
   "contributes": {
     "commands": [
       {
@@ -44,6 +42,7 @@
       "clive": [
         {
           "id": "clive.mainView",
+          "icon": "",
           "name": "Clive",
           "type": "webview"
         }
@@ -106,6 +105,7 @@
     "vitest": "^4.0.14"
   },
   "dependencies": {
+    "@clerk/clerk-react": "catalog:",
     "@clive/ui": "workspace:*",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
@@ -113,10 +113,8 @@
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-query": "catalog:",
     "@vscode/webview-ui-toolkit": "^1.4.0",
-    "better-auth": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "effect": "^3.19.6",
     "lucide-react": "^0.554.0",
     "postcss": "^8.5.6",
     "react": "catalog:",

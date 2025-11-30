@@ -36,4 +36,10 @@ export const WebviewMessages = {
   logout: "logout",
   oauthCallback: "oauth-callback",
   startOAuth: "start-oauth",
+  authToken: "auth-token",
+  openLoginPage: "open-login-page",
+  openSignupPage: "open-signup-page",
+  authTokenReceived: "auth-token-received",
+  // Logging
+  log: "log",
 } as const;

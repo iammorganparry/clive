@@ -1,12 +1,8 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import { Effect, pipe } from 'effect';
-import { getGitignorePatternsForCypress } from './gitignore-reader';
-import {
-	findCypressConfig,
-	updateCypressConfig,
-} from './cypress-config-updater';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { GitignoreReader } from './gitignore-reader.js';
+import { CypressConfigUpdater } from './cypress-config-updater.js';
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm';
 
@@ -16,106 +12,108 @@ export interface SetupOptions {
 }
 
 /**
- * Poll for Cypress config file to appear
+ * Service for setting up Cypress in a project
  */
-async function pollForConfigFile(
-	targetDirectory: string,
-	timeoutMs: number = 30000,
-	intervalMs: number = 500
-): Promise<string | null> {
-	const startTime = Date.now();
+export class CypressSetup {
+	private gitignoreReader: GitignoreReader;
+	private configUpdater: CypressConfigUpdater;
 
-	while (Date.now() - startTime < timeoutMs) {
-		const configPath = await findCypressConfig(targetDirectory);
-		if (configPath) {
-			return configPath;
-		}
-		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	constructor() {
+		this.gitignoreReader = new GitignoreReader();
+		this.configUpdater = new CypressConfigUpdater();
 	}
 
-	return null;
-}
+	/**
+	 * Poll for Cypress config file to appear
+	 */
+	private async pollForConfigFile(
+		targetDirectory: string,
+		timeoutMs: number = 30000,
+		intervalMs: number = 500
+	): Promise<string | null> {
+		const startTime = Date.now();
 
-/**
- * Set up Cypress in the target directory
- */
-export async function setupCypress(options: SetupOptions): Promise<void> {
-	return pipe(
-		Effect.sync(() => {
-			const targetDir = options.targetDirectory;
-			const packageManager =
-				options.packageManager || detectPackageManager(targetDir);
+		while (Date.now() - startTime < timeoutMs) {
+			const configPath = await this.configUpdater.findConfig(targetDirectory);
+			if (configPath) {
+				return configPath;
+			}
+			await new Promise((resolve) => setTimeout(resolve, intervalMs));
+		}
 
-			return { targetDir, packageManager };
-		}),
-		Effect.flatMap(({ targetDir, packageManager }) => {
-			return Effect.promise(async () => {
-				const command = getInitCommand(packageManager);
-				const cwd = targetDir;
+		return null;
+	}
 
-				// Show progress notification
-				vscode.window.showInformationMessage(
-					`Setting up Cypress in ${path.basename(targetDir)}...`
-				);
+	/**
+	 * Set up Cypress in the target directory
+	 */
+	async setup(options: SetupOptions): Promise<void> {
+		const targetDir = options.targetDirectory;
+		const packageManager =
+			options.packageManager || this.detectPackageManager(targetDir);
 
-				// Create terminal and run command
-				const terminal = vscode.window.createTerminal({
-					name: 'Clive: Cypress Setup',
-					cwd,
-				});
+		const command = this.getInitCommand(packageManager);
+		const cwd = targetDir;
 
-				terminal.show(true);
-				terminal.sendText(command);
+		// Show progress notification
+		vscode.window.showInformationMessage(
+			`Setting up Cypress in ${path.basename(targetDir)}...`
+		);
 
-				// Wait for terminal to be created and command to be sent
-				await new Promise((resolve) => setTimeout(resolve, 500));
+		// Create terminal and run command
+		const terminal = vscode.window.createTerminal({
+			name: 'Clive: Cypress Setup',
+			cwd,
+		});
 
-				// Poll for config file to appear
-				const configPath = await pollForConfigFile(targetDir);
+		terminal.show(true);
+		terminal.sendText(command);
 
-				if (configPath) {
-					// Get gitignore patterns and update config
-					try {
-						const workspaceRoot =
-							vscode.workspace.workspaceFolders?.[0]?.uri;
-						if (workspaceRoot) {
-							const gitignorePatterns =
-								await getGitignorePatternsForCypress(
-									workspaceRoot
-								);
+		// Wait for terminal to be created and command to be sent
+		await new Promise((resolve) => setTimeout(resolve, 500));
 
-							if (gitignorePatterns.length > 0) {
-								await updateCypressConfig(
-									targetDir,
-									gitignorePatterns
-								);
+		// Poll for config file to appear
+		const configPath = await this.pollForConfigFile(targetDir);
 
-								vscode.window.showInformationMessage(
-									`Cypress configured with ${gitignorePatterns.length} gitignore patterns`
-								);
-							}
-						}
-					} catch (error) {
-						// Log error but don't fail the setup
-						console.error(
-							'Failed to update Cypress config with gitignore patterns:',
-							error
+		if (configPath) {
+			// Get gitignore patterns and update config
+			try {
+				const workspaceRoot =
+					vscode.workspace.workspaceFolders?.[0]?.uri;
+				if (workspaceRoot) {
+					const gitignorePatterns =
+						await this.gitignoreReader.getGitignorePatternsForCypress(
+							workspaceRoot
+						);
+
+					if (gitignorePatterns.length > 0) {
+						await this.configUpdater.updateConfig(
+							targetDir,
+							gitignorePatterns
+						);
+
+						vscode.window.showInformationMessage(
+							`Cypress configured with ${gitignorePatterns.length} gitignore patterns`
 						);
 					}
 				}
+			} catch (error) {
+				// Log error but don't fail the setup
+				console.error(
+					'Failed to update Cypress config with gitignore patterns:',
+					error
+				);
+			}
+		}
 
-				// Note: We don't wait for the command to complete here
-				// The user can see the terminal output and we'll re-check status later
-			});
-		}),
-		Effect.runPromise
-	);
-}
+		// Note: We don't wait for the command to complete here
+		// The user can see the terminal output and we'll re-check status later
+	}
 
 	/**
 	 * Detect package manager from lock files
 	 */
-function detectPackageManager(targetDirectory: string): PackageManager {
+	private detectPackageManager(targetDirectory: string): PackageManager {
 		let currentDir = targetDirectory;
 
 		// Walk up the directory tree to find lock files
@@ -155,15 +153,20 @@ function detectPackageManager(targetDirectory: string): PackageManager {
 	/**
 	 * Get the init command for the package manager
 	 */
-function getInitCommand(packageManager: PackageManager): string {
+	private getInitCommand(packageManager: PackageManager): string {
 		switch (packageManager) {
 			case 'yarn':
 				return 'yarn add cypress -D && npx cypress open --e2e --browser electron';
 			case 'pnpm':
 				return 'pnpm add -D cypress && npx cypress open --e2e --browser electron';
-			case 'npm':
 			default:
 				return 'npm install cypress --save-dev && npx cypress open --e2e --browser electron';
 		}
 	}
+}
 
+// Export convenience function for backward compatibility
+export async function setupCypress(options: SetupOptions): Promise<void> {
+	const setup = new CypressSetup();
+	return setup.setup(options);
+}

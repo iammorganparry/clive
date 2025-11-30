@@ -1,58 +1,34 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { Button } from "@clive/ui/button";
+import { SignInButton, SignOutButton, UserButton } from "@clerk/nextjs";
 
-import { auth, getSession } from "~/auth/server";
+import { auth } from "~/auth/server";
 
 export async function AuthShowcase() {
-	const session = await getSession();
+	const { userId } = await auth();
 
-	if (!session) {
+	if (!userId) {
 		return (
-			<form>
-				<Button
-					size="lg"
-					formAction={async () => {
-						"use server";
-						const res = await auth.api.signInSocial({
-							body: {
-								provider: "discord",
-								callbackURL: "/",
-							},
-						});
-						if (!res.url) {
-							throw new Error("No URL returned from signInSocial");
-						}
-						redirect(res.url);
-					}}
-				>
-					Sign in with Discord
-				</Button>
-			</form>
+			<div className="flex flex-col items-center justify-center gap-4">
+				<SignInButton mode="modal">
+					<Button size="lg">Sign in</Button>
+				</SignInButton>
+			</div>
 		);
 	}
 
 	return (
 		<div className="flex flex-col items-center justify-center gap-4">
 			<p className="text-center text-2xl">
-				<span>Logged in as {session.user.name}</span>
+				<span>Logged in</span>
 			</p>
-
-			<form>
-				<Button
-					size="lg"
-					formAction={async () => {
-						"use server";
-						await auth.api.signOut({
-							headers: await headers(),
-						});
-						redirect("/");
-					}}
-				>
-					Sign out
-				</Button>
-			</form>
+			<div className="flex items-center gap-4">
+				<UserButton />
+				<SignOutButton>
+					<Button size="lg">Sign out</Button>
+				</SignOutButton>
+			</div>
 		</div>
 	);
 }

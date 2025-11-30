@@ -5,18 +5,28 @@ import App from "./App.js";
 import "./index.css";
 import { initializeTheme, updateTheme } from "./services/theme-service.js";
 import { WebviewMessages } from "../constants.js";
+import { initLogger } from "./services/logger.js";
+import { getVSCodeAPI } from "./services/vscode.js";
+import { AuthProvider } from "./contexts/AuthContext.js";
 
-// Acquire VS Code API
-declare const acquireVsCodeApi: () => {
-  postMessage: (message: unknown) => void;
-  getState: () => unknown;
-  setState: (state: unknown) => void;
-};
+let vscode: ReturnType<typeof getVSCodeAPI>;
+try {
+  vscode = getVSCodeAPI();
+} catch (error) {
+  throw error;
+}
 
-const vscode = acquireVsCodeApi();
+try {
+  initLogger(vscode);
+} catch (_error) {
+  // Continue without logger
+}
 
-// Initialize theme service before React renders
-initializeTheme();
+try {
+  initializeTheme();
+} catch (_error) {
+  // Continue if theme initialization fails
+}
 
 // Set up message listener for theme changes
 window.addEventListener("message", (event) => {
@@ -41,15 +51,20 @@ const queryClient = new QueryClient({
   },
 });
 
-// Create root and render
-const root = ReactDOM.createRoot(
-  document.getElementById("root") as HTMLElement,
-);
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  throw new Error("Root element not found");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+
 
 root.render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App vscode={vscode} />
-    </QueryClientProvider>
-  </React.StrictMode>,
+	<React.StrictMode>
+		<AuthProvider vscode={vscode}>
+		<QueryClientProvider client={queryClient}>
+		<App vscode={vscode} />
+		</QueryClientProvider>
+		</AuthProvider>
+	</React.StrictMode>
 );

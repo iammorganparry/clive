@@ -91,6 +91,9 @@ POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-pas
 # Auth (for Next.js app)
 AUTH_GITHUB_CLIENT_ID=your-github-client-id
 AUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+
+# Clerk (for VS Code extension)
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ### 4. Setup Database Schema

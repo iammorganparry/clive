@@ -15,6 +15,7 @@
     "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
+    "@clerk/nextjs": "catalog:",
     "@clive/api": "workspace:*",
     "@clive/auth": "workspace:*",
     "@clive/db": "workspace:*",
@@ -26,7 +27,7 @@
     "@trpc/client": "catalog:",
     "@trpc/server": "catalog:",
     "@trpc/tanstack-react-query": "catalog:",
-    "better-auth": "catalog:",
+    "jose": "^5.9.6",
     "next": "^16.0.0",
     "react": "catalog:",
     "react-dom": "catalog:",

@@ -11,6 +11,7 @@
     "clean:workspaces": "turbo run clean",
     "auth:generate": "pnpm -F @clive/auth generate",
     "db:push": "turbo -F @clive/db push",
+    "db:generate": "turbo -F @clive/db generate",
     "db:studio": "turbo -F @clive/db studio",
     "dev": "turbo watch dev --continue",
     "dev:next": "turbo watch dev -F @clive/nextjs...",
@@ -31,11 +32,9 @@
     "@turbo/gen": "^2.5.8",
     "dotenv-cli": "^10.0.0",
     "turbo": "^2.5.8",
-    "typescript": "catalog:"
-  },
-  "packageManager": "pnpm@10.19.0",
-  "dependencies": {
+    "typescript": "catalog:",
     "commitlint": "^20.1.0",
     "husky": "^9.1.7"
-  }
+  },
+  "packageManager": "pnpm@10.19.0"
 }

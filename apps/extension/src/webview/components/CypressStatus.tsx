@@ -1,13 +1,13 @@
-import React from 'react';
-import { Button } from 'extension/src/components/ui/button';
+import type React from 'react';
+import { Button } from '../../components/ui/button.js';
 import {
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
-} from 'extension/src/components/ui/card';
-import { Alert, AlertDescription } from 'extension/src/components/ui/alert';
+} from '../../components/ui/card.js';
+import { Alert, AlertDescription } from '../../components/ui/alert.js';
 
 interface PackageInfo {
 	name: string;
