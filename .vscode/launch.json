@@ -2,16 +2,23 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Next.js",
-      "type": "node-terminal",
+      "name": "Run Extension",
+      "type": "extensionHost",
       "request": "launch",
-      "command": "pnpm dev",
-      "cwd": "${workspaceFolder}/apps/nextjs",
-      "skipFiles": ["<node_internals>/**"],
-      "sourceMaps": true,
-      "sourceMapPathOverrides": {
-        "/turbopack/[project]/*": "${webRoot}/*" //https://github.com/vercel/next.js/issues/62008
-      }
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "--extensionTestsPath=${workspaceFolder}/apps/extension/out/test/suite/index"
+      ],
+      "outFiles": ["${workspaceFolder}/apps/extension/out/test/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
     }
   ]
 }

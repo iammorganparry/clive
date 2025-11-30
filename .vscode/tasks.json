@@ -1,0 +1,101 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build:ui",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "build", "--filter", "@clive/ui"],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "build:extension",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "build:extension", "--filter", "./apps/extension"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "dependsOn": "build:ui"
+    },
+    {
+      "label": "build:webview",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "build:webview", "--filter", "./apps/extension"],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "dependsOn": "build:ui"
+    },
+    {
+      "label": "build:all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "compile", "--filter", "./apps/extension"],
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": "build:ui"
+    },
+    {
+      "label": "watch:extension",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "watch:esbuild", "--filter", "./apps/extension"],
+      "problemMatcher": ["$tsc-watch"],
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "watch:webview",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "watch:vite", "--filter", "./apps/extension"],
+      "problemMatcher": [],
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "watch:all",
+      "dependsOn": ["build:ui", "watch:extension", "watch:webview"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "watch",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["run", "watch", "--filter", "./apps/extension"],
+      "problemMatcher": [
+        "$tsc-watch"
+      ],
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "dependsOn": "build:ui"
+    }
+  ]
+}

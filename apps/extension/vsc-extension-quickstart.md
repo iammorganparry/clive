@@ -4,27 +4,71 @@
 
 * This folder contains all of the files necessary for your extension.
 * `package.json` - this is the manifest file in which you declare your extension and command.
-  * The sample plugin registers a command and defines its title and command name. With this information VS Code can show the command in the command palette. It doesn’t yet need to load the plugin.
+  * The sample plugin registers a command and defines its title and command name. With this information VS Code can show the command in the command palette. It doesn't yet need to load the plugin.
 * `src/extension.ts` - this is the main file where you will provide the implementation of your command.
   * The file exports one function, `activate`, which is called the very first time your extension is activated (in this case by executing the command). Inside the `activate` function we call `registerCommand`.
   * We pass the function containing the implementation of the command as the second parameter to `registerCommand`.
 
-## Setup
+## Monorepo Setup
 
-* install the recommended extensions (amodio.tsl-problem-matcher, ms-vscode.extension-test-runner, and dbaeumer.vscode-eslint)
+This extension is part of a monorepo. The VS Code configuration files are located in the root `.vscode/` directory.
 
+### Prerequisites
+
+1. Ensure all dependencies are installed from the repository root:
+   ```bash
+   pnpm install
+   ```
+
+2. Build the UI package (required dependency):
+   ```bash
+   pnpm run build --filter @clive/ui
+   ```
 
 ## Get up and running straight away
 
-* Press `F5` to open a new window with your extension loaded.
-* Run your command from the command palette by pressing (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac) and typing `Hello World`.
-* Set breakpoints in your code inside `src/extension.ts` to debug your extension.
-* Find output from your extension in the debug console.
+1. **Build the extension** (from repository root):
+   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
+   - Run "Tasks: Run Build Task" (or press `Ctrl+Shift+B` / `Cmd+Shift+B`)
+   - This will build `@clive/ui` and then compile the extension
+
+2. **Launch the extension**:
+   - Press `F5` to open a new window with your extension loaded
+   - Or use the Run and Debug view (Ctrl+Shift+D / Cmd+Shift+D) and select "Run Extension"
+
+3. **Test the extension**:
+   - Run your command from the command palette by pressing (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac) and typing `Show Clive`
+   - Set breakpoints in your code inside `src/extension.ts` to debug your extension
+   - Find output from your extension in the debug console
 
 ## Make changes
 
-* You can relaunch the extension from the debug toolbar after changing code in `src/extension.ts`.
-* You can also reload (`Ctrl+R` or `Cmd+R` on Mac) the VS Code window with your extension to load your changes.
+* **Extension code** (`src/extension.ts`, `src/views/`, etc.):
+  - Changes rebuild automatically if watch mode is running
+  - Reload the Extension Development Host window (`Ctrl+R` or `Cmd+R` on Mac)
+  - Or use Command Palette: "Developer: Reload Window"
+
+* **Webview code** (`src/webview/`):
+  - Changes rebuild automatically if watch mode is running
+  - Refresh webview by closing and reopening the sidebar view
+  - Or use Developer Tools (Help > Toggle Developer Tools) to see changes
+
+## Watch Mode (Development)
+
+For active development, run watch mode from the repository root:
+
+```bash
+# Terminal 1: Watch extension and webview
+pnpm run watch --filter ./apps/extension
+
+# Or use VS Code tasks:
+# Press Ctrl+Shift+P > "Tasks: Run Task" > "watch:all"
+```
+
+This will:
+- Watch and rebuild extension code (`watch:esbuild`)
+- Watch and rebuild webview code (`watch:vite`)
+- Watch TypeScript types (`watch:tsc`)
 
 
 ## Explore the API

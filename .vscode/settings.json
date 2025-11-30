@@ -1,34 +1,21 @@
 {
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit"
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/dist": false,
+    "**/.turbo": true
   },
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "[typescript,typescriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": false,
+    "**/.turbo": true,
+    "**/pnpm-lock.yaml": true
   },
-  "editor.formatOnSave": true,
-  "eslint.rules.customizations": [{ "rule": "*", "severity": "warn" }],
-  "eslint.runtime": "node",
-  "eslint.workingDirectories": [
-    { "pattern": "apps/*/" },
-    { "pattern": "packages/*/" },
-    { "pattern": "tooling/*/" }
-  ],
-  "files.associations": {
-    "*.css": "tailwindcss"
-  },
-  "files.readonlyInclude": {
-    "**/routeTree.gen.ts": true
-  },
-  "files.watcherExclude": {
-    "**/routeTree.gen.ts": true
-  },
-  "prettier.ignorePath": ".gitignore",
-  "tailwindCSS.classFunctions": ["cva", "cx", "cn"],
+  "typescript.tsdk": "node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
-  "typescript.preferences.autoImportFileExcludePatterns": [
-    "next/router.d.ts",
-    "next/dist/client/router.d.ts"
-  ],
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "eslint.workingDirectories": [
+    "apps/extension",
+    "packages/ui"
+  ]
 }
