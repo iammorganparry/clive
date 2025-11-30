@@ -1,0 +1,20 @@
+{
+  "name": "@clive/biome-config",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./biome.json"
+  },
+  "files": [
+    "biome.json"
+  ],
+  "scripts": {
+    "clean": "git clean -xdf .cache .turbo node_modules",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@clive/tsconfig": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
