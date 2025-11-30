@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: supabase/postgres:15.1.0.117
+    container_name: clive-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+      - "54322:54322" # Supabase connection pooler port
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: 5432
+      POSTGRES_PORT: 5432
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      PGUSER: supabase_admin
+      POSTGRES_USER: supabase_admin
+      PGPASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      JWT_EXP: ${JWT_EXP:-3600}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supabase_admin -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+    driver: local
+# Connection string format:
+# POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:5432/postgres
+#
+# For connection pooling (port 6543), use:
+# POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:6543/postgres
+#
+# Note: The drizzle.config.ts handles port conversion from 6543 to 5432 automatically
+
