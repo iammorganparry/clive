@@ -7,14 +7,15 @@ import { oAuthProxy } from "better-auth/plugins";
 import { db } from "@clive/db/client";
 
 export function initAuth<
-  TExtraPlugins extends BetterAuthPlugin[] = [],
+  TExtraPlugins extends BetterAuthPlugin[] = []
 >(options: {
   baseUrl: string;
   productionUrl: string;
   secret: string | undefined;
 
-  discordClientId: string;
-  discordClientSecret: string;
+  githubClientId: string;
+  githubClientSecret: string;
+
   extraPlugins?: TExtraPlugins;
 }) {
   const config = {
@@ -31,10 +32,10 @@ export function initAuth<
       ...(options.extraPlugins ?? []),
     ],
     socialProviders: {
-      discord: {
-        clientId: options.discordClientId,
-        clientSecret: options.discordClientSecret,
-        redirectURI: `${options.productionUrl}/api/auth/callback/discord`,
+      github: {
+        clientId: options.githubClientId,
+        clientSecret: options.githubClientSecret,
+        redirectURI: `${options.productionUrl}/api/auth/callback/github`,
       },
     },
     trustedOrigins: ["expo://"],
