@@ -1,0 +1,52 @@
+# Testing Rules
+
+## Never Run Tests Automatically
+
+**CRITICAL**: Never run tests automatically using terminal commands. Always ask the user to run tests and relay the results.
+
+## Rules
+
+- **Never execute test commands** - Do not run `npm test`, `npm run test:unit`, `vitest`, or any test-related commands
+- **Ask user to run tests** - When tests need to be verified, ask the user to run them
+- **Wait for results** - After asking, wait for the user to provide test results before proceeding
+- **Fix based on results** - Use the test results provided by the user to fix any failures
+
+## Examples
+
+### ✅ Good - Ask user to run tests
+
+```typescript
+// After creating or modifying tests, say:
+"I've created the test file. Please run `npm run test:unit` and share the results."
+```
+
+### ❌ Bad - Running tests automatically
+
+```bash
+# Don't do this
+npm run test:unit
+```
+
+## When to Ask for Tests
+
+Ask the user to run tests when:
+- Creating new test files
+- Modifying existing tests
+- After fixing test failures
+- When verifying test coverage
+- Before marking tasks as complete
+
+## Test Commands
+
+Common test commands in this project:
+- `npm run test:unit` - Run unit tests with Vitest
+- `npm run test:unit:watch` - Run unit tests in watch mode
+- `npm test` - Run VS Code extension tests
+
+## Workflow
+
+1. Create or modify test files
+2. Ask user: "Please run `npm run test:unit` and share the results"
+3. Wait for user to provide test output
+4. Fix any failures based on the results
+5. Repeat until all tests pass

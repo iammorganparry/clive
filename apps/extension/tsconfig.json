@@ -1,0 +1,24 @@
+{
+	"compilerOptions": {
+		"module": "Node16",
+		"target": "ES2022",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"sourceMap": true,
+		"rootDir": "extension/src",
+		"outDir": "extension/dist",
+		"strict": true /* enable all strict type-checking options */,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"skipLibCheck": true,
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["extension/src/*"]
+		}
+		/* Additional Checks */
+		// "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
+		// "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
+		// "noUnusedParameters": true,  /* Report errors on unused parameters. */
+	},
+	"exclude": ["node_modules", "extension/dist", "extension/out", "vite.config.ts", "esbuild.js", "vitest.config.ts", "vitest.config.mts"]
+}

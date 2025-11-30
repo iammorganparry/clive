@@ -1,113 +1,41 @@
 {
-  "name": "clive",
-  "displayName": "clive",
-  "description": "Your AI E2E Test Writer",
-  "version": "0.0.1",
+  "name": "Clive",
+  "private": true,
   "engines": {
-    "vscode": "^1.106.1"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onView:clive.mainView"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "clive.helloWorld",
-        "title": "Hello World"
-      },
-      {
-        "command": "clive.showView",
-        "title": "Show Clive",
-        "icon": "$(beaker)"
-      },
-      {
-        "command": "clive.setupPlaywright",
-        "title": "Setup Playwright",
-        "icon": "$(tools)"
-      }
-    ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "clive",
-          "title": "Clive",
-          "icon": "$(beaker)"
-        }
-      ]
-    },
-    "views": {
-      "clive": [
-        {
-          "id": "clive.mainView",
-          "name": "Clive",
-          "type": "webview"
-        }
-      ]
-    }
+    "node": "^22.21.0",
+    "pnpm": "^10.19.0"
   },
   "scripts": {
-    "vscode:prepublish": "yarn run package",
-    "compile": "yarn run check-types && yarn run lint && yarn run build:extension && yarn run build:webview",
-    "build:extension": "node esbuild.js",
-    "build:webview": "vite build",
-    "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
-    "watch:vite": "vite build --watch",
-    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "yarn run check-types && yarn run lint && node esbuild.js --production && vite build",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "yarn run compile-tests && yarn run compile && yarn run lint",
-    "check-types": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vscode-test",
-    "prepare": "husky",
-    "commitlint": "commitlint --edit"
+    "build": "turbo run build",
+    "clean": "git clean -xdf node_modules",
+    "clean:workspaces": "turbo run clean",
+    "auth:generate": "pnpm -F @clive/auth generate",
+    "db:push": "turbo -F @clive/db push",
+    "db:studio": "turbo -F @clive/db studio",
+    "dev": "turbo watch dev --continue",
+    "dev:next": "turbo watch dev -F @clive/nextjs...",
+    "format": "turbo run format --continue",
+    "format:fix": "turbo run format:fix --continue",
+    "lint": "turbo run lint --continue",
+    "lint:fix": "turbo run lint:fix --continue",
+    "lint:ws": "pnpm dlx sherif@latest",
+    "postinstall": "pnpm lint:ws",
+    "typecheck": "turbo run typecheck",
+    "ui-add": "turbo run ui-add",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.7",
-    "@commitlint/cli": "^20.1.0",
-    "@commitlint/config-conventional": "^20.0.0",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "@types/vscode": "^1.106.1",
-    "@vitejs/plugin-react": "^5.1.1",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "autoprefixer": "^10.4.22",
-    "esbuild": "^0.27.0",
-    "eslint": "^9.39.1",
-    "husky": "^9.1.7",
-    "npm-run-all": "^4.1.5",
-    "semantic-release-vsce": "^6.0.17",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.3",
-    "vite": "^7.2.4",
-    "vitest": "^4.0.14"
+    "@commitlint/cli": "catalog:",
+    "@commitlint/config-conventional": "catalog:",
+    "@turbo/gen": "^2.5.8",
+    "dotenv-cli": "^10.0.0",
+    "turbo": "^2.5.8",
+    "typescript": "catalog:"
   },
+  "packageManager": "pnpm@10.19.0",
   "dependencies": {
-    "@radix-ui/react-select": "^2.2.6",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@tailwindcss/postcss": "^4.1.17",
-    "@tailwindcss/vite": "^4.1.17",
-    "@tanstack/react-query": "^5.90.11",
-    "@vscode/webview-ui-toolkit": "^1.4.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "effect": "^3.19.6",
-    "lucide-react": "^0.554.0",
-    "postcss": "^8.5.6",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.1.17",
-    "tailwindcss-animate": "^1.0.7",
-    "tw-animate-css": "^1.4.0"
+    "commitlint": "^20.1.0",
+    "husky": "^9.1.7"
   }
 }
