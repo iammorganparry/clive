@@ -1,31 +1,24 @@
-import { Context, Layer } from "effect";
+export interface VSCodeAPI {
+	readonly postMessage: (message: unknown) => void;
+	readonly getState: () => unknown;
+	readonly setState: (state: unknown) => void;
+}
 
-// Acquire VS Code API
-declare const acquireVsCodeApi: () => {
-  postMessage: (message: unknown) => void;
-  getState: () => unknown;
-  setState: (state: unknown) => void;
-};
+/**
+ * Acquire VS Code API (only call this once per webview)
+ */
+declare const acquireVsCodeApi: () => VSCodeAPI;
 
-const vscode = acquireVsCodeApi();
+// Store the singleton instance
+let vscodeInstance: VSCodeAPI | null = null;
 
-export class VSCode extends Context.Tag("VSCode")<
-  VSCode,
-  {
-    readonly postMessage: (message: unknown) => void;
-    readonly getState: () => unknown;
-    readonly setState: (state: unknown) => void;
-  }
->() {}
-
-export const VSCodeLive = Layer.succeed(VSCode, {
-  postMessage: (message: unknown) => {
-    vscode.postMessage(message);
-  },
-  getState: () => {
-    return vscode.getState();
-  },
-  setState: (state: unknown) => {
-    vscode.setState(state);
-  },
-});
+/**
+ * Get or acquire the VS Code API instance
+ * This ensures acquireVsCodeApi() is only called once
+ */
+export function getVSCodeAPI(): VSCodeAPI {
+	if (!vscodeInstance) {
+		vscodeInstance = acquireVsCodeApi();
+	}
+	return vscodeInstance;
+}

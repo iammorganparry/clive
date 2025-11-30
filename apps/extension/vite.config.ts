@@ -1,19 +1,25 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Load env file from the root of the monorepo (two levels up from vite.config.ts)
+  // Vite automatically loads .env files from the project root, but in a monorepo
+  // we need to explicitly point to the root directory
+  const rootDir = path.resolve(__dirname, '../../');
+  const env = loadEnv(mode, rootDir, 'VITE_');
+
+  return {
   plugins: [
     react(),
     {
       name: "remove-html-output",
       writeBundle(options, bundle) {
         // Remove HTML files and src directory since we generate HTML dynamically
-        const fs = require("fs");
-        const path = require("path");
         const outDir = options.dir || "dist/webview";
 
         // Remove HTML files from bundle
@@ -32,13 +38,13 @@ export default defineConfig({
             const srcWebviewDir = path.join(outDir, "src", "webview");
             const srcDir = path.join(outDir, "src");
             if (fs.existsSync(srcWebviewDir)) {
-              fs.rmdirSync(srcWebviewDir);
+              fs.rmSync(srcWebviewDir, { recursive: true });
             }
             if (fs.existsSync(srcDir)) {
-              fs.rmdirSync(srcDir);
+              fs.rmSync(srcDir, { recursive: true });
             }
           }
-        } catch (error) {
+        } catch (_error) {
           // Ignore cleanup errors
         }
       },
@@ -52,7 +58,7 @@ export default defineConfig({
       output: {
         entryFileNames: "webview.js",
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name && assetInfo.name.endsWith(".css")) {
+          if (assetInfo.name?.endsWith(".css")) {
             return "webview.css";
           }
           // Keep original name for other assets
@@ -66,4 +72,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  // Configure Vite to load .env files from monorepo root
+  envDir: rootDir,
+  // Explicitly define env variables using the loaded env values
+  // This ensures they're available in the built bundle
+  };
 });

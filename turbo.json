@@ -51,7 +51,8 @@
     "AUTH_GITHUB_CLIENT_SECRET",
     "AUTH_REDIRECT_PROXY_URL",
     "AUTH_SECRET",
-    "PORT"
+    "PORT",
+    "VITE_CLERK_PUBLISHABLE_KEY"
   ],
   "globalPassThroughEnv": [
     "NODE_ENV",

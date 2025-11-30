@@ -6,8 +6,20 @@
       "type": "extensionHost",
       "request": "launch",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension"],
-      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.js"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.{js,cjs}"],
       "preLaunchTask": "${defaultBuildTask}"
+    },
+    {
+      "name": "Run Extension (Watch Mode)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension"],
+      "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.{js,cjs}"],
+      "preLaunchTask": "watch:all",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
     },
     {
       "name": "Extension Tests",

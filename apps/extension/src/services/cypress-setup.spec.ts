@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import type { PackageManager } from './cypress-setup';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { PackageManager } from './cypress-setup.js';
 
 // We need to test the internal functions, so we'll need to export them or test indirectly
 // Since they're not exported, we'll test them through the public API where possible
@@ -57,7 +57,6 @@ function getInitCommand(packageManager: PackageManager): string {
 			return 'yarn add cypress -D && npx cypress open --e2e --browser electron';
 		case 'pnpm':
 			return 'pnpm add -D cypress && npx cypress open --e2e --browser electron';
-		case 'npm':
 		default:
 			return 'npm install cypress --save-dev && npx cypress open --e2e --browser electron';
 	}

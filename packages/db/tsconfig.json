@@ -1,5 +1,8 @@
 {
   "extends": "@clive/tsconfig/compiled-package.json",
-  "include": ["src"],
-  "exclude": ["node_modules"]
+  "include": ["src", "drizzle.config.ts"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "types": ["node"]
+  }
 }

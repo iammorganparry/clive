@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { Effect, pipe } from 'effect';
 
 export interface PackageInfo {
 	name: string;
@@ -17,84 +16,75 @@ export interface CypressStatus {
 }
 
 /**
- * Check Cypress installation status across all packages in the workspace
+ * Service for detecting Cypress installation status
  */
-export async function checkCypressStatus(): Promise<CypressStatus | null> {
-	return pipe(
-		Effect.sync(() => {
-			const workspaceFolders = vscode.workspace.workspaceFolders;
-			if (!workspaceFolders || workspaceFolders.length === 0) {
-				return null;
+export class CypressDetector {
+	/**
+	 * Check Cypress installation status across all packages in the workspace
+	 */
+	async checkStatus(): Promise<CypressStatus | null> {
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders || workspaceFolders.length === 0) {
+			return null;
+		}
+
+		// For now, use the first workspace folder
+		// TODO: Support multiple workspace folders
+		const workspaceRoot = workspaceFolders[0].uri;
+
+		// Find all package.json files excluding node_modules
+		const packageJsonFiles = await vscode.workspace.findFiles(
+			'**/package.json',
+			'**/node_modules/**'
+		);
+
+		if (packageJsonFiles.length === 0) {
+			return {
+				overallStatus: 'not_installed' as const,
+				packages: [],
+				workspaceRoot: workspaceRoot.fsPath,
+			};
+		}
+
+		const packages: PackageInfo[] = [];
+
+		for (const packageJsonUri of packageJsonFiles) {
+			const packageInfo = await this.checkPackage(
+				packageJsonUri,
+				workspaceRoot
+			);
+			if (packageInfo) {
+				packages.push(packageInfo);
 			}
+		}
 
-			// For now, use the first workspace folder
-			// TODO: Support multiple workspace folders
-			const workspaceRoot = workspaceFolders[0].uri;
-			return workspaceRoot;
-		}),
-		Effect.flatMap((workspaceRoot) => {
-			if (!workspaceRoot) {
-				return Effect.succeed(null);
-			}
+		// Determine overall status
+		const configuredCount = packages.filter((p) => p.isConfigured).length;
+		const totalCount = packages.length;
+		let overallStatus: 'installed' | 'not_installed' | 'partial';
+		if (configuredCount === 0) {
+			overallStatus = 'not_installed';
+		} else if (configuredCount === totalCount) {
+			overallStatus = 'installed';
+		} else {
+			overallStatus = 'partial';
+		}
 
-			return Effect.promise(async () => {
-				// Find all package.json files excluding node_modules
-				const packageJsonFiles = await vscode.workspace.findFiles(
-					'**/package.json',
-					'**/node_modules/**'
-				);
+		return {
+			overallStatus,
+			packages,
+			workspaceRoot: workspaceRoot.fsPath,
+		};
+	}
 
-				if (packageJsonFiles.length === 0) {
-					return {
-						overallStatus: 'not_installed' as const,
-						packages: [],
-						workspaceRoot: workspaceRoot.fsPath,
-					};
-				}
-
-				const packages: PackageInfo[] = [];
-
-				for (const packageJsonUri of packageJsonFiles) {
-					const packageInfo = await checkPackage(
-						packageJsonUri,
-						workspaceRoot
-					);
-					if (packageInfo) {
-						packages.push(packageInfo);
-					}
-				}
-
-				// Determine overall status
-				const configuredCount = packages.filter((p) => p.isConfigured).length;
-				const totalCount = packages.length;
-				let overallStatus: 'installed' | 'not_installed' | 'partial';
-				if (configuredCount === 0) {
-					overallStatus = 'not_installed';
-				} else if (configuredCount === totalCount) {
-					overallStatus = 'installed';
-				} else {
-					overallStatus = 'partial';
-				}
-
-				return {
-					overallStatus,
-					packages,
-					workspaceRoot: workspaceRoot.fsPath,
-				};
-			});
-		}),
-		Effect.runPromise
-	);
-}
-
-/**
- * Check a single package.json for Cypress installation
- */
-async function checkPackage(
-	packageJsonUri: vscode.Uri,
-	_workspaceRoot: vscode.Uri
-): Promise<PackageInfo | null> {
-	try {
+	/**
+	 * Check a single package.json for Cypress installation
+	 */
+	private async checkPackage(
+		packageJsonUri: vscode.Uri,
+		_workspaceRoot: vscode.Uri
+	): Promise<PackageInfo | null> {
+		try {
 			// Read package.json
 			const packageJsonContent = await vscode.workspace.fs.readFile(
 				packageJsonUri
@@ -109,10 +99,9 @@ async function checkPackage(
 
 			// Check for cypress in dependencies or devDependencies
 			const hasCypressPackage =
-				packageJson.dependencies?.['cypress'] ||
-				packageJson.devDependencies?.['cypress']
-					? true
-					: false;
+				!!(
+				packageJson.dependencies?.cypress ||
+				packageJson.devDependencies?.cypress);
 
 			// Check for cypress config files
 			const configFiles = [
@@ -135,17 +124,23 @@ async function checkPackage(
 
 			const isConfigured = hasCypressPackage && hasCypressConfig;
 
-		return {
-			name: packageName,
-			path: packageDir.fsPath,
-			relativePath,
-			hasCypressPackage,
-			hasCypressConfig,
-			isConfigured,
-		};
-	} catch (error) {
-		console.error(`Error checking package at ${packageJsonUri.fsPath}:`, error);
-		return null;
+			return {
+				name: packageName,
+				path: packageDir.fsPath,
+				relativePath,
+				hasCypressPackage,
+				hasCypressConfig,
+				isConfigured,
+			};
+		} catch (error) {
+			console.error(`Error checking package at ${packageJsonUri.fsPath}:`, error);
+			return null;
+		}
 	}
 }
 
+// Export a convenience function for backward compatibility
+export async function checkCypressStatus(): Promise<CypressStatus | null> {
+	const detector = new CypressDetector();
+	return detector.checkStatus();
+}

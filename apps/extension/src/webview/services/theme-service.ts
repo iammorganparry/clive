@@ -23,7 +23,7 @@ function detectColorScheme(): 'light' | 'dark' {
 			// Parse RGB and check if it's dark (sum < 382.5 for RGB 0-255)
 			const rgb = bodyBg.match(/\d+/g);
 			if (rgb && rgb.length >= 3) {
-				const sum = parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2]);
+				const sum = parseInt(rgb[0], 10) + parseInt(rgb[1], 10) + parseInt(rgb[2], 10);
 				return sum < 382.5 ? 'dark' : 'light';
 			}
 		}
@@ -42,9 +42,9 @@ function detectColorScheme(): 'light' | 'dark' {
 		// Try to extract numeric values
 		const matches = bgColor.match(/\d+/g);
 		if (matches && matches.length >= 3) {
-			const r = parseInt(matches[0]);
-			const g = parseInt(matches[1]);
-			const b = parseInt(matches[2]);
+			const r = parseInt(matches[0], 10);
+			const g = parseInt(matches[1], 10);
+			const b = parseInt(matches[2], 10);
 			// Calculate luminance approximation
 			const luminance = (r * 299 + g * 587 + b * 114) / 1000;
 			return luminance < 128 ? 'dark' : 'light';

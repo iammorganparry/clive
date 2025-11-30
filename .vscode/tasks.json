@@ -5,7 +5,7 @@
       "label": "build:ui",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "build", "--filter", "@clive/ui"],
+      "args": ["--filter", "@clive/ui", "run", "build"],
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -16,7 +16,7 @@
       "label": "build:extension",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "build:extension", "--filter", "./apps/extension"],
+      "args": ["--filter", "./apps/extension", "run", "build:extension"],
       "problemMatcher": ["$tsc"],
       "group": {
         "kind": "build",
@@ -28,7 +28,7 @@
       "label": "build:webview",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "build:webview", "--filter", "./apps/extension"],
+      "args": ["--filter", "./apps/extension", "run", "build:webview"],
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -40,7 +40,7 @@
       "label": "build:all",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "compile", "--filter", "./apps/extension"],
+      "args": ["--filter", "./apps/extension", "run", "compile"],
       "problemMatcher": ["$tsc"],
       "group": {
         "kind": "build",
@@ -52,7 +52,7 @@
       "label": "watch:extension",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "watch:esbuild", "--filter", "./apps/extension"],
+      "args": ["--filter", "./apps/extension", "run", "watch:esbuild"],
       "problemMatcher": ["$tsc-watch"],
       "isBackground": true,
       "group": {
@@ -64,8 +64,18 @@
       "label": "watch:webview",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "watch:vite", "--filter", "./apps/extension"],
-      "problemMatcher": [],
+      "args": ["--filter", "./apps/extension", "run", "watch:vite"],
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^.*$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*building.*",
+          "endsPattern": "^(built in \\d+ms\\.|watching for file changes\\.\\.\\.)$"
+        }
+      },
       "isBackground": true,
       "group": {
         "kind": "build",
@@ -86,7 +96,7 @@
       "label": "watch",
       "type": "shell",
       "command": "pnpm",
-      "args": ["run", "watch", "--filter", "./apps/extension"],
+      "args": ["--filter", "./apps/extension", "run", "watch"],
       "problemMatcher": [
         "$tsc-watch"
       ],

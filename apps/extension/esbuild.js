@@ -1,4 +1,4 @@
-const esbuild = require("esbuild");
+import * as esbuild from "esbuild";
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -34,7 +34,7 @@ async function main() {
 		sourcemap: !production,
 		sourcesContent: false,
 		platform: 'node',
-		outfile: 'dist/extension.js',
+		outfile: 'dist/extension.cjs',
 		external: ['vscode'],
 		logLevel: 'silent',
 		plugins: [
