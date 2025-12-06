@@ -110,17 +110,16 @@ export default function SignInPage() {
 
   return (
     <div className="flex items-center justify-center">
-      <Card className="w-full max-w-md">
-        <LoginForm
-          title="Welcome to Clive"
-          signUpLink={signUpUrl}
-          signUpText="Don't have an account?"
-          onSubmit={handleEmailSubmit}
-          onGitHubClick={handleGitHubClick}
-          isLoading={isLoading}
-          error={error}
-        />
-      </Card>
+      <LoginForm
+        title="Clive"
+        description="Your AI E2E Test Writer"
+        signUpLink={signUpUrl}
+        signUpText="Don't have an account?"
+        onSubmit={handleEmailSubmit}
+        onGitHubClick={handleGitHubClick}
+        isLoading={isLoading}
+        error={error}
+      />
     </div>
   );
 }

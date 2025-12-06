@@ -66,7 +66,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       <div className="flex items-center justify-center h-screen p-6">
         <div className="w-full max-w-md">
           <LoginForm
-            onGitHubLogin={() => {
+            onGitHubClick={() => {
               // Loading state - button disabled
             }}
             isLoading={true}
@@ -81,7 +81,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     <div className="flex items-center justify-center h-screen p-6">
       <div className="w-full max-w-md space-y-4">
         <LoginForm
-          onGitHubLogin={handleGitHubLogin}
+          onGitHubClick={handleGitHubLogin}
           isLoading={isLoading}
           error={error}
         />

@@ -40,6 +40,10 @@
       "types": "./dist/separator.d.ts",
       "default": "./dist/separator.js"
     },
+    "./avatar": {
+      "types": "./dist/avatar.d.ts",
+      "default": "./dist/avatar.js"
+    },
     "./theme": {
       "types": "./dist/theme.d.ts",
       "default": "./dist/theme.js"
@@ -47,6 +51,9 @@
     "./toast": {
       "types": "./dist/toast.d.ts",
       "default": "./dist/toast.js"
+    },
+    "./styles.css": {
+      "default": "./dist/styles.css"
     }
   },
   "license": "MIT",
@@ -62,10 +69,12 @@
     "ui-add": "npx shadcn@latest add && biome check --write src"
   },
   "dependencies": {
+    "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
+    "@tabler/icons-react": "^3.35.0",
     "class-variance-authority": "^0.7.1",
     "radix-ui": "^1.4.3",
     "sonner": "^2.0.7",

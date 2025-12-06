@@ -1,12 +1,23 @@
-import { createContext, useContext, useCallback } from "react";
+import { createContext, useContext, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { WebviewMessages } from "../../constants.js";
 import type { VSCodeAPI } from "../services/vscode.js";
 import { useMessageHandler } from "../hooks/use-message-handler.js";
 
+export interface UserData {
+  userId: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  imageUrl?: string;
+  [key: string]: unknown;
+}
+
 interface AuthContextType {
   token: string | null;
+  user: UserData | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => Promise<void>;
@@ -24,6 +35,55 @@ interface AuthProviderProps {
 
 const TOKEN_STORAGE_KEY = "auth_token";
 const AUTH_TOKEN_QUERY_KEY = ["auth-token"];
+
+/**
+ * Decodes a JWT token and extracts user data from the payload
+ */
+function decodeJWT(token: string): UserData | null {
+  try {
+    // JWT format: header.payload.signature
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      console.error("Invalid JWT format");
+      return null;
+    }
+
+    // Decode the payload (second part)
+    const payload = parts[1];
+    // Replace base64url characters
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    // Add padding if needed
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+
+    // Decode base64
+    const decoded = atob(padded);
+    const parsed = JSON.parse(decoded) as Record<string, unknown>;
+
+    // Extract user data from Clerk JWT payload
+    // Clerk typically uses 'sub' for userId, 'email', 'first_name', 'last_name', etc.
+    return {
+      userId: (parsed.sub as string) || (parsed.user_id as string) || "",
+      email: parsed.email as string | undefined,
+      firstName:
+        (parsed.first_name as string) ||
+        (parsed.firstName as string) ||
+        undefined,
+      lastName:
+        (parsed.last_name as string) ||
+        (parsed.lastName as string) ||
+        undefined,
+      username: parsed.username as string | undefined,
+      imageUrl:
+        (parsed.image_url as string) ||
+        (parsed.imageUrl as string) ||
+        undefined,
+      ...parsed,
+    };
+  } catch (error) {
+    console.error("Failed to decode JWT token:", error);
+    return null;
+  }
+}
 
 export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
   const queryClient = useQueryClient();
@@ -47,7 +107,14 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
     gcTime: Infinity, // Keep in cache indefinitely
   });
 
+  // Decode user data from token
+  const user = useMemo(() => {
+    if (!token) return null;
+    return decodeJWT(token);
+  }, [token]);
+
   console.log("[Clive] token", token);
+  console.log("[Clive] user", user);
 
   // Save token to VS Code state and update React Query cache
   const saveToken = useCallback(
@@ -116,6 +183,7 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
 
   const value: AuthContextType = {
     token: token ?? null,
+    user,
     isAuthenticated: !!token,
     isLoading,
     login,

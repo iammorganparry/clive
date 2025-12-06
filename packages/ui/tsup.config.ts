@@ -1,8 +1,10 @@
 import { defineConfig } from "tsup";
+import { copyFileSync } from "node:fs";
 
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/avatar.tsx",
     "src/button.tsx",
     "src/card.tsx",
     "src/dropdown-menu.tsx",
@@ -21,7 +23,12 @@ export default defineConfig({
   clean: true,
   external: ["react", "react-dom", "react/jsx-runtime"],
   treeshake: true,
+  publicDir: false,
   esbuildOptions(options) {
     options.jsx = "automatic";
+  },
+  onSuccess: () => {
+    // Copy CSS file to dist
+    copyFileSync("src/styles.css", "dist/styles.css");
   },
 });

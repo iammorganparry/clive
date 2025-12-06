@@ -4,8 +4,8 @@
     {
       "label": "build:ui",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "@clive/ui", "run", "build"],
+      "command": "yarn",
+      "args": ["workspace", "@clive/ui", "build"],
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -15,8 +15,8 @@
     {
       "label": "build:extension",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "build:extension"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "build:extension"],
       "problemMatcher": ["$tsc"],
       "group": {
         "kind": "build",
@@ -27,8 +27,8 @@
     {
       "label": "build:webview",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "build:webview"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "build:webview"],
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -39,8 +39,8 @@
     {
       "label": "build:all",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "compile"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "compile"],
       "problemMatcher": ["$tsc"],
       "group": {
         "kind": "build",
@@ -51,8 +51,8 @@
     {
       "label": "watch:extension",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "watch:esbuild"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "watch:esbuild"],
       "problemMatcher": ["$tsc-watch"],
       "isBackground": true,
       "group": {
@@ -63,8 +63,8 @@
     {
       "label": "watch:webview",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "watch:vite"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "watch:vite"],
       "problemMatcher": {
         "owner": "vite",
         "pattern": {
@@ -95,8 +95,8 @@
     {
       "label": "watch",
       "type": "shell",
-      "command": "pnpm",
-      "args": ["--filter", "./apps/extension", "run", "watch"],
+      "command": "yarn",
+      "args": ["workspace", "clive", "watch"],
       "problemMatcher": [
         "$tsc-watch"
       ],

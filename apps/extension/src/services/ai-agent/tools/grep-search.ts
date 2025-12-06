@@ -99,7 +99,6 @@ export const grepSearchTool = tool({
           }
         } catch {
           // Skip files that can't be read (binary files, etc.)
-          continue;
         }
       }
 
