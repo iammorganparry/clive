@@ -75,7 +75,7 @@ Clive follows a clean architecture pattern with clear separation of concerns:
 - Executes Playwright initialization
 - Detects package manager from lock files
 - Creates VS Code terminal to run commands
-- Supports npm, yarn, and pnpm
+- Supports npm, yarn, and pnpm (uses yarn in this project)
 
 #### `views/clive-view-provider.ts`
 - Implements `vscode.WebviewViewProvider`

@@ -17,12 +17,12 @@ This extension is part of a monorepo. The VS Code configuration files are locate
 
 1. Ensure all dependencies are installed from the repository root:
    ```bash
-   pnpm install
+   yarn install
    ```
 
 2. Build the UI package (required dependency):
    ```bash
-   pnpm run build --filter @clive/ui
+   yarn workspace @clive/ui build
    ```
 
 ## Get up and running straight away
@@ -59,7 +59,7 @@ For active development, run watch mode from the repository root:
 
 ```bash
 # Terminal 1: Watch extension and webview
-pnpm run watch --filter ./apps/extension
+yarn workspace clive watch
 
 # Or use VS Code tasks:
 # Press Ctrl+Shift+P > "Tasks: Run Task" > "watch:all"

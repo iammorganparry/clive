@@ -9,9 +9,9 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z, ZodError } from "zod/v4";
-import type { auth } from "@clerk/nextjs/server";
 
 import { db } from "@clive/db/client";
+import type { auth } from "@clerk/nextjs/server";
 
 /**
  * 1. CONTEXT
@@ -27,22 +27,22 @@ import { db } from "@clive/db/client";
  */
 
 type ContextResult = {
-  auth: ReturnType<typeof auth>;
+  auth: Awaited<ReturnType<typeof auth>>;
   userId: string | null;
   db: typeof db;
 };
 
 export const createTRPCContext = async (opts: {
   headers: Headers;
-  auth: ReturnType<typeof auth>;
+  auth: Awaited<ReturnType<typeof auth>>;
 }): Promise<ContextResult> => {
-  const authResult = await opts.auth();
   return {
     auth: opts.auth,
-    userId: authResult.userId,
+    userId: opts.auth.userId,
     db,
   };
 };
+
 /**
  * 2. INITIALIZATION
  *
@@ -62,6 +62,8 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
     },
   }),
 });
+
+export const createCallerFactory = t.createCallerFactory;
 
 /**
  * 3. ROUTER & PROCEDURE (THE IMPORTANT BIT)
@@ -130,4 +132,5 @@ const _protectedProcedure = t.procedure
       },
     });
   });
-export const protectedProcedure: typeof _protectedProcedure = _protectedProcedure;
+export const protectedProcedure: typeof _protectedProcedure =
+  _protectedProcedure;

@@ -4,9 +4,8 @@ import { protectedProcedure, publicProcedure } from "../trpc";
 
 export const authRouter = {
   getSession: publicProcedure.query(async ({ ctx }) => {
-    const authResult = await ctx.auth();
     return {
-      userId: authResult.userId,
+      userId: ctx.userId,
     };
   }),
   getSecretMessage: protectedProcedure.query(() => {

@@ -1,5 +1,6 @@
 {
   "name": "@clive/api",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,18 +21,18 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
-    "@clerk/nextjs": "catalog:",
-    "@clive/auth": "workspace:*",
-    "@clive/db": "workspace:*",
-    "@clive/validators": "workspace:*",
-    "@trpc/server": "catalog:",
+    "@clerk/nextjs": "^6.36.0",
+    "@clive/auth": "*",
+    "@clive/db": "*",
+    "@clive/validators": "*",
+    "@trpc/server": "^11.7.2",
     "superjson": "2.2.3",
-    "zod": "catalog:"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
-    "@clive/biome-config": "workspace:*",
-    "@clive/tsconfig": "workspace:*",
-    "typescript": "catalog:"
+    "@biomejs/biome": "^2.3.7",
+    "@clive/biome-config": "*",
+    "@clive/tsconfig": "*",
+    "typescript": "^5.9.3"
   }
 }

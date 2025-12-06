@@ -6,12 +6,12 @@ This guide explains how to test and debug the Clive extension in VS Code within 
 
 1. **Install dependencies** (from repository root):
    ```bash
-   pnpm install
+   yarn install
    ```
 
 2. **Build UI package** (required dependency):
    ```bash
-   pnpm run build --filter @clive/ui
+   yarn workspace @clive/ui build
    ```
 
 ## Quick Start
@@ -40,13 +40,13 @@ This guide explains how to test and debug the Clive extension in VS Code within 
 1. **Build everything**:
    ```bash
    # From repository root
-   pnpm run build --filter @clive/ui
-   pnpm run compile --filter ./apps/extension
+   yarn workspace @clive/ui build
+   yarn workspace clive compile
    ```
 
 2. **Package the extension** (optional, for manual installation):
    ```bash
-   pnpm run package --filter ./apps/extension
+   yarn workspace clive package
    ```
 
 ## Development Workflow
@@ -57,7 +57,7 @@ For active development, use watch mode to automatically rebuild on changes:
 
 1. **Start watch mode**:
    - Press `Ctrl+Shift+P` → "Tasks: Run Task" → "watch:all"
-   - Or from terminal: `pnpm run watch --filter ./apps/extension`
+   - Or from terminal: `yarn workspace clive watch`
 
 2. **Make changes**:
    - **Extension code** (`src/extension.ts`, `src/views/`, etc.):
@@ -107,7 +107,7 @@ Available tasks (run via `Ctrl+Shift+P` → "Tasks: Run Task"):
 
 2. **Check UI package**:
    - Ensure `packages/ui/dist/` contains built files
-   - Rebuild UI: `pnpm run build --filter @clive/ui`
+   - Rebuild UI: `yarn workspace @clive/ui build`
 
 3. **Check console**:
    - Open Debug Console in VS Code
@@ -131,12 +131,12 @@ Available tasks (run via `Ctrl+Shift+P` → "Tasks: Run Task"):
 
 1. **Type errors**:
    ```bash
-   pnpm run check-types --filter ./apps/extension
+   yarn workspace clive check-types
    ```
 
 2. **Lint errors**:
    ```bash
-   pnpm run lint --filter ./apps/extension
+   yarn workspace clive lint
    ```
 
 3. **Clean rebuild**:
@@ -146,25 +146,25 @@ Available tasks (run via `Ctrl+Shift+P` → "Tasks: Run Task"):
    rm -rf packages/ui/dist
    
    # Rebuild
-   pnpm run build --filter @clive/ui
-   pnpm run compile --filter ./apps/extension
+   yarn workspace @clive/ui build
+   yarn workspace clive compile
    ```
 
 ## Running Tests
 
 1. **Unit tests**:
    ```bash
-   pnpm run test:unit --filter ./apps/extension
+   yarn workspace clive test:unit
    ```
 
 2. **Extension tests**:
    ```bash
-   pnpm run test --filter ./apps/extension
+   yarn workspace clive test
    ```
 
 3. **Watch mode tests**:
    ```bash
-   pnpm run test:unit:watch --filter ./apps/extension
+   yarn workspace clive test:unit:watch
    ```
 
 ## File Structure
