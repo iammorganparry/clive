@@ -1,20 +1,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import App from "./App.js";
+import App from "./app.js";
 import "./index.css";
 import { initializeTheme, updateTheme } from "./services/theme-service.js";
 import { WebviewMessages } from "../constants.js";
 import { initLogger } from "./services/logger.js";
 import { getVSCodeAPI } from "./services/vscode.js";
-import { AuthProvider } from "./contexts/AuthContext.js";
+import { AuthProvider } from "./contexts/auth-context.js";
 
-let vscode: ReturnType<typeof getVSCodeAPI>;
-try {
-  vscode = getVSCodeAPI();
-} catch (error) {
-  throw error;
-}
+const vscode = getVSCodeAPI();
 
 try {
   initLogger(vscode);
@@ -58,13 +53,12 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 
-
 root.render(
-	<React.StrictMode>
-		<AuthProvider vscode={vscode}>
-		<QueryClientProvider client={queryClient}>
-		<App vscode={vscode} />
-		</QueryClientProvider>
-		</AuthProvider>
-	</React.StrictMode>
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider vscode={vscode}>
+        <App vscode={vscode} />
+      </AuthProvider>
+    </QueryClientProvider>
+  </React.StrictMode>,
 );

@@ -1,12 +1,11 @@
-import { createJiti } from "jiti";
+import { withWorkflow } from "workflow/next";
+import type { NextConfig } from "next";
 
-const jiti = createJiti(import.meta.url);
+// Import env files to validate at build time
+// This import will cause env validation to run when the config is loaded
+import "./src/env";
 
-// Import env files to validate at build time. Use jiti so we can load .ts files in here.
-await jiti.import("./src/env");
-
-/** @type {import("next").NextConfig} */
-const config = {
+const config: NextConfig = {
   /** Enables hot reloading for local packages without a build step */
   transpilePackages: [
     "@clive/api",
@@ -20,4 +19,4 @@ const config = {
   typescript: { ignoreBuildErrors: true },
 };
 
-export default config;
+export default withWorkflow(config);

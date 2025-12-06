@@ -4,7 +4,6 @@
 export const Commands = {
   showView: "clive.showView",
   helloWorld: "clive.helloWorld",
-  setupCypress: "clive.setupCypress",
 } as const;
 
 /**
@@ -21,10 +20,7 @@ export const Views = {
 export const WebviewMessages = {
   ready: "ready",
   refreshStatus: "refresh-status",
-  setupCypress: "setup-cypress",
   cypressStatus: "cypress-status",
-  setupStart: "setup-start",
-  setupError: "setup-error",
   themeInfo: "theme-info",
   themeChange: "theme-change",
   // Auth messages
@@ -42,4 +38,8 @@ export const WebviewMessages = {
   authTokenReceived: "auth-token-received",
   // Logging
   log: "log",
+  // Branch changes
+  getBranchChanges: "get-branch-changes",
+  branchChangesStatus: "branch-changes-status",
+  createTestForFile: "create-test-for-file",
 } as const;

@@ -22,11 +22,6 @@
         "command": "clive.showView",
         "title": "Show Clive",
         "icon": "$(beaker)"
-      },
-      {
-        "command": "clive.setupCypress",
-        "title": "Setup Cypress",
-        "icon": "$(tools)"
       }
     ],
     "viewsContainers": {
@@ -117,8 +112,8 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.554.0",
     "postcss": "^8.5.6",
-    "react": "catalog:",
-    "react-dom": "catalog:",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "catalog:",
     "tailwindcss-animate": "^1.0.7",

@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   // Vite automatically loads .env files from the project root, but in a monorepo
   // we need to explicitly point to the root directory
   const rootDir = path.resolve(__dirname, '../../');
-  const env = loadEnv(mode, rootDir, 'VITE_');
+  const _env = loadEnv(mode, rootDir, 'VITE_');
 
   return {
   plugins: [

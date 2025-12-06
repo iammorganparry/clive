@@ -32,6 +32,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "superjson": "2.2.3",
+    "workflow": "4.0.1-beta.28",
     "zod": "catalog:"
   },
   "devDependencies": {

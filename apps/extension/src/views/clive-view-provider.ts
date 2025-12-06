@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 import { CypressDetector } from "../services/cypress-detector.js";
-import { CypressSetup } from "../services/cypress-setup.js";
+import { GitService } from "../services/git-service.js";
+import { ReactFileFilter } from "../services/react-file-filter.js";
 import { Views, WebviewMessages } from "../constants.js";
 
 // Custom JWT authentication - token stored in VS Code persistent state
-
 
 export class CliveViewProvider implements vscode.WebviewViewProvider {
 	public static readonly viewType = Views.mainView;
@@ -13,11 +13,13 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 	private _context?: vscode.ExtensionContext;
 	private _outputChannel?: vscode.OutputChannel;
 	private cypressDetector: CypressDetector;
-	private cypressSetup: CypressSetup;
+	private gitService: GitService;
+	private reactFileFilter: ReactFileFilter;
 
 	constructor(private readonly _extensionUri: vscode.Uri) {
 		this.cypressDetector = new CypressDetector();
-		this.cypressSetup = new CypressSetup();
+		this.gitService = new GitService();
+		this.reactFileFilter = new ReactFileFilter();
 	}
 
 	public setContext(context: vscode.ExtensionContext): void {
@@ -31,7 +33,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
 		_context: vscode.WebviewViewResolveContext,
-		_token: vscode.CancellationToken
+		_token: vscode.CancellationToken,
 	): void {
 		this._webviewView = webviewView;
 
@@ -49,7 +51,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 		const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(
 			() => {
 				this.sendThemeInfo();
-			}
+			},
 		);
 
 		// Clean up on dispose
@@ -65,11 +67,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 						console.log("Clive webview is ready");
 						// Check Cypress status when webview is ready
 						this.checkAndSendCypressStatus();
+						// Check branch changes when webview is ready
+						this.checkAndSendBranchChanges();
 						// Send stored auth token if available
 						this.sendStoredAuthToken();
-						break;
-					case WebviewMessages.setupCypress:
-						this.handleSetupCypress(message.targetDirectory);
 						break;
 					case WebviewMessages.refreshStatus:
 						this.checkAndSendCypressStatus();
@@ -88,20 +89,32 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 						break;
 					case WebviewMessages.log:
 						if (this._outputChannel && message.data) {
-							const logData = message.data as { level?: string; message: string; data?: unknown };
+							const logData = message.data as {
+								level?: string;
+								message: string;
+								data?: unknown;
+							};
 							const level = logData.level || "info";
-							const logMessage = logData.data 
+							const logMessage = logData.data
 								? `${logData.message}: ${JSON.stringify(logData.data, null, 2)}`
 								: logData.message;
-							this._outputChannel.appendLine(`[${level.toUpperCase()}] ${logMessage}`);
+							this._outputChannel.appendLine(
+								`[${level.toUpperCase()}] ${logMessage}`,
+							);
 						}
+						break;
+					case WebviewMessages.getBranchChanges:
+						this.checkAndSendBranchChanges();
+						break;
+					case WebviewMessages.createTestForFile:
+						this.handleCreateTestForFile(message.filePath as string);
 						break;
 					default:
 						console.log(`Unknown command: ${message.command}`);
 				}
 			},
 			null,
-			[]
+			[],
 		);
 
 		// Handle visibility changes
@@ -110,6 +123,8 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 				console.log("Clive view became visible");
 				// Check Cypress status when view becomes visible
 				this.checkAndSendCypressStatus();
+				// Check branch changes when view becomes visible
+				this.checkAndSendBranchChanges();
 			}
 		});
 
@@ -133,7 +148,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 
 		// Watch for cypress config file changes
 		const configWatcher = vscode.workspace.createFileSystemWatcher(
-			"**/cypress.config.{ts,js,mjs}"
+			"**/cypress.config.{ts,js,mjs}",
 		);
 		configWatcher.onDidChange(() => {
 			if (webviewView.visible) {
@@ -195,60 +210,13 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	/**
-	 * Handle Cypress setup request from webview
-	 */
-	private async handleSetupCypress(targetDirectory?: string): Promise<void> {
-		if (!this._webviewView) {
-			return;
-		}
-
-		// Determine target directory
-		let targetDir: string;
-		if (targetDirectory) {
-			targetDir = targetDirectory;
-		} else {
-			const workspaceFolders = vscode.workspace.workspaceFolders;
-			if (!workspaceFolders || workspaceFolders.length === 0) {
-				this._webviewView.webview.postMessage({
-					command: WebviewMessages.setupError,
-					error: "No workspace folder found",
-				});
-				return;
-			}
-			targetDir = workspaceFolders[0].uri.fsPath;
-		}
-
-		// Send loading state
-		this._webviewView.webview.postMessage({
-			command: WebviewMessages.setupStart,
-			targetDirectory: targetDir,
-		});
-
-		try {
-			await this.cypressSetup.setup({ targetDirectory: targetDir });
-
-			// Wait a bit for the command to start, then re-check status
-			setTimeout(() => {
-				this.checkAndSendCypressStatus();
-			}, 2000);
-		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message : "Unknown error";
-			this._webviewView.webview.postMessage({
-				command: WebviewMessages.setupError,
-				error: errorMessage,
-			});
-		}
-	}
-
 	private _getHtmlForWebview(webview: vscode.Webview): string {
 		// Get URIs for built webview assets
 		const webviewUri = webview.asWebviewUri(
-			vscode.Uri.joinPath(this._extensionUri, "dist", "webview", "webview.js")
+			vscode.Uri.joinPath(this._extensionUri, "dist", "webview", "webview.js"),
 		);
 		const webviewCssUri = webview.asWebviewUri(
-			vscode.Uri.joinPath(this._extensionUri, "dist", "webview", "webview.css")
+			vscode.Uri.joinPath(this._extensionUri, "dist", "webview", "webview.css"),
 		);
 
 		// Generate nonce for CSP
@@ -263,11 +231,18 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 				<title>Clive</title>
 				<link href="${webviewCssUri}" rel="stylesheet">
 				<style>
+					html {
+						margin: 0;
+						padding: 0;
+						width: 100%;
+						height: 100%;
+					}
 					body {
 						margin: 0;
 						padding: 0;
 						width: 100%;
 						height: 100%;
+						overflow: hidden;
 					}
 					#root {
 						width: 100%;
@@ -334,7 +309,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 		if (token) {
 			// Authentication successful - save token to persistent state
 			await this._context.globalState.update("auth_token", token);
-			
+
 			// Send token to webview
 			this._webviewView.webview.postMessage({
 				command: WebviewMessages.authToken,
@@ -382,7 +357,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 	 * Handle open login page request from webview
 	 */
 	private async handleOpenLoginPage(url?: string): Promise<void> {
-		const loginUrl = url || "http://localhost:3000/login";
+		const callbackUrl = "vscode://clive.auth/callback";
+		const loginUrl =
+			url ||
+			`http://localhost:3000/sign-in?callback_url=${encodeURIComponent(callbackUrl)}`;
 		await vscode.env.openExternal(vscode.Uri.parse(loginUrl));
 	}
 
@@ -390,8 +368,81 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 	 * Handle open signup page request from webview
 	 */
 	private async handleOpenSignupPage(url?: string): Promise<void> {
-		const signupUrl = url || "http://localhost:3000/signup";
+		const callbackUrl = "vscode://clive.auth/callback";
+		const signupUrl =
+			url ||
+			`http://localhost:3000/sign-up?callback_url=${encodeURIComponent(callbackUrl)}`;
 		await vscode.env.openExternal(vscode.Uri.parse(signupUrl));
+	}
+
+	/**
+	 * Check branch changes and send to webview
+	 */
+	private async checkAndSendBranchChanges(): Promise<void> {
+		if (!this._webviewView) {
+			return;
+		}
+
+		try {
+			const branchChanges = await this.gitService.getBranchChanges();
+			if (!branchChanges) {
+				this._webviewView.webview.postMessage({
+					command: WebviewMessages.branchChangesStatus,
+					changes: null,
+					error: "No workspace folder found or not a git repository",
+				});
+				return;
+			}
+
+			// Filter to only eligible React files
+			const eligibleFiles = await this.reactFileFilter.filterEligibleFiles(
+				branchChanges.files,
+			);
+
+			this._webviewView.webview.postMessage({
+				command: WebviewMessages.branchChangesStatus,
+				changes: {
+					branchName: branchChanges.branchName,
+					baseBranch: branchChanges.baseBranch,
+					files: eligibleFiles,
+					workspaceRoot: branchChanges.workspaceRoot,
+				},
+			});
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Unknown error";
+			this._webviewView.webview.postMessage({
+				command: WebviewMessages.branchChangesStatus,
+				changes: null,
+				error: errorMessage,
+			});
+		}
+	}
+
+	/**
+	 * Handle create test request for a specific file
+	 */
+	private async handleCreateTestForFile(filePath: string): Promise<void> {
+		if (!this._webviewView) {
+			return;
+		}
+
+		try {
+			// TODO: Implement test creation logic
+			// For now, show a notification
+			vscode.window.showInformationMessage(
+				`Creating Cypress test for ${filePath}...`,
+			);
+
+			// In the future, this could:
+			// 1. Analyze the React component
+			// 2. Generate Cypress test file
+			// 3. Place it in the appropriate test directory
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Unknown error";
+			vscode.window.showErrorMessage(`Failed to create test: ${errorMessage}`);
+		}
 	}
 }
 
