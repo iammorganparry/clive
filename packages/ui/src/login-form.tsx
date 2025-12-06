@@ -1,76 +1,151 @@
 import * as React from "react";
+import { GalleryVerticalEnd } from "lucide-react";
+
 import { cn } from "./lib/utils";
 import { Button } from "./button";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "./card";
-import {
-	Field,
-	FieldDescription,
-	FieldGroup,
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
 } from "./field";
-import { GitHubLogoIcon } from "@radix-ui/react-icons";
+import { Input } from "./input";
 
-export interface LoginFormProps extends React.ComponentProps<"div"> {
-	onGitHubLogin?: () => void | Promise<void>;
-	isLoading?: boolean;
-	error?: string | null;
+export interface LoginFormProps {
+  className?: string;
+  title?: string;
+  signUpLink?: string;
+  signUpText?: string;
+  onSubmit?: (email: string, password?: string) => void | Promise<void>;
+  onGitHubClick?: () => void | Promise<void>;
+  isLoading?: boolean;
+  error?: string | null;
+  showPassword?: boolean;
 }
 
 export function LoginForm({
-	className,
-	onGitHubLogin,
-	isLoading = false,
-	error,
-	...props
+  className,
+  title = "Welcome to Acme Inc.",
+  signUpLink,
+  signUpText = "Don't have an account?",
+  onSubmit,
+  onGitHubClick,
+  isLoading = false,
+  error,
+  showPassword = false,
 }: LoginFormProps) {
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
 
-	return (
-		<div className={cn("flex flex-col gap-6", className)} {...props}>
-			<Card className="p-2 border-none">
-				<CardHeader className="text-center">
-					<CardTitle className="text-xl">Welcome back</CardTitle>
-					<CardDescription>
-						Login with your GitHub account
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<FieldGroup>
-						<Field>
-							<Button
-								variant="outline"
-								type="button"
-								onClick={onGitHubLogin}
-								disabled={isLoading}
-								className="w-full"
-							>
-								<GitHubLogoIcon />
-								Login with GitHub
-							</Button>
-						</Field>
-						{error && (
-							<Field>
-								<div className="text-destructive text-sm">{error}</div>
-							</Field>
-						)}
-					</FieldGroup>
-				</CardContent>
-			</Card>
-			<FieldDescription className="px-6 text-center">
-				By clicking continue, you agree to our{" "}
-				<button type="button" className="underline">
-					Terms of Service
-				</button>{" "}
-				and{" "}
-				<button type="button" className="underline">
-					Privacy Policy
-				</button>
-				.
-			</FieldDescription>
-		</div>
-	);
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (onSubmit) {
+      await onSubmit(email, showPassword ? password : undefined);
+    }
+  };
+
+  return (
+    <div className={cn("flex flex-col gap-6", className)}>
+      <form onSubmit={handleSubmit}>
+        <FieldGroup>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <div className="flex flex-col items-center gap-2 font-medium">
+              <div className="flex size-8 items-center justify-center rounded-md">
+                <GalleryVerticalEnd className="size-6" />
+              </div>
+            </div>
+            <h1 className="text-xl font-bold">{title}</h1>
+            {signUpLink && (
+              <FieldDescription>
+                {signUpText}{" "}
+                <a href={signUpLink} className="text-primary underline">
+                  Sign up
+                </a>
+              </FieldDescription>
+            )}
+          </div>
+          {error && (
+            <Field>
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            </Field>
+          )}
+          <Field>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input
+              id="email"
+              type="email"
+              placeholder="m@example.com"
+              value={email}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setEmail(e.target.value)
+              }
+              required
+              disabled={isLoading}
+            />
+          </Field>
+          {showPassword && (
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPassword(e.target.value)
+                }
+                required
+                disabled={isLoading}
+              />
+            </Field>
+          )}
+          <Field>
+            <Button type="submit" disabled={isLoading} className="w-full">
+              {isLoading ? "Loading..." : "Continue"}
+            </Button>
+          </Field>
+          <FieldSeparator>Or</FieldSeparator>
+          <Field className="grid gap-4 sm:grid-cols-2">
+            {onGitHubClick && (
+              <Button
+                variant="outline"
+                type="button"
+                onClick={onGitHubClick}
+                disabled={isLoading}
+                className="w-full"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  className="size-4"
+                  aria-label="GitHub logo"
+                >
+                  <title>GitHub</title>
+                  <path
+                    d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
+                    fill="currentColor"
+                  />
+                </svg>
+                Continue with GitHub
+              </Button>
+            )}
+          </Field>
+        </FieldGroup>
+      </form>
+      <FieldDescription className="px-6 text-center">
+        By clicking continue, you agree to our{" "}
+        <a href="/terms" className="underline">
+          Terms of Service
+        </a>{" "}
+        and{" "}
+        <a href="/privacy" className="underline">
+          Privacy Policy
+        </a>
+        .
+      </FieldDescription>
+    </div>
+  );
 }
