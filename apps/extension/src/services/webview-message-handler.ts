@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
-import { CypressDetector } from "./cypress-detector.js";
-import { GitService } from "./git-service.js";
-import { ReactFileFilter } from "./react-file-filter.js";
-import { CypressTestAgent } from "./ai-agent/agent.js";
-import { DiffContentProvider } from "./diff-content-provider.js";
-import { WebviewMessages } from "../constants.js";
+import type { CypressDetector } from "./cypress-detector.js";
+import type { GitService } from "./git-service.js";
+import type { ReactFileFilter } from "./react-file-filter.js";
+import type { CypressTestAgent } from "./ai-agent/agent.js";
+import type { DiffContentProvider } from "./diff-content-provider.js";
+import type { ConfigService } from "./config-service.js";
+import { WebviewMessages, SecretKeys } from "../constants.js";
 
 export interface MessageHandlerContext {
   webviewView: vscode.WebviewView;
@@ -15,6 +16,7 @@ export interface MessageHandlerContext {
   reactFileFilter: ReactFileFilter;
   testAgent: CypressTestAgent;
   diffProvider: DiffContentProvider;
+  configService: ConfigService;
 }
 
 /**
@@ -44,10 +46,10 @@ export class WebviewMessageHandler {
         await this.handleOpenSignupPage(message.url as string | undefined);
         break;
       case WebviewMessages.checkSession:
-        this.handleCheckSession();
+        await this.handleCheckSession();
         break;
       case WebviewMessages.logout:
-        this.handleLogout();
+        await this.handleLogout();
         break;
       case WebviewMessages.log:
         this.handleLog(
@@ -99,7 +101,7 @@ export class WebviewMessageHandler {
     console.log("Clive webview is ready");
     await this.checkAndSendCypressStatus();
     await this.checkAndSendBranchChanges();
-    this.sendStoredAuthToken();
+    await this.sendStoredAuthToken();
   }
 
   private async handleRefreshStatus(): Promise<void> {
@@ -122,12 +124,13 @@ export class WebviewMessageHandler {
     await vscode.env.openExternal(vscode.Uri.parse(signupUrl));
   }
 
-  private handleCheckSession(): void {
-    this.sendStoredAuthToken();
+  private async handleCheckSession(): Promise<void> {
+    await this.sendStoredAuthToken();
   }
 
-  private handleLogout(): void {
-    this.ctx.context.globalState.update("auth_token", undefined);
+  private async handleLogout(): Promise<void> {
+    await this.ctx.context.secrets.delete(SecretKeys.authToken);
+    await this.ctx.configService.clearApiKeys();
   }
 
   private handleLog(logData?: {
@@ -151,7 +154,7 @@ export class WebviewMessageHandler {
   }
 
   private async handleCreateTestForFile(filePath: string): Promise<void> {
-    if (!this.ctx.testAgent.isConfigured()) {
+    if (!(await this.ctx.testAgent.isConfigured())) {
       const action = await vscode.window.showErrorMessage(
         "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
         "Open Settings",
@@ -234,7 +237,7 @@ export class WebviewMessageHandler {
   }
 
   private async handlePlanTestGeneration(files: string[]): Promise<void> {
-    if (!this.ctx.testAgent.isConfigured()) {
+    if (!(await this.ctx.testAgent.isConfigured())) {
       const action = await vscode.window.showErrorMessage(
         "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
         "Open Settings",
@@ -468,8 +471,8 @@ export class WebviewMessageHandler {
     }
   }
 
-  private sendStoredAuthToken(): void {
-    const token = this.ctx.context.globalState.get<string>("auth_token");
+  private async sendStoredAuthToken(): Promise<void> {
+    const token = await this.ctx.context.secrets.get(SecretKeys.authToken);
     if (token) {
       this.ctx.webviewView.webview.postMessage({
         command: WebviewMessages.authToken,
@@ -513,7 +516,11 @@ export class WebviewMessageHandler {
     }
 
     if (token) {
-      await this.ctx.context.globalState.update("auth_token", token);
+      // Store auth token in SecretStorage
+      await this.ctx.context.secrets.store(SecretKeys.authToken, token);
+
+      // Fetch API keys from backend and store them
+      await this.fetchAndStoreApiKeys(token);
 
       this.ctx.webviewView.webview.postMessage({
         command: WebviewMessages.authToken,
@@ -524,6 +531,53 @@ export class WebviewMessageHandler {
         command: WebviewMessages.oauthCallback,
         error: "No token received",
       });
+    }
+  }
+
+  /**
+   * Fetch API keys from backend and store them in SecretStorage
+   */
+  private async fetchAndStoreApiKeys(authToken: string): Promise<void> {
+    try {
+      const backendUrl = "http://localhost:3000";
+      // tRPC query format: POST to /api/trpc/[procedure] with JSON input
+      const response = await fetch(`${backendUrl}/api/trpc/config.getApiKeys`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch API keys: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // tRPC response format: { result: { data: { json: {...} } } }
+      const apiKeys = data.result?.data?.json;
+
+      if (apiKeys?.anthropicApiKey) {
+        await this.ctx.configService.storeApiKeys({
+          anthropicApiKey: apiKeys.anthropicApiKey,
+        });
+
+        this.ctx.webviewView.webview.postMessage({
+          command: WebviewMessages.configUpdated,
+        });
+
+        this.ctx.outputChannel.appendLine(
+          "API keys fetched and stored successfully",
+        );
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      this.ctx.outputChannel.appendLine(
+        `Failed to fetch API keys: ${errorMessage}`,
+      );
+      // Don't throw - allow auth to proceed even if config fetch fails
     }
   }
 }

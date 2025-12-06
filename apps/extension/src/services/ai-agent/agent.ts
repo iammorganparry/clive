@@ -1,6 +1,7 @@
 import type * as vscode from "vscode";
 import { PlanningAgent } from "./planning-agent.js";
 import { ExecutionAgent } from "./execution-agent.js";
+import type { ConfigService } from "../config-service.js";
 import type {
   GenerateTestInput,
   GenerateTestOutput,
@@ -17,16 +18,16 @@ export class CypressTestAgent {
   private planningAgent: PlanningAgent;
   private executionAgent: ExecutionAgent;
 
-  constructor() {
-    this.planningAgent = new PlanningAgent();
-    this.executionAgent = new ExecutionAgent();
+  constructor(configService: ConfigService) {
+    this.planningAgent = new PlanningAgent(configService);
+    this.executionAgent = new ExecutionAgent(configService);
   }
 
   /**
    * Check if the agent is properly configured
    */
-  isConfigured(): boolean {
-    return this.planningAgent.isConfigured();
+  async isConfigured(): Promise<boolean> {
+    return await this.planningAgent.isConfigured();
   }
 
   /**
