@@ -1,9 +1,10 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
 import Welcome from "./components/welcome.js";
 import CypressStatus from "./components/cypress-status.js";
 import BranchChanges from "./components/branch-changes.js";
+import TestGenerationPlan from "./components/test-generation-plan.js";
 import { Login } from "./components/login.js";
 import { Button } from "../components/ui/button.js";
 import { WebviewMessages } from "../constants.js";
@@ -11,6 +12,10 @@ import { logger } from "./services/logger.js";
 import type { VSCodeAPI } from "./services/vscode.js";
 import { useAuth } from "./contexts/auth-context.js";
 import type { BranchChangesData } from "./components/branch-changes.js";
+import type {
+  ProposedTest,
+  TestExecutionStatus,
+} from "../services/ai-agent/types.js";
 
 interface AppProps {
   vscode: VSCodeAPI;
@@ -36,6 +41,13 @@ interface MessageData {
   error?: string;
   targetDirectory?: string;
   filePath?: string;
+  // Test generation planning
+  tests?: ProposedTest[];
+  // Test execution updates
+  id?: string;
+  executionStatus?: TestExecutionStatus;
+  testFilePath?: string;
+  message?: string;
 }
 
 // Store pending promises for message responses
@@ -81,6 +93,16 @@ const App: React.FC<AppProps> = ({ vscode }) => {
   // Use AuthContext for authentication
   const { isAuthenticated, isLoading: authLoading, token, logout } = useAuth();
 
+  // Test generation plan state
+  const [testPlan, setTestPlan] = useState<ProposedTest[]>([]);
+  const [testStatuses, setTestStatuses] = useState<
+    Map<string, TestExecutionStatus>
+  >(new Map());
+  const [testErrors, setTestErrors] = useState<Map<string, string>>(new Map());
+  const [testFilePaths, setTestFilePaths] = useState<Map<string, string>>(
+    new Map(),
+  );
+
   // Handle incoming messages from extension
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -114,6 +136,53 @@ const App: React.FC<AppProps> = ({ vscode }) => {
           ["branch-changes"],
           message.changes,
         );
+      }
+
+      // Handle test generation plan
+      if (message.command === WebviewMessages.testGenerationPlan) {
+        if (message.error) {
+          logger.error("Test generation plan error:", message.error);
+        } else if (message.tests) {
+          setTestPlan(message.tests);
+          // Initialize all tests as pending
+          const initialStatuses = new Map<string, TestExecutionStatus>();
+          message.tests.forEach((test) => {
+            initialStatuses.set(test.id, "pending");
+          });
+          setTestStatuses(initialStatuses);
+          setTestErrors(new Map());
+          setTestFilePaths(new Map());
+        }
+      }
+
+      // Handle test execution updates
+      if (
+        message.command === WebviewMessages.testExecutionUpdate &&
+        message.id
+      ) {
+        setTestStatuses((prev) => {
+          const next = new Map(prev);
+          if (message.executionStatus) {
+            next.set(message.id!, message.executionStatus);
+          }
+          return next;
+        });
+
+        if (message.testFilePath) {
+          setTestFilePaths((prev) => {
+            const next = new Map(prev);
+            next.set(message.id!, message.testFilePath!);
+            return next;
+          });
+        }
+
+        if (message.error) {
+          setTestErrors((prev) => {
+            const next = new Map(prev);
+            next.set(message.id!, message.error!);
+            return next;
+          });
+        }
       }
     },
     [queryClient],
@@ -217,17 +286,50 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     [vscode],
   );
 
-  // Handler for creating tests for all changed files
+  // Handler for creating tests for all changed files (new planning flow)
   const handleCreateAllTests = useCallback(() => {
-    if (branchChanges?.files) {
-      for (const file of branchChanges.files) {
-        vscode.postMessage({
-          command: WebviewMessages.createTestForFile,
-          filePath: file.path,
-        });
-      }
+    if (branchChanges?.files && branchChanges.files.length > 0) {
+      const filePaths = branchChanges.files.map((file) => file.path);
+      vscode.postMessage({
+        command: WebviewMessages.planTestGeneration,
+        files: filePaths,
+      });
     }
   }, [branchChanges, vscode]);
+
+  // Handler for accepting a test
+  const handleAcceptTest = useCallback((id: string) => {
+    setTestStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(id, "accepted");
+      return next;
+    });
+  }, []);
+
+  // Handler for rejecting a test
+  const handleRejectTest = useCallback((id: string) => {
+    setTestStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(id, "rejected");
+      return next;
+    });
+  }, []);
+
+  // Handler for generating accepted tests
+  const handleGenerateTests = useCallback(
+    (acceptedIds: string[]) => {
+      if (acceptedIds.length === 0) {
+        return;
+      }
+
+      vscode.postMessage({
+        command: WebviewMessages.confirmTestPlan,
+        acceptedIds,
+        tests: testPlan,
+      });
+    },
+    [vscode, testPlan],
+  );
 
   return (
     <div className="w-full h-full flex flex-col bg-background text-foreground">
@@ -250,14 +352,26 @@ const App: React.FC<AppProps> = ({ vscode }) => {
         ) : isLoading && !cypressStatus ? (
           <Welcome />
         ) : cypressStatus ? (
-          <div className="w-full">
-            <BranchChanges
-              changes={branchChanges ?? null}
-              isLoading={branchChangesLoading}
-              error={branchChangesError?.message}
-              onCreateTest={handleCreateTestForFile}
-              onCreateAllTests={handleCreateAllTests}
-            />
+          <div className="w-full space-y-4 p-4">
+            {testPlan.length > 0 ? (
+              <TestGenerationPlan
+                tests={testPlan}
+                testStatuses={testStatuses}
+                testErrors={testErrors}
+                testFilePaths={testFilePaths}
+                onAccept={handleAcceptTest}
+                onReject={handleRejectTest}
+                onGenerate={handleGenerateTests}
+              />
+            ) : (
+              <BranchChanges
+                changes={branchChanges ?? null}
+                isLoading={branchChangesLoading}
+                error={branchChangesError?.message}
+                onCreateTest={handleCreateTestForFile}
+                onCreateAllTests={handleCreateAllTests}
+              />
+            )}
           </div>
         ) : (
           <Welcome />
