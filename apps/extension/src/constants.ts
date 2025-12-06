@@ -49,4 +49,5 @@ export const WebviewMessages = {
   testGenerationPlan: "test-generation-plan",
   confirmTestPlan: "confirm-test-plan",
   testExecutionUpdate: "test-execution-update",
+  previewTestDiff: "preview-test-diff",
 } as const;

@@ -20,6 +20,7 @@ interface TestCardProps {
   testFilePath?: string;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const TestCard: React.FC<TestCardProps> = ({
@@ -29,6 +30,7 @@ const TestCard: React.FC<TestCardProps> = ({
   testFilePath,
   onAccept,
   onReject,
+  onPreviewDiff,
 }) => {
   const getStatusStyles = () => {
     switch (status) {
@@ -85,7 +87,14 @@ const TestCard: React.FC<TestCardProps> = ({
             <div className="flex-1 min-w-0">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                <span className="truncate">{test.targetTestPath}</span>
+                <button
+                  type="button"
+                  onClick={() => onPreviewDiff?.(test)}
+                  className="truncate text-left hover:text-primary hover:underline cursor-pointer"
+                  title="Click to preview diff"
+                >
+                  {test.targetTestPath}
+                </button>
                 {test.isUpdate && (
                   <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                     Update
