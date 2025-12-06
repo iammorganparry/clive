@@ -33,7 +33,7 @@ tooling
 
 ## Tech Stack
 
-- **Package Manager**: pnpm with catalog dependencies
+- **Package Manager**: Yarn workspaces
 - **Build System**: Turborepo
 - **Language**: TypeScript
 - **Linting/Formatting**: Biome
@@ -48,7 +48,7 @@ tooling
 ## Prerequisites
 
 - **Node.js**: `^22.21.0`
-- **pnpm**: `^10.19.0`
+- **Yarn**: `^1.22.0`
 - **Docker**: For local database (optional)
 
 ## Quick Start
@@ -56,7 +56,7 @@ tooling
 ### 1. Install Dependencies
 
 ```bash
-pnpm install
+yarn install
 ```
 
 ### 2. Setup Local Database (Optional)
@@ -100,32 +100,32 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 
 ```bash
 # Push the Drizzle schema to the database
-pnpm db:push
+yarn db:push
 
 # Generate Better Auth schema
-pnpm auth:generate
+yarn auth:generate
 ```
 
 ### 5. Development
 
 ```bash
 # Start all apps in watch mode
-pnpm dev
+yarn dev
 
 # Start only Next.js app
-pnpm dev:next
+yarn dev:next
 
 # Build all packages
-pnpm build
+yarn build
 
 # Run type checking
-pnpm typecheck
+yarn typecheck
 
 # Format code
-pnpm format:fix
+yarn format:fix
 
 # Lint code
-pnpm lint:fix
+yarn lint:fix
 ```
 
 ## Development Workflow
@@ -143,7 +143,7 @@ The extension is located in `apps/extension`. To develop:
 Use Turbo's generator to create new packages:
 
 ```bash
-pnpm turbo gen init
+yarn turbo gen init
 ```
 
 This will set up:
@@ -157,7 +157,7 @@ This will set up:
 Add new shadcn/ui components using:
 
 ```bash
-pnpm ui-add
+yarn ui-add
 ```
 
 This runs the interactive shadcn CLI to add components to the `@clive/ui` package.
@@ -193,12 +193,12 @@ This project uses [Biome](https://biomejs.dev) for both linting and formatting:
 
 ```bash
 # Check formatting and linting
-pnpm format
-pnpm lint
+yarn format
+yarn lint
 
 # Auto-fix issues
-pnpm format:fix
-pnpm lint:fix
+yarn format:fix
+yarn lint:fix
 ```
 
 ### Type Safety
@@ -206,7 +206,7 @@ pnpm lint:fix
 TypeScript is configured with strict mode. Run type checking:
 
 ```bash
-pnpm typecheck
+yarn typecheck
 ```
 
 ### Commit Messages
@@ -232,7 +232,7 @@ Scopes: `extension`, `webview`, `services`, `commands`, `views`, `docs`, `config
 Open Drizzle Studio to view and manage your database:
 
 ```bash
-pnpm db:studio
+yarn db:studio
 ```
 
 ### Schema Changes
@@ -241,7 +241,7 @@ After modifying the schema in `packages/db/src/schema.ts`:
 
 ```bash
 # Push changes to database
-pnpm db:push
+yarn db:push
 ```
 
 ## Docker Compose
@@ -272,20 +272,20 @@ The default connection string format is documented in `docker-compose.yml`. The 
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start all apps in watch mode |
-| `pnpm dev:next` | Start only Next.js app |
-| `pnpm build` | Build all packages |
-| `pnpm typecheck` | Run TypeScript type checking |
-| `pnpm format` | Check code formatting |
-| `pnpm format:fix` | Auto-fix formatting issues |
-| `pnpm lint` | Check code linting |
-| `pnpm lint:fix` | Auto-fix linting issues |
-| `pnpm db:push` | Push database schema changes |
-| `pnpm db:studio` | Open Drizzle Studio |
-| `pnpm auth:generate` | Generate Better Auth schema |
-| `pnpm ui-add` | Add new shadcn/ui component |
-| `pnpm clean` | Remove all node_modules |
-| `pnpm clean:workspaces` | Clean all workspace node_modules |
+| `yarn dev` | Start all apps in watch mode |
+| `yarn dev:next` | Start only Next.js app |
+| `yarn build` | Build all packages |
+| `yarn typecheck` | Run TypeScript type checking |
+| `yarn format` | Check code formatting |
+| `yarn format:fix` | Auto-fix formatting issues |
+| `yarn lint` | Check code linting |
+| `yarn lint:fix` | Auto-fix linting issues |
+| `yarn db:push` | Push database schema changes |
+| `yarn db:studio` | Open Drizzle Studio |
+| `yarn auth:generate` | Generate Better Auth schema |
+| `yarn ui-add` | Add new shadcn/ui component |
+| `yarn clean` | Remove all node_modules |
+| `yarn clean:workspaces` | Clean all workspace node_modules |
 
 ## Contributing
 

@@ -1,7 +1,0 @@
-{
-  "$schema": "https://biomejs.dev/schemas/2.3.8/schema.json",
-  "extends": ["../../tooling/biome/biome.json"],
-  "files": {
-    "experimentalScannerIgnores": [".next/**", "node_modules/**", ".turbo/**"]
-  }
-}

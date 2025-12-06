@@ -1,5 +1,6 @@
 {
   "name": "@clive/biome-config",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,8 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
-    "@clive/tsconfig": "workspace:*",
-    "typescript": "catalog:"
+    "@biomejs/biome": "^2.3.7",
+    "@clive/tsconfig": "*",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,15 +1,20 @@
 {
   "name": "Clive",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tooling/*"
+  ],
   "engines": {
     "node": "^22.21.0",
-    "pnpm": "^10.19.0"
+    "yarn": "^1.22.0"
   },
   "scripts": {
     "build": "turbo run build",
     "clean": "git clean -xdf node_modules",
     "clean:workspaces": "turbo run clean",
-    "auth:generate": "pnpm -F @clive/auth generate",
+    "auth:generate": "yarn workspace @clive/auth generate",
     "db:push": "turbo -F @clive/db push",
     "db:generate": "turbo -F @clive/db generate",
     "db:studio": "turbo -F @clive/db studio",
@@ -19,22 +24,22 @@
     "format:fix": "turbo run format:fix --continue",
     "lint": "turbo run lint --continue",
     "lint:fix": "turbo run lint:fix --continue",
-    "lint:ws": "pnpm dlx sherif@latest",
-    "postinstall": "pnpm lint:ws",
+    "lint:ws": "npx sherif@latest",
+    "postinstall": "yarn lint:ws",
     "typecheck": "turbo run typecheck",
     "ui-add": "turbo run ui-add",
     "android": "expo run:android",
     "ios": "expo run:ios"
   },
   "devDependencies": {
-    "@commitlint/cli": "catalog:",
-    "@commitlint/config-conventional": "catalog:",
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
     "@turbo/gen": "^2.5.8",
     "commitlint": "^20.1.0",
     "dotenv-cli": "^10.0.0",
     "husky": "^9.1.7",
     "turbo": "^2.5.8",
-    "typescript": "catalog:"
+    "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.19.0"
+  "packageManager": "yarn@1.22.0"
 }

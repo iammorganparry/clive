@@ -1,5 +1,6 @@
 {
   "name": "@clive/tailwind-config",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -16,15 +17,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "catalog:",
+    "@tailwindcss/postcss": "^4.1.17",
     "postcss": "^8.5.6",
-    "tailwindcss": "catalog:"
+    "tailwindcss": "^4.1.17"
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
-    "@clive/biome-config": "workspace:*",
-    "@clive/tsconfig": "workspace:*",
-    "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "@biomejs/biome": "^2.3.7",
+    "@clive/biome-config": "*",
+    "@clive/tsconfig": "*",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
   }
 }
