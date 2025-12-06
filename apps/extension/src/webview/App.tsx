@@ -306,6 +306,23 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     });
   }, []);
 
+  // Handler for previewing test diff
+  const handlePreviewTestDiff = useCallback(
+    (test: ProposedTest) => {
+      vscode.postMessage({
+        command: WebviewMessages.previewTestDiff,
+        test: {
+          id: test.id,
+          targetTestPath: test.targetTestPath,
+          proposedContent: test.proposedContent,
+          existingContent: test.existingContent,
+          isUpdate: test.isUpdate,
+        },
+      });
+    },
+    [vscode],
+  );
+
   // Handler for rejecting a test
   const handleRejectTest = useCallback((id: string) => {
     setTestStatuses((prev) => {
@@ -362,6 +379,7 @@ const App: React.FC<AppProps> = ({ vscode }) => {
                 onAccept={handleAcceptTest}
                 onReject={handleRejectTest}
                 onGenerate={handleGenerateTests}
+                onPreviewDiff={handlePreviewTestDiff}
               />
             ) : (
               <BranchChanges

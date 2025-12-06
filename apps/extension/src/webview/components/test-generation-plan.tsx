@@ -23,6 +23,7 @@ interface TestGenerationPlanProps {
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onGenerate: (acceptedIds: string[]) => void;
+  onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
@@ -33,6 +34,7 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
   onAccept,
   onReject,
   onGenerate,
+  onPreviewDiff,
 }) => {
   const [localStatuses, setLocalStatuses] = useState<
     Map<string, "pending" | "accepted" | "rejected">
@@ -185,6 +187,7 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
               testFilePath={testFilePaths.get(test.id)}
               onAccept={handleAccept}
               onReject={handleReject}
+              onPreviewDiff={onPreviewDiff}
             />
           ))}
         </div>

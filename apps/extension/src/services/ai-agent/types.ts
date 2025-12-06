@@ -101,6 +101,8 @@ export interface ProposedTest {
   targetTestPath: string;
   description: string;
   isUpdate: boolean;
+  proposedContent: string; // The actual test code that will be written
+  existingContent?: string; // Current file content (for updates)
 }
 
 export interface TestGenerationPlan {

@@ -8,6 +8,7 @@ import {
   globSearchTool,
   getCypressConfigTool,
   proposeTestTool,
+  writeTestFileTool,
 } from "./tools/index.js";
 import type {
   ProposedTest,
@@ -76,6 +77,104 @@ export class PlanningAgent {
    */
   isConfigured(): boolean {
     return !!this.apiKey && this.apiKey.length > 0;
+  }
+
+  /**
+   * Generate test content for a proposed test without writing it
+   * Returns both proposed content and existing content (if update)
+   */
+  private async generateTestContent(
+    test: ProposedTest,
+    outputChannel?: vscode.OutputChannel,
+  ): Promise<{ proposedContent: string; existingContent?: string }> {
+    const log = (message: string) => {
+      if (outputChannel) {
+        outputChannel.appendLine(`[Planning Agent] ${message}`);
+      }
+      console.log(`[Planning Agent] ${message}`);
+    };
+
+    // Read existing content if this is an update
+    let existingContent: string | undefined;
+    if (test.isUpdate) {
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+          const workspaceRoot = workspaceFolders[0].uri;
+          const fileUri = vscode.Uri.joinPath(
+            workspaceRoot,
+            test.targetTestPath,
+          );
+          const fileData = await vscode.workspace.fs.readFile(fileUri);
+          existingContent = Buffer.from(fileData).toString("utf-8");
+        }
+      } catch {
+        // File doesn't exist, that's okay
+        existingContent = undefined;
+      }
+    }
+
+    // Create tool set for content generation (same as execution but we'll capture content)
+    const tools = {
+      readFile: readFileTool,
+      listFiles: listFilesTool,
+      getCypressConfig: getCypressConfigTool,
+      writeTestFile: writeTestFileTool, // We'll capture the content from tool calls
+    };
+
+    // Build prompt for content generation (same as execution)
+    const prompt = `Write a comprehensive Cypress E2E test file for the React component at: ${test.sourceFile}
+
+      Target test path: ${test.targetTestPath}
+      Description: ${test.description}
+      ${test.isUpdate ? "Update the existing test file if it exists." : "Create a new test file."}
+
+      Please:
+      1. Read and understand the component file
+      2. Read Cypress configuration to understand project conventions
+      3. Write a complete, runnable Cypress test file to ${test.targetTestPath}
+
+      The test should cover: ${test.description}
+
+      Start by reading the component file and Cypress config, then write the test file.`;
+
+    const anthropic = createAnthropic({
+      apiKey: this.apiKey,
+    });
+
+    const result = await generateText({
+      model: anthropic("claude-3-5-haiku-latest"),
+      tools,
+      stopWhen: stepCountIs(10),
+      system: `You are an expert Cypress E2E test writer. Generate comprehensive Cypress test files.
+      
+      Read the component file and Cypress config, then generate a complete test file.
+      Use the writeTestFile tool to provide the test content.`,
+      prompt,
+    });
+
+    // Extract test content from writeTestFile tool calls
+    let proposedContent = "";
+    const writeCalls = result.steps
+      .flatMap((step) => step.toolCalls)
+      .filter((call) => call.toolName === "writeTestFile");
+
+    if (writeCalls.length > 0) {
+      const lastCall = writeCalls[writeCalls.length - 1];
+      if ("args" in lastCall && typeof lastCall.args === "object") {
+        const args = lastCall.args as { testContent?: string };
+        if (args.testContent) {
+          proposedContent = args.testContent;
+        }
+      }
+    }
+
+    // If no content was captured, use a fallback
+    if (!proposedContent) {
+      proposedContent = `// Test content generation in progress...\n// Target: ${test.targetTestPath}\n// Description: ${test.description}`;
+    }
+
+    return { proposedContent, existingContent };
   }
 
   /**
@@ -185,6 +284,8 @@ export class PlanningAgent {
                 targetTestPath: args.targetTestPath,
                 description: args.description,
                 isUpdate: args.isUpdate,
+                proposedContent: "", // Will be populated during content generation
+                existingContent: undefined, // Will be populated during content generation if update
               });
             }
           }
@@ -193,8 +294,35 @@ export class PlanningAgent {
 
       log(`Proposed ${proposedTests.length} test file(s)`);
 
+      // Generate test content for each proposed test
+      const testsWithContent: ProposedTest[] = [];
+      for (const test of proposedTests) {
+        log(`Generating content for test: ${test.targetTestPath}`);
+        try {
+          const { proposedContent, existingContent } =
+            await this.generateTestContent(test, outputChannel);
+          testsWithContent.push({
+            ...test,
+            proposedContent,
+            existingContent,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          log(
+            `Failed to generate content for ${test.targetTestPath}: ${errorMessage}`,
+          );
+          // Still include the test but with empty content
+          testsWithContent.push({
+            ...test,
+            proposedContent: `// Failed to generate content: ${errorMessage}`,
+            existingContent: undefined,
+          });
+        }
+      }
+
       return {
-        tests: proposedTests,
+        tests: testsWithContent,
       };
     } catch (error) {
       const errorMessage =
@@ -204,4 +332,3 @@ export class PlanningAgent {
     }
   }
 }
-
