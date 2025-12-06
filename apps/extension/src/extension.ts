@@ -4,6 +4,8 @@ import * as vscode from "vscode";
 import { CliveViewProvider } from "./views/clive-view-provider.js";
 import { CommandCenter } from "./commands/command-center.js";
 import { DiffContentProvider } from "./services/diff-content-provider.js";
+import { ConfigService } from "./services/config-service.js";
+import { SecretKeys } from "./constants.js";
 
 const commandCenter = new CommandCenter();
 
@@ -18,11 +20,30 @@ export function activate(context: vscode.ExtensionContext) {
     'Congratulations, your extension "clive" is now active!',
   );
 
+  // Initialize ConfigService with SecretStorage
+  const configService = new ConfigService(context.secrets);
+
+  // Migrate auth token from globalState to SecretStorage (one-time migration)
+  const oldAuthToken = context.globalState.get<string>("auth_token");
+  if (oldAuthToken) {
+    context.secrets.store(SecretKeys.authToken, oldAuthToken).catch((err) => {
+      outputChannel.appendLine(
+        `Failed to migrate auth token to SecretStorage: ${err}`,
+      );
+    });
+    // Clear old token from globalState after migration
+    context.globalState.update("auth_token", undefined);
+  }
+
   // Register the diff content provider
   const diffProvider = DiffContentProvider.register(context);
 
   // Register the webview view provider
-  const provider = new CliveViewProvider(context.extensionUri, diffProvider);
+  const provider = new CliveViewProvider(
+    context.extensionUri,
+    diffProvider,
+    configService,
+  );
   provider.setContext(context);
   provider.setOutputChannel(outputChannel);
 

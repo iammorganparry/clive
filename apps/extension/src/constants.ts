@@ -15,6 +15,14 @@ export const Views = {
 } as const;
 
 /**
+ * Secret storage keys used for encrypted storage
+ */
+export const SecretKeys = {
+  anthropicApiKey: "clive.anthropic_api_key",
+  authToken: "clive.auth_token",
+} as const;
+
+/**
  * Webview message commands for communication between extension and webview
  */
 export const WebviewMessages = {
@@ -50,4 +58,7 @@ export const WebviewMessages = {
   confirmTestPlan: "confirm-test-plan",
   testExecutionUpdate: "test-execution-update",
   previewTestDiff: "preview-test-diff",
+  // Config messages
+  fetchConfig: "fetch-config",
+  configUpdated: "config-updated",
 } as const;

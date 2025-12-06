@@ -6,6 +6,7 @@ import { CypressTestAgent } from "../services/ai-agent/agent.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import { WebviewMessageHandler } from "../services/webview-message-handler.js";
 import type { MessageHandlerContext } from "../services/webview-message-handler.js";
+import type { ConfigService } from "../services/config-service.js";
 import { getWebviewHtml } from "./webview-html.js";
 import { Views, WebviewMessages } from "../constants.js";
 
@@ -26,6 +27,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly diffProvider: DiffContentProvider,
+    private readonly configService: ConfigService,
   ) {}
 
   public setContext(context: vscode.ExtensionContext): void {
@@ -123,8 +125,9 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       cypressDetector: new CypressDetector(),
       gitService: new GitService(),
       reactFileFilter: new ReactFileFilter(),
-      testAgent: new CypressTestAgent(),
+      testAgent: new CypressTestAgent(this.configService),
       diffProvider: this.diffProvider,
+      configService: this.configService,
     };
 
     return new WebviewMessageHandler(context);

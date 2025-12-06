@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import { generateText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
@@ -7,6 +7,7 @@ import {
   getCypressConfigTool,
   writeTestFileTool,
 } from "./tools/index.js";
+import type { ConfigService } from "../config-service.js";
 import type {
   ExecuteTestInput,
   ExecuteTestOutput,
@@ -56,27 +57,13 @@ const CYPRESS_EXECUTION_PROMPT = `You are an expert Cypress E2E test writer. You
  * Uses Claude Haiku for fast, cost-effective test file generation
  */
 export class ExecutionAgent {
-  private apiKey: string | undefined;
-
-  constructor() {
-    // Get API key from VS Code configuration
-    const config = vscode.workspace.getConfiguration("clive");
-    this.apiKey = config.get<string>("anthropicApiKey");
-
-    // Listen for configuration changes
-    vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("clive.anthropicApiKey")) {
-        const newConfig = vscode.workspace.getConfiguration("clive");
-        this.apiKey = newConfig.get<string>("anthropicApiKey");
-      }
-    });
-  }
+  constructor(private configService: ConfigService) {}
 
   /**
    * Check if the agent is properly configured
    */
-  isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+  async isConfigured(): Promise<boolean> {
+    return await this.configService.isConfigured();
   }
 
   /**
@@ -87,7 +74,7 @@ export class ExecutionAgent {
     input: ExecuteTestInput,
     outputChannel?: vscode.OutputChannel,
   ): Promise<ExecuteTestOutput> {
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       return {
         success: false,
         error:
@@ -130,8 +117,16 @@ export class ExecutionAgent {
         Start by reading the component file and Cypress config, then write the test file.`;
 
       log("Calling AI model for execution...");
+      const apiKey = await this.configService.getAnthropicApiKey();
+      if (!apiKey) {
+        return {
+          success: false,
+          error: "Anthropic API key not configured",
+        };
+      }
+
       const anthropic = createAnthropic({
-        apiKey: this.apiKey,
+        apiKey,
       });
 
       const result = await generateText({
@@ -200,4 +195,3 @@ export class ExecutionAgent {
     }
   }
 }
-

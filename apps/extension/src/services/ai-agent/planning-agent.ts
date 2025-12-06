@@ -10,6 +10,7 @@ import {
   proposeTestTool,
   writeTestFileTool,
 } from "./tools/index.js";
+import type { ConfigService } from "../config-service.js";
 import type {
   ProposedTest,
   TestGenerationPlan,
@@ -56,27 +57,13 @@ const CYPRESS_PLANNING_PROMPT = `You are an expert Cypress E2E test planner. You
  * Uses Claude Opus 4.5 for intelligent analysis and planning
  */
 export class PlanningAgent {
-  private apiKey: string | undefined;
-
-  constructor() {
-    // Get API key from VS Code configuration
-    const config = vscode.workspace.getConfiguration("clive");
-    this.apiKey = config.get<string>("anthropicApiKey");
-
-    // Listen for configuration changes
-    vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration("clive.anthropicApiKey")) {
-        const newConfig = vscode.workspace.getConfiguration("clive");
-        this.apiKey = newConfig.get<string>("anthropicApiKey");
-      }
-    });
-  }
+  constructor(private configService: ConfigService) {}
 
   /**
    * Check if the agent is properly configured
    */
-  isConfigured(): boolean {
-    return !!this.apiKey && this.apiKey.length > 0;
+  async isConfigured(): Promise<boolean> {
+    return await this.configService.isConfigured();
   }
 
   /**
@@ -138,8 +125,13 @@ export class PlanningAgent {
 
       Start by reading the component file and Cypress config, then write the test file.`;
 
+    const apiKey = await this.configService.getAnthropicApiKey();
+    if (!apiKey) {
+      throw new Error("Anthropic API key not configured");
+    }
+
     const anthropic = createAnthropic({
-      apiKey: this.apiKey,
+      apiKey,
     });
 
     const result = await generateText({
@@ -185,7 +177,7 @@ export class PlanningAgent {
     files: string[],
     outputChannel?: vscode.OutputChannel,
   ): Promise<TestGenerationPlan> {
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       throw new Error(
         "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
       );
@@ -227,8 +219,13 @@ export class PlanningAgent {
         Propose one test file per component. Start by reading the Cypress config and then analyze each component.`;
 
       log("Calling AI model for planning...");
+      const apiKey = await this.configService.getAnthropicApiKey();
+      if (!apiKey) {
+        throw new Error("Anthropic API key not configured");
+      }
+
       const anthropic = createAnthropic({
-        apiKey: this.apiKey,
+        apiKey,
       });
 
       const result = await generateText({
