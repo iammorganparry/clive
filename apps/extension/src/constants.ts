@@ -42,4 +42,11 @@ export const WebviewMessages = {
   getBranchChanges: "get-branch-changes",
   branchChangesStatus: "branch-changes-status",
   createTestForFile: "create-test-for-file",
+  testGenerationStatus: "test-generation-status",
+  testGenerationProgress: "test-generation-progress",
+  // Test generation planning and execution
+  planTestGeneration: "plan-test-generation",
+  testGenerationPlan: "test-generation-plan",
+  confirmTestPlan: "confirm-test-plan",
+  testExecutionUpdate: "test-execution-update",
 } as const;
