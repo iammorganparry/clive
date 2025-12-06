@@ -103,13 +103,13 @@ function CallbackPageContent() {
   }
 
   return (
-    <Card>
+    <Card className="max-w-lg rounded-xl p-4 shadow-sm gap-10">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <CheckCircle2 className="size-5 text-green-500" />
           Authentication Successful
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-sm text-muted-foreground">
           Copy the token below and paste it into the VSCode extension login
           page.
           {callbackUrl && (

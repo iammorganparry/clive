@@ -2,7 +2,6 @@ import React, { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
 import Welcome from "./components/welcome.js";
-import CypressStatus from "./components/cypress-status.js";
 import BranchChanges from "./components/branch-changes.js";
 import TestGenerationPlan from "./components/test-generation-plan.js";
 import { Login } from "./components/login.js";
@@ -16,6 +15,7 @@ import type {
   ProposedTest,
   TestExecutionStatus,
 } from "../services/ai-agent/types.js";
+import { UserDropdown } from "./components/user-dropdown.js";
 
 interface AppProps {
   vscode: VSCodeAPI;
@@ -160,26 +160,33 @@ const App: React.FC<AppProps> = ({ vscode }) => {
         message.command === WebviewMessages.testExecutionUpdate &&
         message.id
       ) {
+        const testId = message.id;
+        if (!testId) {
+          return;
+        }
+
         setTestStatuses((prev) => {
           const next = new Map(prev);
           if (message.executionStatus) {
-            next.set(message.id!, message.executionStatus);
+            next.set(testId, message.executionStatus);
           }
           return next;
         });
 
-        if (message.testFilePath) {
+        const testFilePath = message.testFilePath;
+        if (testFilePath) {
           setTestFilePaths((prev) => {
             const next = new Map(prev);
-            next.set(message.id!, message.testFilePath!);
+            next.set(testId, testFilePath);
             return next;
           });
         }
 
-        if (message.error) {
+        const error = message.error;
+        if (error) {
           setTestErrors((prev) => {
             const next = new Map(prev);
-            next.set(message.id!, message.error!);
+            next.set(testId, error);
             return next;
           });
         }
@@ -213,35 +220,33 @@ const App: React.FC<AppProps> = ({ vscode }) => {
   // Clerk handles session management, so we use isSignedIn and user from useUser hook
 
   // Query for Cypress status (only when authenticated)
-  const {
-    data: cypressStatus,
-    isLoading,
-    error: queryError,
-  } = useQuery<CypressStatusData, Error>({
-    queryKey: ["cypress-status"],
-    queryFn: async () => {
-      logger.query.start("cypress-status");
-      try {
-        const message = await createMessagePromise(
-          vscode,
-          WebviewMessages.refreshStatus,
-          WebviewMessages.cypressStatus,
-        );
+  const { data: cypressStatus, isLoading } = useQuery<CypressStatusData, Error>(
+    {
+      queryKey: ["cypress-status"],
+      queryFn: async () => {
+        logger.query.start("cypress-status");
+        try {
+          const message = await createMessagePromise(
+            vscode,
+            WebviewMessages.refreshStatus,
+            WebviewMessages.cypressStatus,
+          );
 
-        if (!message.status) {
-          throw new Error("No status received");
+          if (!message.status) {
+            throw new Error("No status received");
+          }
+
+          logger.query.success("cypress-status", message.status);
+          return message.status;
+        } catch (error) {
+          logger.query.error("cypress-status", error);
+          throw error;
         }
-
-        logger.query.success("cypress-status", message.status);
-        return message.status;
-      } catch (error) {
-        logger.query.error("cypress-status", error);
-        throw error;
-      }
+      },
+      refetchInterval: false,
+      enabled: isAuthenticated && !authLoading, // Only fetch when authenticated
     },
-    refetchInterval: false,
-    enabled: isAuthenticated && !authLoading, // Only fetch when authenticated
-  });
+  );
 
   // Query for branch changes (only when authenticated)
   const {
@@ -351,7 +356,8 @@ const App: React.FC<AppProps> = ({ vscode }) => {
   return (
     <div className="w-full h-full flex flex-col bg-background text-foreground">
       {isAuthenticated && (
-        <div className="flex items-center justify-end border-b border-border px-4 py-2">
+        <div className="flex items-center w-full justify-between border-b border-border px-4 py-2">
+          <UserDropdown />
           <Button
             variant="ghost"
             size="icon"

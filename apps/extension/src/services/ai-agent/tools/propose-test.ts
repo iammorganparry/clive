@@ -34,7 +34,7 @@ export const proposeTestTool = tool({
   execute: async ({
     sourceFile,
     targetTestPath,
-    description,
+    description: _description,
     isUpdate,
   }: ProposeTestInput): Promise<ProposeTestOutput> => {
     // Generate a unique ID for this proposal

@@ -53,6 +53,7 @@ export default defineConfig(({ mode }) => {
   build: {
     outDir: "dist/webview",
     emptyOutDir: true,
+    sourcemap: true,
     rollupOptions: {
       input: path.resolve(__dirname, "src/webview/index.html"),
       output: {
