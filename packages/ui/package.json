@@ -13,6 +13,10 @@
       "types": "./dist/button.d.ts",
       "default": "./dist/button.js"
     },
+    "./card": {
+      "types": "./dist/card.d.ts",
+      "default": "./dist/card.js"
+    },
     "./dropdown-menu": {
       "types": "./dist/dropdown-menu.d.ts",
       "default": "./dist/dropdown-menu.js"

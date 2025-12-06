@@ -1,246 +1,270 @@
 import React, { useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Welcome from "./components/Welcome.js";
-import CypressStatus from "./components/CypressStatus.js";
-import { Login } from "./components/Login.js";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LogOut } from "lucide-react";
+import Welcome from "./components/welcome.js";
+import CypressStatus from "./components/cypress-status.js";
+import BranchChanges from "./components/branch-changes.js";
+import { Login } from "./components/login.js";
+import { Button } from "../components/ui/button.js";
 import { WebviewMessages } from "../constants.js";
 import { logger } from "./services/logger.js";
 import type { VSCodeAPI } from "./services/vscode.js";
-import { useAuth } from "./contexts/AuthContext.js";
+import { useAuth } from "./contexts/auth-context.js";
+import type { BranchChangesData } from "./components/branch-changes.js";
 
 interface AppProps {
-	vscode: VSCodeAPI;
+  vscode: VSCodeAPI;
 }
 
 interface CypressStatusData {
-	overallStatus: "installed" | "not_installed" | "partial";
-	packages: Array<{
-		name: string;
-		path: string;
-		relativePath: string;
-		hasCypressPackage: boolean;
-		hasCypressConfig: boolean;
-		isConfigured: boolean;
-	}>;
-	workspaceRoot: string;
+  overallStatus: "installed" | "not_installed" | "partial";
+  packages: Array<{
+    name: string;
+    path: string;
+    relativePath: string;
+    hasCypressPackage: boolean;
+    hasCypressConfig: boolean;
+    isConfigured: boolean;
+  }>;
+  workspaceRoot: string;
 }
 
 interface MessageData {
-	command: string;
-	status?: CypressStatusData;
-	error?: string;
-	targetDirectory?: string;
+  command: string;
+  status?: CypressStatusData;
+  changes?: BranchChangesData | null;
+  error?: string;
+  targetDirectory?: string;
+  filePath?: string;
 }
 
 // Store pending promises for message responses
 const pendingPromises = new Map<
-	string,
-	{ resolve: (value: MessageData) => void; reject: (error: Error) => void }
+  string,
+  { resolve: (value: MessageData) => void; reject: (error: Error) => void }
 >();
 
 // Create a Promise-based message system
 const createMessagePromise = (
-	vscode: VSCodeAPI,
-	command: string,
-	expectedResponseCommand: string
+  vscode: VSCodeAPI,
+  command: string,
+  expectedResponseCommand: string,
 ): Promise<MessageData> => {
-	return new Promise<MessageData>((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			pendingPromises.delete(expectedResponseCommand);
-			reject(new Error("Request timeout"));
-		}, 10000);
+  return new Promise<MessageData>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingPromises.delete(expectedResponseCommand);
+      reject(new Error("Request timeout"));
+    }, 10000);
 
-		pendingPromises.set(expectedResponseCommand, {
-			resolve: (value) => {
-				clearTimeout(timeout);
-				pendingPromises.delete(expectedResponseCommand);
-				resolve(value);
-			},
-			reject: (error) => {
-				clearTimeout(timeout);
-				pendingPromises.delete(expectedResponseCommand);
-				reject(error);
-			},
-		});
+    pendingPromises.set(expectedResponseCommand, {
+      resolve: (value) => {
+        clearTimeout(timeout);
+        pendingPromises.delete(expectedResponseCommand);
+        resolve(value);
+      },
+      reject: (error) => {
+        clearTimeout(timeout);
+        pendingPromises.delete(expectedResponseCommand);
+        reject(error);
+      },
+    });
 
-		logger.message.send(command);
-		vscode.postMessage({ command });
-	});
+    logger.message.send(command);
+    vscode.postMessage({ command });
+  });
 };
 
 const App: React.FC<AppProps> = ({ vscode }) => {
-	logger.component.render("App", { vscodeAvailable: !!vscode });
-	const queryClient = useQueryClient();
+  logger.component.render("App", { vscodeAvailable: !!vscode });
+  const queryClient = useQueryClient();
 
-	// Use AuthContext for authentication
-	const { isAuthenticated, isLoading: authLoading, token } = useAuth();
+  // Use AuthContext for authentication
+  const { isAuthenticated, isLoading: authLoading, token, logout } = useAuth();
 
-	// Handle incoming messages from extension
-	const handleMessage = useCallback(
-		(event: MessageEvent) => {
-			const message = event.data as MessageData;
-			logger.message.receive(message.command, message);
+  // Handle incoming messages from extension
+  const handleMessage = useCallback(
+    (event: MessageEvent) => {
+      const message = event.data as MessageData;
+      logger.message.receive(message.command, message);
 
-			// Check if there's a pending promise for this command (for Cypress status)
-			const pending = pendingPromises.get(message.command);
-			if (pending) {
-				if (message.error) {
-					pending.reject(new Error(message.error));
-				} else {
-					pending.resolve(message);
-				}
-			}
+      // Check if there's a pending promise for this command (for Cypress status)
+      const pending = pendingPromises.get(message.command);
+      if (pending) {
+        if (message.error) {
+          pending.reject(new Error(message.error));
+        } else {
+          pending.resolve(message);
+        }
+      }
 
-			// Update the query cache with the new status
-			if (message.command === WebviewMessages.cypressStatus && message.status) {
-				queryClient.setQueryData<CypressStatusData>(
-					["cypress-status"],
-					message.status
-				);
-			}
-		},
-		[queryClient]
-	);
+      // Update the query cache with the new status
+      if (message.command === WebviewMessages.cypressStatus && message.status) {
+        queryClient.setQueryData<CypressStatusData>(
+          ["cypress-status"],
+          message.status,
+        );
+      }
 
-	console.log("[Clive] App render state", {
-		isAuthenticated,
-		authLoading,
-		hasToken: !!token,
-	});
+      // Update the query cache with branch changes
+      if (
+        message.command === WebviewMessages.branchChangesStatus &&
+        message.changes !== undefined
+      ) {
+        queryClient.setQueryData<BranchChangesData | null>(
+          ["branch-changes"],
+          message.changes,
+        );
+      }
+    },
+    [queryClient],
+  );
 
-	// Set up message listener to update query cache and resolve promises
-	React.useEffect(() => {
-		window.addEventListener("message", handleMessage);
+  console.log("[Clive] App render state", {
+    isAuthenticated,
+    authLoading,
+    hasToken: !!token,
+  });
 
-		// Notify extension that webview is ready
-		logger.info("Webview ready, notifying extension");
-		logger.message.send(WebviewMessages.ready);
-		vscode.postMessage({
-			command: WebviewMessages.ready,
-		});
+  // Set up message listener to update query cache and resolve promises
+  React.useEffect(() => {
+    window.addEventListener("message", handleMessage);
 
-		return () => {
-			window.removeEventListener("message", handleMessage);
-		};
-	}, [vscode, handleMessage]);
+    // Notify extension that webview is ready
+    logger.info("Webview ready, notifying extension");
+    logger.message.send(WebviewMessages.ready);
+    vscode.postMessage({
+      command: WebviewMessages.ready,
+    });
 
-	// Clerk handles session management, so we use isSignedIn and user from useUser hook
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [vscode, handleMessage]);
 
-	// Query for Cypress status (only when authenticated)
-	const {
-		data: cypressStatus,
-		isLoading,
-		error: queryError,
-	} = useQuery<CypressStatusData, Error>({
-		queryKey: ["cypress-status"],
-		queryFn: async () => {
-			logger.query.start("cypress-status");
-			try {
-				const message = await createMessagePromise(
-					vscode,
-					WebviewMessages.refreshStatus,
-					WebviewMessages.cypressStatus
-				);
+  // Clerk handles session management, so we use isSignedIn and user from useUser hook
 
-				if (!message.status) {
-					throw new Error("No status received");
-				}
+  // Query for Cypress status (only when authenticated)
+  const {
+    data: cypressStatus,
+    isLoading,
+    error: queryError,
+  } = useQuery<CypressStatusData, Error>({
+    queryKey: ["cypress-status"],
+    queryFn: async () => {
+      logger.query.start("cypress-status");
+      try {
+        const message = await createMessagePromise(
+          vscode,
+          WebviewMessages.refreshStatus,
+          WebviewMessages.cypressStatus,
+        );
 
-				logger.query.success("cypress-status", message.status);
-				return message.status;
-			} catch (error) {
-				logger.query.error("cypress-status", error);
-				throw error;
-			}
-		},
-		refetchInterval: false,
-		enabled: isAuthenticated && !authLoading, // Only fetch when authenticated
-	});
+        if (!message.status) {
+          throw new Error("No status received");
+        }
 
-	// Handle successful setup - refetch status
-	const handleSetupSuccess = useCallback(() => {
-		// Refetch status after successful setup
-		// The file watcher should trigger an update, but we'll also manually refetch
-		setTimeout(() => {
-			queryClient.invalidateQueries({ queryKey: ["cypress-status"] });
-		}, 3000);
-	}, [queryClient]);
+        logger.query.success("cypress-status", message.status);
+        return message.status;
+      } catch (error) {
+        logger.query.error("cypress-status", error);
+        throw error;
+      }
+    },
+    refetchInterval: false,
+    enabled: isAuthenticated && !authLoading, // Only fetch when authenticated
+  });
 
-	// Mutation for setting up Cypress
-	const setupMutation = useMutation({
-		mutationFn: async (targetDirectory?: string): Promise<void> => {
-			vscode.postMessage({
-				command: WebviewMessages.setupCypress,
-				targetDirectory,
-			});
+  // Query for branch changes (only when authenticated)
+  const {
+    data: branchChanges,
+    isLoading: branchChangesLoading,
+    error: branchChangesError,
+  } = useQuery<BranchChangesData | null, Error>({
+    queryKey: ["branch-changes"],
+    queryFn: async () => {
+      logger.query.start("branch-changes");
+      try {
+        const message = await createMessagePromise(
+          vscode,
+          WebviewMessages.getBranchChanges,
+          WebviewMessages.branchChangesStatus,
+        );
 
-			return new Promise<void>((resolve, reject) => {
-				const timeout = setTimeout(() => {
-					window.removeEventListener("message", handler);
-					reject(new Error("Setup timeout"));
-				}, 60000); // 60 seconds for setup
+        logger.query.success("branch-changes", message.changes);
+        return message.changes ?? null;
+      } catch (error) {
+        logger.query.error("branch-changes", error);
+        throw error;
+      }
+    },
+    refetchInterval: false,
+    enabled: isAuthenticated && !authLoading, // Only fetch when authenticated
+  });
 
-				const handler = (event: MessageEvent) => {
-					const message = event.data as MessageData;
-					if (message.command === WebviewMessages.setupError) {
-						clearTimeout(timeout);
-						window.removeEventListener("message", handler);
-						reject(new Error(message.error || "Setup failed"));
-					} else if (message.command === WebviewMessages.setupStart) {
-						// Setup started successfully
-						// The status will be refreshed automatically via file watcher
-						// Wait a bit then resolve - status update will come via query cache
-						setTimeout(() => {
-							clearTimeout(timeout);
-							window.removeEventListener("message", handler);
-							resolve();
-						}, 1000);
-					}
-				};
+  const handleLoginSuccess = useCallback(() => {
+    // AuthContext handles login state automatically
+    // Token is already set, so we can proceed
+  }, []);
 
-				window.addEventListener("message", handler);
-			});
-		},
-		onSuccess: handleSetupSuccess,
-	});
+  // Handler for creating test for a single file
+  const handleCreateTestForFile = useCallback(
+    (filePath: string) => {
+      vscode.postMessage({
+        command: WebviewMessages.createTestForFile,
+        filePath,
+      });
+    },
+    [vscode],
+  );
 
-	const handleSetup = (targetDirectory?: string) => {
-		setupMutation.mutate(targetDirectory);
-	};
+  // Handler for creating tests for all changed files
+  const handleCreateAllTests = useCallback(() => {
+    if (branchChanges?.files) {
+      for (const file of branchChanges.files) {
+        vscode.postMessage({
+          command: WebviewMessages.createTestForFile,
+          filePath: file.path,
+        });
+      }
+    }
+  }, [branchChanges, vscode]);
 
-	const handleLoginSuccess = useCallback(() => {
-		// AuthContext handles login state automatically
-		// Token is already set, so we can proceed
-	}, []);
-
-	const error = queryError?.message || setupMutation.error?.message;
-
-	return (
-		<div className="w-full h-full overflow-auto bg-background text-foreground">
-			{isLoading && !cypressStatus ? (
-				<>
-					{isAuthenticated ? (
-						<Welcome />
-					) : (
-						<Login onLoginSuccess={handleLoginSuccess} />
-					)}
-				</>
-			) : cypressStatus ? (
-				<CypressStatus
-					status={cypressStatus}
-					onSetup={handleSetup}
-					setupInProgress={
-						setupMutation.isPending
-							? setupMutation.variables || undefined
-							: undefined
-					}
-					error={error}
-				/>
-			) : (
-				<Welcome />
-			)}
-		</div>
-	);
+  return (
+    <div className="w-full h-full flex flex-col bg-background text-foreground">
+      {isAuthenticated && (
+        <div className="flex items-center justify-end border-b border-border px-4 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            title="Logout"
+            className="h-8 w-8"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+      <div className="flex-1 overflow-auto">
+        {!isAuthenticated && !authLoading ? (
+          <Login onLoginSuccess={handleLoginSuccess} />
+        ) : isLoading && !cypressStatus ? (
+          <Welcome />
+        ) : cypressStatus ? (
+          <div className="w-full">
+            <BranchChanges
+              changes={branchChanges ?? null}
+              isLoading={branchChangesLoading}
+              error={branchChangesError?.message}
+              onCreateTest={handleCreateTestForFile}
+              onCreateAllTests={handleCreateAllTests}
+            />
+          </div>
+        ) : (
+          <Welcome />
+        )}
+      </div>
+    </div>
+  );
 };
 
 export default App;

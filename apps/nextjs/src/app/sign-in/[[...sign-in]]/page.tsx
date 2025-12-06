@@ -27,16 +27,17 @@ async function getBaseUrl(): Promise<string> {
  * Custom sign-in page for VS Code extension
  * Handles callback_url parameter and redirects to OAuth callback after authentication
  */
-export default async function SignInPage({ searchParams }: SignInPageProps) {
-	const params = await searchParams;
-	const callbackUrl = params.callback_url || "vscode://clive.auth/callback";
+export default async function SignInPage(props: SignInPageProps) {
+    const searchParams = await props.searchParams;
+    const params = await searchParams;
+    const callbackUrl = params.callback_url || "vscode://clive.auth/callback";
 
-	// Build the callback URL that Clerk will redirect to after OAuth
-	const baseUrl = await getBaseUrl();
-	const afterSignInUrl = new URL("/api/auth/oauth-callback", baseUrl);
-	afterSignInUrl.searchParams.set("redirect_url", callbackUrl);
+    // Build the callback URL that Clerk will redirect to after OAuth
+    const baseUrl = await getBaseUrl();
+    const afterSignInUrl = new URL("/api/auth/oauth-callback", baseUrl);
+    afterSignInUrl.searchParams.set("redirect_url", callbackUrl);
 
-	return (
+    return (
 		<div className="flex items-center justify-center min-h-screen p-6">
 			<SignIn
 				redirectUrl={afterSignInUrl.toString()}

@@ -1,14 +1,8 @@
 import * as vscode from "vscode";
-import { CypressSetup } from "../services/cypress-setup.js";
 import { Commands, Views } from "../constants.js";
 
 export class CommandCenter {
 	private disposables: vscode.Disposable[] = [];
-	private cypressSetup: CypressSetup;
-
-	constructor() {
-		this.cypressSetup = new CypressSetup();
-	}
 
 	/**
 	 * Register all commands
@@ -16,7 +10,6 @@ export class CommandCenter {
 	registerAll(context: vscode.ExtensionContext): void {
 		this.registerShowView();
 		this.registerHelloWorld();
-		this.registerSetupCypress();
 
 		// Add all disposables to context subscriptions
 		this.disposables.forEach((disposable) => {
@@ -54,27 +47,6 @@ export class CommandCenter {
 		this.disposables.push(disposable);
 	}
 
-	/**
-	 * Register Cypress setup command
-	 */
-	private registerSetupCypress(): void {
-		const disposable = vscode.commands.registerCommand(
-			Commands.setupCypress,
-			async (targetDirectory?: string) => {
-				const workspaceFolders = vscode.workspace.workspaceFolders;
-
-				if (!workspaceFolders || workspaceFolders.length === 0) {
-					vscode.window.showErrorMessage("No workspace folder found");
-					return;
-				}
-
-				const targetDir = targetDirectory || workspaceFolders[0].uri.fsPath;
-				await this.cypressSetup.setup({ targetDirectory: targetDir });
-			}
-		);
-
-		this.disposables.push(disposable);
-	}
 
 	/**
 	 * Dispose all registered commands
