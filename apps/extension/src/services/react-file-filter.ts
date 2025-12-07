@@ -39,9 +39,15 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
       // Helper function to check if a file is eligible
       const checkEligibility = (file: ChangedFile) =>
         Effect.gen(function* () {
+          yield* Effect.logDebug(
+            `[ReactFileFilter] Checking eligibility for: ${file.path}`,
+          );
           // Check extension
           const ext = path.extname(file.path);
           if (!reactExtensions.includes(ext as ".tsx" | ".jsx")) {
+            yield* Effect.logDebug(
+              `[ReactFileFilter] File ${file.path} not eligible: wrong extension (${ext})`,
+            );
             return false;
           }
 
@@ -49,6 +55,9 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
           const pathParts = file.path.split(path.sep);
           for (const excludedDir of excludedDirs) {
             if (pathParts.includes(excludedDir)) {
+              yield* Effect.logDebug(
+                `[ReactFileFilter] File ${file.path} not eligible: in excluded directory (${excludedDir})`,
+              );
               return false;
             }
           }
@@ -56,11 +65,17 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
           // Check if it's a test file
           for (const pattern of testPatterns) {
             if (pattern.test(file.path)) {
+              yield* Effect.logDebug(
+                `[ReactFileFilter] File ${file.path} not eligible: matches test pattern`,
+              );
               return false;
             }
           }
 
           // Check if file contains React component patterns
+          yield* Effect.logDebug(
+            `[ReactFileFilter] Reading file content: ${file.path}`,
+          );
           const vscode = yield* VSCodeService;
           const content = yield* Effect.tryPromise({
             try: () => vscode.workspace.fs.readFile(Uri.file(file.path)),
@@ -85,7 +100,11 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
             /<[A-Z]\w+/.test(text) || /return\s*\(?\s*</.test(text);
           const hasReactImport = /from\s+['"]react['"]/.test(text);
 
-          return (hasDefaultExport || hasJSX) && hasReactImport;
+          const isEligible = (hasDefaultExport || hasJSX) && hasReactImport;
+          yield* Effect.logDebug(
+            `[ReactFileFilter] File ${file.path} eligibility: ${isEligible ? "eligible" : "not eligible"}`,
+          );
+          return isEligible;
         });
 
       return {
@@ -99,6 +118,9 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
          */
         filterEligibleFiles: (files: ChangedFile[]) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[ReactFileFilter] Filtering ${files.length} file(s) for eligibility`,
+            );
             const eligibleFiles = yield* Effect.forEach(
               files,
               (file) =>
@@ -113,7 +135,11 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
             );
 
             // Return only eligible files
-            return eligibleFiles.filter((file) => file.isEligible);
+            const filtered = eligibleFiles.filter((file) => file.isEligible);
+            yield* Effect.logDebug(
+              `[ReactFileFilter] Filtered to ${filtered.length} eligible file(s)`,
+            );
+            return filtered;
           }),
       };
     }),

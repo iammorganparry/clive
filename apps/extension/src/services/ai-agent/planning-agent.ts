@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import vscode from "vscode";
 import { generateText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
@@ -10,322 +10,507 @@ import {
   proposeTestTool,
   writeTestFileTool,
 } from "./tools/index.js";
-import type { ConfigService } from "../config-service.js";
 import type {
   ProposedTest,
   TestGenerationPlan,
   ProposeTestOutput,
 } from "./types.js";
+import { Data, Effect, Layer } from "effect";
+import { ConfigService } from "../config-service.js";
+import { SecretStorageService, VSCodeService } from "../vs-code.js";
+import {
+  CYPRESS_PLANNING_SYSTEM_PROMPT,
+  CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
+  PromptFactory,
+} from "./prompts.js";
 
-/**
- * System prompt for Cypress test planning (proposal phase)
- */
-const CYPRESS_PLANNING_PROMPT = `You are an expert Cypress E2E test planner. Your task is to analyze React components and propose comprehensive Cypress test files WITHOUT writing them.
+class PlanningAgentError extends Data.TaggedError("PlanningAgentError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
-## Your Responsibilities
-
-1. **Analyze components**: Read and understand each React component's structure, props, state, and behavior
-2. **Explore dependencies**: Find related files (routes, API calls, types, utilities) that components use
-3. **Check existing tests**: Look for existing Cypress tests to determine if updates are needed
-4. **Read Cypress config**: Understand the Cypress configuration to follow project conventions
-5. **Propose tests**: Use the proposeTest tool to suggest test files that would cover:
-   - Component rendering and visibility
-   - User interactions (clicks, typing, form submissions)
-   - Navigation and routing
-   - API calls and data loading
-   - Error states and edge cases
-   - Accessibility (if applicable)
-
-## Planning Guidelines
-
-- Use proposeTest tool for EACH component that needs a test
-- Check if a test already exists - if so, propose an update (isUpdate: true)
-- Follow the project's naming conventions (usually \`.cy.ts\` or \`.spec.ts\`)
-- Match the component's directory structure in the test directory
-- Provide clear descriptions of what each test will cover
-
-## Important Notes
-
-- DO NOT use writeTestFile tool - only use proposeTest
-- Always read the component file first to understand what needs testing
-- Use grepSearch to find where components are used to understand context
-- Read Cypress config to understand project setup and conventions
-- Propose one test file per component`;
+class ConfigurationError extends Data.TaggedError("ConfigurationError")<{
+  message: string;
+}> {}
 
 /**
  * Planning Agent for analyzing components and proposing Cypress tests
  * Uses Claude Opus 4.5 for intelligent analysis and planning
  */
-export class PlanningAgent {
-  constructor(private configService: ConfigService) {}
+export class PlanningAgent extends Effect.Service<PlanningAgent>()(
+  "PlanningAgent",
+  {
+    effect: Effect.gen(function* () {
+      const configService = yield* ConfigService;
+      const vscodeService = yield* VSCodeService;
 
-  /**
-   * Check if the agent is properly configured
-   */
-  async isConfigured(): Promise<boolean> {
-    return await this.configService.isConfigured();
-  }
+      /**
+       * Read existing test file content if it exists
+       */
+      const readExistingContent = (
+        targetTestPath: string,
+      ): Effect.Effect<string | undefined, never> =>
+        Effect.gen(function* () {
+          const workspaceFolders = vscodeService.workspace.workspaceFolders;
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            return undefined;
+          }
 
-  /**
-   * Generate test content for a proposed test without writing it
-   * Returns both proposed content and existing content (if update)
-   */
-  private async generateTestContent(
-    test: ProposedTest,
-    outputChannel?: vscode.OutputChannel,
-  ): Promise<{ proposedContent: string; existingContent?: string }> {
-    const log = (message: string) => {
-      if (outputChannel) {
-        outputChannel.appendLine(`[Planning Agent] ${message}`);
-      }
-      console.log(`[Planning Agent] ${message}`);
-    };
-
-    // Read existing content if this is an update
-    let existingContent: string | undefined;
-    if (test.isUpdate) {
-      try {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (workspaceFolders && workspaceFolders.length > 0) {
           const workspaceRoot = workspaceFolders[0].uri;
-          const fileUri = vscode.Uri.joinPath(
-            workspaceRoot,
-            test.targetTestPath,
-          );
-          const fileData = await vscode.workspace.fs.readFile(fileUri);
-          existingContent = Buffer.from(fileData).toString("utf-8");
-        }
-      } catch {
-        // File doesn't exist, that's okay
-        existingContent = undefined;
-      }
-    }
+          const fileUri = vscode.Uri.joinPath(workspaceRoot, targetTestPath);
 
-    // Create tool set for content generation (same as execution but we'll capture content)
-    const tools = {
-      readFile: readFileTool,
-      listFiles: listFilesTool,
-      getCypressConfig: getCypressConfigTool,
-      writeTestFile: writeTestFileTool, // We'll capture the content from tool calls
-    };
+          return yield* Effect.tryPromise({
+            try: async () => {
+              const fileData =
+                await vscodeService.workspace.fs.readFile(fileUri);
+              return Buffer.from(fileData).toString("utf-8");
+            },
+            catch: () => undefined as string | undefined, // File doesn't exist, that's okay
+          }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+        });
 
-    // Build prompt for content generation (same as execution)
-    const prompt = `Write a comprehensive Cypress E2E test file for the React component at: ${test.sourceFile}
+      /**
+       * Extract test content from generateText result
+       */
+      const extractTestContent = <
+        T extends { steps: Array<{ toolCalls: Array<unknown> }> },
+      >(
+        result: T,
+        test: ProposedTest,
+      ): Effect.Effect<string, never> =>
+        Effect.sync(() => {
+          const writeCalls = result.steps
+            .flatMap((step) => step.toolCalls)
+            .filter((call: unknown) => {
+              return (
+                typeof call === "object" &&
+                call !== null &&
+                "toolName" in call &&
+                call.toolName === "writeTestFile"
+              );
+            });
 
-      Target test path: ${test.targetTestPath}
-      Description: ${test.description}
-      ${test.isUpdate ? "Update the existing test file if it exists." : "Create a new test file."}
-
-      Please:
-      1. Read and understand the component file
-      2. Read Cypress configuration to understand project conventions
-      3. Write a complete, runnable Cypress test file to ${test.targetTestPath}
-
-      The test should cover: ${test.description}
-
-      Start by reading the component file and Cypress config, then write the test file.`;
-
-    const apiKey = await this.configService.getAnthropicApiKey();
-    if (!apiKey) {
-      throw new Error("Anthropic API key not configured");
-    }
-
-    const anthropic = createAnthropic({
-      apiKey,
-    });
-
-    const result = await generateText({
-      model: anthropic("claude-3-5-haiku-latest"),
-      tools,
-      stopWhen: stepCountIs(10),
-      system: `You are an expert Cypress E2E test writer. Generate comprehensive Cypress test files.
-      
-      Read the component file and Cypress config, then generate a complete test file.
-      Use the writeTestFile tool to provide the test content.`,
-      prompt,
-    });
-
-    // Extract test content from writeTestFile tool calls
-    let proposedContent = "";
-    const writeCalls = result.steps
-      .flatMap((step) => step.toolCalls)
-      .filter((call) => call.toolName === "writeTestFile");
-
-    if (writeCalls.length > 0) {
-      const lastCall = writeCalls[writeCalls.length - 1];
-      if ("args" in lastCall && typeof lastCall.args === "object") {
-        const args = lastCall.args as { testContent?: string };
-        if (args.testContent) {
-          proposedContent = args.testContent;
-        }
-      }
-    }
-
-    // If no content was captured, use a fallback
-    if (!proposedContent) {
-      proposedContent = `// Test content generation in progress...\n// Target: ${test.targetTestPath}\n// Description: ${test.description}`;
-    }
-
-    return { proposedContent, existingContent };
-  }
-
-  /**
-   * Plan Cypress tests for multiple React components
-   * Analyzes files and proposes test files without writing them
-   */
-  async planTests(
-    files: string[],
-    outputChannel?: vscode.OutputChannel,
-  ): Promise<TestGenerationPlan> {
-    if (!(await this.isConfigured())) {
-      throw new Error(
-        "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
-      );
-    }
-
-    const log = (message: string) => {
-      if (outputChannel) {
-        outputChannel.appendLine(`[Planning Agent] ${message}`);
-      }
-      console.log(`[Planning Agent] ${message}`);
-    };
-
-    try {
-      log(`Starting test planning for ${files.length} file(s)`);
-
-      // Create tool set for planning (read-only tools + proposeTest)
-      const tools = {
-        readFile: readFileTool,
-        listFiles: listFilesTool,
-        grepSearch: grepSearchTool,
-        globSearch: globSearchTool,
-        getCypressConfig: getCypressConfigTool,
-        proposeTest: proposeTestTool,
-      };
-
-      // Build prompt for planning
-      const fileList = files.map((f, i) => `${i + 1}. ${f}`).join("\n");
-      const prompt = `Analyze the following React component files and propose Cypress E2E tests for each:
-
-        ${fileList}
-
-        For each component:
-        1. Read and analyze the component file
-        2. Explore related files (imports, routes, API calls)
-        3. Check for existing Cypress tests
-        4. Read Cypress configuration
-        5. Use the proposeTest tool to propose a test file
-
-        Propose one test file per component. Start by reading the Cypress config and then analyze each component.`;
-
-      log("Calling AI model for planning...");
-      const apiKey = await this.configService.getAnthropicApiKey();
-      if (!apiKey) {
-        throw new Error("Anthropic API key not configured");
-      }
-
-      const anthropic = createAnthropic({
-        apiKey,
-      });
-
-      const result = await generateText({
-        model: anthropic("claude-opus-4-5"),
-        tools,
-        stopWhen: stepCountIs(20), // Allow more steps for multiple files
-        system: CYPRESS_PLANNING_PROMPT,
-        prompt,
-      });
-
-      log(`Planning completed. Steps: ${result.steps.length}`);
-
-      // Extract ProposedTest objects from tool results
-      const proposedTests: ProposedTest[] = [];
-      const proposeResults = result.steps
-        .flatMap((step) => step.toolResults)
-        .filter((toolResult) => toolResult.toolName === "proposeTest");
-
-      for (const toolResult of proposeResults) {
-        const toolOutput =
-          "result" in toolResult ? toolResult.result : undefined;
-        if (toolOutput) {
-          const isProposeTestOutput = (
-            value: unknown,
-          ): value is ProposeTestOutput => {
-            return (
-              typeof value === "object" &&
-              value !== null &&
-              "success" in value &&
-              "id" in value &&
-              "message" in value &&
-              typeof (value as ProposeTestOutput).success === "boolean"
-            );
-          };
-
-          if (isProposeTestOutput(toolOutput) && toolOutput.success) {
-            // Extract input from tool call to build ProposedTest
-            const toolCall = result.steps
-              .flatMap((step) => step.toolCalls)
-              .find((call) => call.toolCallId === toolResult.toolCallId);
-
-            if (toolCall && "args" in toolCall) {
-              const args = toolCall.args as {
-                sourceFile: string;
-                targetTestPath: string;
-                description: string;
-                isUpdate: boolean;
-              };
-
-              proposedTests.push({
-                id: toolOutput.id,
-                sourceFile: args.sourceFile,
-                targetTestPath: args.targetTestPath,
-                description: args.description,
-                isUpdate: args.isUpdate,
-                proposedContent: "", // Will be populated during content generation
-                existingContent: undefined, // Will be populated during content generation if update
-              });
+          if (writeCalls.length > 0) {
+            const lastCall = writeCalls[writeCalls.length - 1] as {
+              args?: unknown;
+            };
+            if (lastCall.args && typeof lastCall.args === "object") {
+              const args = lastCall.args as { testContent?: string };
+              if (args.testContent) {
+                return args.testContent;
+              }
             }
           }
-        }
-      }
 
-      log(`Proposed ${proposedTests.length} test file(s)`);
+          // Fallback if no content was captured
+          return `// Test content generation in progress...\n// Target: ${test.targetTestPath}\n// Description: ${test.description}`;
+        });
 
-      // Generate test content for each proposed test
-      const testsWithContent: ProposedTest[] = [];
-      for (const test of proposedTests) {
-        log(`Generating content for test: ${test.targetTestPath}`);
-        try {
-          const { proposedContent, existingContent } =
-            await this.generateTestContent(test, outputChannel);
-          testsWithContent.push({
-            ...test,
-            proposedContent,
-            existingContent,
+      /**
+       * Generate test content for a proposed test without writing it
+       * Returns both proposed content and existing content (if update)
+       */
+      const generateTestContent = (
+        test: ProposedTest,
+        _outputChannel?: vscode.OutputChannel,
+      ) =>
+        Effect.gen(function* () {
+          // Read existing content if this is an update
+          const existingContent = test.isUpdate
+            ? yield* readExistingContent(test.targetTestPath).pipe(
+                Effect.provide(VSCodeService.Default),
+              )
+            : undefined;
+
+          // Create tool set for content generation
+          const tools = {
+            readFile: readFileTool,
+            listFiles: listFilesTool,
+            getCypressConfig: getCypressConfigTool,
+            writeTestFile: writeTestFileTool,
+          };
+
+          // Build prompt for content generation
+          const prompt = PromptFactory.writeTestFile({
+            sourceFile: test.sourceFile,
+            targetTestPath: test.targetTestPath,
+            description: test.description,
+            isUpdate: test.isUpdate,
           });
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-          log(
-            `Failed to generate content for ${test.targetTestPath}: ${errorMessage}`,
+
+          // Get AI Gateway OIDC token
+          const gatewayToken = yield* configService.getAiApiKey().pipe(
+            Effect.mapError(
+              (error) =>
+                new ConfigurationError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            ),
           );
-          // Still include the test but with empty content
-          testsWithContent.push({
-            ...test,
-            proposedContent: `// Failed to generate content: ${errorMessage}`,
-            existingContent: undefined,
+          if (!gatewayToken) {
+            return yield* Effect.fail(
+              new ConfigurationError({
+                message: "AI Gateway token not available. Please log in.",
+              }),
+            );
+          }
+
+          // Create Anthropic client with OIDC token (SDK auto-detects gateway)
+          const anthropic = createAnthropic({
+            apiKey: gatewayToken,
           });
-        }
-      }
+
+          // Generate text using AI SDK
+          yield* Effect.logDebug(
+            `[PlanningAgent] Generating test content for ${test.targetTestPath}`,
+          );
+          const result = yield* Effect.tryPromise({
+            try: () =>
+              generateText({
+                model: anthropic("claude-opus-4-5"),
+                tools,
+                stopWhen: stepCountIs(10),
+                system: CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
+                prompt,
+              }),
+            catch: (error) =>
+              new PlanningAgentError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          yield* Effect.logDebug(
+            `[PlanningAgent] Content generation completed. Steps: ${result.steps.length}`,
+          );
+
+          // Extract test content
+          const proposedContent = yield* extractTestContent(result, test);
+
+          yield* Effect.logDebug(
+            `[PlanningAgent] Extracted test content (${proposedContent.length} chars)`,
+          );
+
+          return {
+            proposedContent,
+            ...(existingContent !== undefined && { existingContent }),
+          };
+        }).pipe(
+          Effect.provide(
+            Layer.merge(ConfigService.Default, SecretStorageService.Default),
+          ),
+        );
+
+      /**
+       * Extract ProposedTest objects from tool results
+       */
+      const extractProposedTests = <
+        T extends {
+          steps: Array<{
+            toolResults: Array<unknown>;
+            toolCalls: Array<unknown>;
+          }>;
+        },
+      >(
+        result: T,
+      ): Effect.Effect<ProposedTest[], never> =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug(
+            `[PlanningAgent] Extracting proposed tests from ${result.steps.length} step(s)`,
+          );
+          const proposedTests: ProposedTest[] = [];
+          const proposeResults = result.steps
+            .flatMap((step) => step.toolResults)
+            .filter((toolResult: unknown) => {
+              return (
+                typeof toolResult === "object" &&
+                toolResult !== null &&
+                "toolName" in toolResult &&
+                toolResult.toolName === "proposeTest"
+              );
+            });
+
+          yield* Effect.logDebug(
+            `[PlanningAgent] Found ${proposeResults.length} proposeTest tool result(s)`,
+          );
+
+          for (const toolResult of proposeResults) {
+            const typedResult = toolResult as {
+              toolCallId?: string;
+              result?: unknown;
+            };
+            const toolOutput = typedResult.result;
+            if (toolOutput) {
+              const isProposeTestOutput = (
+                value: unknown,
+              ): value is ProposeTestOutput => {
+                return (
+                  typeof value === "object" &&
+                  value !== null &&
+                  "success" in value &&
+                  "id" in value &&
+                  "message" in value &&
+                  typeof (value as ProposeTestOutput).success === "boolean"
+                );
+              };
+
+              if (isProposeTestOutput(toolOutput) && toolOutput.success) {
+                // Extract input from tool call to build ProposedTest
+                const toolCall = result.steps
+                  .flatMap((step) => step.toolCalls)
+                  .find(
+                    (call: unknown) =>
+                      typeof call === "object" &&
+                      call !== null &&
+                      "toolCallId" in call &&
+                      call.toolCallId === typedResult.toolCallId,
+                  );
+
+                if (
+                  toolCall &&
+                  typeof toolCall === "object" &&
+                  "args" in toolCall
+                ) {
+                  const args = toolCall.args as {
+                    sourceFile: string;
+                    targetTestPath: string;
+                    description: string;
+                    isUpdate: boolean;
+                  };
+
+                  const testProposal = {
+                    id: toolOutput.id,
+                    sourceFile: args.sourceFile,
+                    targetTestPath: args.targetTestPath,
+                    description: args.description,
+                    isUpdate: args.isUpdate,
+                    proposedContent: "", // Will be populated during content generation
+                    existingContent: undefined, // Will be populated during content generation if update
+                  };
+                  proposedTests.push(testProposal);
+
+                  yield* Effect.logDebug(
+                    `[PlanningAgent] Extracted test proposal: ${toolOutput.id} for ${args.sourceFile} -> ${args.targetTestPath}`,
+                  );
+                }
+              }
+            }
+          }
+
+          yield* Effect.logDebug(
+            `[PlanningAgent] Successfully extracted ${proposedTests.length} test proposal(s)`,
+          );
+          return proposedTests;
+        });
 
       return {
-        tests: testsWithContent,
+        /**
+         * Check if the agent is properly configured
+         */
+        isConfigured: () =>
+          Effect.gen(function* () {
+            return yield* configService.isConfigured();
+          }),
+
+        /**
+         * Plan Cypress tests for multiple React components
+         * Analyzes files and proposes test files without writing them
+         */
+        planTests: (files: string[], outputChannel?: vscode.OutputChannel) =>
+          Effect.gen(function* () {
+            // Check configuration first
+            const configured = yield* configService.isConfigured();
+            if (!configured) {
+              return yield* Effect.fail(
+                new ConfigurationError({
+                  message:
+                    "AI Gateway token not available. Please log in to authenticate.",
+                }),
+              );
+            }
+
+            yield* Effect.logDebug(
+              `[PlanningAgent] Starting test planning for ${files.length} file(s)`,
+            );
+
+            // Create tool set for planning (read-only tools + proposeTest)
+            const tools = {
+              readFile: readFileTool,
+              listFiles: listFilesTool,
+              grepSearch: grepSearchTool,
+              globSearch: globSearchTool,
+              getCypressConfig: getCypressConfigTool,
+              proposeTest: proposeTestTool,
+            };
+
+            // Build prompt for planning
+            const prompt = PromptFactory.planTests(files);
+
+            yield* Effect.logDebug(
+              "[PlanningAgent] Calling AI model for planning...",
+            );
+
+            // Get AI Gateway OIDC token
+            const gatewayToken = yield* configService.getAiApiKey().pipe(
+              Effect.mapError(
+                (error) =>
+                  new ConfigurationError({
+                    message:
+                      error instanceof Error ? error.message : "Unknown error",
+                  }),
+              ),
+            );
+            if (!gatewayToken) {
+              return yield* Effect.fail(
+                new ConfigurationError({
+                  message: "AI Gateway token not available. Please log in.",
+                }),
+              );
+            }
+
+            // Create Anthropic client with OIDC token (SDK auto-detects gateway)
+            const anthropic = createAnthropic({
+              apiKey: gatewayToken,
+            });
+
+            // Generate text using AI SDK
+            const result = yield* Effect.tryPromise({
+              try: () =>
+                generateText({
+                  model: anthropic("claude-opus-4-5"),
+                  tools,
+                  stopWhen: stepCountIs(20), // Allow more steps for multiple files
+                  system: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                  prompt,
+                }),
+              catch: (error) =>
+                new PlanningAgentError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+            });
+
+            yield* Effect.logDebug(
+              `[PlanningAgent] Planning completed. Steps: ${result.steps.length}`,
+            );
+
+            // Log step details
+            yield* Effect.logDebug(
+              `[PlanningAgent] Step breakdown: ${JSON.stringify(
+                result.steps.map((step, idx) => ({
+                  step: idx + 1,
+                  toolCalls: step.toolCalls?.length || 0,
+                  toolResults: step.toolResults?.length || 0,
+                  toolNames: step.toolCalls?.map(
+                    (call: unknown) =>
+                      (call as { toolName?: string })?.toolName || "unknown",
+                  ),
+                })),
+                null,
+                2,
+              )}`,
+            );
+
+            // Extract ProposedTest objects from tool results
+            const proposedTests = yield* extractProposedTests(result);
+
+            yield* Effect.logDebug(
+              `[PlanningAgent] Proposed ${proposedTests.length} test file(s)`,
+            );
+
+            // Log proposed test details
+            for (const test of proposedTests) {
+              yield* Effect.logDebug(
+                `[PlanningAgent] Proposed test: ${test.id} - ${test.targetTestPath} (${test.isUpdate ? "update" : "new"})`,
+              );
+            }
+
+            // Generate test content for each proposed test
+            const testsWithContent: ProposedTest[] = [];
+            for (const test of proposedTests) {
+              yield* Effect.logDebug(
+                `[PlanningAgent] Generating content for test: ${test.targetTestPath}`,
+              );
+
+              const contentResult = yield* generateTestContent(
+                test,
+                outputChannel,
+              ).pipe(
+                Effect.catchTag("ConfigurationError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
+                    );
+                    return {
+                      proposedContent: `// Failed to generate content: ${error.message}`,
+                      existingContent: undefined,
+                    };
+                  }),
+                ),
+                Effect.catchTag("PlanningAgentError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
+                    );
+                    return {
+                      proposedContent: `// Failed to generate content: ${error.message}`,
+                      existingContent: undefined,
+                    };
+                  }),
+                ),
+              );
+
+              yield* Effect.logDebug(
+                `[PlanningAgent] Generated content for ${test.targetTestPath} (${contentResult.proposedContent.length} chars)`,
+              );
+
+              testsWithContent.push({
+                ...test,
+                proposedContent: contentResult.proposedContent,
+                existingContent: contentResult.existingContent,
+              });
+            }
+
+            yield* Effect.logDebug(
+              `[PlanningAgent] Planning complete: ${testsWithContent.length} test(s) with content generated`,
+            );
+
+            return {
+              tests: testsWithContent,
+            } as TestGenerationPlan;
+          }).pipe(
+            Effect.catchTag("ConfigurationError", (error) =>
+              Effect.fail(error),
+            ),
+            Effect.catchTag("PlanningAgentError", (error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[PlanningAgent] Error during planning: ${error.message}`,
+                );
+                return yield* Effect.fail(error);
+              }),
+            ),
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const errorMessage =
+                  error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[PlanningAgent] Error during planning: ${errorMessage}`,
+                );
+                return yield* Effect.fail(
+                  new PlanningAgentError({
+                    message: errorMessage,
+                    cause: error,
+                  }),
+                );
+              }),
+            ),
+          ),
       };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      log(`Error during planning: ${errorMessage}`);
-      throw error;
-    }
-  }
-}
+    }),
+    dependencies: [ConfigService.Default, VSCodeService.Default],
+  },
+) {}

@@ -4,13 +4,24 @@ import * as vscode from "vscode";
 import { CliveViewProvider } from "./views/clive-view-provider.js";
 import { CommandCenter } from "./commands/command-center.js";
 import { DiffContentProvider } from "./services/diff-content-provider.js";
+import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
-import { SecretKeys } from "./constants.js";
+import { createSecretStorageLayer } from "./services/vs-code.js";
+import { createLoggerLayer } from "./services/logger-service.js";
+import { LoggerConfig } from "./constants.js";
 
 const commandCenter = new CommandCenter();
 
 // Create output channel for logging
 const outputChannel = vscode.window.createOutputChannel("Clive");
+
+// Create logger layer - check if dev mode is enabled
+const isDev =
+  vscode.workspace
+    .getConfiguration()
+    .get<boolean>(LoggerConfig.devModeSettingKey, false) ||
+  process.env.NODE_ENV === "development";
+const loggerLayer = createLoggerLayer(outputChannel, isDev);
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -20,17 +31,33 @@ export function activate(context: vscode.ExtensionContext) {
     'Congratulations, your extension "clive" is now active!',
   );
 
-  // Initialize ConfigService with SecretStorage
-  const configService = new ConfigService(context.secrets);
-
   // Migrate auth token from globalState to SecretStorage (one-time migration)
   const oldAuthToken = context.globalState.get<string>("auth_token");
   if (oldAuthToken) {
-    context.secrets.store(SecretKeys.authToken, oldAuthToken).catch((err) => {
-      outputChannel.appendLine(
-        `Failed to migrate auth token to SecretStorage: ${err}`,
-      );
-    });
+    const secretStorageLayer = createSecretStorageLayer(context);
+    const configServiceLayer = Layer.merge(
+      ConfigService.Default,
+      secretStorageLayer,
+    );
+
+    Effect.gen(function* () {
+      const configService = yield* ConfigService;
+      yield* configService.storeAuthToken(oldAuthToken);
+    })
+      .pipe(
+        Effect.provide(Layer.merge(configServiceLayer, loggerLayer)),
+        Effect.catchAll((err: unknown) =>
+          Effect.sync(() => {
+            outputChannel.appendLine(
+              `Failed to migrate auth token to SecretStorage: ${err}`,
+            );
+          }),
+        ),
+        Runtime.runPromise(Runtime.defaultRuntime),
+      )
+      .catch(() => {
+        // Ignore errors during migration
+      });
     // Clear old token from globalState after migration
     context.globalState.update("auth_token", undefined);
   }
@@ -39,11 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
   const diffProvider = DiffContentProvider.register(context);
 
   // Register the webview view provider
-  const provider = new CliveViewProvider(
-    context.extensionUri,
-    diffProvider,
-    configService,
-  );
+  const provider = new CliveViewProvider(context.extensionUri, diffProvider);
   provider.setContext(context);
   provider.setOutputChannel(outputChannel);
 

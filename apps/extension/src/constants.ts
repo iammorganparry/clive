@@ -44,6 +44,7 @@ export const WebviewMessages = {
   openLoginPage: "open-login-page",
   openSignupPage: "open-signup-page",
   authTokenReceived: "auth-token-received",
+  storeAuthToken: "store-auth-token",
   // Logging
   log: "log",
   // Branch changes
@@ -61,4 +62,12 @@ export const WebviewMessages = {
   // Config messages
   fetchConfig: "fetch-config",
   configUpdated: "config-updated",
+} as const;
+
+/**
+ * Logger configuration constants
+ */
+export const LoggerConfig = {
+  prefix: "Clive",
+  devModeSettingKey: "clive.devMode",
 } as const;

@@ -1,14 +1,38 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import vscode from "vscode";
 
 export class VSCodeService extends Effect.Service<VSCodeService>()(
   "VSCodeService",
   {
     effect: Effect.succeed({
-      // @ts-expect-error - secrets is not a property of vscode
-      secrets: vscode.secrets as vscode.SecretStorage,
       workspace: vscode.workspace,
     }),
     dependencies: [],
   },
 ) {}
+
+/**
+ * SecretStorageService - provides access to VS Code SecretStorage
+ * Must be provided with ExtensionContext via createSecretStorageLayer
+ */
+export class SecretStorageService extends Effect.Service<SecretStorageService>()(
+  "SecretStorageService",
+  {
+    effect: Effect.succeed({
+      secrets: undefined as unknown as vscode.SecretStorage,
+    }),
+    dependencies: [],
+  },
+) {}
+
+/**
+ * Create a SecretStorageService layer from ExtensionContext
+ */
+export function createSecretStorageLayer(
+  context: vscode.ExtensionContext,
+): Layer.Layer<SecretStorageService> {
+  return Layer.succeed(SecretStorageService, {
+    _tag: "SecretStorageService",
+    secrets: context.secrets,
+  });
+}
