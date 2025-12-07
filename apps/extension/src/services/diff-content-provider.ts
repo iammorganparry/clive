@@ -1,4 +1,8 @@
-import * as vscode from "vscode";
+import { Uri, EventEmitter } from "vscode";
+import type { CancellationToken } from "vscode";
+import type * as vscode from "vscode";
+import { Effect, Runtime } from "effect";
+import { VSCodeService } from "./vs-code.js";
 
 /**
  * Virtual document content provider for diff previews
@@ -13,11 +17,21 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
    */
   static register(context: vscode.ExtensionContext): DiffContentProvider {
     const provider = new DiffContentProvider();
-    const disposable = vscode.workspace.registerTextDocumentContentProvider(
-      DiffContentProvider.SCHEME,
-      provider,
-    );
-    context.subscriptions.push(disposable);
+
+    // Use Effect for registration
+    Runtime.runPromise(Runtime.defaultRuntime)(
+      Effect.gen(function* () {
+        const vscode = yield* VSCodeService;
+        const disposable = vscode.workspace.registerTextDocumentContentProvider(
+          DiffContentProvider.SCHEME,
+          provider,
+        );
+        context.subscriptions.push(disposable);
+      }).pipe(Effect.provide(VSCodeService.Default)),
+    ).catch((error) => {
+      console.error("Failed to register DiffContentProvider:", error);
+    });
+
     return provider;
   }
 
@@ -31,10 +45,8 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
     testId: string,
     content: string,
     type: "proposed" | "existing" | "empty" = "proposed",
-  ): vscode.Uri {
-    const uri = vscode.Uri.parse(
-      `${DiffContentProvider.SCHEME}://${type}/${testId}`,
-    );
+  ): Uri {
+    const uri = Uri.parse(`${DiffContentProvider.SCHEME}://${type}/${testId}`);
     // Map to content key based on type
     const contentKey =
       type === "proposed"
@@ -51,19 +63,14 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
   /**
    * Get the URI for a test ID
    */
-  getUri(testId: string): vscode.Uri {
-    return vscode.Uri.parse(
-      `${DiffContentProvider.SCHEME}://proposed/${testId}`,
-    );
+  getUri(testId: string): Uri {
+    return Uri.parse(`${DiffContentProvider.SCHEME}://proposed/${testId}`);
   }
 
   /**
    * Provide content for a virtual document URI
    */
-  provideTextDocumentContent(
-    uri: vscode.Uri,
-    _token: vscode.CancellationToken,
-  ): string {
+  provideTextDocumentContent(uri: Uri, _token: CancellationToken): string {
     // Handle different URI patterns:
     // clive-diff://proposed/{testId} - proposed content
     // clive-diff://existing/{testId} - existing content
@@ -87,6 +94,6 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
     return this.contentMap.get(contentKey) || "";
   }
 
-  private onDidChangeEmitter = new vscode.EventEmitter<vscode.Uri>();
+  private onDidChangeEmitter = new EventEmitter<Uri>();
   onDidChange = this.onDidChangeEmitter.event;
 }

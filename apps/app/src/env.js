@@ -8,7 +8,9 @@ export const env = createEnv({
    */
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]),
-    AI_GATEWAY_API_KEY: z.string().min(1),
+    // Optional: used as fallback for local development
+    // OIDC tokens are used when deployed to Vercel
+    AI_GATEWAY_API_KEY: z.string().min(1).optional(),
   },
 
   /**
