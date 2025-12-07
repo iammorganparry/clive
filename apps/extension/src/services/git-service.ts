@@ -38,27 +38,43 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
       command: string,
       workspaceRoot: string,
     ): Effect.Effect<string, GitCommandError> =>
-      Effect.tryPromise({
-        try: () => execAsync(command, { cwd: workspaceRoot }),
-        catch: (error) =>
-          new GitCommandError({
-            message: error instanceof Error ? error.message : "Unknown error",
-            command,
-            workspaceRoot,
-          }),
-      }).pipe(Effect.map(({ stdout }) => stdout.trim()));
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Executing git command: ${command}`,
+        );
+        const result = yield* Effect.tryPromise({
+          try: () => execAsync(command, { cwd: workspaceRoot }),
+          catch: (error) =>
+            new GitCommandError({
+              message: error instanceof Error ? error.message : "Unknown error",
+              command,
+              workspaceRoot,
+            }),
+        });
+        yield* Effect.logDebug(
+          `[GitService] Git command completed: ${command.substring(0, 50)}...`,
+        );
+        return result.stdout.trim();
+      });
 
     /**
      * Helper to get current branch
      */
     const getCurrentBranchHelper = (workspaceRoot: string) =>
       Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Getting current branch for workspace: ${workspaceRoot}`,
+        );
         const result = yield* executeGitCommand(
           "git rev-parse --abbrev-ref HEAD",
           workspaceRoot,
         ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
-        return result || null;
+        const branch = result || null;
+        yield* Effect.logDebug(
+          `[GitService] Current branch: ${branch || "none"}`,
+        );
+        return branch;
       });
 
     /**
@@ -66,6 +82,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
      */
     const getBaseBranchHelper = (workspaceRoot: string) =>
       Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Determining base branch for workspace: ${workspaceRoot}`,
+        );
         // Try main first - command succeeds if branch exists
         const mainExists = yield* executeGitCommand(
           "git show-ref --verify --quiet refs/heads/main",
@@ -76,6 +95,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         );
 
         if (mainExists) {
+          yield* Effect.logDebug("[GitService] Base branch: main");
           return "main";
         }
 
@@ -89,10 +109,14 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         );
 
         if (masterExists) {
+          yield* Effect.logDebug("[GitService] Base branch: master");
           return "master";
         }
 
         // Default to main
+        yield* Effect.logDebug(
+          "[GitService] No main/master branch found, defaulting to main",
+        );
         return "main";
       });
 
@@ -101,6 +125,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
      */
     const getChangedFilesHelper = (workspaceRoot: string, baseBranch: string) =>
       Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Getting changed files: ${baseBranch}...HEAD in ${workspaceRoot}`,
+        );
         const vscode = yield* VSCodeService;
 
         const stdout = yield* executeGitCommand(
@@ -146,6 +173,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
           }
         }
 
+        yield* Effect.logDebug(
+          `[GitService] Found ${files.length} changed file(s)`,
+        );
         return files;
       });
 
@@ -171,10 +201,12 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
        */
       getBranchChanges: () =>
         Effect.gen(function* () {
+          yield* Effect.logDebug("[GitService] Getting branch changes");
           const vscode = yield* VSCodeService;
           const workspaceFolders = vscode.workspace.workspaceFolders;
 
           if (!workspaceFolders || workspaceFolders.length === 0) {
+            yield* Effect.logDebug("[GitService] No workspace folders found");
             return null;
           }
 
@@ -182,12 +214,16 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 
           const branchName = yield* getCurrentBranchHelper(workspaceRoot);
           if (!branchName) {
+            yield* Effect.logDebug("[GitService] No current branch found");
             return null;
           }
 
           const baseBranch = yield* getBaseBranchHelper(workspaceRoot);
           const files = yield* getChangedFilesHelper(workspaceRoot, baseBranch);
 
+          yield* Effect.logDebug(
+            `[GitService] Branch changes: ${branchName} vs ${baseBranch}, ${files.length} file(s)`,
+          );
           return {
             branchName,
             baseBranch,

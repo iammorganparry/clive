@@ -129,6 +129,13 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
         vscode.setState(newState);
         // Update React Query cache
         queryClient.setQueryData(AUTH_TOKEN_QUERY_KEY, newToken);
+        // Persist token to secret storage via extension
+        if (newToken) {
+          vscode.postMessage({
+            command: WebviewMessages.storeAuthToken,
+            token: newToken,
+          });
+        }
       } catch (error) {
         console.error("Failed to save token to VS Code state:", error);
       }

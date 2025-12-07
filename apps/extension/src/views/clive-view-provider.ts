@@ -11,7 +11,13 @@ import { Effect, Layer, Runtime } from "effect";
 import { ReactFileFilter as ReactFileFilterService } from "../services/react-file-filter.js";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
 import { ConfigService as ConfigServiceEffect } from "../services/config-service.js";
-import { VSCodeService } from "../services/vs-code.js";
+import {
+  VSCodeService,
+  createSecretStorageLayer,
+} from "../services/vs-code.js";
+import { PlanningAgent } from "../services/ai-agent/planning-agent.js";
+import { createLoggerLayer } from "../services/logger-service.js";
+import { LoggerConfig } from "../constants.js";
 
 /**
  * Webview view provider for Clive extension
@@ -31,7 +37,6 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly diffProvider: DiffContentProvider,
-    private readonly configService: ConfigService,
   ) {}
 
   public setContext(context: vscode.ExtensionContext): void {
@@ -192,7 +197,6 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       gitService: gitServiceProxy,
       reactFileFilter:
         {} as import("../services/react-file-filter.js").ReactFileFilter,
-      testAgent: new CypressTestAgent(this.configService),
       diffProvider: this.diffProvider,
       configService: {} as ConfigService,
     };
@@ -245,6 +249,21 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
             ReactFileFilterService.Default,
             GitServiceEffect.Default,
             ConfigServiceEffect.Default,
+            CypressTestAgent.Default,
+            PlanningAgent.Default,
+            VSCodeService.Default,
+            this._context
+              ? createSecretStorageLayer(this._context)
+              : Layer.empty,
+            this._outputChannel
+              ? createLoggerLayer(
+                  this._outputChannel,
+                  vscode.workspace
+                    .getConfiguration()
+                    .get<boolean>(LoggerConfig.devModeSettingKey, false) ||
+                    process.env.NODE_ENV === "development",
+                )
+              : Layer.empty,
           ),
         ),
       ),

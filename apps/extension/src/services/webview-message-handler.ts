@@ -2,9 +2,9 @@ import * as vscode from "vscode";
 import type { CypressDetector } from "./cypress-detector.js";
 import type { GitService } from "./git-service.js";
 import type { ReactFileFilter } from "./react-file-filter.js";
-import type { CypressTestAgent } from "./ai-agent/agent.js";
+import { CypressTestAgent } from "./ai-agent/agent.js";
 import type { DiffContentProvider } from "./diff-content-provider.js";
-import { WebviewMessages, SecretKeys } from "../constants.js";
+import { WebviewMessages } from "../constants.js";
 import { Effect, Match } from "effect";
 import { ReactFileFilter as ReactFileFilterService } from "./react-file-filter.js";
 import { ConfigService as ConfigServiceEffect } from "./config-service.js";
@@ -17,7 +17,6 @@ export interface MessageHandlerContext {
   cypressDetector: CypressDetector;
   gitService: GitService;
   reactFileFilter: ReactFileFilter;
-  testAgent: CypressTestAgent;
   diffProvider: DiffContentProvider;
   configService: ConfigService;
 }
@@ -32,6 +31,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
       return {
         handleReady: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Handling ready message",
+            );
             const service = yield* WebviewMessageHandler;
             yield* service.checkAndSendCypressStatus(ctx);
             yield* service.checkAndSendBranchChanges(ctx);
@@ -72,13 +74,42 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             yield* service.sendStoredAuthToken(ctx);
           }),
 
-        handleLogout: (ctx: MessageHandlerContext) =>
+        handleLogout: (_ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
-            yield* Effect.promise(() =>
-              ctx.context.secrets.delete(SecretKeys.authToken),
+            const configService = yield* ConfigServiceEffect;
+            yield* configService.deleteAuthToken();
+            // OIDC gateway tokens are fetched on-demand, no need to clear them
+          }),
+
+        handleStoreAuthToken: (ctx: MessageHandlerContext, token: string) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Storing auth token",
             );
             const configService = yield* ConfigServiceEffect;
-            yield* configService.storeAiApiKey("");
+            yield* configService.storeAuthToken(token);
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const errorMessage =
+                  error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Failed to store auth token in secret storage: ${errorMessage}`,
+                );
+                yield* Effect.sync(() => {
+                  ctx.outputChannel.appendLine(
+                    `Failed to store auth token in secret storage: ${errorMessage}`,
+                  );
+                });
+              }),
+            ),
+          ),
+
+        handleAuthTokenReceived: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Auth token received acknowledgment",
+            );
           }),
 
         handleLog: (
@@ -114,31 +145,23 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
           filePath: string,
         ) =>
           Effect.gen(function* () {
-            const isConfigured = yield* Effect.promise(() =>
-              ctx.testAgent.isConfigured(),
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Creating test for file: ${filePath}`,
             );
+            const testAgent = yield* CypressTestAgent;
+            const isConfigured = yield* testAgent.isConfigured();
 
             if (!isConfigured) {
-              const action = yield* Effect.promise(() =>
+              yield* Effect.promise(() =>
                 vscode.window.showErrorMessage(
-                  "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
-                  "Open Settings",
+                  "AI Gateway token not available. Please log in to authenticate.",
                 ),
               );
-
-              if (action === "Open Settings") {
-                yield* Effect.promise(() =>
-                  vscode.commands.executeCommand(
-                    "workbench.action.openSettings",
-                    "clive.anthropicApiKey",
-                  ),
-                );
-              }
 
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.testGenerationStatus,
                 success: false,
-                error: "API key not configured",
+                error: "Authentication required. Please log in.",
                 filePath,
               });
               return;
@@ -157,22 +180,15 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               ),
             );
 
-            const result = yield* Effect.tryPromise({
-              try: () =>
-                ctx.testAgent.generateTest(
-                  {
-                    sourceFilePath: filePath,
-                    options: {
-                      updateExisting: false,
-                    },
-                  },
-                  ctx.outputChannel,
-                ),
-              catch: (error) =>
-                new Error(
-                  error instanceof Error ? error.message : "Unknown error",
-                ),
-            });
+            const result = yield* testAgent.generateTest(
+              {
+                sourceFilePath: filePath,
+                options: {
+                  updateExisting: false,
+                },
+              },
+              ctx.outputChannel,
+            );
 
             if (result.success) {
               yield* Effect.promise(() =>
@@ -209,26 +225,18 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
           files: string[],
         ) =>
           Effect.gen(function* () {
-            const isConfigured = yield* Effect.promise(() =>
-              ctx.testAgent.isConfigured(),
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Planning test generation for ${files.length} file(s)`,
             );
+            const testAgent = yield* CypressTestAgent;
+            const isConfigured = yield* testAgent.isConfigured();
 
             if (!isConfigured) {
-              const action = yield* Effect.promise(() =>
+              yield* Effect.promise(() =>
                 vscode.window.showErrorMessage(
-                  "Anthropic API key not configured. Please set 'clive.anthropicApiKey' in VS Code settings.",
-                  "Open Settings",
+                  "AI Gateway token not available. Please log in to authenticate.",
                 ),
               );
-
-              if (action === "Open Settings") {
-                yield* Effect.promise(() =>
-                  vscode.commands.executeCommand(
-                    "workbench.action.openSettings",
-                    "clive.anthropicApiKey",
-                  ),
-                );
-              }
 
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.testGenerationPlan,
@@ -247,19 +255,45 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               return;
             }
 
+            // Send initial progress update
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.testGenerationProgress,
+              filePath: files[0] || "",
+              status: "planning",
+              message: `Planning tests for ${files.length} file(s)...`,
+            });
+
             yield* Effect.promise(() =>
               vscode.window.showInformationMessage(
                 `Planning Cypress tests for ${files.length} file(s)...`,
               ),
             );
 
-            const plan = yield* Effect.tryPromise({
-              try: () => ctx.testAgent.planTests(files, ctx.outputChannel),
-              catch: (error) =>
-                new Error(
-                  error instanceof Error ? error.message : "Unknown error",
-                ),
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Calling planTests agent...",
+            );
+
+            // Send progress update before calling agent
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.testGenerationProgress,
+              filePath: files[0] || "",
+              status: "analyzing",
+              message: `Analyzing ${files.length} file(s) with AI model...`,
             });
+
+            const plan = yield* testAgent.planTests(files, ctx.outputChannel);
+
+            // Send progress update after planning completes
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.testGenerationProgress,
+              filePath: files[0] || "",
+              status: "generating_content",
+              message: `Generating test content for ${plan.tests.length} test(s)...`,
+            });
+
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Planning completed: ${plan.tests.length} test(s) proposed`,
+            );
 
             ctx.webviewView.webview.postMessage({
               command: WebviewMessages.testGenerationPlan,
@@ -270,6 +304,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               Effect.gen(function* () {
                 const errorMessage =
                   error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Planning failed: ${errorMessage}`,
+                );
                 yield* Effect.promise(() =>
                   vscode.window.showErrorMessage(
                     `Failed to plan tests: ${errorMessage}`,
@@ -318,22 +355,16 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                 executionStatus: "in_progress",
               });
 
-              const result = yield* Effect.tryPromise({
-                try: () =>
-                  ctx.testAgent.executeTest(
-                    {
-                      sourceFile: test.sourceFile,
-                      targetTestPath: test.targetTestPath,
-                      description: test.description,
-                      isUpdate: test.isUpdate,
-                    },
-                    ctx.outputChannel,
-                  ),
-                catch: (error) =>
-                  new Error(
-                    error instanceof Error ? error.message : "Unknown error",
-                  ),
-              });
+              const testAgent = yield* CypressTestAgent;
+              const result = yield* testAgent.executeTest(
+                {
+                  sourceFile: test.sourceFile,
+                  targetTestPath: test.targetTestPath,
+                  description: test.description,
+                  isUpdate: test.isUpdate,
+                },
+                ctx.outputChannel,
+              );
 
               if (result.success) {
                 ctx.webviewView.webview.postMessage({
@@ -429,6 +460,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
         checkAndSendCypressStatus: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Checking Cypress status",
+            );
             const status = yield* Effect.tryPromise({
               try: () => ctx.cypressDetector.checkStatus(),
               catch: (error) =>
@@ -457,6 +491,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
         checkAndSendBranchChanges: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Checking branch changes",
+            );
             const branchChanges = yield* ctx.gitService.getBranchChanges();
 
             if (!branchChanges) {
@@ -498,9 +535,8 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
         sendStoredAuthToken: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
-            const token = yield* Effect.promise(() =>
-              ctx.context.secrets.get(SecretKeys.authToken),
-            );
+            const configService = yield* ConfigServiceEffect;
+            const token = yield* configService.getAuthToken();
             if (token) {
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.authToken,
@@ -541,9 +577,8 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             }
 
             if (token) {
-              yield* Effect.promise(() =>
-                ctx.context.secrets.store(SecretKeys.authToken, token),
-              );
+              const configService = yield* ConfigServiceEffect;
+              yield* configService.storeAuthToken(token);
 
               yield* service.fetchAndStoreApiKeys(ctx, token);
 
@@ -561,31 +596,31 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
         fetchAndStoreApiKeys: (ctx: MessageHandlerContext, authToken: string) =>
           Effect.gen(function* () {
-            const configService = yield* ConfigServiceEffect;
-
-            const apiKeys = yield* Effect.tryPromise({
+            // Fetch OIDC gateway token from app
+            const gatewayToken = yield* Effect.tryPromise({
               try: async () => {
                 const backendUrl = "http://localhost:3000";
-                const response = await fetch(
-                  `${backendUrl}/api/trpc/config.getApiKeys`,
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: `Bearer ${authToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({}),
+                const response = await fetch(`${backendUrl}/api/ai/token`, {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                    "Content-Type": "application/json",
                   },
-                );
+                });
 
                 if (!response.ok) {
+                  const errorText = await response.text();
                   throw new Error(
-                    `Failed to fetch API keys: ${response.statusText}`,
+                    `Failed to fetch gateway token: ${response.status} ${response.statusText} - ${errorText}`,
                   );
                 }
 
                 const data = await response.json();
-                return data.result?.data?.json;
+                if (!data.token) {
+                  throw new Error("No token in gateway token response");
+                }
+
+                return data.token as string;
               },
               catch: (error) =>
                 new Error(
@@ -593,15 +628,15 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                 ),
             });
 
-            if (apiKeys?.anthropicApiKey) {
-              yield* configService.storeAiApiKey(apiKeys.anthropicApiKey);
-
+            // OIDC tokens are fetched on-demand and expire in 12 hours
+            // No need to store them, but we can verify the token was fetched
+            if (gatewayToken) {
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.configUpdated,
               });
 
               ctx.outputChannel.appendLine(
-                "API keys fetched and stored successfully",
+                "AI Gateway token fetched successfully",
               );
             }
           }).pipe(
@@ -610,7 +645,7 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                 const errorMessage =
                   error instanceof Error ? error.message : "Unknown error";
                 ctx.outputChannel.appendLine(
-                  `Failed to fetch API keys: ${errorMessage}`,
+                  `Failed to fetch gateway token: ${errorMessage}`,
                 );
               }),
             ),
@@ -624,6 +659,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
           },
         ) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Handling message: ${message.command}`,
+            );
             const service = yield* WebviewMessageHandler;
             yield* Match.value(message.command).pipe(
               Match.when(WebviewMessages.ready, () => service.handleReady(ctx)),
@@ -641,6 +679,12 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               ),
               Match.when(WebviewMessages.logout, () =>
                 service.handleLogout(ctx),
+              ),
+              Match.when(WebviewMessages.storeAuthToken, () =>
+                service.handleStoreAuthToken(ctx, message.token as string),
+              ),
+              Match.when(WebviewMessages.authTokenReceived, () =>
+                service.handleAuthTokenReceived(),
               ),
               Match.when(WebviewMessages.log, () =>
                 service.handleLog(

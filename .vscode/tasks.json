@@ -42,6 +42,11 @@
       "command": "yarn",
       "args": ["workspace", "clive", "compile"],
       "problemMatcher": ["$tsc"],
+      "options": {
+        "env": {
+          "NODE_ENV": "development"
+        }
+      },
       "group": {
         "kind": "build",
         "isDefault": true
