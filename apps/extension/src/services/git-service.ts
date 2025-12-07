@@ -1,7 +1,9 @@
-import * as vscode from "vscode";
 import * as path from "node:path";
+import { Uri } from "vscode";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { Data, Effect } from "effect";
+import { VSCodeService } from "./vs-code.js";
 
 const execAsync = promisify(exec);
 
@@ -18,140 +20,182 @@ export interface BranchChanges {
   workspaceRoot: string;
 }
 
+class GitCommandError extends Data.TaggedError("GitCommandError")<{
+  message: string;
+  command: string;
+  workspaceRoot: string;
+}> {}
+
 /**
  * Service for Git operations
  */
-export class GitService {
-  /**
-   * Get the current branch name
-   */
-  async getCurrentBranch(workspaceRoot: string): Promise<string | null> {
-    try {
-      const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", {
-        cwd: workspaceRoot,
+export class GitService extends Effect.Service<GitService>()("GitService", {
+  effect: Effect.gen(function* () {
+    /**
+     * Execute a git command and return stdout
+     */
+    const executeGitCommand = (
+      command: string,
+      workspaceRoot: string,
+    ): Effect.Effect<string, GitCommandError> =>
+      Effect.tryPromise({
+        try: () => execAsync(command, { cwd: workspaceRoot }),
+        catch: (error) =>
+          new GitCommandError({
+            message: error instanceof Error ? error.message : "Unknown error",
+            command,
+            workspaceRoot,
+          }),
+      }).pipe(Effect.map(({ stdout }) => stdout.trim()));
+
+    /**
+     * Helper to get current branch
+     */
+    const getCurrentBranchHelper = (workspaceRoot: string) =>
+      Effect.gen(function* () {
+        const result = yield* executeGitCommand(
+          "git rev-parse --abbrev-ref HEAD",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        return result || null;
       });
-      return stdout.trim() || null;
-    } catch (error) {
-      console.error("Error getting current branch:", error);
-      return null;
-    }
-  }
 
-  /**
-   * Get the default base branch (main or master)
-   */
-  async getBaseBranch(workspaceRoot: string): Promise<string> {
-    try {
-      // Try main first - command succeeds if branch exists
-      try {
-        await execAsync("git show-ref --verify --quiet refs/heads/main", {
-          cwd: workspaceRoot,
-        });
-        return "main";
-      } catch {
-        // main doesn't exist, try master
-      }
+    /**
+     * Helper to get base branch
+     */
+    const getBaseBranchHelper = (workspaceRoot: string) =>
+      Effect.gen(function* () {
+        // Try main first - command succeeds if branch exists
+        const mainExists = yield* executeGitCommand(
+          "git show-ref --verify --quiet refs/heads/main",
+          workspaceRoot,
+        ).pipe(
+          Effect.map(() => true),
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
 
-      // Try master - command succeeds if branch exists
-      try {
-        await execAsync("git show-ref --verify --quiet refs/heads/master", {
-          cwd: workspaceRoot,
-        });
-        return "master";
-      } catch {
-        // master doesn't exist either
-      }
-
-      // Default to main
-      return "main";
-    } catch {
-      return "main";
-    }
-  }
-
-  /**
-   * Get changed files between current branch and base branch
-   */
-  async getChangedFiles(
-    workspaceRoot: string,
-    baseBranch: string = "main",
-  ): Promise<ChangedFile[]> {
-    try {
-      // Get diff between current branch and base branch
-      const { stdout } = await execAsync(
-        `git diff --name-status ${baseBranch}...HEAD`,
-        { cwd: workspaceRoot },
-      );
-
-      const files: ChangedFile[] = [];
-      const lines = stdout
-        .trim()
-        .split("\n")
-        .filter((line) => line.trim());
-
-      for (const line of lines) {
-        const match = line.match(/^([MADRC])\s+(.+)$/);
-        if (match) {
-          const [, statusChar, filePath] = match;
-          const fullPath = path.join(workspaceRoot, filePath);
-          const relativePath = vscode.workspace.asRelativePath(
-            vscode.Uri.file(fullPath),
-            false,
-          );
-
-          // Map git status to our status
-          let status: "M" | "A" | "D" | "R";
-          if (statusChar === "M") {
-            status = "M";
-          } else if (statusChar === "A") {
-            status = "A";
-          } else if (statusChar === "D") {
-            status = "D";
-          } else if (statusChar === "R" || statusChar === "C") {
-            status = "R";
-          } else {
-            status = "M"; // Default to modified
-          }
-
-          files.push({
-            path: fullPath,
-            relativePath,
-            status,
-          });
+        if (mainExists) {
+          return "main";
         }
-      }
 
-      return files;
-    } catch (error) {
-      console.error("Error getting changed files:", error);
-      return [];
-    }
-  }
+        // Try master - command succeeds if branch exists
+        const masterExists = yield* executeGitCommand(
+          "git show-ref --verify --quiet refs/heads/master",
+          workspaceRoot,
+        ).pipe(
+          Effect.map(() => true),
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
 
-  /**
-   * Get branch changes (branch name and changed files)
-   */
-  async getBranchChanges(): Promise<BranchChanges | null> {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      return null;
-    }
+        if (masterExists) {
+          return "master";
+        }
 
-    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+        // Default to main
+        return "main";
+      });
 
-    const branchName = await this.getCurrentBranch(workspaceRoot);
-    if (!branchName) {
-      return null;
-    }
+    /**
+     * Helper to get changed files
+     */
+    const getChangedFilesHelper = (workspaceRoot: string, baseBranch: string) =>
+      Effect.gen(function* () {
+        const vscode = yield* VSCodeService;
 
-    const baseBranch = await this.getBaseBranch(workspaceRoot);
-    const files = await this.getChangedFiles(workspaceRoot, baseBranch);
+        const stdout = yield* executeGitCommand(
+          `git diff --name-status ${baseBranch}...HEAD`,
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        const files: ChangedFile[] = [];
+        const lines = stdout
+          .trim()
+          .split("\n")
+          .filter((line) => line.trim());
+
+        for (const line of lines) {
+          const match = line.match(/^([MADRC])\s+(.+)$/);
+          if (match) {
+            const [, statusChar, filePath] = match;
+            const fullPath = path.join(workspaceRoot, filePath);
+            const relativePath = vscode.workspace.asRelativePath(
+              Uri.file(fullPath),
+              false,
+            );
+
+            // Map git status to our status
+            let status: "M" | "A" | "D" | "R";
+            if (statusChar === "M") {
+              status = "M";
+            } else if (statusChar === "A") {
+              status = "A";
+            } else if (statusChar === "D") {
+              status = "D";
+            } else if (statusChar === "R" || statusChar === "C") {
+              status = "R";
+            } else {
+              status = "M"; // Default to modified
+            }
+
+            files.push({
+              path: fullPath,
+              relativePath,
+              status,
+            });
+          }
+        }
+
+        return files;
+      });
 
     return {
-      branchName,
-      baseBranch,
-      files,
-      workspaceRoot,
+      /**
+       * Get the current branch name
+       */
+      getCurrentBranch: getCurrentBranchHelper,
+
+      /**
+       * Get the default base branch (main or master)
+       */
+      getBaseBranch: getBaseBranchHelper,
+
+      /**
+       * Get changed files between current branch and base branch
+       */
+      getChangedFiles: (workspaceRoot: string, baseBranch: string = "main") =>
+        getChangedFilesHelper(workspaceRoot, baseBranch),
+
+      /**
+       * Get branch changes (branch name and changed files)
+       */
+      getBranchChanges: () =>
+        Effect.gen(function* () {
+          const vscode = yield* VSCodeService;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            return null;
+          }
+
+          const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+          const branchName = yield* getCurrentBranchHelper(workspaceRoot);
+          if (!branchName) {
+            return null;
+          }
+
+          const baseBranch = yield* getBaseBranchHelper(workspaceRoot);
+          const files = yield* getChangedFilesHelper(workspaceRoot, baseBranch);
+
+          return {
+            branchName,
+            baseBranch,
+            files,
+            workspaceRoot,
+          };
+        }),
     };
-  }
-}
+  }),
+  dependencies: [VSCodeService.Default],
+}) {}

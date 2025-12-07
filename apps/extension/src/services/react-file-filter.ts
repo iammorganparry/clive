@@ -1,5 +1,7 @@
 import * as path from "node:path";
-import * as vscode from "vscode";
+import { Uri } from "vscode";
+import { Data, Effect } from "effect";
+import { VSCodeService } from "./vs-code.js";
 import type { ChangedFile } from "./git-service.js";
 
 export interface EligibleFile extends ChangedFile {
@@ -7,89 +9,114 @@ export interface EligibleFile extends ChangedFile {
   reason?: string;
 }
 
+class FileReadError extends Data.TaggedError("FileReadError")<{
+  message: string;
+  filePath: string;
+}> {}
+
 /**
  * Service for filtering React component files eligible for E2E testing
  */
-export class ReactFileFilter {
-  private readonly reactExtensions = [".tsx", ".jsx"];
-  private readonly excludedDirs = [
-    "node_modules",
-    "dist",
-    "build",
-    ".next",
-    "out",
-  ];
-  private readonly testPatterns = [
-    /\.test\./,
-    /\.spec\./,
-    /\.test$/,
-    /\.spec$/,
-  ];
+export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
+  "ReactFileFilter",
+  {
+    effect: Effect.gen(function* () {
+      const reactExtensions = [".tsx", ".jsx"] as const;
+      const excludedDirs = [
+        "node_modules",
+        "dist",
+        "build",
+        ".next",
+        "out",
+      ] as const;
+      const testPatterns = [
+        /\.test\./,
+        /\.spec\./,
+        /\.test$/,
+        /\.spec$/,
+      ] as const;
 
-  /**
-   * Check if a file is eligible for E2E testing
-   */
-  async isEligibleForE2E(file: ChangedFile): Promise<boolean> {
-    // Check extension
-    const ext = path.extname(file.path);
-    if (!this.reactExtensions.includes(ext)) {
-      return false;
-    }
+      // Helper function to check if a file is eligible
+      const checkEligibility = (file: ChangedFile) =>
+        Effect.gen(function* () {
+          // Check extension
+          const ext = path.extname(file.path);
+          if (!reactExtensions.includes(ext as ".tsx" | ".jsx")) {
+            return false;
+          }
 
-    // Check if file is in excluded directories
-    const pathParts = file.path.split(path.sep);
-    for (const excludedDir of this.excludedDirs) {
-      if (pathParts.includes(excludedDir)) {
-        return false;
-      }
-    }
+          // Check if file is in excluded directories
+          const pathParts = file.path.split(path.sep);
+          for (const excludedDir of excludedDirs) {
+            if (pathParts.includes(excludedDir)) {
+              return false;
+            }
+          }
 
-    // Check if it's a test file
-    for (const pattern of this.testPatterns) {
-      if (pattern.test(file.path)) {
-        return false;
-      }
-    }
+          // Check if it's a test file
+          for (const pattern of testPatterns) {
+            if (pattern.test(file.path)) {
+              return false;
+            }
+          }
 
-    // Check if file contains React component patterns
-    try {
-      const content = await vscode.workspace.fs.readFile(
-        vscode.Uri.file(file.path),
-      );
-      const text = Buffer.from(content).toString("utf-8");
+          // Check if file contains React component patterns
+          const vscode = yield* VSCodeService;
+          const content = yield* Effect.tryPromise({
+            try: () => vscode.workspace.fs.readFile(Uri.file(file.path)),
+            catch: (error) =>
+              new FileReadError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                filePath: file.path,
+              }),
+          });
 
-      // Check for React component patterns:
-      // - default export of function/const
-      // - named export of component (PascalCase)
-      // - JSX syntax
-      const hasDefaultExport =
-        /default\s+export\s+(?:function|const|class)\s+\w+/i.test(text) ||
-        /export\s+default\s+(?:function|const|class)\s+\w+/i.test(text);
-      const hasJSX = /<[A-Z]\w+/.test(text) || /return\s*\(?\s*</.test(text);
-      const hasReactImport = /from\s+['"]react['"]/.test(text);
+          const text = Buffer.from(content).toString("utf-8");
 
-      return (hasDefaultExport || hasJSX) && hasReactImport;
-    } catch (error) {
-      console.error(`Error reading file ${file.path}:`, error);
-      return false;
-    }
-  }
+          // Check for React component patterns:
+          // - default export of function/const
+          // - named export of component (PascalCase)
+          // - JSX syntax
+          const hasDefaultExport =
+            /default\s+export\s+(?:function|const|class)\s+\w+/i.test(text) ||
+            /export\s+default\s+(?:function|const|class)\s+\w+/i.test(text);
+          const hasJSX =
+            /<[A-Z]\w+/.test(text) || /return\s*\(?\s*</.test(text);
+          const hasReactImport = /from\s+['"]react['"]/.test(text);
 
-  /**
-   * Filter files to only include those eligible for E2E testing
-   */
-  async filterEligibleFiles(files: ChangedFile[]): Promise<EligibleFile[]> {
-    const eligibleFiles: EligibleFile[] = [];
+          return (hasDefaultExport || hasJSX) && hasReactImport;
+        });
 
-    for (const file of files) {
-      const isEligible = await this.isEligibleForE2E(file);
-      eligibleFiles.push({
-        ...file,
-        isEligible,
-      });
-    }
+      return {
+        /**
+         * Check if a file is eligible for E2E testing
+         */
+        isEligibleForE2E: checkEligibility,
 
-    // Return only eligible files
-    return eligibleFiles.filter((file) => file.isEligible);
-  }
-}
+        /**
+         * Filter files to only include those eligible for E2E testing
+         */
+        filterEligibleFiles: (files: ChangedFile[]) =>
+          Effect.gen(function* () {
+            const eligibleFiles = yield* Effect.forEach(
+              files,
+              (file) =>
+                Effect.gen(function* () {
+                  const isEligible = yield* checkEligibility(file);
+                  return {
+                    ...file,
+                    isEligible,
+                  } as EligibleFile;
+                }),
+              { concurrency: "unbounded" },
+            );
+
+            // Return only eligible files
+            return eligibleFiles.filter((file) => file.isEligible);
+          }),
+      };
+    }),
+    dependencies: [VSCodeService.Default],
+  },
+) {}

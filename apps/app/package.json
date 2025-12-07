@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.53",
     "@clerk/nextjs": "^6.36.0",
     "@clive/api": "*",
     "@clive/db": "*",
@@ -28,10 +29,11 @@
     "@trpc/next": "^11.7.2",
     "@trpc/react-query": "^11.7.2",
     "@trpc/server": "^11.7.2",
-    "@ai-sdk/anthropic": "^2.0.53",
+    "@vercel/oidc": "^3.0.5",
     "ai": "^5.0.108",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "effect": "^3.19.9",
     "lucide-react": "^0.556.0",
     "next": "^15.2.3",
     "react": "^19.2.0",

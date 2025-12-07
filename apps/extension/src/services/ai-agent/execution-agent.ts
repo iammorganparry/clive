@@ -13,6 +13,8 @@ import type {
   ExecuteTestOutput,
   WriteTestFileOutput,
 } from "./types.js";
+import { Effect, Runtime } from "effect";
+import { VSCodeService } from "../vs-code.js";
 
 /**
  * System prompt for Cypress test execution
@@ -63,7 +65,12 @@ export class ExecutionAgent {
    * Check if the agent is properly configured
    */
   async isConfigured(): Promise<boolean> {
-    return await this.configService.isConfigured();
+    return await this.configService
+      .isConfigured()
+      .pipe(
+        Effect.provide(VSCodeService.Default),
+        Runtime.runPromise(Runtime.defaultRuntime),
+      );
   }
 
   /**
@@ -117,7 +124,13 @@ export class ExecutionAgent {
         Start by reading the component file and Cypress config, then write the test file.`;
 
       log("Calling AI model for execution...");
-      const apiKey = await this.configService.getAnthropicApiKey();
+      const apiKey = await this.configService
+        .getAiApiKey()
+        .pipe(
+          Effect.provide(VSCodeService.Default),
+          Runtime.runPromise(Runtime.defaultRuntime),
+        );
+
       if (!apiKey) {
         return {
           success: false,
