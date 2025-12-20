@@ -1,17 +1,17 @@
 import type React from "react";
-import { Button } from "../../components/ui/button.js";
+import { Button } from "../../../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card.js";
+} from "../../../../components/ui/card.js";
 import { Check, X, Loader2, FileText, AlertCircle } from "lucide-react";
 import type {
   ProposedTest,
   TestExecutionStatus,
-} from "../../services/ai-agent/types.js";
+} from "../../../../services/ai-agent/types.js";
 
 interface TestCardProps {
   test: ProposedTest;

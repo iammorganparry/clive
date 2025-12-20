@@ -9,6 +9,8 @@ import { Effect, Match } from "effect";
 import { ReactFileFilter as ReactFileFilterService } from "./react-file-filter.js";
 import { ConfigService as ConfigServiceEffect } from "./config-service.js";
 import type { ConfigService } from "./config-service.js";
+import { ApiKeyService as ApiKeyServiceEffect } from "./api-key-service.js";
+import type { ApiKeyService } from "./api-key-service.js";
 
 export interface MessageHandlerContext {
   webviewView: vscode.WebviewView;
@@ -458,6 +460,108 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
         handleConfigUpdated: () => Effect.void,
 
+        handleGetApiKeys: (ctx: MessageHandlerContext) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[WebviewMessageHandler] Getting API keys status",
+            );
+            const apiKeyService = yield* ApiKeyServiceEffect;
+            const statuses = yield* apiKeyService.getApiKeysStatus();
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.apiKeysStatus,
+              statuses,
+            });
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const errorMessage =
+                  error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Failed to get API keys: ${errorMessage}`,
+                );
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.apiKeysStatus,
+                  statuses: [],
+                  error: errorMessage,
+                });
+              }),
+            ),
+          ),
+
+        handleSaveApiKey: (
+          ctx: MessageHandlerContext,
+          provider: string,
+          key: string,
+        ) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Saving API key for provider: ${provider}`,
+            );
+            const apiKeyService = yield* ApiKeyServiceEffect;
+            yield* apiKeyService.setApiKey(provider as "anthropic", key);
+            // Refresh and send updated status
+            const statuses = yield* apiKeyService.getApiKeysStatus();
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.apiKeysStatus,
+              statuses,
+            });
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const errorMessage =
+                  error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Failed to save API key: ${errorMessage}`,
+                );
+                yield* Effect.promise(() =>
+                  vscode.window.showErrorMessage(
+                    `Failed to save API key: ${errorMessage}`,
+                  ),
+                );
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.apiKeysStatus,
+                  statuses: [],
+                  error: errorMessage,
+                });
+              }),
+            ),
+          ),
+
+        handleDeleteApiKey: (ctx: MessageHandlerContext, provider: string) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Deleting API key for provider: ${provider}`,
+            );
+            const apiKeyService = yield* ApiKeyServiceEffect;
+            yield* apiKeyService.deleteApiKey(provider as "anthropic");
+            // Refresh and send updated status
+            const statuses = yield* apiKeyService.getApiKeysStatus();
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.apiKeysStatus,
+              statuses,
+            });
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                const errorMessage =
+                  error instanceof Error ? error.message : "Unknown error";
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Failed to delete API key: ${errorMessage}`,
+                );
+                yield* Effect.promise(() =>
+                  vscode.window.showErrorMessage(
+                    `Failed to delete API key: ${errorMessage}`,
+                  ),
+                );
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.apiKeysStatus,
+                  statuses: [],
+                  error: errorMessage,
+                });
+              }),
+            ),
+          ),
+
         checkAndSendCypressStatus: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
             yield* Effect.logDebug(
@@ -744,6 +848,19 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               Match.when(WebviewMessages.configUpdated, () =>
                 service.handleConfigUpdated(),
               ),
+              Match.when(WebviewMessages.getApiKeys, () =>
+                service.handleGetApiKeys(ctx),
+              ),
+              Match.when(WebviewMessages.saveApiKey, () =>
+                service.handleSaveApiKey(
+                  ctx,
+                  message.provider as string,
+                  message.key as string,
+                ),
+              ),
+              Match.when(WebviewMessages.deleteApiKey, () =>
+                service.handleDeleteApiKey(ctx, message.provider as string),
+              ),
               Match.orElse(() =>
                 Effect.die(`Unknown command: ${message.command}`),
               ),
@@ -751,6 +868,10 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
           }),
       };
     }),
-    dependencies: [ReactFileFilterService.Default, ConfigServiceEffect.Default],
+    dependencies: [
+      ReactFileFilterService.Default,
+      ConfigServiceEffect.Default,
+      ApiKeyServiceEffect.Default,
+    ],
   },
 ) {}

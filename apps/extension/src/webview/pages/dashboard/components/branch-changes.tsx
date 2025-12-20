@@ -1,13 +1,13 @@
 import type React from "react";
 import { useState, useCallback } from "react";
-import { Button } from "../../components/ui/button.js";
+import { Button } from "../../../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card.js";
+} from "../../../../components/ui/card.js";
 import {
   GitBranch,
   ChevronDown,
