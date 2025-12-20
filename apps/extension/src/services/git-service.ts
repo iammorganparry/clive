@@ -179,6 +179,38 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         return files;
       });
 
+    /**
+     * Helper to get git diff for a specific file
+     */
+    const getFileDiffHelper = (
+      workspaceRoot: string,
+      filePath: string,
+      baseBranch: string,
+    ) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Getting diff for file: ${filePath} (${baseBranch}...HEAD)`,
+        );
+
+        // Get relative path for git command
+        const vscode = yield* VSCodeService;
+        const relativePath = vscode.workspace.asRelativePath(
+          Uri.file(filePath),
+          false,
+        );
+
+        // Get diff for the specific file
+        const diff = yield* executeGitCommand(
+          `git diff ${baseBranch}...HEAD -- "${relativePath}"`,
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        yield* Effect.logDebug(
+          `[GitService] Got diff for ${relativePath} (${diff.length} chars)`,
+        );
+        return diff;
+      });
+
     return {
       /**
        * Get the current branch name
@@ -230,6 +262,31 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
             files,
             workspaceRoot,
           };
+        }),
+
+      /**
+       * Get git diff for a specific file compared to base branch
+       */
+      getFileDiff: (filePath: string) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug(`[GitService] Getting file diff: ${filePath}`);
+          const vscode = yield* VSCodeService;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            yield* Effect.logDebug("[GitService] No workspace folders found");
+            return "";
+          }
+
+          const workspaceRoot = workspaceFolders[0].uri.fsPath;
+          const baseBranch = yield* getBaseBranchHelper(workspaceRoot);
+          const diff = yield* getFileDiffHelper(
+            workspaceRoot,
+            filePath,
+            baseBranch,
+          );
+
+          return diff;
         }),
     };
   }),

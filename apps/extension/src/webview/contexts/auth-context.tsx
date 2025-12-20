@@ -59,10 +59,14 @@ function decodeJWT(token: string): UserData | null {
     const decoded = atob(padded);
     const parsed = JSON.parse(decoded) as Record<string, unknown>;
 
-    // Extract user data from Clerk JWT payload
-    // Clerk typically uses 'sub' for userId, 'email', 'first_name', 'last_name', etc.
+    // Extract user data from Better Auth JWT payload
+    // Better Auth uses 'id' for userId, 'email', 'name', 'image', etc.
     return {
-      userId: (parsed.sub as string) || (parsed.user_id as string) || "",
+      userId:
+        (parsed.id as string) ||
+        (parsed.sub as string) ||
+        (parsed.user_id as string) ||
+        "",
       email: parsed.email as string | undefined,
       firstName:
         (parsed.first_name as string) ||
@@ -72,8 +76,12 @@ function decodeJWT(token: string): UserData | null {
         (parsed.last_name as string) ||
         (parsed.lastName as string) ||
         undefined,
-      username: parsed.username as string | undefined,
+      username:
+        (parsed.username as string) ||
+        (parsed.name as string) ||
+        undefined,
       imageUrl:
+        (parsed.image as string) || // Better Auth uses 'image' field
         (parsed.image_url as string) ||
         (parsed.imageUrl as string) ||
         undefined,

@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect";
 import { SecretStorageService } from "./vs-code.js";
 import { ApiKeyService } from "./api-key-service.js";
-import { SecretKeys } from "../constants.js";
+import { SecretKeys, ConfigFile } from "../constants.js";
 
 class SecretStorageError extends Data.TaggedError("SecretStorageError")<{
   message: string;
@@ -216,6 +216,13 @@ export class ConfigService extends Effect.Service<ConfigService>()(
             );
             return configured;
           }),
+
+        /**
+         * Gets the maximum number of concurrent files to process
+         * Returns the default value from constants
+         */
+        getMaxConcurrentFiles: () =>
+          Effect.succeed(ConfigFile.defaults.maxConcurrentFiles),
       };
     }),
     dependencies: [SecretStorageService.Default, ApiKeyService.Default],

@@ -101,6 +101,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.53",
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@clerk/clerk-react": "5.57.0",
     "@clive/db": "*",
     "@clive/ui": "*",

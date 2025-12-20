@@ -4,7 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { VSCodeAPI } from "../../services/vscode.js";
 import { WebviewMessages } from "../../../constants.js";
 import { logger } from "../../services/logger.js";
-import type { BranchChangesData } from "./components/branch-changes.js";
+import type {
+  BranchChangesData,
+  FileGenerationState,
+} from "./components/branch-changes.js";
 import type {
   ProposedTest,
   TestExecutionStatus,
@@ -51,6 +54,10 @@ interface MessageData {
   testFilePath?: string;
   conversationId?: string;
   sourceFile?: string;
+  planningStatus?: "planning" | "analyzing" | "generating_content" | "starting";
+  message?: string;
+  filePath?: string;
+  success?: boolean;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -75,6 +82,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [activeSourceFile, setActiveSourceFile] = useState<
     string | undefined
   >();
+  // Planning state (for "Create All Tests" flow)
+  const [isPlanningTests, setIsPlanningTests] = useState(false);
+  const [planningStatus, setPlanningStatus] = useState<string>("");
+  // Per-file generation state
+  const [fileGenerationStates, setFileGenerationStates] = useState<
+    Map<string, FileGenerationState>
+  >(new Map());
 
   // Handle incoming messages from extension
   const handleMessage = useCallback(
@@ -111,8 +125,45 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         );
       }
 
+      // Handle test generation progress (for individual file generation)
+      if (message.command === WebviewMessages.testGenerationProgress) {
+        const filePath = message.filePath;
+        if (filePath) {
+          setFileGenerationStates((prev) => {
+            const next = new Map(prev);
+            const currentState = next.get(filePath) || {
+              status: "idle" as const,
+              statusMessage: "",
+              logs: [],
+            };
+
+            // Update status based on message status or default to generating
+            const newStatus =
+              message.planningStatus === "starting"
+                ? ("generating" as const)
+                : currentState.status === "idle"
+                  ? ("generating" as const)
+                  : currentState.status;
+
+            // Add log message if provided
+            const newLogs = message.message
+              ? [...currentState.logs, message.message]
+              : currentState.logs;
+
+            next.set(filePath, {
+              status: newStatus,
+              statusMessage: message.message || currentState.statusMessage,
+              logs: newLogs,
+            });
+            return next;
+          });
+        }
+      }
+
       // Handle test generation plan
       if (message.command === WebviewMessages.testGenerationPlan) {
+        setIsPlanningTests(false);
+        setPlanningStatus("");
         if (message.error) {
           logger.error("Test generation plan error:", message.error);
         } else if (message.tests) {
@@ -177,6 +228,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           setTestErrors((prev) => {
             const next = new Map(prev);
             next.set(testId, error);
+            return next;
+          });
+        }
+      }
+
+      // Handle test generation status (for individual file generation)
+      if (message.command === WebviewMessages.testGenerationStatus) {
+        const filePath = message.filePath;
+        if (filePath) {
+          setFileGenerationStates((prev) => {
+            const next = new Map(prev);
+            const currentState = next.get(filePath) || {
+              status: "idle" as const,
+              statusMessage: "",
+              logs: [],
+            };
+
+            if (message.success !== undefined) {
+              if (message.success) {
+                // Generation completed successfully
+                next.set(filePath, {
+                  status: "completed" as const,
+                  statusMessage: message.testFilePath
+                    ? `Test created: ${message.testFilePath}`
+                    : "Test generation completed",
+                  logs: currentState.logs,
+                });
+              } else {
+                // Generation failed
+                next.set(filePath, {
+                  status: "error" as const,
+                  statusMessage: message.error || "Test generation failed",
+                  logs: currentState.logs,
+                  error: message.error,
+                });
+              }
+            }
             return next;
           });
         }
@@ -250,6 +338,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Handler for creating test for a single file
   const handleCreateTestForFile = useCallback(
     (filePath: string) => {
+      // Initialize state for this file
+      setFileGenerationStates((prev) => {
+        const next = new Map(prev);
+        next.set(filePath, {
+          status: "generating",
+          statusMessage: "Starting test generation...",
+          logs: ["Starting test generation..."],
+        });
+        return next;
+      });
+
       vscode.postMessage({
         command: WebviewMessages.createTestForFile,
         filePath,
@@ -261,6 +360,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Handler for creating tests for all changed files
   const handleCreateAllTests = useCallback(() => {
     if (branchChanges?.files && branchChanges.files.length > 0) {
+      setIsPlanningTests(true);
+      setPlanningStatus("Planning test generation for all files...");
       const filePaths = branchChanges.files.map((file) => file.path);
       vscode.postMessage({
         command: WebviewMessages.planTestGeneration,
@@ -295,6 +396,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     [vscode],
   );
 
+  // Handler for navigating to chat view
+  const handleNavigateToChat = useCallback(
+    (sourceFile: string) => {
+      setActiveSourceFile(sourceFile);
+      // If no conversation exists, start one
+      if (!conversationId) {
+        vscode.postMessage({
+          command: WebviewMessages.startConversation,
+          sourceFile,
+        });
+      }
+    },
+    [vscode, conversationId],
+  );
+
   // Handler for rejecting a test
   const handleRejectTest = useCallback((id: string) => {
     setTestStatuses((prev) => {
@@ -320,6 +436,28 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     [vscode, testPlan],
   );
 
+  // Handler for canceling a test
+  const handleCancelTest = useCallback(
+    (id: string) => {
+      vscode.postMessage({
+        command: WebviewMessages.cancelTest,
+        id,
+      });
+    },
+    [vscode],
+  );
+
+  // Handler for canceling a single file test
+  const handleCancelFileTest = useCallback(
+    (filePath: string) => {
+      vscode.postMessage({
+        command: WebviewMessages.cancelTest,
+        id: filePath,
+      });
+    },
+    [vscode],
+  );
+
   if (isLoading && !cypressStatus) {
     return <Welcome />;
   }
@@ -339,8 +477,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             testFilePaths={testFilePaths}
             onAccept={handleAcceptTest}
             onReject={handleRejectTest}
+            onCancel={handleCancelTest}
             onGenerate={handleGenerateTests}
             onPreviewDiff={handlePreviewTestDiff}
+            onNavigateToChat={handleNavigateToChat}
           />
           {activeSourceFile && (
             <ChatPanel
@@ -355,8 +495,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           changes={branchChanges ?? null}
           isLoading={branchChangesLoading}
           error={branchChangesError?.message}
+          fileStates={fileGenerationStates}
           onCreateTest={handleCreateTestForFile}
           onCreateAllTests={handleCreateAllTests}
+          isGenerating={isPlanningTests}
+          generationStatus={planningStatus}
+          onCancelTest={handleCancelFileTest}
         />
       )}
     </div>

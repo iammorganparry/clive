@@ -13,6 +13,7 @@ export default defineConfig({
     "src/label.tsx",
     "src/login-form.tsx",
     "src/separator.tsx",
+    "src/task.tsx",
     "src/theme.tsx",
     "src/toast.tsx",
   ],

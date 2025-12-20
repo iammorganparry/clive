@@ -1,16 +1,26 @@
 import { Effect, Layer } from "effect";
-import * as vscode from "vscode";
+import type vscode from "vscode";
 import { ConfigService } from "../config-service.js";
+import { createLoggerLayer } from "../logger-service.js";
 import { VSCodeService } from "../vs-code.js";
 import { ExecutionAgent } from "./execution-agent.js";
 import { PlanningAgent } from "./planning-agent.js";
-import { createLoggerLayer } from "../logger-service.js";
 import type {
   ExecuteTestInput,
   GenerateTestInput,
   GenerateTestOutput,
 } from "./types.js";
-import { LoggerConfig } from "src/constants.js";
+
+// Create layers for both agents
+const planningAgentLayer = Layer.merge(
+  PlanningAgent.Default,
+  Layer.merge(ConfigService.Default, VSCodeService.Default),
+);
+
+const executionAgentLayer = Layer.merge(
+  ExecutionAgent.Default,
+  Layer.merge(ConfigService.Default, VSCodeService.Default),
+);
 
 /**
  * Facade for Cypress test generation agents
@@ -20,17 +30,6 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
   "CypressTestAgent",
   {
     effect: Effect.gen(function* () {
-      // Create layers for both agents
-      const planningAgentLayer = Layer.merge(
-        PlanningAgent.Default,
-        Layer.merge(ConfigService.Default, VSCodeService.Default),
-      );
-
-      const executionAgentLayer = Layer.merge(
-        ExecutionAgent.Default,
-        Layer.merge(ConfigService.Default, VSCodeService.Default),
-      );
-
       return {
         /**
          * Check if the agent is properly configured
@@ -44,23 +43,32 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
         /**
          * Plan Cypress tests for multiple React components
          * Uses PlanningAgent with Claude Opus 4.5 for intelligent analysis
+         * Processes files in parallel with a concurrency limit
          */
-        planTests: (files: string[], outputChannel?: vscode.OutputChannel) =>
+        planTests: (
+          files: string[],
+          outputChannel?: vscode.OutputChannel,
+          isDev?: boolean,
+        ) =>
           Effect.gen(function* () {
             const planningAgent = yield* PlanningAgent;
-            return yield* planningAgent.planTests(files, outputChannel);
+            const configService = yield* ConfigService;
+            const maxConcurrentFiles =
+              yield* configService.getMaxConcurrentFiles();
+            const results = yield* Effect.all(
+              files.map((file) => planningAgent.planTest(file, outputChannel)),
+              { concurrency: maxConcurrentFiles },
+            );
+            // Aggregate all tests from all files
+            return {
+              tests: results.flatMap((result) => result.tests),
+            };
           }).pipe(
             Effect.provide(
-              outputChannel
+              outputChannel && isDev !== undefined
                 ? Layer.merge(
                     planningAgentLayer,
-                    createLoggerLayer(
-                      outputChannel,
-                      vscode.workspace
-                        .getConfiguration()
-                        .get<boolean>(LoggerConfig.devModeSettingKey, false) ||
-                        process.env.NODE_ENV === "development",
-                    ),
+                    createLoggerLayer(outputChannel, isDev),
                   )
                 : planningAgentLayer,
             ),
@@ -73,22 +81,24 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
         executeTest: (
           input: ExecuteTestInput,
           outputChannel?: vscode.OutputChannel,
+          isDev?: boolean,
+          abortSignal?: AbortSignal,
+          progressCallback?: (message: string) => void,
         ) =>
           Effect.gen(function* () {
             const executionAgent = yield* ExecutionAgent;
-            return yield* executionAgent.executeTest(input, outputChannel);
+            return yield* executionAgent.executeTest(
+              input,
+              outputChannel,
+              abortSignal,
+              progressCallback,
+            );
           }).pipe(
             Effect.provide(
-              outputChannel
+              outputChannel && isDev !== undefined
                 ? Layer.merge(
                     executionAgentLayer,
-                    createLoggerLayer(
-                      outputChannel,
-                      vscode.workspace
-                        .getConfiguration()
-                        .get<boolean>(LoggerConfig.devModeSettingKey, false) ||
-                        process.env.NODE_ENV === "development",
-                    ),
+                    createLoggerLayer(outputChannel, isDev),
                   )
                 : executionAgentLayer,
             ),
@@ -102,8 +112,16 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
         generateTest: (
           input: GenerateTestInput,
           outputChannel?: vscode.OutputChannel,
+          isDev?: boolean,
+          abortSignal?: AbortSignal,
+          progressCallback?: (message: string) => void,
         ) =>
           Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[CypressTestAgent] generateTest called for: ${input.sourceFilePath}`,
+            );
+            progressCallback?.("Analyzing source file...");
+
             const service = yield* CypressTestAgent;
             const executeInput: ExecuteTestInput = {
               sourceFile: input.sourceFilePath,
@@ -112,10 +130,21 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
               isUpdate: input.options?.updateExisting ?? false,
             };
 
+            progressCallback?.("Generating test content...");
+
             const result = yield* service.executeTest(
               executeInput,
               outputChannel,
+              isDev,
+              abortSignal,
+              progressCallback,
             );
+
+            if (result.success) {
+              progressCallback?.("Test generated successfully!");
+            } else {
+              progressCallback?.("Test generation failed.");
+            }
 
             return {
               success: result.success,

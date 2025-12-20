@@ -1,5 +1,5 @@
 import type * as vscode from "vscode";
-import { generateText, stepCountIs } from "ai";
+import { streamText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   readFileTool,
@@ -12,10 +12,11 @@ import type {
   ExecuteTestOutput,
   WriteTestFileOutput,
 } from "./types.js";
-import { Data, Effect } from "effect";
+import { Data, Effect, Match, Stream } from "effect";
 import { ConfigService } from "../config-service.js";
 import { VSCodeService } from "../vs-code.js";
 import { CYPRESS_EXECUTION_SYSTEM_PROMPT, PromptFactory } from "./prompts.js";
+import { streamFromAI } from "./stream-utils.js";
 
 class ExecutionAgentError extends Data.TaggedError("ExecutionAgentError")<{
   message: string;
@@ -129,7 +130,9 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
          */
         executeTest: (
           input: ExecuteTestInput,
-          outputChannel?: vscode.OutputChannel,
+          _outputChannel?: vscode.OutputChannel,
+          abortSignal?: AbortSignal,
+          progressCallback?: (message: string) => void,
         ) =>
           Effect.gen(function* () {
             // Check configuration first
@@ -182,32 +185,126 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
               apiKey: gatewayToken,
             });
 
-            // Generate text using AI SDK
-            const result = yield* Effect.tryPromise({
-              try: () =>
-                generateText({
+            // Generate text using AI SDK with streaming
+            const streamResult = yield* Effect.sync(() => {
+              try {
+                return streamText({
                   model: anthropic("claude-haiku-4-5"),
                   tools,
                   stopWhen: stepCountIs(10), // Fewer steps needed since we're just executing
                   system: CYPRESS_EXECUTION_SYSTEM_PROMPT,
                   prompt,
-                }),
-              catch: (error) =>
-                new ExecutionAgentError({
+                  abortSignal,
+                });
+              } catch (error) {
+                throw new ExecutionAgentError({
                   message:
                     error instanceof Error ? error.message : "Unknown error",
                   cause: error,
+                });
+              }
+            });
+
+            // Process stream for real-time feedback
+            const eventStream = streamFromAI(streamResult);
+            yield* eventStream.pipe(
+              Stream.runForEach((event) =>
+                Effect.gen(function* () {
+                  const effect = Match.value(event.type).pipe(
+                    Match.when("text-delta", () => {
+                      return Effect.gen(function* () {
+                        if (event.content) {
+                          // Log full AI streaming text response
+                          yield* Effect.logDebug(
+                            `[ExecutionAgent] AI text: ${event.content}`,
+                          );
+                        }
+                      });
+                    }),
+                    Match.when("tool-call", () => {
+                      return Effect.gen(function* () {
+                        yield* Effect.logDebug(
+                          `[ExecutionAgent] Tool call: ${event.toolName}`,
+                        );
+                        if (event.toolArgs) {
+                          yield* Effect.logDebug(
+                            `[ExecutionAgent]   Tool args: ${JSON.stringify(event.toolArgs, null, 2)}`,
+                          );
+                        }
+                        // Send progress update for tool calls
+                        if (event.toolName) {
+                          const toolMessages: Record<string, string> = {
+                            readFile: "Reading source file...",
+                            listFiles: "Scanning directory structure...",
+                            getCypressConfig:
+                              "Checking Cypress configuration...",
+                            writeTestFile: "Writing test file...",
+                          };
+                          const message =
+                            toolMessages[event.toolName] ||
+                            `Using ${event.toolName}...`;
+                          progressCallback?.(message);
+                        }
+                      });
+                    }),
+                    Match.when("tool-result", () => {
+                      return Effect.gen(function* () {
+                        yield* Effect.logDebug(
+                          `[ExecutionAgent] Tool result: ${event.toolName}`,
+                        );
+                        if (event.toolResult) {
+                          const resultStr =
+                            typeof event.toolResult === "string"
+                              ? event.toolResult
+                              : JSON.stringify(event.toolResult, null, 2);
+                          // Truncate very long results for readability
+                          const truncated =
+                            resultStr.length > 500
+                              ? `${resultStr.substring(0, 500)}... (truncated)`
+                              : resultStr;
+                          yield* Effect.logDebug(
+                            `[ExecutionAgent]   Result: ${truncated}`,
+                          );
+                        }
+                        // Send progress update for tool results
+                        if (event.toolName === "writeTestFile") {
+                          progressCallback?.("Test file written successfully!");
+                        }
+                      });
+                    }),
+                    Match.when("finish", () => {
+                      return Effect.gen(function* () {
+                        yield* Effect.logDebug(
+                          `[ExecutionAgent] Execution stream finished`,
+                        );
+                        progressCallback?.("Finalizing test generation...");
+                      });
+                    }),
+                    Match.orElse(() => Effect.void),
+                  );
+                  return yield* effect;
                 }),
+              ),
+            );
+
+            // Get final result for extraction
+            const result = yield* Effect.promise(async () => {
+              return await streamResult;
+            });
+
+            // Await steps before using them
+            const awaitedSteps = yield* Effect.promise(async () => {
+              return await result.steps;
             });
 
             yield* Effect.logDebug(
-              `[ExecutionAgent] Execution completed. Steps: ${result.steps.length}`,
+              `[ExecutionAgent] Execution completed. Steps: ${awaitedSteps.length}`,
             );
 
             // Log step details
             yield* Effect.logDebug(
               `[ExecutionAgent] Step breakdown: ${JSON.stringify(
-                result.steps.map((step, idx) => ({
+                awaitedSteps.map((step, idx) => ({
                   step: idx + 1,
                   toolCalls: step.toolCalls?.length || 0,
                   toolResults: step.toolResults?.length || 0,
@@ -222,7 +319,10 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
             );
 
             // Extract structured data from tool results
-            const extractionResult = yield* extractTestFilePath(result);
+            const extractionResult = yield* extractTestFilePath({
+              ...result,
+              steps: awaitedSteps,
+            });
 
             yield* Effect.logDebug(
               `[ExecutionAgent] Extraction result: ${extractionResult.success ? "success" : "failed"} - ${extractionResult.testFilePath || "no file path"}`,

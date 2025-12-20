@@ -7,7 +7,14 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../../components/ui/card.js";
-import { Check, X, Loader2, FileText, AlertCircle } from "lucide-react";
+import {
+  Check,
+  X,
+  Loader2,
+  FileText,
+  AlertCircle,
+  XCircle,
+} from "lucide-react";
 import type {
   ProposedTest,
   TestExecutionStatus,
@@ -20,7 +27,9 @@ interface TestCardProps {
   testFilePath?: string;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onCancel?: (id: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
+  onNavigateToChat?: (sourceFile: string) => void;
 }
 
 const TestCard: React.FC<TestCardProps> = ({
@@ -30,7 +39,9 @@ const TestCard: React.FC<TestCardProps> = ({
   testFilePath,
   onAccept,
   onReject,
+  onCancel,
   onPreviewDiff,
+  onNavigateToChat,
 }) => {
   const getStatusStyles = () => {
     switch (status) {
@@ -75,9 +86,21 @@ const TestCard: React.FC<TestCardProps> = ({
 
   const styles = getStatusStyles();
   const showActions = status === "pending";
+  const showCancel = status === "pending" || status === "in_progress";
+
+  const handleCardClick = () => {
+    if (onNavigateToChat) {
+      onNavigateToChat(test.sourceFile);
+    }
+  };
 
   return (
-    <Card className={`${styles.border} ${styles.bg} transition-colors`}>
+    <Card
+      className={`${styles.border} ${styles.bg} transition-colors ${
+        onNavigateToChat ? "cursor-pointer hover:bg-muted/50" : ""
+      }`}
+      onClick={onNavigateToChat ? handleCardClick : undefined}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -89,7 +112,10 @@ const TestCard: React.FC<TestCardProps> = ({
                 <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                 <button
                   type="button"
-                  onClick={() => onPreviewDiff?.(test)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPreviewDiff?.(test);
+                  }}
                   className="truncate text-left hover:text-primary hover:underline cursor-pointer"
                   title="Click to preview diff"
                 >
@@ -106,26 +132,50 @@ const TestCard: React.FC<TestCardProps> = ({
               </CardDescription>
             </div>
           </div>
-          {showActions && (
+          {(showActions || showCancel) && (
             <div className="flex items-center gap-1 flex-shrink-0">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30"
-                onClick={() => onAccept(test.id)}
-                title="Accept"
-              >
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30"
-                onClick={() => onReject(test.id)}
-                title="Reject"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {showActions && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAccept(test.id);
+                    }}
+                    title="Accept"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReject(test.id);
+                    }}
+                    title="Reject"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+              {showCancel && onCancel && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-950/30"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancel(test.id);
+                  }}
+                  title="Cancel"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           )}
         </div>

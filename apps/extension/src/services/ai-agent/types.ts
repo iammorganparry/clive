@@ -10,6 +10,10 @@ export interface ReadFileOutput {
   content: string;
   filePath: string;
   exists: boolean;
+  wasTruncated?: boolean;
+  totalLines?: number;
+  returnedLines?: number;
+  truncationNote?: string;
 }
 
 export interface ListFilesInput {
@@ -66,6 +70,16 @@ export interface GetCypressConfigOutput {
   config: Record<string, unknown> | null;
   configPath: string | null;
   exists: boolean;
+}
+
+export interface GetFileDiffInput {
+  filePath: string;
+}
+
+export interface GetFileDiffOutput {
+  diff: string;
+  filePath: string;
+  hasChanges: boolean;
 }
 
 export interface WriteTestFileInput {

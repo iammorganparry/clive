@@ -1,27 +1,28 @@
-import * as vscode from "vscode";
-import type { CypressDetector } from "./cypress-detector.js";
-import type { GitService } from "./git-service.js";
-import type { ReactFileFilter } from "./react-file-filter.js";
-import { CypressTestAgent } from "./ai-agent/agent.js";
-import type { DiffContentProvider } from "./diff-content-provider.js";
-import { WebviewMessages } from "../constants.js";
 import { Effect } from "effect";
+import * as vscode from "vscode";
+import { WebviewMessages } from "../constants.js";
 import { ErrorCode, getErrorMessage } from "../lib/error-messages.js";
-import { ReactFileFilter as ReactFileFilterService } from "./react-file-filter.js";
-import { ConfigService as ConfigServiceEffect } from "./config-service.js";
-import type { ConfigService } from "./config-service.js";
+import { CypressTestAgent } from "./ai-agent/agent.js";
+import { PlanningAgent } from "./ai-agent/planning-agent.js";
 import { ApiKeyService as ApiKeyServiceEffect } from "./api-key-service.js";
+import type { ConfigService } from "./config-service.js";
+import { ConfigService as ConfigServiceEffect } from "./config-service.js";
 import {
-  ConversationService as ConversationServiceEffect,
   type Conversation,
+  ConversationService as ConversationServiceEffect,
   type Message,
 } from "./conversation-service.js";
-import { PlanningAgent } from "./ai-agent/planning-agent.js";
+import type { CypressDetector } from "./cypress-detector.js";
+import type { DiffContentProvider } from "./diff-content-provider.js";
+import type { GitService } from "./git-service.js";
+import type { ReactFileFilter } from "./react-file-filter.js";
+import { ReactFileFilter as ReactFileFilterService } from "./react-file-filter.js";
 
 export interface MessageHandlerContext {
   webviewView: vscode.WebviewView;
   context: vscode.ExtensionContext;
   outputChannel: vscode.OutputChannel;
+  isDev: boolean;
   cypressDetector: CypressDetector;
   gitService: GitService;
   reactFileFilter: ReactFileFilter;
@@ -32,6 +33,9 @@ export interface MessageHandlerContext {
 /**
  * Handles all webview message routing and processing
  */
+// Track active AbortControllers for canceling test generation
+const activeAbortControllers = new Map<string, AbortController>();
+
 export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>()(
   "WebviewMessageHandler",
   {
@@ -175,6 +179,10 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               return;
             }
 
+            // Create AbortController for this file
+            const abortController = new AbortController();
+            activeAbortControllers.set(filePath, abortController);
+
             ctx.webviewView.webview.postMessage({
               command: WebviewMessages.testGenerationProgress,
               filePath,
@@ -188,15 +196,36 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               ),
             );
 
-            const result = yield* testAgent.generateTest(
-              {
-                sourceFilePath: filePath,
-                options: {
-                  updateExisting: false,
+            // Create progress callback to stream updates
+            const progressCallback = (message: string) => {
+              ctx.webviewView.webview.postMessage({
+                command: WebviewMessages.testGenerationProgress,
+                filePath,
+                message,
+              });
+            };
+
+            const result = yield* testAgent
+              .generateTest(
+                {
+                  sourceFilePath: filePath,
+                  options: {
+                    updateExisting: false,
+                  },
                 },
-              },
-              ctx.outputChannel,
-            );
+                ctx.outputChannel,
+                ctx.isDev,
+                abortController.signal,
+                progressCallback,
+              )
+              .pipe(
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    // Clean up AbortController
+                    activeAbortControllers.delete(filePath);
+                  }),
+                ),
+              );
 
             if (result.success) {
               yield* Effect.promise(() =>
@@ -233,13 +262,33 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
           files: string[],
         ) =>
           Effect.gen(function* () {
+            const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+            const startTime = Date.now();
+
             yield* Effect.logDebug(
-              `[WebviewMessageHandler] Planning test generation for ${files.length} file(s)`,
+              `[WebviewMessageHandler:${requestId}] ========== Starting test generation planning ==========`,
             );
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] Files to process: ${files.length}`,
+            );
+            for (let idx = 0; idx < files.length; idx++) {
+              yield* Effect.logDebug(
+                `[WebviewMessageHandler:${requestId}]   ${idx + 1}. ${files[idx]}`,
+              );
+            }
+
+            const configCheckStartTime = Date.now();
             const testAgent = yield* CypressTestAgent;
             const isConfigured = yield* testAgent.isConfigured();
+            const configCheckDuration = Date.now() - configCheckStartTime;
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] Configuration check completed in ${configCheckDuration}ms: ${isConfigured ? "configured" : "not configured"}`,
+            );
 
             if (!isConfigured) {
+              yield* Effect.logDebug(
+                `[WebviewMessageHandler:${requestId}] ERROR: Not configured, aborting`,
+              );
               yield* Effect.promise(() =>
                 vscode.window.showErrorMessage(
                   "AI Gateway token not available. Please log in to authenticate.",
@@ -255,6 +304,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             }
 
             if (files.length === 0) {
+              yield* Effect.logDebug(
+                `[WebviewMessageHandler:${requestId}] ERROR: No files provided`,
+              );
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.testGenerationPlan,
                 tests: [],
@@ -264,6 +316,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             }
 
             // Send initial progress update
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] Sending initial progress update: planning ${files.length} file(s) in parallel`,
+            );
             ctx.webviewView.webview.postMessage({
               command: WebviewMessages.testGenerationProgress,
               filePath: files[0] || "",
@@ -277,74 +332,109 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               ),
             );
 
+            // Process each file in parallel
             yield* Effect.logDebug(
-              "[WebviewMessageHandler] Calling planTests agent...",
+              `[WebviewMessageHandler:${requestId}] Processing ${files.length} file(s) in parallel...`,
             );
-
-            // Send progress update before calling agent
-            ctx.webviewView.webview.postMessage({
-              command: WebviewMessages.testGenerationProgress,
-              filePath: files[0] || "",
-              status: "analyzing",
-              message: `Analyzing ${files.length} file(s) with AI model...`,
-            });
-
-            // Start or get conversation for the first file
-            const conversationService = yield* ConversationServiceEffect;
-            const conversation = yield* conversationService
-              .getOrCreateConversation(files[0] || "")
-              .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-            // Get conversation history if exists
-            let conversationHistory: Array<{
-              role: "user" | "assistant" | "system";
-              content: string;
-            }> = [];
-            if (conversation) {
-              const messages = yield* conversationService
-                .getMessages(conversation.id)
-                .pipe(Effect.catchAll(() => Effect.succeed([])));
-              conversationHistory = messages.map((msg) => ({
-                role: msg.role as "user" | "assistant" | "system",
-                content: msg.content,
-              }));
-            }
-
-            // Use planning agent with history
             const planningAgent = yield* PlanningAgent;
-            const result = yield* planningAgent.planTestsWithHistory(
-              files,
-              conversationHistory,
-              ctx.outputChannel,
-            );
+            const conversationService = yield* ConversationServiceEffect;
 
-            const plan = result as { tests: unknown[]; response?: string };
-
-            // Save assistant response to conversation if we have one
-            if (conversation && plan.response) {
-              yield* conversationService
-                .addMessage(conversation.id, "assistant", plan.response)
-                .pipe(Effect.catchAll(() => Effect.void));
-            }
-
-            // Send progress update after planning completes
-            ctx.webviewView.webview.postMessage({
-              command: WebviewMessages.testGenerationProgress,
-              filePath: files[0] || "",
-              status: "generating_content",
-              message: `Generating test content for ${plan.tests.length} test(s)...`,
+            // Create progress callbacks for each file
+            const progressCallbacks = files.map((filePath) => {
+              return (_status: string, message: string) => {
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.testGenerationProgress,
+                  filePath,
+                  status: status as
+                    | "planning"
+                    | "analyzing"
+                    | "generating_content"
+                    | "starting",
+                  message: `${filePath.split("/").pop()}: ${message}`,
+                });
+              };
             });
 
+            // Get max concurrent files from config
+            const configService = yield* ConfigServiceEffect;
+            const maxConcurrentFiles =
+              yield* configService.getMaxConcurrentFiles();
+
+            // Process all files in parallel using Effect.all
+            const agentStartTime = Date.now();
+            const results = yield* Effect.all(
+              files.map((filePath, index) =>
+                Effect.gen(function* () {
+                  // Get or create conversation for this file
+                  const conversation = yield* conversationService
+                    .getOrCreateConversation(filePath)
+                    .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+                  // Get conversation history if exists
+                  let conversationHistory: Array<{
+                    role: "user" | "assistant" | "system";
+                    content: string;
+                  }> = [];
+                  if (conversation) {
+                    const messages = yield* conversationService
+                      .getMessages(conversation.id)
+                      .pipe(Effect.catchAll(() => Effect.succeed([])));
+                    conversationHistory = messages.map((msg) => ({
+                      role: msg.role as "user" | "assistant" | "system",
+                      content: msg.content,
+                    }));
+                  }
+
+                  // Plan test for this file
+                  const result = yield* planningAgent.planTestForFile(
+                    filePath,
+                    conversationHistory,
+                    ctx.outputChannel,
+                    progressCallbacks[index],
+                  );
+
+                  // Save assistant response to conversation if we have one
+                  if (conversation && result.response) {
+                    yield* conversationService
+                      .addMessage(conversation.id, "assistant", result.response)
+                      .pipe(Effect.catchAll(() => Effect.void));
+                  }
+
+                  return {
+                    tests: result.tests,
+                    conversationId: conversation?.id,
+                    sourceFile: filePath,
+                  };
+                }),
+              ),
+              { concurrency: maxConcurrentFiles },
+            );
+            const agentDuration = Date.now() - agentStartTime;
             yield* Effect.logDebug(
-              `[WebviewMessageHandler] Planning completed: ${plan.tests.length} test(s) proposed`,
+              `[WebviewMessageHandler:${requestId}] All planning completed in ${agentDuration}ms`,
             );
 
+            // Aggregate all results
+            const allTests = results.flatMap((r) => r.tests);
+            const firstResult = results[0];
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] Aggregated ${allTests.length} test(s) from ${results.length} file(s)`,
+            );
+
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] Sending test generation plan to webview`,
+            );
             ctx.webviewView.webview.postMessage({
               command: WebviewMessages.testGenerationPlan,
-              tests: plan.tests,
-              conversationId: conversation?.id,
-              sourceFile: files[0] || "",
+              tests: allTests,
+              conversationId: firstResult?.conversationId,
+              sourceFile: firstResult?.sourceFile || files[0] || "",
             });
+
+            const totalDuration = Date.now() - startTime;
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler:${requestId}] ========== Test generation planning completed in ${totalDuration}ms ==========`,
+            );
           }).pipe(
             Effect.catchAll((error) =>
               Effect.gen(function* () {
@@ -395,6 +485,10 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             );
 
             for (const test of testsToExecute) {
+              // Create AbortController for this test
+              const abortController = new AbortController();
+              activeAbortControllers.set(test.id, abortController);
+
               ctx.webviewView.webview.postMessage({
                 command: WebviewMessages.testExecutionUpdate,
                 id: test.id,
@@ -410,7 +504,12 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                   isUpdate: test.isUpdate,
                 },
                 ctx.outputChannel,
+                ctx.isDev,
+                abortController.signal,
               );
+
+              // Clean up AbortController
+              activeAbortControllers.delete(test.id);
 
               if (result.success) {
                 ctx.webviewView.webview.postMessage({
@@ -424,10 +523,77 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                 ctx.webviewView.webview.postMessage({
                   command: WebviewMessages.testExecutionUpdate,
                   id: test.id,
-                  executionStatus: "error",
+                  executionStatus: result.error?.includes("cancelled")
+                    ? "pending"
+                    : "error",
                   error: result.error || "Unknown error",
                 });
               }
+            }
+          }),
+
+        handleCancelTest: (ctx: MessageHandlerContext, testId: string) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Cancelling test: ${testId}`,
+            );
+
+            const abortController = activeAbortControllers.get(testId);
+            if (abortController) {
+              // Abort the ongoing operation
+              abortController.abort();
+              activeAbortControllers.delete(testId);
+
+              // Determine if it's a file path (contains path separator) or test ID
+              const isFilePath = testId.includes("/") || testId.includes("\\");
+
+              if (isFilePath) {
+                // Single file flow - send testGenerationStatus
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.testGenerationStatus,
+                  success: false,
+                  error: "Test generation cancelled",
+                  filePath: testId,
+                });
+
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] File ${testId} cancelled successfully`,
+                );
+              } else {
+                // Multi-file flow - send testExecutionUpdate
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.testExecutionUpdate,
+                  id: testId,
+                  executionStatus: "pending",
+                });
+
+                yield* Effect.logDebug(
+                  `[WebviewMessageHandler] Test ${testId} cancelled successfully`,
+                );
+              }
+            } else {
+              // Test is pending, just update status
+              // Try to determine if it's a file path or test ID
+              const isFilePath = testId.includes("/") || testId.includes("\\");
+
+              if (isFilePath) {
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.testGenerationStatus,
+                  success: false,
+                  error: "Test generation cancelled",
+                  filePath: testId,
+                });
+              } else {
+                ctx.webviewView.webview.postMessage({
+                  command: WebviewMessages.testExecutionUpdate,
+                  id: testId,
+                  executionStatus: "pending",
+                });
+              }
+
+              yield* Effect.logDebug(
+                `[WebviewMessageHandler] Test ${testId} was pending, status updated`,
+              );
             }
           }),
 
@@ -776,8 +942,8 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
 
             // Call planning agent with history
             const result = yield* planningAgent
-              .planTestsWithHistory(
-                [sourceFile],
+              .planTestForFile(
+                sourceFile,
                 conversationHistory,
                 ctx.outputChannel,
               )
@@ -856,7 +1022,7 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                     return null as Conversation | null;
                   }),
                 ),
-                Effect.catchTag("NetworkError", (error) =>
+                Effect.catchTag("NetworkError", (_error) =>
                   Effect.sync(() => {
                     ctx.webviewView.webview.postMessage({
                       command: WebviewMessages.chatError,
@@ -1195,6 +1361,9 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                       }
                     | undefined,
                 );
+                break;
+              case WebviewMessages.cancelTest:
+                yield* service.handleCancelTest(ctx, message.id as string);
                 break;
               case WebviewMessages.fetchConfig:
                 yield* service.handleFetchConfig();

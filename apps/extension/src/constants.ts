@@ -59,6 +59,7 @@ export const WebviewMessages = {
   confirmTestPlan: "confirm-test-plan",
   testExecutionUpdate: "test-execution-update",
   previewTestDiff: "preview-test-diff",
+  cancelTest: "cancel-test",
   // Config messages
   fetchConfig: "fetch-config",
   configUpdated: "config-updated",
@@ -81,5 +82,14 @@ export const WebviewMessages = {
  */
 export const LoggerConfig = {
   prefix: "Clive",
-  devModeSettingKey: "clive.devMode",
+} as const;
+
+/**
+ * Configuration file constants
+ */
+export const ConfigFile = {
+  filename: "clive.config.json",
+  defaults: {
+    maxConcurrentFiles: 3,
+  },
 } as const;

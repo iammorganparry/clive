@@ -28,14 +28,29 @@ export function UserDropdown() {
     ? `${user.firstName} ${user.lastName}`
     : user.username;
   const email = user.email ? `${user.email}` : undefined;
+  
+  // Generate initials for fallback
+  const getInitials = () => {
+    if (user.firstName && user.lastName) {
+      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    }
+    if (user.username) {
+      return user.username.slice(0, 2).toUpperCase();
+    }
+    if (user.email) {
+      return user.email.slice(0, 2).toUpperCase();
+    }
+    return "U";
+  };
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
-        <Avatar className="h-8 w-8 rounded-lg grayscale">
-          <AvatarImage src={user.imageUrl} alt={user.username} />
-          <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+      <DropdownMenuTrigger className="flex items-center gap-2">
+        <Avatar className="h-8 w-8 rounded-lg shrink-0">
+          <AvatarImage src={user.imageUrl} alt={name || user.username || "User"} />
+          <AvatarFallback className="rounded-lg">{getInitials()}</AvatarFallback>
         </Avatar>
-        <div className="grid flex-1 text-left text-sm leading-tight">
+        <div className="flex flex-col text-left text-sm leading-tight min-w-0">
           <span className="truncate font-medium">{name}</span>
           <span className="text-muted-foreground truncate text-xs">
             {email}
@@ -51,11 +66,11 @@ export function UserDropdown() {
         <DropdownMenuLabel className="p-0 font-normal">
           <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
             <Avatar className="h-8 w-8 rounded-lg">
-              <AvatarImage src={user.imageUrl} alt={user.username} />
-              <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+              <AvatarImage src={user.imageUrl} alt={name || user.username || "User"} />
+              <AvatarFallback className="rounded-lg">{getInitials()}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user.username}</span>
+              <span className="truncate font-medium">{name || user.username}</span>
               <span className="text-muted-foreground truncate text-xs">
                 {user.email}
               </span>
