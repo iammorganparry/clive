@@ -12,15 +12,19 @@ import {
   CardTitle,
 } from "@clive/ui/card";
 import { Input } from "@clive/ui/input";
-import { Field, FieldDescription, FieldGroup } from "@clive/ui/field";
-import { CheckCircle2, Copy, Loader2, ExternalLink } from "lucide-react";
+import {
+  CheckCircle2,
+  Copy,
+  Loader2,
+  ExternalLink,
+  ChevronDown,
+} from "lucide-react";
 
 function CallbackPageContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callback_url");
   const [copied, setCopied] = useState(false);
-  const [redirectAttempted, setRedirectAttempted] = useState(false);
-  const [showManualFallback, setShowManualFallback] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const {
     data: token,
@@ -67,20 +71,10 @@ function CallbackPageContent() {
 
   // Auto-redirect to deep link when token is ready
   useEffect(() => {
-    if (token && callbackUrl && !redirectAttempted) {
-      setRedirectAttempted(true);
-
-      // Redirect to deep link
+    if (token && callbackUrl) {
       window.location.href = `${callbackUrl}?token=${encodeURIComponent(token)}`;
-
-      // Show manual fallback after a delay (in case redirect doesn't work)
-      const fallbackTimer = setTimeout(() => {
-        setShowManualFallback(true);
-      }, 2000);
-
-      return () => clearTimeout(fallbackTimer);
     }
-  }, [token, callbackUrl, redirectAttempted]);
+  }, [token, callbackUrl]);
 
   const handleCopy = useCallback(async () => {
     if (!token) return;
@@ -102,8 +96,8 @@ function CallbackPageContent() {
 
   if (loading) {
     return (
-      <Card className="max-w-md">
-        <CardContent className="flex flex-col items-center justify-center py-12">
+      <Card className="w-full max-w-md border-0 bg-card/50 backdrop-blur">
+        <CardContent className="flex flex-col items-center justify-center py-16">
           <Loader2 className="size-8 animate-spin text-primary" />
           <p className="mt-4 text-sm text-muted-foreground">
             Generating authentication token...
@@ -115,9 +109,11 @@ function CallbackPageContent() {
 
   if (error) {
     return (
-      <Card className="max-w-md">
-        <CardHeader>
-          <CardTitle>Authentication Error</CardTitle>
+      <Card className="w-full max-w-md border-0 bg-card/50 backdrop-blur">
+        <CardHeader className="text-center">
+          <CardTitle className="text-destructive">
+            Authentication Error
+          </CardTitle>
           <CardDescription>{error}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -136,8 +132,8 @@ function CallbackPageContent() {
 
   if (!token) {
     return (
-      <Card className="max-w-md">
-        <CardHeader>
+      <Card className="w-full max-w-md border-0 bg-card/50 backdrop-blur">
+        <CardHeader className="text-center">
           <CardTitle>No Token Available</CardTitle>
           <CardDescription>
             Unable to generate authentication token. Please try signing in
@@ -158,56 +154,48 @@ function CallbackPageContent() {
     );
   }
 
-  // If we have a callback URL, show redirecting state
-  if (callbackUrl && !showManualFallback) {
-    return (
-      <Card className="max-w-md">
-        <CardContent className="flex flex-col items-center justify-center py-12">
-          <CheckCircle2 className="size-8 text-green-500" />
-          <p className="mt-4 text-sm font-medium">Authentication Successful!</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Redirecting to {editorName}...
-          </p>
-          <Loader2 className="mt-4 size-5 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Manual fallback (shown if no callback URL or redirect didn't work)
   return (
-    <Card className="max-w-lg rounded-xl p-4 shadow-sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <CheckCircle2 className="size-5 text-green-500" />
-          Authentication Successful
-        </CardTitle>
-        <CardDescription className="text-sm text-muted-foreground">
-          {callbackUrl ? (
-            <>
-              If {editorName} didn&apos;t open automatically, click the button
-              below or copy the token manually.
-            </>
-          ) : (
-            <>
-              Copy the token below and paste it into the extension login page.
-            </>
-          )}
+    <Card className="w-full max-w-md border-0 bg-card/50 backdrop-blur">
+      <CardHeader className="pb-4 text-center">
+        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-green-500/10">
+          <CheckCircle2 className="size-6 text-green-500" />
+        </div>
+        <CardTitle>Authentication Successful</CardTitle>
+        <CardDescription>
+          {callbackUrl
+            ? `Redirecting you to ${editorName}...`
+            : "Copy the token below to complete sign in."}
         </CardDescription>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {callbackUrl && (
-          <Button onClick={handleOpenEditor} className="w-full">
-            <ExternalLink className="mr-2 size-4" />
-            Open in {editorName}
-          </Button>
+          <>
+            <Button
+              onClick={handleOpenEditor}
+              variant="outline"
+              className="w-full"
+            >
+              <ExternalLink className="mr-2 size-4" />
+              Open {editorName} Manually
+            </Button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+          </>
         )}
 
-        <FieldGroup>
-          <Field>
-            <FieldDescription className="mb-2">
-              Or copy the token manually:
-            </FieldDescription>
+        {showToken ? (
+          <div className="space-y-3">
+            <p className="text-center text-sm text-muted-foreground">
+              Copy this token and paste it in the extension:
+            </p>
             <div className="flex gap-2">
               <Input
                 type="text"
@@ -228,8 +216,17 @@ function CallbackPageContent() {
                 )}
               </Button>
             </div>
-          </Field>
-        </FieldGroup>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowToken(true)}
+            className="flex w-full items-center justify-center gap-1 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown className="size-4" />
+            Show token manually
+          </button>
+        )}
       </CardContent>
     </Card>
   );
@@ -237,17 +234,19 @@ function CallbackPageContent() {
 
 export default function CallbackPage() {
   return (
-    <Suspense
-      fallback={
-        <Card className="max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="size-8 animate-spin text-primary" />
-            <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
-          </CardContent>
-        </Card>
-      }
-    >
-      <CallbackPageContent />
-    </Suspense>
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Suspense
+        fallback={
+          <Card className="w-full max-w-md border-0 bg-card/50 backdrop-blur">
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <Loader2 className="size-8 animate-spin text-primary" />
+              <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
+            </CardContent>
+          </Card>
+        }
+      >
+        <CallbackPageContent />
+      </Suspense>
+    </div>
   );
 }

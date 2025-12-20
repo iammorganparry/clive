@@ -646,4 +646,21 @@ describe("ConfigService", () => {
       expect(secondToken).not.toBe(firstToken);
     });
   });
+
+  describe("getMaxConcurrentFiles", () => {
+    it("should return the default max concurrent files value", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.getMaxConcurrentFiles();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(3); // ConfigFile.defaults.maxConcurrentFiles
+    });
+  });
 });

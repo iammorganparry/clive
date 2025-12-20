@@ -9,11 +9,20 @@ import {
   CardTitle,
 } from "../../../../components/ui/card.js";
 import {
+  Task,
+  TaskTrigger,
+  TaskContent,
+  TaskItem,
+} from "@clive/ui/task";
+import {
   GitBranch,
   ChevronDown,
   ChevronRight,
   FileText,
   Plus,
+  Loader2,
+  AlertCircle,
+  XCircle,
 } from "lucide-react";
 
 export interface EligibleFile {
@@ -30,20 +39,35 @@ export interface BranchChangesData {
   workspaceRoot: string;
 }
 
+export interface FileGenerationState {
+  status: "idle" | "generating" | "completed" | "error";
+  statusMessage: string;
+  logs: string[];
+  error?: string;
+}
+
 interface BranchChangesProps {
   changes: BranchChangesData | null;
   isLoading: boolean;
   error?: string;
+  fileStates: Map<string, FileGenerationState>;
   onCreateTest: (filePath: string) => void;
   onCreateAllTests: () => void;
+  isGenerating?: boolean;
+  generationStatus?: string;
+  onCancelTest: (filePath: string) => void;
 }
 
 const BranchChanges: React.FC<BranchChangesProps> = ({
   changes,
   isLoading,
   error,
+  fileStates,
   onCreateTest,
   onCreateAllTests,
+  isGenerating = false,
+  generationStatus = "",
+  onCancelTest,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -122,45 +146,112 @@ const BranchChanges: React.FC<BranchChangesProps> = ({
 
       {isExpanded && (
         <CardContent className="space-y-2">
-          <div className="space-y-1">
-            {files.map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 transition-colors cursor-pointer group focus:outline-none focus:ring-2 focus:ring-ring w-full text-left"
-                onClick={() => onCreateTest(file.path)}
-              >
-                <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                <span className="text-xs font-mono text-muted-foreground w-4 flex-shrink-0">
-                  {file.status}
-                </span>
-                <span className="text-sm text-foreground flex-1 truncate">
-                  {file.relativePath}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity h-6 px-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCreateTest(file.path);
-                  }}
+          <div className="space-y-2">
+            {files.map((file) => {
+              const fileState = fileStates.get(file.path);
+              const isFileGenerating = fileState?.status === "generating";
+              const hasLogs = fileState?.logs && fileState.logs.length > 0;
+
+              return (
+                <Task
+                  key={file.path}
+                  defaultOpen={isFileGenerating || fileState?.status === "error"}
                 >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Test
-                </Button>
-              </button>
-            ))}
+                  <div className="flex items-center gap-2">
+                    <TaskTrigger
+                      title={file.relativePath}
+                      className="flex-1 min-w-0"
+                    >
+                      <div className="flex items-center gap-2 w-full cursor-pointer text-muted-foreground text-sm transition-colors hover:text-foreground">
+                        <FileText className="h-4 w-4 flex-shrink-0" />
+                        <span className="text-xs font-mono w-4 flex-shrink-0">
+                          {file.status}
+                        </span>
+                        <span className="text-sm flex-1 truncate">
+                          {file.relativePath}
+                        </span>
+                        <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180 flex-shrink-0" />
+                      </div>
+                    </TaskTrigger>
+                    {isFileGenerating ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-6 px-2 flex-shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCancelTest(file.path);
+                        }}
+                      >
+                        <XCircle className="h-3 w-3 mr-1" />
+                        Cancel
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 flex-shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCreateTest(file.path);
+                        }}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Test
+                      </Button>
+                    )}
+                  </div>
+                  {(hasLogs || fileState?.error) && (
+                    <TaskContent>
+                      {fileState?.logs.map((log, i) => (
+                        <TaskItem key={`${file.path}-log-${i}-${log.slice(0, 20)}`}>
+                          {log}
+                        </TaskItem>
+                      ))}
+                      {fileState?.error && (
+                        <TaskItem className="text-destructive">
+                          <AlertCircle className="h-3 w-3 inline mr-1" />
+                          {fileState.error}
+                        </TaskItem>
+                      )}
+                    </TaskContent>
+                  )}
+                </Task>
+              );
+            })}
           </div>
 
-          <div className="pt-2 border-t">
+          <div className="pt-2 border-t space-y-2">
+            {isGenerating && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted/50">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Generating test plan...</p>
+                  {generationStatus && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {generationStatus}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <Button
               variant="outline"
               className="w-full"
               onClick={onCreateAllTests}
+              disabled={isGenerating}
             >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Tests for All Changes
+              {isGenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Tests for All Changes
+                </>
+              )}
             </Button>
           </div>
         </CardContent>

@@ -18,7 +18,6 @@ import {
 } from "../services/vs-code.js";
 import { PlanningAgent } from "../services/ai-agent/planning-agent.js";
 import { createLoggerLayer } from "../services/logger-service.js";
-import { LoggerConfig } from "../constants.js";
 
 /**
  * Webview view provider for Clive extension
@@ -30,6 +29,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   private _webviewView?: vscode.WebviewView;
   private _context?: vscode.ExtensionContext;
   private _outputChannel?: vscode.OutputChannel;
+  private _isDev: boolean = false;
   private messageHandlerContext?: MessageHandlerContext;
   private themeChangeDisposable?: vscode.Disposable;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
@@ -46,6 +46,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 
   public setOutputChannel(outputChannel: vscode.OutputChannel): void {
     this._outputChannel = outputChannel;
+  }
+
+  public setIsDev(isDev: boolean): void {
+    this._isDev = isDev;
   }
 
   public resolveWebviewView(
@@ -194,6 +198,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       webviewView,
       context: this._context,
       outputChannel: this._outputChannel,
+      isDev: this._isDev,
       cypressDetector: new CypressDetector(),
       gitService: gitServiceProxy,
       reactFileFilter:
@@ -258,13 +263,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
               ? createSecretStorageLayer(this._context)
               : Layer.empty,
             this._outputChannel
-              ? createLoggerLayer(
-                  this._outputChannel,
-                  vscode.workspace
-                    .getConfiguration()
-                    .get<boolean>(LoggerConfig.devModeSettingKey, false) ||
-                    process.env.NODE_ENV === "development",
-                )
+              ? createLoggerLayer(this._outputChannel, this._isDev)
               : Layer.empty,
           ),
         ),

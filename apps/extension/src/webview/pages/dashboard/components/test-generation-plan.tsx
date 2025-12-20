@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../../components/ui/card.js";
-import { Check, X, Play, Loader2 } from "lucide-react";
+import { Check, X, Play, XCircle } from "lucide-react";
 import TestCard from "./test-card.js";
 import type {
   ProposedTest,
@@ -22,8 +22,10 @@ interface TestGenerationPlanProps {
   testFilePaths: Map<string, string>;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onCancel?: (id: string) => void;
   onGenerate: (acceptedIds: string[]) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
+  onNavigateToChat?: (sourceFile: string) => void;
 }
 
 const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
@@ -33,8 +35,10 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
   testFilePaths,
   onAccept,
   onReject,
+  onCancel,
   onGenerate,
   onPreviewDiff,
+  onNavigateToChat,
 }) => {
   const [localStatuses, setLocalStatuses] = useState<
     Map<string, "pending" | "accepted" | "rejected">
@@ -99,6 +103,15 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
     onGenerate(acceptedIds);
   }, [tests, getStatus, onGenerate]);
 
+  const handleCancelAll = useCallback(() => {
+    // Cancel all in-progress tests
+    tests.forEach((test) => {
+      if (getStatus(test.id) === "in_progress" && onCancel) {
+        onCancel(test.id);
+      }
+    });
+  }, [tests, getStatus, onCancel]);
+
   const acceptedCount = useMemo(
     () => tests.filter((test) => getStatus(test.id) === "accepted").length,
     [tests, getStatus],
@@ -156,24 +169,27 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
             Reject All
           </Button>
           <div className="flex-1" />
-          <Button
-            size="sm"
-            onClick={handleGenerate}
-            disabled={!hasAcceptedTests || isGenerating}
-            className="h-8"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Play className="h-3.5 w-3.5 mr-1.5" />
-                Generate Accepted Tests ({acceptedCount})
-              </>
-            )}
-          </Button>
+          {isGenerating ? (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleCancelAll}
+              className="h-8"
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1.5" />
+              Cancel Generation
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleGenerate}
+              disabled={!hasAcceptedTests}
+              className="h-8"
+            >
+              <Play className="h-3.5 w-3.5 mr-1.5" />
+              Generate Accepted Tests ({acceptedCount})
+            </Button>
+          )}
         </div>
 
         {/* Test cards */}
@@ -187,7 +203,9 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
               testFilePath={testFilePaths.get(test.id)}
               onAccept={handleAccept}
               onReject={handleReject}
+              onCancel={onCancel}
               onPreviewDiff={onPreviewDiff}
+              onNavigateToChat={onNavigateToChat}
             />
           ))}
         </div>
