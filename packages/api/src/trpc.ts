@@ -30,6 +30,7 @@ type ContextResult = {
   session: Session | null;
   userId: string | null;
   db: typeof db;
+  headers: Headers;
 };
 
 export const createTRPCContext = async (opts: {
@@ -40,6 +41,7 @@ export const createTRPCContext = async (opts: {
     session: opts.session,
     userId: opts.session?.user.id ?? null,
     db,
+    headers: opts.headers,
   };
 };
 
@@ -129,6 +131,9 @@ const _protectedProcedure = t.procedure
       ctx: {
         // infers the `userId` as non-nullable
         userId: ctx.userId,
+        session: ctx.session,
+        db: ctx.db,
+        headers: ctx.headers,
       },
     });
   });

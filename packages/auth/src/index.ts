@@ -2,6 +2,7 @@ import { db } from "@clive/db/client";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { jwt, bearer } from "better-auth/plugins";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -36,7 +37,11 @@ export const auth = betterAuth({
       clientSecret: githubClientSecret,
     },
   },
-  plugins: [nextCookies()],
+  plugins: [
+    nextCookies(),
+    jwt(), // Provides /api/auth/token endpoint for JWT generation
+    bearer(), // Enables Bearer token validation in getSession()
+  ],
 });
 
 export type Session = typeof auth.$Infer.Session;

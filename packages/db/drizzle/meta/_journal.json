@@ -22,6 +22,13 @@
       "when": 1766227937652,
       "tag": "0002_thin_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1766232631741,
+      "tag": "0003_wise_callisto",
+      "breakpoints": true
     }
   ]
 }

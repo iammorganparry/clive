@@ -85,6 +85,15 @@ export const verification = pgTable("verification", {
     .$onUpdateFn(() => sql`now()`),
 });
 
+// Better Auth JWT plugin table
+export const jwks = pgTable("jwks", {
+  id: text("id").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  privateKey: text("private_key").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"),
+});
+
 export const conversationStatusEnum = pgEnum("conversation_status", [
   "planning",
   "confirmed",
