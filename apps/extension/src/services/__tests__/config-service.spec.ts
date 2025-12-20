@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "../config-service.js";
+import { ApiKeyService } from "../api-key-service.js";
 import { createMockSecretStorageLayer } from "../../__mocks__/secret-storage-service.js";
 import { SecretKeys } from "../../constants.js";
 import type * as vscode from "vscode";
@@ -27,8 +28,9 @@ describe("ConfigService", () => {
 
   describe("storeAuthToken", () => {
     it("should store auth token in secret storage", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -43,8 +45,9 @@ describe("ConfigService", () => {
     });
 
     it("should overwrite existing auth token", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -70,8 +73,9 @@ describe("ConfigService", () => {
         },
       };
 
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(errorMockSecrets),
       );
 
@@ -86,8 +90,9 @@ describe("ConfigService", () => {
 
   describe("deleteAuthToken", () => {
     it("should delete auth token from secret storage", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -103,8 +108,9 @@ describe("ConfigService", () => {
     });
 
     it("should handle deletion when token does not exist", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -124,8 +130,9 @@ describe("ConfigService", () => {
         },
       };
 
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(errorMockSecrets),
       );
 
@@ -140,8 +147,9 @@ describe("ConfigService", () => {
 
   describe("getAuthToken", () => {
     it("should retrieve stored auth token", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -157,8 +165,9 @@ describe("ConfigService", () => {
     });
 
     it("should return undefined when no token is stored", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -177,8 +186,9 @@ describe("ConfigService", () => {
         },
       };
 
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(errorMockSecrets),
       );
 
@@ -193,8 +203,9 @@ describe("ConfigService", () => {
 
   describe("isConfigured", () => {
     it("should return true when auth token exists", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -209,8 +220,9 @@ describe("ConfigService", () => {
     });
 
     it("should return false when auth token does not exist", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -223,12 +235,70 @@ describe("ConfigService", () => {
     });
 
     it("should return false when auth token is empty string", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
       storedTokens.set(SecretKeys.authToken, "");
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.isConfigured();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("isConfigured with stored API key", () => {
+    it("should return true when stored API key exists (no auth token)", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const storedApiKey =
+        "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
+      storedTokens.set(SecretKeys.anthropicApiKey, storedApiKey);
+      // No auth token
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.isConfigured();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(true);
+    });
+
+    it("should return true when auth token exists (no stored key)", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      storedTokens.set(SecretKeys.authToken, "auth-token");
+      // No stored API key
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.isConfigured();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(true);
+    });
+
+    it("should return false when neither stored key nor auth token exists", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      // Nothing stored
 
       const result = await Effect.gen(function* () {
         const configService = yield* ConfigService;
@@ -246,8 +316,9 @@ describe("ConfigService", () => {
     });
 
     it("should fetch gateway token when auth token exists", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -280,8 +351,9 @@ describe("ConfigService", () => {
     });
 
     it("should fail when auth token is missing", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -296,8 +368,9 @@ describe("ConfigService", () => {
     });
 
     it("should handle API errors", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -320,8 +393,9 @@ describe("ConfigService", () => {
     });
 
     it("should handle missing token in response", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -343,8 +417,9 @@ describe("ConfigService", () => {
     });
 
     it("should handle network errors", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -368,8 +443,9 @@ describe("ConfigService", () => {
     });
 
     it("should return gateway token (backward compatibility)", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -392,14 +468,89 @@ describe("ConfigService", () => {
     });
   });
 
+  describe("getAiApiKey with stored API key", () => {
+    beforeEach(() => {
+      global.fetch = vi.fn();
+    });
+
+    it("should return stored Anthropic API key when available", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const storedApiKey =
+        "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
+      storedTokens.set(SecretKeys.anthropicApiKey, storedApiKey);
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.getAiApiKey();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(storedApiKey);
+      expect(global.fetch).not.toHaveBeenCalled(); // Should not call gateway
+    });
+
+    it("should fall back to gateway token when no stored key exists", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const authToken = "test-auth-token";
+      const gatewayToken = "gateway-token-123";
+      storedTokens.set(SecretKeys.authToken, authToken);
+      // No anthropicApiKey stored
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: gatewayToken }),
+        text: async () => "",
+      } as Response);
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.getAiApiKey();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(gatewayToken);
+      expect(global.fetch).toHaveBeenCalled();
+    });
+
+    it("should prefer stored key over gateway even when auth token exists", async () => {
+      const layer = Layer.mergeAll(
+        ConfigService.Default,
+        ApiKeyService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const storedApiKey =
+        "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
+      storedTokens.set(SecretKeys.anthropicApiKey, storedApiKey);
+      storedTokens.set(SecretKeys.authToken, "auth-token"); // Both exist
+
+      const result = await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        return yield* configService.getAiApiKey();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBe(storedApiKey);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("integration scenarios", () => {
     beforeEach(() => {
       global.fetch = vi.fn();
     });
 
     it("should handle complete authentication flow", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
@@ -453,8 +604,9 @@ describe("ConfigService", () => {
     });
 
     it("should handle token refresh scenario", async () => {
-      const layer = Layer.merge(
+      const layer = Layer.mergeAll(
         ConfigService.Default,
+        ApiKeyService.Default,
         createMockSecretStorageLayer(mockSecrets),
       );
 
