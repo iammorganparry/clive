@@ -1,11 +1,10 @@
 import "@clive/ui/styles.css";
-import "../styles/globals.css";
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import "../styles/globals.css";
 
-import { ClerkProvider } from "@clerk/nextjs";
-import { TRPCReactProvider } from "~/trpc/react";
 import { ThemeProvider } from "~/components/theme-provider";
+import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -22,20 +21,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
-      <TRPCReactProvider>
-        <html
-          lang="en"
-          className={`${geist.variable}`}
-          suppressHydrationWarning
-        >
-          <body>
-            <ThemeProvider>
-              <TRPCReactProvider>{children}</TRPCReactProvider>
-            </ThemeProvider>
-          </body>
-        </html>
-      </TRPCReactProvider>
-    </ClerkProvider>
+    <TRPCReactProvider>
+      <html lang="en" className={`${geist.variable}`} suppressHydrationWarning>
+        <body>
+          <ThemeProvider>
+            <TRPCReactProvider>{children}</TRPCReactProvider>
+          </ThemeProvider>
+        </body>
+      </html>
+    </TRPCReactProvider>
   );
 }

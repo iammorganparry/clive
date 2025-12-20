@@ -1,16 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useSignUp } from "@clerk/nextjs";
+import { authClient } from "@clive/auth/client";
 import { LoginForm } from "@clive/ui";
 import { Card } from "@clive/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 export default function SignUpPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callback_url");
-  const { isLoaded, signUp, setActive } = useSignUp();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,50 +23,22 @@ export default function SignUpPage() {
     : "/sign-in";
 
   const handleEmailSubmit = async (email: string) => {
-    if (!isLoaded || !signUp) return;
-
     setIsLoading(true);
     setError(null);
-
-    try {
-      // Start the sign-up process with email
-      const result = await signUp.create({
-        emailAddress: email,
-      });
-
-      // Check if we need to verify email
-      if (result.status === "complete") {
-        // Sign-up is complete, set the session
-        await setActive({ session: result.createdSessionId });
-        router.push(afterSignUpUrl);
-      } else {
-        // Need to verify email with magic link
-        await signUp.prepareEmailAddressVerification({
-          strategy: "email_code",
-        });
-        setError("Please check your email for a verification code.");
-        setIsLoading(false);
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to sign up";
-      setError(errorMessage);
-      setIsLoading(false);
-    }
+    setError(
+      "Email/password authentication is not yet configured. Please use GitHub sign-in.",
+    );
+    setIsLoading(false);
   };
 
   const handleGitHubClick = async () => {
-    if (!isLoaded || !signUp) return;
-
     setIsLoading(true);
     setError(null);
 
     try {
-      // Redirect to GitHub OAuth
-      await signUp.authenticateWithRedirect({
-        strategy: "oauth_github",
-        redirectUrl: `${window.location.origin}${afterSignUpUrl}`,
-        redirectUrlComplete: `${window.location.origin}${afterSignUpUrl}`,
+      await authClient.signIn.social({
+        provider: "github",
+        callbackURL: afterSignUpUrl,
       });
     } catch (err) {
       const errorMessage =
@@ -76,16 +47,6 @@ export default function SignUpPage() {
       setIsLoading(false);
     }
   };
-
-  if (!isLoaded) {
-    return (
-      <Card>
-        <div className="flex items-center justify-center p-12">
-          <div className="text-sm text-muted-foreground">Loading...</div>
-        </div>
-      </Card>
-    );
-  }
 
   return (
     <div className="flex items-center justify-center">

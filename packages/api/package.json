@@ -21,7 +21,6 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false"
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.36.0",
     "@clive/auth": "*",
     "@clive/db": "*",
     "@clive/validators": "*",

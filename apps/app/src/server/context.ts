@@ -1,7 +1,11 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@clive/auth";
+import { headers } from "next/headers";
 
 export const createContext = async (req: Request) => {
-  return { auth: await auth(), headers: req.headers };
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  return { session, headers: req.headers };
 };
 
 export type Context = Awaited<ReturnType<typeof createContext>>;
