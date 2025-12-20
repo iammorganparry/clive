@@ -97,7 +97,7 @@
     "semantic-release-vsce": "^6.0.17",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
-    "vitest": "^4.0.14"
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.53",

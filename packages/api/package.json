@@ -18,7 +18,8 @@
     "format:fix": "biome check --write .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
-    "typecheck": "tsc --noEmit --emitDeclarationOnly false"
+    "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@clive/auth": "*",
@@ -33,6 +34,8 @@
     "@biomejs/biome": "^2.3.7",
     "@clive/biome-config": "*",
     "@clive/tsconfig": "*",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16",
+    "vitest-mock-extended": "^3.1.0"
   }
 }

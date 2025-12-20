@@ -113,9 +113,6 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
     return decodeJWT(token);
   }, [token]);
 
-  console.log("[Clive] token", token);
-  console.log("[Clive] user", user);
-
   // Save token to VS Code state and update React Query cache
   const saveToken = useCallback(
     (newToken: string | null) => {
