@@ -1,0 +1,37 @@
+{
+    "name": "@clive/webview-rpc",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./src/index.ts"
+        }
+    },
+    "license": "MIT",
+    "scripts": {
+        "build": "tsc",
+        "clean": "git clean -xdf .cache .turbo dist node_modules",
+        "dev": "tsc",
+        "format": "biome check .",
+        "format:fix": "biome check --write .",
+        "lint": "biome lint .",
+        "lint:fix": "biome lint --write .",
+        "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+        "test": "vitest"
+    },
+    "dependencies": {
+        "effect": "^3.19.9",
+        "zod": "^4.1.13"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.3.7",
+        "@clive/biome-config": "*",
+        "@clive/tsconfig": "*",
+        "typescript": "^5.9.3"
+    },
+    "peerDependencies": {
+        "@tanstack/react-query": "^5.0.0"
+    }
+}

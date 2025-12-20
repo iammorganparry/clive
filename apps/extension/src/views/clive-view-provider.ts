@@ -18,6 +18,8 @@ import {
 } from "../services/vs-code.js";
 import { PlanningAgent } from "../services/ai-agent/planning-agent.js";
 import { createLoggerLayer } from "../services/logger-service.js";
+import { handleRpcMessage, isRpcMessage } from "../rpc/handler.js";
+import type { RpcContext } from "../rpc/context.js";
 
 /**
  * Webview view provider for Clive extension
@@ -101,6 +103,19 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
     // Set up message handling
     webviewView.webview.onDidReceiveMessage(
       async (message) => {
+        // Check if it's an RPC message first
+        if (isRpcMessage(message)) {
+          const rpcContext = this.createRpcContext(webviewView);
+          if (rpcContext) {
+            const response = await handleRpcMessage(message, rpcContext);
+            if (response) {
+              webviewView.webview.postMessage(response);
+            }
+          }
+          return;
+        }
+
+        // Fall back to legacy message handler
         if (this.messageHandlerContext) {
           await this.executeHandlerEffect((handler) =>
             handler.handleMessage(
@@ -208,6 +223,43 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
     };
 
     return context;
+  }
+
+  /**
+   * Create RPC context with required dependencies
+   */
+  private createRpcContext(webviewView: vscode.WebviewView): RpcContext | null {
+    if (!this._context || !this._outputChannel) {
+      return null;
+    }
+
+    // Create a proxy for GitService that matches the expected interface
+    const gitServiceProxy = {
+      getBranchChanges: () => {
+        return Effect.gen(function* () {
+          const gitService = yield* GitServiceEffect;
+          return yield* gitService.getBranchChanges();
+        }).pipe(
+          Effect.provide(
+            Layer.merge(GitServiceEffect.Default, VSCodeService.Default),
+          ),
+        );
+      },
+    } as unknown as import("../services/git-service.js").GitService;
+
+    return {
+      webviewView,
+      context: this._context,
+      outputChannel: this._outputChannel,
+      isDev: this._isDev,
+      cypressDetector: new CypressDetector(),
+      gitService: gitServiceProxy,
+      reactFileFilter:
+        {} as import("../services/react-file-filter.js").ReactFileFilter,
+      diffProvider: this.diffProvider,
+      configService:
+        {} as import("../services/config-service.js").ConfigService,
+    };
   }
 
   /**

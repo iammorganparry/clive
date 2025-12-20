@@ -1,9 +1,10 @@
 import type React from "react";
 import { useCallback, useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { VSCodeAPI } from "../../services/vscode.js";
 import { WebviewMessages } from "../../../constants.js";
 import { logger } from "../../services/logger.js";
+import { useRpc } from "../../rpc/provider.js";
 import type {
   BranchChangesData,
   FileGenerationState,
@@ -63,7 +64,7 @@ interface MessageData {
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   vscode,
   pendingPromises,
-  createMessagePromise,
+  createMessagePromise: _createMessagePromise,
 }) => {
   logger.component.render("DashboardPage", { vscodeAvailable: !!vscode });
   const queryClient = useQueryClient();
@@ -281,59 +282,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [handleMessage]);
 
-  // Query for Cypress status
-  const { data: cypressStatus, isLoading } = useQuery<CypressStatusData, Error>(
-    {
-      queryKey: ["cypress-status"],
-      queryFn: async () => {
-        logger.query.start("cypress-status");
-        try {
-          const message = (await createMessagePromise(
-            vscode,
-            WebviewMessages.refreshStatus,
-            WebviewMessages.cypressStatus,
-          )) as MessageData;
+  // Get RPC client
+  const rpc = useRpc();
 
-          if (!message.status) {
-            throw new Error("No status received");
-          }
+  // Query for Cypress status using new RPC API
+  const { data: cypressStatus, isLoading } = rpc.status.cypress.useQuery();
 
-          logger.query.success("cypress-status", message.status);
-          return message.status;
-        } catch (error) {
-          logger.query.error("cypress-status", error);
-          throw error;
-        }
-      },
-      refetchInterval: false,
-    },
-  );
-
-  // Query for branch changes
+  // Query for branch changes using new RPC API
   const {
     data: branchChanges,
     isLoading: branchChangesLoading,
     error: branchChangesError,
-  } = useQuery<BranchChangesData | null, Error>({
-    queryKey: ["branch-changes"],
-    queryFn: async () => {
-      logger.query.start("branch-changes");
-      try {
-        const message = (await createMessagePromise(
-          vscode,
-          WebviewMessages.getBranchChanges,
-          WebviewMessages.branchChangesStatus,
-        )) as MessageData;
-
-        logger.query.success("branch-changes", message.changes);
-        return message.changes ?? null;
-      } catch (error) {
-        logger.query.error("branch-changes", error);
-        throw error;
-      }
-    },
-    refetchInterval: false,
-  });
+  } = rpc.status.branchChanges.useQuery();
 
   // Handler for creating test for a single file
   const handleCreateTestForFile = useCallback(
