@@ -67,6 +67,13 @@ export const WebviewMessages = {
   apiKeysStatus: "api-keys-status",
   saveApiKey: "save-api-key",
   deleteApiKey: "delete-api-key",
+  // Conversation messages
+  startConversation: "start-conversation",
+  sendChatMessage: "send-chat-message",
+  chatMessageReceived: "chat-message-received",
+  conversationHistory: "conversation-history",
+  loadConversation: "load-conversation",
+  chatError: "chat-error",
 } as const;
 
 /**

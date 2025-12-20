@@ -25,6 +25,7 @@
     "@clive/db": "*",
     "@clive/validators": "*",
     "@trpc/server": "^11.7.2",
+    "effect": "^3.19.9",
     "superjson": "2.2.3",
     "zod": "^4.1.13"
   },

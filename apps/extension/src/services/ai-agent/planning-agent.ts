@@ -315,10 +315,18 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           }),
 
         /**
-         * Plan Cypress tests for multiple React components
+         * Plan Cypress tests for multiple React components with conversation history
          * Analyzes files and proposes test files without writing them
+         * Supports multi-turn conversations for refining plans
          */
-        planTests: (files: string[], outputChannel?: vscode.OutputChannel) =>
+        planTestsWithHistory: (
+          files: string[],
+          conversationHistory: Array<{
+            role: "user" | "assistant" | "system";
+            content: string;
+          }>,
+          outputChannel?: vscode.OutputChannel,
+        ) =>
           Effect.gen(function* () {
             // Check configuration first
             const configured = yield* configService.isConfigured();
@@ -332,7 +340,7 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
             }
 
             yield* Effect.logDebug(
-              `[PlanningAgent] Starting test planning for ${files.length} file(s)`,
+              `[PlanningAgent] Starting test planning for ${files.length} file(s) with ${conversationHistory.length} message(s) in history`,
             );
 
             // Create tool set for planning (read-only tools + proposeTest)
@@ -345,8 +353,39 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
               proposeTest: proposeTestTool,
             };
 
-            // Build prompt for planning
-            const prompt = PromptFactory.planTests(files);
+            // Build initial prompt for planning
+            const initialPrompt = PromptFactory.planTests(files);
+
+            // Convert conversation history to AI SDK message format
+            const messages: Array<{
+              role: "user" | "assistant" | "system";
+              content: string;
+            }> = [];
+
+            // Add system message if this is the first message
+            if (conversationHistory.length === 0) {
+              messages.push({
+                role: "user",
+                content: initialPrompt,
+              });
+            } else {
+              // Include conversation history
+              messages.push(...conversationHistory);
+              // If the last message is from user, we're continuing the conversation
+              // Otherwise, add the initial prompt as context
+              if (
+                conversationHistory[conversationHistory.length - 1]?.role ===
+                "user"
+              ) {
+                // User just sent a message, continue conversation
+              } else {
+                // Add initial prompt as context for new user message
+                messages.push({
+                  role: "user",
+                  content: initialPrompt,
+                });
+              }
+            }
 
             yield* Effect.logDebug(
               "[PlanningAgent] Calling AI model for planning...",
@@ -376,15 +415,32 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
             });
 
             // Generate text using AI SDK
+            // If we have conversation history, use messages; otherwise use prompt
             const result = yield* Effect.tryPromise({
-              try: () =>
-                generateText({
-                  model: anthropic("claude-opus-4-5"),
-                  tools,
-                  stopWhen: stepCountIs(20), // Allow more steps for multiple files
-                  system: CYPRESS_PLANNING_SYSTEM_PROMPT,
-                  prompt,
-                }),
+              try: () => {
+                if (conversationHistory.length > 0) {
+                  // Use messages for conversation continuation
+                  return generateText({
+                    model: anthropic("claude-opus-4-5"),
+                    tools,
+                    messages: messages as Array<{
+                      role: "user" | "assistant";
+                      content: string;
+                    }>,
+                    stopWhen: stepCountIs(20),
+                    system: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                  });
+                } else {
+                  // Use prompt for initial request
+                  return generateText({
+                    model: anthropic("claude-opus-4-5"),
+                    tools,
+                    prompt: initialPrompt,
+                    stopWhen: stepCountIs(20),
+                    system: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                  });
+                }
+              },
               catch: (error) =>
                 new PlanningAgentError({
                   message:
@@ -478,9 +534,13 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
               `[PlanningAgent] Planning complete: ${testsWithContent.length} test(s) with content generated`,
             );
 
+            // Extract the assistant's response text
+            const assistantResponse = result.text || "";
+
             return {
               tests: testsWithContent,
-            } as TestGenerationPlan;
+              response: assistantResponse,
+            } as TestGenerationPlan & { response: string };
           }).pipe(
             Effect.catchTag("ConfigurationError", (error) =>
               Effect.fail(error),
@@ -509,6 +569,25 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
               }),
             ),
           ),
+
+        /**
+         * Plan Cypress tests for multiple React components
+         * Analyzes files and proposes test files without writing them
+         * Convenience method that calls planTestsWithHistory with empty history
+         */
+        /**
+         * Plan Cypress tests for multiple React components (convenience method)
+         * Calls planTestsWithHistory with empty history
+         */
+        planTests: (files: string[], outputChannel?: vscode.OutputChannel) =>
+          Effect.gen(function* () {
+            const service = yield* PlanningAgent;
+            return yield* service.planTestsWithHistory(
+              files,
+              [],
+              outputChannel,
+            );
+          }),
       };
     }),
     dependencies: [ConfigService.Default, VSCodeService.Default],

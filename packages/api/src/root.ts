@@ -1,11 +1,13 @@
 import { authRouter } from "./router/auth";
 import { configRouter } from "./router/config";
+import { conversationRouter } from "./router/conversation";
 import { postRouter } from "./router/post";
 import { createTRPCRouter } from "./trpc";
 
 const _appRouter = createTRPCRouter({
   auth: authRouter,
   config: configRouter,
+  conversation: conversationRouter,
   post: postRouter,
 });
 
