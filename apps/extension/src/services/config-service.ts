@@ -1,5 +1,6 @@
 import { Data, Effect } from "effect";
 import { SecretStorageService } from "./vs-code.js";
+import { ApiKeyService } from "./api-key-service.js";
 import { SecretKeys } from "../constants.js";
 
 class SecretStorageError extends Data.TaggedError("SecretStorageError")<{
@@ -47,7 +48,9 @@ export class ConfigService extends Effect.Service<ConfigService>()(
             );
           }
 
-          yield* Effect.logDebug("[ConfigService] Auth token found, fetching gateway token");
+          yield* Effect.logDebug(
+            "[ConfigService] Auth token found, fetching gateway token",
+          );
           // Fetch OIDC gateway token from app
           const gatewayToken = yield* Effect.tryPromise({
             try: async () => {
@@ -95,10 +98,29 @@ export class ConfigService extends Effect.Service<ConfigService>()(
         getAiGatewayToken: fetchGatewayToken,
 
         /**
-         * Gets the AI API key (now returns OIDC gateway token)
-         * Maintains backward compatibility with existing code
+         * Gets the AI API key
+         * First checks for stored Anthropic API key via ApiKeyService
+         * Falls back to fetching OIDC gateway token if no stored key exists
          */
-        getAiApiKey: fetchGatewayToken,
+        getAiApiKey: () =>
+          Effect.gen(function* () {
+            // First, check for stored Anthropic API key
+            const apiKeyService = yield* ApiKeyService;
+            const storedKey = yield* apiKeyService.getApiKey("anthropic");
+
+            if (storedKey && storedKey.length > 0) {
+              yield* Effect.logDebug(
+                "[ConfigService] Using stored Anthropic API key",
+              );
+              return storedKey;
+            }
+
+            // Fall back to gateway token
+            yield* Effect.logDebug(
+              "[ConfigService] No stored key, fetching gateway token",
+            );
+            return yield* fetchGatewayToken();
+          }),
 
         /**
          * Stores the auth token in secret storage
@@ -116,7 +138,9 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                     error instanceof Error ? error.message : "Unknown error",
                 }),
             });
-            yield* Effect.logDebug("[ConfigService] Auth token stored successfully");
+            yield* Effect.logDebug(
+              "[ConfigService] Auth token stored successfully",
+            );
           }),
 
         /**
@@ -134,7 +158,9 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                     error instanceof Error ? error.message : "Unknown error",
                 }),
             });
-            yield* Effect.logDebug("[ConfigService] Auth token deleted successfully");
+            yield* Effect.logDebug(
+              "[ConfigService] Auth token deleted successfully",
+            );
           }),
 
         /**
@@ -142,7 +168,9 @@ export class ConfigService extends Effect.Service<ConfigService>()(
          */
         getAuthToken: () =>
           Effect.gen(function* () {
-            yield* Effect.logDebug("[ConfigService] Getting auth token from secret storage");
+            yield* Effect.logDebug(
+              "[ConfigService] Getting auth token from secret storage",
+            );
             const secretStorage = yield* SecretStorageService;
             const token = yield* Effect.tryPromise({
               try: async () => {
@@ -163,21 +191,33 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           }),
 
         /**
-         * Checks if the service is configured (has auth token)
+         * Checks if the service is configured
+         * Returns true if either a stored API key OR auth token exists
          */
         isConfigured: () =>
           Effect.gen(function* () {
             yield* Effect.logDebug("[ConfigService] Checking if configured");
+            // Check for stored API key first
+            const apiKeyService = yield* ApiKeyService;
+            const storedKey = yield* apiKeyService.getApiKey("anthropic");
+            if (storedKey && storedKey.length > 0) {
+              yield* Effect.logDebug(
+                "[ConfigService] Configuration status: configured (stored API key)",
+              );
+              return true;
+            }
+
+            // Fall back to checking auth token
             const service = yield* ConfigService;
             const authToken = yield* service.getAuthToken();
             const configured = !!authToken && authToken.length > 0;
             yield* Effect.logDebug(
-              `[ConfigService] Configuration status: ${configured ? "configured" : "not configured"}`,
+              `[ConfigService] Configuration status: ${configured ? "configured (auth token)" : "not configured"}`,
             );
             return configured;
           }),
       };
     }),
-    dependencies: [SecretStorageService.Default],
+    dependencies: [SecretStorageService.Default, ApiKeyService.Default],
   },
 ) {}
