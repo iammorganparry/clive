@@ -1,19 +1,19 @@
 import type React from "react";
 import { useState, useCallback, useMemo } from "react";
-import { Button } from "../../components/ui/button.js";
+import { Button } from "../../../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card.js";
+} from "../../../../components/ui/card.js";
 import { Check, X, Play, Loader2 } from "lucide-react";
 import TestCard from "./test-card.js";
 import type {
   ProposedTest,
   TestExecutionStatus,
-} from "../../services/ai-agent/types.js";
+} from "../../../../services/ai-agent/types.js";
 
 interface TestGenerationPlanProps {
   tests: ProposedTest[];

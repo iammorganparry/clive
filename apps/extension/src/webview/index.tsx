@@ -8,6 +8,7 @@ import { WebviewMessages } from "../constants.js";
 import { initLogger } from "./services/logger.js";
 import { getVSCodeAPI } from "./services/vscode.js";
 import { AuthProvider } from "./contexts/auth-context.js";
+import { RouterProvider } from "./router/index.js";
 
 const vscode = getVSCodeAPI();
 
@@ -57,7 +58,9 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider vscode={vscode}>
-        <App vscode={vscode} />
+        <RouterProvider>
+          <App vscode={vscode} />
+        </RouterProvider>
       </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>,

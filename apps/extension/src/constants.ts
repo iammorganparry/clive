@@ -62,6 +62,11 @@ export const WebviewMessages = {
   // Config messages
   fetchConfig: "fetch-config",
   configUpdated: "config-updated",
+  // API key messages
+  getApiKeys: "get-api-keys",
+  apiKeysStatus: "api-keys-status",
+  saveApiKey: "save-api-key",
+  deleteApiKey: "delete-api-key",
 } as const;
 
 /**

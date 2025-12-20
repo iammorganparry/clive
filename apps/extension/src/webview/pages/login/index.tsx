@@ -3,35 +3,35 @@ import { LoginForm } from "@clive/ui";
 import { Button } from "@clive/ui/button";
 import { Input } from "@clive/ui/input";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@clive/ui/card";
-import {
-	Field,
-	FieldGroup,
-} from "@clive/ui/field";
-import { useAuth } from "../contexts/auth-context.js";
+import { Field, FieldGroup } from "@clive/ui/field";
+import { useAuth } from "../../contexts/auth-context.js";
+import { useRouter, Routes } from "../../router/index.js";
 
-interface LoginProps {
-  onLoginSuccess: () => void;
-}
-
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const { login, isLoading: authLoading, isAuthenticated, setToken } = useAuth();
+export const LoginPage: React.FC = () => {
+  const {
+    login,
+    isLoading: authLoading,
+    isAuthenticated,
+    setToken,
+  } = useAuth();
+  const { navigate } = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
 
-  // Monitor authentication state - when user becomes authenticated, call onLoginSuccess
+  // Monitor authentication state - when user becomes authenticated, navigate to dashboard
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      onLoginSuccess();
+      navigate(Routes.dashboard);
     }
-  }, [isAuthenticated, authLoading, onLoginSuccess]);
+  }, [isAuthenticated, authLoading, navigate]);
 
   const handleGitHubLogin = async () => {
     setIsLoading(true);
