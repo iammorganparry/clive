@@ -1,7 +1,7 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import type { NextRequest } from "next/server";
 
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@clive/auth";
 import { appRouter, createTRPCContext } from "@clive/api";
 import { env } from "~/env";
 import { TRPCError } from "@trpc/server";
@@ -11,13 +11,15 @@ import { TRPCError } from "@trpc/server";
  * handling a HTTP request (e.g. when you make requests from Client Components).
  */
 const createContext = async (req: NextRequest) => {
-  const a = await auth();
-  if (!a.userId) {
+  const session = await auth.api.getSession({
+    headers: req.headers,
+  });
+  if (!session?.user.id) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
   return createTRPCContext({
     headers: req.headers,
-    auth: a,
+    session,
   });
 };
 

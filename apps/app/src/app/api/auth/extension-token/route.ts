@@ -1,16 +1,20 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@clive/auth";
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 
 export async function GET() {
-  const authResult = await auth();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
-  if (!authResult.userId) {
+  if (!session?.user.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    // Get the Clerk session token (JWT)
-    const token = await authResult.getToken();
+    // Use session ID as token for extension authentication
+    // In production, you may want to generate a proper JWT token here
+    const token = session.session.id;
 
     if (!token) {
       return NextResponse.json(

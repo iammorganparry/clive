@@ -11,7 +11,7 @@ import superjson from "superjson";
 import { z, ZodError } from "zod/v4";
 
 import { db } from "@clive/db/client";
-import type { auth } from "@clerk/nextjs/server";
+import type { Session } from "@clive/auth";
 
 /**
  * 1. CONTEXT
@@ -27,18 +27,18 @@ import type { auth } from "@clerk/nextjs/server";
  */
 
 type ContextResult = {
-  auth: Awaited<ReturnType<typeof auth>>;
+  session: Session | null;
   userId: string | null;
   db: typeof db;
 };
 
 export const createTRPCContext = async (opts: {
   headers: Headers;
-  auth: Awaited<ReturnType<typeof auth>>;
+  session: Session | null;
 }): Promise<ContextResult> => {
   return {
-    auth: opts.auth,
-    userId: opts.auth.userId,
+    session: opts.session,
+    userId: opts.session?.user.id ?? null,
     db,
   };
 };

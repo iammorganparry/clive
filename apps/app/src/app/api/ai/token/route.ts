@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { getVercelOidcToken } from "@vercel/oidc";
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@clive/auth";
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 class UnauthorizedError {
@@ -14,9 +15,13 @@ class TokenGenerationError {
 }
 
 const getOidcToken = Effect.gen(function* () {
-  const authResult = yield* Effect.promise(() => auth());
+  const session = yield* Effect.promise(async () => {
+    return await auth.api.getSession({
+      headers: await headers(),
+    });
+  });
 
-  if (!authResult.userId) {
+  if (!session?.user.id) {
     return yield* Effect.fail(new UnauthorizedError());
   }
 
