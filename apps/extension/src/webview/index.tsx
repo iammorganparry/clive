@@ -9,6 +9,7 @@ import { initLogger } from "./services/logger.js";
 import { getVSCodeAPI } from "./services/vscode.js";
 import { AuthProvider } from "./contexts/auth-context.js";
 import { RouterProvider } from "./router/index.js";
+import { RpcProvider } from "./rpc/provider.js";
 
 const vscode = getVSCodeAPI();
 
@@ -57,11 +58,13 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider vscode={vscode}>
-        <RouterProvider>
-          <App vscode={vscode} />
-        </RouterProvider>
-      </AuthProvider>
+      <RpcProvider vscode={vscode}>
+        <AuthProvider vscode={vscode}>
+          <RouterProvider>
+            <App vscode={vscode} />
+          </RouterProvider>
+        </AuthProvider>
+      </RpcProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );
