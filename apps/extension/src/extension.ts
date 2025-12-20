@@ -23,9 +23,16 @@ const isDev =
   process.env.NODE_ENV === "development";
 const loggerLayer = createLoggerLayer(outputChannel, isDev);
 
+/**
+ * Extension exports for testing purposes
+ */
+export interface ExtensionExports {
+  context: vscode.ExtensionContext;
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext): ExtensionExports {
   outputChannel.appendLine("Clive extension is activating...");
   outputChannel.appendLine(
     'Congratulations, your extension "clive" is now active!',
@@ -92,6 +99,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register all commands via CommandCenter
   commandCenter.registerAll(context);
+
+  // Return exports for testing
+  return { context };
 }
 
 // This method is called when your extension is deactivated

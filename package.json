@@ -29,7 +29,9 @@
     "typecheck": "turbo run typecheck",
     "ui-add": "turbo run ui-add",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "test": "turbo run test:unit",
+    "test:int": "turbo run test:integration"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.1.0",

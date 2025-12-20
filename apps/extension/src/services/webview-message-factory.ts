@@ -1,7 +1,7 @@
 import { WebviewMessages } from "../constants.js";
+import type { BranchChangesData } from "../webview/pages/dashboard/components/branch-changes.js";
 import type { ProposedTest, TestExecutionStatus } from "./ai-agent/types.js";
 import type { CypressStatus } from "./cypress-detector.js";
-import type { BranchChangesData } from "../webview/components/branch-changes.js";
 
 /**
  * Type definitions for webview messages
