@@ -150,6 +150,7 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
   const queryClient = useQueryClient();
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<ErrorInfo | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -304,11 +305,13 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
       queryClient.invalidateQueries({ queryKey: ["api-keys-status"] });
       setApiKey("");
       setError(null);
+      setShowDeleteConfirm(false);
     },
     onError: (error) => {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to delete API key";
       setError(createErrorInfo(errorMessage));
+      setShowDeleteConfirm(false);
     },
   });
 
@@ -323,12 +326,12 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
   }, [apiKey, saveMutation]);
 
   const handleDelete = useCallback(() => {
-    if (
-      window.confirm("Are you sure you want to delete the Anthropic API key?")
-    ) {
-      deleteMutation.mutate();
-    }
+    deleteMutation.mutate();
   }, [deleteMutation]);
+
+  const handleDeleteClick = useCallback(() => {
+    setShowDeleteConfirm(true);
+  }, []);
 
   return (
     <Card>
@@ -351,63 +354,89 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
           />
         )}
 
-        {anthropicStatus?.hasKey && anthropicStatus.maskedKey && (
-          <div className="p-3 bg-muted rounded-md">
-            <p className="text-sm font-mono text-muted-foreground">
-              Current key: {anthropicStatus.maskedKey}
-            </p>
+        {anthropicStatus?.hasKey && anthropicStatus.maskedKey ? (
+          <div className="space-y-4">
+            <div className="p-3 bg-muted rounded-md">
+              <p className="text-sm font-mono text-muted-foreground">
+                Current key: {anthropicStatus.maskedKey}
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end w-full items-center">
+              {showDeleteConfirm ? (
+                <>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={isLoading || deleteMutation.isPending}
+                  >
+                    {deleteMutation.isPending
+                      ? "Deleting..."
+                      : "Confirm Delete"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isLoading || deleteMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteClick}
+                  disabled={isLoading || deleteMutation.isPending}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Input
+                type="password"
+                placeholder="Enter your Anthropic API key (sk-ant-...)"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setError(null);
+                }}
+                className="font-mono text-sm"
+                disabled={isLoading || saveMutation.isPending}
+              />
+              {error && (
+                <ErrorDisplay
+                  error={error}
+                  onRetry={
+                    error.canRetry
+                      ? () => {
+                          setError(null);
+                          if (apiKey.trim()) {
+                            handleSave();
+                          } else {
+                            refetchApiKeys();
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSave}
+                disabled={!apiKey.trim() || isLoading || saveMutation.isPending}
+                className="flex-1"
+              >
+                {saveMutation.isPending ? "Saving..." : "Save API Key"}
+              </Button>
+            </div>
+          </>
         )}
-
-        <div className="space-y-2">
-          <Input
-            type="password"
-            placeholder="Enter your Anthropic API key (sk-ant-...)"
-            value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              setError(null);
-            }}
-            className="font-mono text-sm"
-            disabled={isLoading || saveMutation.isPending}
-          />
-          {error && (
-            <ErrorDisplay
-              error={error}
-              onRetry={
-                error.canRetry
-                  ? () => {
-                      setError(null);
-                      if (apiKey.trim()) {
-                        handleSave();
-                      } else {
-                        refetchApiKeys();
-                      }
-                    }
-                  : undefined
-              }
-            />
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            onClick={handleSave}
-            disabled={!apiKey.trim() || isLoading || saveMutation.isPending}
-            className="flex-1"
-          >
-            {saveMutation.isPending ? "Saving..." : "Save API Key"}
-          </Button>
-          {anthropicStatus?.hasKey && (
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isLoading || deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          )}
-        </div>
       </CardContent>
     </Card>
   );
