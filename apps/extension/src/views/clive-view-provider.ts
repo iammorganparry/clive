@@ -11,6 +11,7 @@ import { Effect, Layer, Runtime } from "effect";
 import { ReactFileFilter as ReactFileFilterService } from "../services/react-file-filter.js";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
 import { ConfigService as ConfigServiceEffect } from "../services/config-service.js";
+import { ApiKeyService } from "../services/api-key-service.js";
 import {
   VSCodeService,
   createSecretStorageLayer,
@@ -249,6 +250,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
             ReactFileFilterService.Default,
             GitServiceEffect.Default,
             ConfigServiceEffect.Default,
+            ApiKeyService.Default,
             CypressTestAgent.Default,
             PlanningAgent.Default,
             VSCodeService.Default,
