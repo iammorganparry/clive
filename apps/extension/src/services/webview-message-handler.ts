@@ -5,12 +5,18 @@ import type { ReactFileFilter } from "./react-file-filter.js";
 import { CypressTestAgent } from "./ai-agent/agent.js";
 import type { DiffContentProvider } from "./diff-content-provider.js";
 import { WebviewMessages } from "../constants.js";
-import { Effect, Match } from "effect";
+import { Effect } from "effect";
+import { ErrorCode, getErrorMessage } from "../lib/error-messages.js";
 import { ReactFileFilter as ReactFileFilterService } from "./react-file-filter.js";
 import { ConfigService as ConfigServiceEffect } from "./config-service.js";
 import type { ConfigService } from "./config-service.js";
 import { ApiKeyService as ApiKeyServiceEffect } from "./api-key-service.js";
-import type { ApiKeyService } from "./api-key-service.js";
+import {
+  ConversationService as ConversationServiceEffect,
+  type Conversation,
+  type Message,
+} from "./conversation-service.js";
+import { PlanningAgent } from "./ai-agent/planning-agent.js";
 
 export interface MessageHandlerContext {
   webviewView: vscode.WebviewView;
@@ -283,7 +289,43 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               message: `Analyzing ${files.length} file(s) with AI model...`,
             });
 
-            const plan = yield* testAgent.planTests(files, ctx.outputChannel);
+            // Start or get conversation for the first file
+            const conversationService = yield* ConversationServiceEffect;
+            const conversation = yield* conversationService
+              .getOrCreateConversation(files[0] || "")
+              .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+            // Get conversation history if exists
+            let conversationHistory: Array<{
+              role: "user" | "assistant" | "system";
+              content: string;
+            }> = [];
+            if (conversation) {
+              const messages = yield* conversationService
+                .getMessages(conversation.id)
+                .pipe(Effect.catchAll(() => Effect.succeed([])));
+              conversationHistory = messages.map((msg) => ({
+                role: msg.role as "user" | "assistant" | "system",
+                content: msg.content,
+              }));
+            }
+
+            // Use planning agent with history
+            const planningAgent = yield* PlanningAgent;
+            const result = yield* planningAgent.planTestsWithHistory(
+              files,
+              conversationHistory,
+              ctx.outputChannel,
+            );
+
+            const plan = result as { tests: unknown[]; response?: string };
+
+            // Save assistant response to conversation if we have one
+            if (conversation && plan.response) {
+              yield* conversationService
+                .addMessage(conversation.id, "assistant", plan.response)
+                .pipe(Effect.catchAll(() => Effect.void));
+            }
 
             // Send progress update after planning completes
             ctx.webviewView.webview.postMessage({
@@ -300,6 +342,8 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             ctx.webviewView.webview.postMessage({
               command: WebviewMessages.testGenerationPlan,
               tests: plan.tests,
+              conversationId: conversation?.id,
+              sourceFile: files[0] || "",
             });
           }).pipe(
             Effect.catchAll((error) =>
@@ -562,6 +606,305 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
             ),
           ),
 
+        handleStartConversation: (
+          ctx: MessageHandlerContext,
+          sourceFile: string,
+        ) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Starting conversation for: ${sourceFile}`,
+            );
+            const conversationService = yield* ConversationServiceEffect;
+
+            // Get or create conversation
+            const conversation = yield* conversationService
+              .getOrCreateConversation(sourceFile)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Failed to start conversation: ${error.message}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+                Effect.catchTag("NetworkError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Network error starting conversation: ${error.message}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: getErrorMessage(ErrorCode.NETWORK),
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+                Effect.catchTag("AuthTokenMissingError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Auth error starting conversation: ${error.message}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: getErrorMessage(ErrorCode.AUTH_REQUIRED),
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+                Effect.catchAll((error) =>
+                  Effect.gen(function* () {
+                    const errorMessage =
+                      error instanceof Error ? error.message : "Unknown error";
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Failed to start conversation: ${errorMessage}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: getErrorMessage(ErrorCode.SERVER_ERROR),
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+              );
+
+            // Load existing messages
+            const messages = yield* conversationService
+              .getMessages(conversation.id)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.sync(() => {
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return [] as Message[];
+                  }),
+                ),
+                Effect.catchAll(() => Effect.succeed([] as Message[])),
+              );
+
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.startConversation,
+              conversationId: conversation.id,
+              sourceFile: conversation.sourceFile,
+              messages: messages.map((msg: Message) => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                createdAt: msg.createdAt.toISOString(),
+              })),
+            });
+          }),
+
+        handleSendChatMessage: (
+          ctx: MessageHandlerContext,
+          conversationId: string,
+          sourceFile: string,
+          message: string,
+        ) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Sending chat message to conversation: ${conversationId}`,
+            );
+            const conversationService = yield* ConversationServiceEffect;
+            const planningAgent = yield* PlanningAgent;
+
+            // Add user message to conversation
+            yield* conversationService
+              .addMessage(conversationId, "user", message)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Failed to save user message: ${error.message}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+                Effect.catchTag("NetworkError", (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Network error saving message: ${error.message}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: getErrorMessage(ErrorCode.NETWORK),
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+                Effect.catchAll((error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Failed to save user message: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    );
+                    // Continue even if saving fails - don't block the conversation
+                  }),
+                ),
+              );
+
+            // Get conversation history
+            const history = yield* conversationService
+              .getMessages(conversationId)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.sync(() => {
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return [] as Message[];
+                  }),
+                ),
+                Effect.catchAll(() => Effect.succeed([] as Message[])),
+              );
+
+            // Convert to planning agent format
+            const conversationHistory = history.map((msg: Message) => ({
+              role: msg.role as "user" | "assistant" | "system",
+              content: msg.content,
+            }));
+
+            // Call planning agent with history
+            const result = yield* planningAgent
+              .planTestsWithHistory(
+                [sourceFile],
+                conversationHistory,
+                ctx.outputChannel,
+              )
+              .pipe(
+                Effect.catchAll((error) =>
+                  Effect.gen(function* () {
+                    const errorMessage =
+                      error instanceof Error ? error.message : "Unknown error";
+                    yield* Effect.logDebug(
+                      `[WebviewMessageHandler] Planning agent error: ${errorMessage}`,
+                    );
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: `Failed to process your message: ${errorMessage}`,
+                    });
+                    return yield* Effect.fail(error);
+                  }),
+                ),
+              );
+
+            // Save assistant response
+            const assistantResponse =
+              (result as { response?: string }).response || "";
+            if (assistantResponse) {
+              yield* conversationService
+                .addMessage(conversationId, "assistant", assistantResponse)
+                .pipe(
+                  Effect.catchAll((error) =>
+                    Effect.gen(function* () {
+                      yield* Effect.logDebug(
+                        `[WebviewMessageHandler] Failed to save assistant message: ${error instanceof Error ? error.message : "Unknown error"}`,
+                      );
+                    }),
+                  ),
+                );
+            }
+
+            // Send response to webview
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.chatMessageReceived,
+              content: assistantResponse,
+              response: assistantResponse,
+              tests: (result as { tests?: unknown[] }).tests || [],
+            });
+
+            // If there are tests, also send the plan
+            if ((result as { tests?: unknown[] }).tests?.length) {
+              ctx.webviewView.webview.postMessage({
+                command: WebviewMessages.testGenerationPlan,
+                tests: (result as { tests?: unknown[] }).tests,
+                conversationId,
+                sourceFile,
+              });
+            }
+          }),
+
+        handleLoadConversation: (
+          ctx: MessageHandlerContext,
+          sourceFile: string,
+        ) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              `[WebviewMessageHandler] Loading conversation for: ${sourceFile}`,
+            );
+            const conversationService = yield* ConversationServiceEffect;
+
+            const conversation = yield* conversationService
+              .getOrCreateConversation(sourceFile)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.sync(() => {
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return null as Conversation | null;
+                  }),
+                ),
+                Effect.catchTag("NetworkError", (error) =>
+                  Effect.sync(() => {
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: getErrorMessage(ErrorCode.NETWORK),
+                    });
+                    return null as Conversation | null;
+                  }),
+                ),
+                Effect.catchAll(() =>
+                  Effect.succeed(null as Conversation | null),
+                ),
+              );
+
+            if (!conversation) {
+              ctx.webviewView.webview.postMessage({
+                command: WebviewMessages.conversationHistory,
+                messages: [],
+              });
+              return;
+            }
+
+            const messages = yield* conversationService
+              .getMessages(conversation.id)
+              .pipe(
+                Effect.catchTag("ApiError", (error) =>
+                  Effect.sync(() => {
+                    ctx.webviewView.webview.postMessage({
+                      command: WebviewMessages.chatError,
+                      message: error.message,
+                    });
+                    return [] as Message[];
+                  }),
+                ),
+                Effect.catchAll(() => Effect.succeed([] as Message[])),
+              );
+
+            ctx.webviewView.webview.postMessage({
+              command: WebviewMessages.conversationHistory,
+              conversationId: conversation.id,
+              messages: messages.map((msg: Message) => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                createdAt: msg.createdAt.toISOString(),
+              })),
+            });
+          }),
+
         checkAndSendCypressStatus: (ctx: MessageHandlerContext) =>
           Effect.gen(function* () {
             yield* Effect.logDebug(
@@ -767,56 +1110,67 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
               `[WebviewMessageHandler] Handling message: ${message.command}`,
             );
             const service = yield* WebviewMessageHandler;
-            yield* Match.value(message.command).pipe(
-              Match.when(WebviewMessages.ready, () => service.handleReady(ctx)),
-              Match.when(WebviewMessages.refreshStatus, () =>
-                service.handleRefreshStatus(ctx),
-              ),
-              Match.when(WebviewMessages.openLoginPage, () =>
-                service.handleOpenLoginPage(message.url as string | undefined),
-              ),
-              Match.when(WebviewMessages.openSignupPage, () =>
-                service.handleOpenSignupPage(message.url as string | undefined),
-              ),
-              Match.when(WebviewMessages.checkSession, () =>
-                service.handleCheckSession(ctx),
-              ),
-              Match.when(WebviewMessages.logout, () =>
-                service.handleLogout(ctx),
-              ),
-              Match.when(WebviewMessages.storeAuthToken, () =>
-                service.handleStoreAuthToken(ctx, message.token as string),
-              ),
-              Match.when(WebviewMessages.authTokenReceived, () =>
-                service.handleAuthTokenReceived(),
-              ),
-              Match.when(WebviewMessages.log, () =>
-                service.handleLog(
+
+            // Use switch statement to avoid Match's 20 case limit
+            switch (message.command) {
+              case WebviewMessages.ready:
+                yield* service.handleReady(ctx);
+                break;
+              case WebviewMessages.refreshStatus:
+                yield* service.handleRefreshStatus(ctx);
+                break;
+              case WebviewMessages.openLoginPage:
+                yield* service.handleOpenLoginPage(
+                  message.url as string | undefined,
+                );
+                break;
+              case WebviewMessages.openSignupPage:
+                yield* service.handleOpenSignupPage(
+                  message.url as string | undefined,
+                );
+                break;
+              case WebviewMessages.checkSession:
+                yield* service.handleCheckSession(ctx);
+                break;
+              case WebviewMessages.logout:
+                yield* service.handleLogout(ctx);
+                break;
+              case WebviewMessages.storeAuthToken:
+                yield* service.handleStoreAuthToken(
+                  ctx,
+                  message.token as string,
+                );
+                break;
+              case WebviewMessages.authTokenReceived:
+                yield* service.handleAuthTokenReceived();
+                break;
+              case WebviewMessages.log:
+                yield* service.handleLog(
                   ctx,
                   message.data as {
                     level?: string;
                     message: string;
                     data?: unknown;
                   },
-                ),
-              ),
-              Match.when(WebviewMessages.getBranchChanges, () =>
-                service.handleGetBranchChanges(ctx),
-              ),
-              Match.when(WebviewMessages.createTestForFile, () =>
-                service.handleCreateTestForFile(
+                );
+                break;
+              case WebviewMessages.getBranchChanges:
+                yield* service.handleGetBranchChanges(ctx);
+                break;
+              case WebviewMessages.createTestForFile:
+                yield* service.handleCreateTestForFile(
                   ctx,
                   message.filePath as string,
-                ),
-              ),
-              Match.when(WebviewMessages.planTestGeneration, () =>
-                service.handlePlanTestGeneration(
+                );
+                break;
+              case WebviewMessages.planTestGeneration:
+                yield* service.handlePlanTestGeneration(
                   ctx,
                   message.files as string[],
-                ),
-              ),
-              Match.when(WebviewMessages.confirmTestPlan, () =>
-                service.handleConfirmTestPlan(
+                );
+                break;
+              case WebviewMessages.confirmTestPlan:
+                yield* service.handleConfirmTestPlan(
                   ctx,
                   message.acceptedIds as string[],
                   message.tests as Array<{
@@ -826,10 +1180,10 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                     description: string;
                     isUpdate: boolean;
                   }>,
-                ),
-              ),
-              Match.when(WebviewMessages.previewTestDiff, () =>
-                service.handlePreviewTestDiff(
+                );
+                break;
+              case WebviewMessages.previewTestDiff:
+                yield* service.handlePreviewTestDiff(
                   ctx,
                   message.test as
                     | {
@@ -840,31 +1194,53 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
                         isUpdate: boolean;
                       }
                     | undefined,
-                ),
-              ),
-              Match.when(WebviewMessages.fetchConfig, () =>
-                service.handleFetchConfig(),
-              ),
-              Match.when(WebviewMessages.configUpdated, () =>
-                service.handleConfigUpdated(),
-              ),
-              Match.when(WebviewMessages.getApiKeys, () =>
-                service.handleGetApiKeys(ctx),
-              ),
-              Match.when(WebviewMessages.saveApiKey, () =>
-                service.handleSaveApiKey(
+                );
+                break;
+              case WebviewMessages.fetchConfig:
+                yield* service.handleFetchConfig();
+                break;
+              case WebviewMessages.configUpdated:
+                yield* service.handleConfigUpdated();
+                break;
+              case WebviewMessages.getApiKeys:
+                yield* service.handleGetApiKeys(ctx);
+                break;
+              case WebviewMessages.saveApiKey:
+                yield* service.handleSaveApiKey(
                   ctx,
                   message.provider as string,
                   message.key as string,
-                ),
-              ),
-              Match.when(WebviewMessages.deleteApiKey, () =>
-                service.handleDeleteApiKey(ctx, message.provider as string),
-              ),
-              Match.orElse(() =>
-                Effect.die(`Unknown command: ${message.command}`),
-              ),
-            );
+                );
+                break;
+              case WebviewMessages.deleteApiKey:
+                yield* service.handleDeleteApiKey(
+                  ctx,
+                  message.provider as string,
+                );
+                break;
+              case WebviewMessages.startConversation:
+                yield* service.handleStartConversation(
+                  ctx,
+                  message.sourceFile as string,
+                );
+                break;
+              case WebviewMessages.sendChatMessage:
+                yield* service.handleSendChatMessage(
+                  ctx,
+                  message.conversationId as string,
+                  message.sourceFile as string,
+                  message.message as string,
+                );
+                break;
+              case WebviewMessages.loadConversation:
+                yield* service.handleLoadConversation(
+                  ctx,
+                  message.sourceFile as string,
+                );
+                break;
+              default:
+                yield* Effect.die(`Unknown command: ${message.command}`);
+            }
           }),
       };
     }),
@@ -872,6 +1248,8 @@ export class WebviewMessageHandler extends Effect.Service<WebviewMessageHandler>
       ReactFileFilterService.Default,
       ConfigServiceEffect.Default,
       ApiKeyServiceEffect.Default,
+      ConversationServiceEffect.Default,
+      PlanningAgent.Default,
     ],
   },
 ) {}

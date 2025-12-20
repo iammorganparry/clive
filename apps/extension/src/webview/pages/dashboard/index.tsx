@@ -12,6 +12,7 @@ import type {
 import BranchChanges from "./components/branch-changes.js";
 import TestGenerationPlan from "./components/test-generation-plan.js";
 import Welcome from "./components/welcome.js";
+import ChatPanel from "./components/chat-panel.js";
 
 interface DashboardPageProps {
   vscode: VSCodeAPI;
@@ -48,6 +49,8 @@ interface MessageData {
   id?: string;
   executionStatus?: TestExecutionStatus;
   testFilePath?: string;
+  conversationId?: string;
+  sourceFile?: string;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -67,6 +70,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [testFilePaths, setTestFilePaths] = useState<Map<string, string>>(
     new Map(),
   );
+  // Conversation state
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [activeSourceFile, setActiveSourceFile] = useState<
+    string | undefined
+  >();
 
   // Handle incoming messages from extension
   const handleMessage = useCallback(
@@ -117,6 +125,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           setTestStatuses(initialStatuses);
           setTestErrors(new Map());
           setTestFilePaths(new Map());
+        }
+        // Set conversation ID and source file if provided
+        if (message.conversationId) {
+          setConversationId(message.conversationId);
+        }
+        if (message.sourceFile) {
+          setActiveSourceFile(message.sourceFile);
+        }
+      }
+
+      // Handle conversation started
+      if (message.command === WebviewMessages.startConversation) {
+        if (message.conversationId) {
+          setConversationId(message.conversationId);
+        }
+        if (message.sourceFile) {
+          setActiveSourceFile(message.sourceFile);
         }
       }
 
@@ -306,16 +331,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   return (
     <div className="w-full space-y-4 p-4">
       {testPlan.length > 0 ? (
-        <TestGenerationPlan
-          tests={testPlan}
-          testStatuses={testStatuses}
-          testErrors={testErrors}
-          testFilePaths={testFilePaths}
-          onAccept={handleAcceptTest}
-          onReject={handleRejectTest}
-          onGenerate={handleGenerateTests}
-          onPreviewDiff={handlePreviewTestDiff}
-        />
+        <div className="space-y-4">
+          <TestGenerationPlan
+            tests={testPlan}
+            testStatuses={testStatuses}
+            testErrors={testErrors}
+            testFilePaths={testFilePaths}
+            onAccept={handleAcceptTest}
+            onReject={handleRejectTest}
+            onGenerate={handleGenerateTests}
+            onPreviewDiff={handlePreviewTestDiff}
+          />
+          {activeSourceFile && (
+            <ChatPanel
+              vscode={vscode}
+              sourceFile={activeSourceFile}
+              conversationId={conversationId}
+            />
+          )}
+        </div>
       ) : (
         <BranchChanges
           changes={branchChanges ?? null}

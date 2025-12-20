@@ -102,6 +102,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.53",
     "@clerk/clerk-react": "5.57.0",
+    "@clive/db": "*",
     "@clive/ui": "*",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",

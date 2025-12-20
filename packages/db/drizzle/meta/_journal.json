@@ -8,6 +8,20 @@
       "when": 1766216904528,
       "tag": "0000_early_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1766227765124,
+      "tag": "0001_tearful_lady_ursula",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1766227937652,
+      "tag": "0002_thin_ravenous",
+      "breakpoints": true
     }
   ]
 }

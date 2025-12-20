@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -83,4 +83,41 @@ export const verification = pgTable("verification", {
     .notNull()
     .defaultNow()
     .$onUpdateFn(() => sql`now()`),
+});
+
+export const conversationStatusEnum = pgEnum("conversation_status", [
+  "planning",
+  "confirmed",
+  "completed",
+]);
+
+export const messageRoleEnum = pgEnum("message_role", [
+  "user",
+  "assistant",
+  "system",
+]);
+
+export const conversation = pgTable("conversation", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  sourceFile: text("source_file").notNull(),
+  status: conversationStatusEnum("status").notNull().default("planning"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdateFn(() => sql`now()`),
+});
+
+export const conversationMessage = pgTable("conversation_message", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversation.id, { onDelete: "cascade" }),
+  role: messageRoleEnum("role").notNull(),
+  content: text("content").notNull(),
+  toolCalls: text("tool_calls"), // JSON string of tool calls if any
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
