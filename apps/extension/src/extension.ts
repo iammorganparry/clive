@@ -11,6 +11,10 @@ import { createSecretStorageLayer, VSCodeService } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
 import { CodebaseIndexingService } from "./services/codebase-indexing-service.js";
 import { RepositoryService } from "./services/repository-service.js";
+import {
+  FileWatcherService,
+  FileWatcherDisposable,
+} from "./services/file-watcher-service.js";
 
 const commandCenter = new CommandCenter();
 
@@ -110,6 +114,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     Layer.merge(ApiKeyService.Default, loggerLayer),
   );
 
+  // Full service layer including CodebaseIndexingService and FileWatcherService
+  const fullIndexingLayer = Layer.merge(
+    Layer.merge(CodebaseIndexingService.Default, FileWatcherService.Default),
+    indexingLayer,
+  );
+
+  // Create file watcher disposable for incremental indexing
+  const fileWatcherDisposable = new FileWatcherDisposable();
+  fileWatcherDisposable.setOutputChannel(outputChannel);
+  fileWatcherDisposable.setServiceLayer(fullIndexingLayer);
+  context.subscriptions.push(fileWatcherDisposable);
+
   Effect.gen(function* () {
     // Check authentication before indexing
     const configService = yield* ConfigService;
@@ -137,13 +153,24 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
         }),
       ),
     );
+
+    // Start file watcher after initial indexing completes
+    yield* Effect.logDebug(
+      "[Extension] Starting file watcher for incremental indexing...",
+    );
   })
     .pipe(
-      Effect.provide(
-        Layer.merge(CodebaseIndexingService.Default, indexingLayer),
-      ),
+      Effect.provide(fullIndexingLayer),
       Runtime.runPromise(Runtime.defaultRuntime),
     )
+    .then(() => {
+      // Start file watcher after initial indexing (outside Effect context)
+      fileWatcherDisposable.start().catch((error) => {
+        outputChannel.appendLine(
+          `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    })
     .catch(() => {
       // Ignore indexing errors - extension should still work without indexing
       outputChannel.appendLine(
