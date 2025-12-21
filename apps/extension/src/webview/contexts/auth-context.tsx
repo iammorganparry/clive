@@ -11,6 +11,7 @@ export interface UserData {
   lastName?: string;
   username?: string;
   imageUrl?: string;
+  organizationId?: string;
   [key: string]: unknown;
 }
 
@@ -60,6 +61,7 @@ function decodeJWT(token: string): UserData | null {
 
     // Extract user data from Better Auth JWT payload
     // Better Auth uses 'id' for userId, 'email', 'name', 'image', etc.
+    // Organization plugin adds 'activeOrganizationId' to session
     return {
       userId:
         (parsed.id as string) ||
@@ -81,6 +83,11 @@ function decodeJWT(token: string): UserData | null {
         (parsed.image as string) || // Better Auth uses 'image' field
         (parsed.image_url as string) ||
         (parsed.imageUrl as string) ||
+        undefined,
+      organizationId:
+        (parsed.activeOrganizationId as string) ||
+        (parsed.organization_id as string) ||
+        (parsed.organizationId as string) ||
         undefined,
       ...parsed,
     };

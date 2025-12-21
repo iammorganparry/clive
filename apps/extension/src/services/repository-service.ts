@@ -49,19 +49,29 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
       const getUserId = () => configService.getUserId();
 
       /**
+       * Get current organization ID from auth token
+       * Delegates to ConfigService which handles JWT decoding
+       */
+      const getOrganizationId = () => configService.getOrganizationId();
+
+      /**
        * Upsert a repository (create or update)
+       * If organizationId is provided, the repository is scoped to the organization
        */
       const upsertRepository = (
         userId: string,
         name: string,
         rootPath: string,
+        organizationId?: string | null,
       ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Upserting repository: ${name} at ${rootPath}`,
+            `[RepositoryService] Upserting repository: ${name} at ${rootPath} (org: ${organizationId ?? "none"})`,
           );
 
-          const repositoryId = `${userId}-${rootPath}`;
+          const repositoryId = organizationId
+            ? `${organizationId}-${rootPath}`
+            : `${userId}-${rootPath}`;
 
           const repository = yield* Effect.tryPromise({
             try: async () => {
@@ -70,6 +80,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
                 .values({
                   id: repositoryId,
                   userId,
+                  organizationId: organizationId ?? undefined,
                   name,
                   rootPath,
                   lastIndexedAt: new Date(),
@@ -79,6 +90,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
                   set: {
                     name,
                     rootPath,
+                    organizationId: organizationId ?? undefined,
                     lastIndexedAt: new Date(),
                     updatedAt: new Date(),
                   },
@@ -103,15 +115,34 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
       /**
        * Get repository by root path
+       * If organizationId is provided, looks up by organization first
        */
-      const getRepository = (userId: string, rootPath: string) =>
+      const getRepository = (
+        userId: string,
+        rootPath: string,
+        organizationId?: string | null,
+      ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Getting repository: ${rootPath}`,
+            `[RepositoryService] Getting repository: ${rootPath} (org: ${organizationId ?? "user"})`,
           );
 
           const repository = yield* Effect.tryPromise({
             try: async () => {
+              // If organization ID is provided, prioritize org-scoped lookup
+              if (organizationId) {
+                const [orgResult] = await db
+                  .select()
+                  .from(repositories)
+                  .where(
+                    sql`${repositories.organizationId} = ${organizationId} AND ${repositories.rootPath} = ${rootPath}`,
+                  )
+                  .limit(1);
+
+                if (orgResult) return orgResult;
+              }
+
+              // Fall back to user-scoped lookup
               const [result] = await db
                 .select()
                 .from(repositories)
@@ -336,13 +367,17 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
       /**
        * Get indexing status for a repository
        */
-      const getIndexingStatus = (userId: string, rootPath: string) =>
+      const getIndexingStatus = (
+        userId: string,
+        rootPath: string,
+        organizationId?: string | null,
+      ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Getting indexing status for: ${rootPath}`,
+            `[RepositoryService] Getting indexing status for: ${rootPath} (org: ${organizationId ?? "user"})`,
           );
 
-          const repo = yield* getRepository(userId, rootPath);
+          const repo = yield* getRepository(userId, rootPath, organizationId);
           if (!repo) {
             return {
               status: "idle" as const,
@@ -383,6 +418,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
       return {
         getUserId,
+        getOrganizationId,
         upsertRepository,
         getRepository,
         upsertFile,

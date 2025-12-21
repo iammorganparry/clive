@@ -2,7 +2,7 @@ import { db } from "@clive/db/client";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { jwt, bearer } from "better-auth/plugins";
+import { jwt, bearer, organization } from "better-auth/plugins";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -41,6 +41,11 @@ export const auth = betterAuth({
     nextCookies(),
     jwt(), // Provides /api/auth/token endpoint for JWT generation
     bearer(), // Enables Bearer token validation in getSession()
+    organization({
+      allowUserToCreateOrganization: true,
+      creatorRole: "owner",
+      membershipLimit: 100,
+    }),
   ],
 });
 

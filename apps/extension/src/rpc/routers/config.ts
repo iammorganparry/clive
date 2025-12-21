@@ -164,17 +164,19 @@ export const configRouter = {
       const repositoryService = yield* RepositoryService;
       const indexingService = yield* CodebaseIndexingService;
 
-      // Get userId
+      // Get userId and organizationId
       const userId = yield* configService.getUserId();
+      const organizationId = yield* configService.getOrganizationId();
 
       // Get workspace root
       const workspaceRoot = yield* getWorkspaceRoot();
       const rootPath = workspaceRoot.fsPath;
 
-      // Get repository status
+      // Get repository status (scoped to organization if available)
       const repoStatus = yield* repositoryService.getIndexingStatus(
         userId,
         rootPath,
+        organizationId,
       );
 
       // Get current indexing state
