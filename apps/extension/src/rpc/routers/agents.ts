@@ -85,10 +85,9 @@ export const agentsRouter = {
             return { tests: [] as ProposedTest[], error: "No files provided" };
           }
 
-          yield* Effect.promise(() =>
-            vscode.window.showInformationMessage(
-              `Planning Cypress tests for ${input.files.length} file(s)...`,
-            ),
+          // Fire-and-forget informational notification
+          vscode.window.showInformationMessage(
+            `Planning Cypress tests for ${input.files.length} file(s)...`,
           );
 
           const planningAgent = yield* PlanningAgent;
@@ -240,9 +239,6 @@ export const agentsRouter = {
 
       const result = await Runtime.runPromise(runtime)(
         Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[RpcRouter] Creating test for file: ${input.sourceFilePath}`,
-          );
           const testAgent = yield* CypressTestAgent;
           const isConfigured = yield* testAgent.isConfigured();
 
@@ -258,10 +254,9 @@ export const agentsRouter = {
             };
           }
 
-          yield* Effect.promise(() =>
-            vscode.window.showInformationMessage(
-              `Creating Cypress test for ${input.sourceFilePath}...`,
-            ),
+          // Fire-and-forget informational notification
+          vscode.window.showInformationMessage(
+            `Creating Cypress test for ${input.sourceFilePath}...`,
           );
 
           const testResult = yield* testAgent.generateTest(
@@ -278,10 +273,9 @@ export const agentsRouter = {
           );
 
           if (testResult.success) {
-            yield* Effect.promise(() =>
-              vscode.window.showInformationMessage(
-                `Cypress test generated successfully: ${testResult.testFilePath || input.sourceFilePath}`,
-              ),
+            // Fire-and-forget success notification
+            vscode.window.showInformationMessage(
+              `Cypress test generated successfully: ${testResult.testFilePath || input.sourceFilePath}`,
             );
 
             return {

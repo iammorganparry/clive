@@ -39,10 +39,10 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
        */
       const maskApiKey = (key: string, prefix: string): string => {
         if (key.length <= prefix.length + 4) {
-          return prefix + "****";
+          return `${prefix}****`;
         }
         const visibleChars = 4;
-        return prefix + "..." + key.slice(-visibleChars);
+        return `${prefix}...${key.slice(-visibleChars)}`;
       };
 
       /**

@@ -126,7 +126,7 @@ export class GitignoreReader extends Effect.Service<GitignoreReader>()(
       };
 
       // Helper function to find gitignore files
-      const findGitignoreFilesHelper = (workspaceRoot: Uri) =>
+      const findGitignoreFilesHelper = (_workspaceRoot: Uri) =>
         Effect.gen(function* () {
           const vscode = yield* VSCodeService;
           const gitignoreFiles = yield* Effect.tryPromise({

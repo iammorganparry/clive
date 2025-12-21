@@ -39,7 +39,10 @@
           "id": "clive.mainView",
           "icon": "*",
           "name": "Clive",
-          "type": "webview"
+          "type": "webview",
+          "webviewOptions": {
+            "retainContextWhenHidden": true
+          }
         }
       ]
     },

@@ -76,6 +76,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const webviewProviderDisposable = vscode.window.registerWebviewViewProvider(
     CliveViewProvider.viewType,
     provider,
+    { webviewOptions: { retainContextWhenHidden: true } },
   );
 
   context.subscriptions.push(webviewProviderDisposable);

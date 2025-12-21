@@ -1,4 +1,4 @@
-import { Effect, Runtime } from "effect";
+import { type Effect, Runtime } from "effect";
 import {
   isZodSchema,
   type RpcMessage,
@@ -113,23 +113,23 @@ export async function handleRpcMessage(
           onProgress,
         });
 
-        // Iterate through the generator
-        let result: unknown;
-        for await (const value of generator) {
+        // Iterate through the generator manually to capture return value
+        let iterResult = await generator.next();
+
+        while (!iterResult.done) {
           // Send intermediate values
           const update: RpcSubscriptionUpdate = {
             id,
             type: "data",
-            data: value,
+            data: iterResult.value,
           };
           ctx.webviewView.webview.postMessage(update);
+
+          iterResult = await generator.next();
         }
 
-        // Get the return value (from the last return statement in the generator)
-        const iterResult = await generator.next();
-        if (iterResult.done) {
-          result = iterResult.value;
-        }
+        // Capture the return value from the final done: true result
+        const result: unknown = iterResult.value;
 
         // Send completion
         const completeUpdate: RpcSubscriptionUpdate = {
@@ -181,8 +181,14 @@ function getProcedure(
   unknown,
   "query" | "mutation" | "subscription"
 > | null {
-  let current: RouterRecord | Procedure<unknown, unknown, unknown, any> =
-    router;
+  let current:
+    | RouterRecord
+    | Procedure<
+        unknown,
+        unknown,
+        unknown,
+        "query" | "mutation" | "subscription"
+      > = router;
 
   for (const segment of path) {
     if (!current || typeof current !== "object") {
@@ -196,7 +202,12 @@ function getProcedure(
 
     current = (current as RouterRecord)[segment] as
       | RouterRecord
-      | Procedure<unknown, unknown, unknown, any>;
+      | Procedure<
+          unknown,
+          unknown,
+          unknown,
+          "query" | "mutation" | "subscription"
+        >;
   }
 
   if (current && typeof current === "object" && "_def" in current) {

@@ -188,6 +188,11 @@ export function useRpcSubscription<TInput, TOutput, TProgress = unknown>(
   const [error, setError] = useState<Error | null>(null);
   const subscriptionIdRef = useRef<string | null>(null);
 
+  // Store callbacks in a ref to avoid stale closures
+  // Update ref on every render to always have latest callbacks
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const subscribe = useCallback(
     (input?: TInput) => {
       const id = generateId();
@@ -199,32 +204,32 @@ export function useRpcSubscription<TInput, TOutput, TProgress = unknown>(
         id,
         type: "subscription",
         path: [...path],
-        input: input ?? options?.input,
+        input: input ?? optionsRef.current?.input,
       };
 
       subscriptionHandlers.set(id, {
         onData: (progressValue: unknown) => {
           setStatus("active");
           setProgressData(progressValue as TProgress);
-          options?.onData?.(progressValue as TProgress);
+          optionsRef.current?.onData?.(progressValue as TProgress);
         },
         onComplete: (result: unknown) => {
           setStatus("complete");
           setData(result as TOutput);
-          options?.onComplete?.(result as TOutput);
+          optionsRef.current?.onComplete?.(result as TOutput);
           subscriptionIdRef.current = null;
         },
         onError: (err: Error) => {
           setStatus("error");
           setError(err);
-          options?.onError?.(err);
+          optionsRef.current?.onError?.(err);
           subscriptionIdRef.current = null;
         },
       });
 
       vscode.postMessage(message);
     },
-    [vscode, path, options],
+    [vscode, path],
   );
 
   const unsubscribe = useCallback(() => {
