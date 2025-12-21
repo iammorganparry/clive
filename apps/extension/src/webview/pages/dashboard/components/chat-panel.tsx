@@ -10,8 +10,8 @@ import {
   CardTitle,
 } from "../../../../components/ui/card.js";
 import { Input } from "../../../../components/ui/input.js";
-import { WebviewMessages } from "../../../../constants.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
+import { useRpc } from "../../../rpc/provider.js";
 
 export interface ChatMessage {
   id: string;
@@ -28,15 +28,37 @@ interface ChatPanelProps {
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({
-  vscode,
+  vscode: _vscode,
   sourceFile,
-  conversationId,
+  conversationId: _conversationId,
   initialMessages = [],
 }) => {
+  const rpc = useRpc();
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load conversation history
+  const { data: historyData } = rpc.conversations.getHistory.useQuery({
+    input: { sourceFile },
+    enabled: !!sourceFile,
+  });
+
+  // Update messages when history loads
+  useEffect(() => {
+    if (historyData?.messages) {
+      const historyMessages: ChatMessage[] = historyData.messages.map(
+        (msg) => ({
+          id: msg.id,
+          role: msg.role as "user" | "assistant" | "system",
+          content: msg.content,
+          timestamp: new Date(msg.createdAt),
+        }),
+      );
+      setMessages(historyMessages);
+    }
+  }, [historyData]);
 
   // Scroll to bottom when messages change
   // biome-ignore lint/correctness/useExhaustiveDependencies: We need to scroll to the bottom when the messages change
@@ -44,54 +66,53 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Listen for incoming chat messages
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      const message = event.data;
-      if (message.command === WebviewMessages.chatMessageReceived) {
-        const newMessage: ChatMessage = {
-          id: `msg-${Date.now()}`,
-          role: "assistant",
-          content: message.content || message.response || "",
-          timestamp: new Date(),
+  // Start conversation if needed
+  const startConversationMutation = rpc.conversations.start.useMutation();
+
+  // Send message subscription
+  const sendMessageSubscription = rpc.conversations.sendMessage.useSubscription(
+    {
+      enabled: false,
+      onData: (data: unknown) => {
+        const progress = data as {
+          type?: string;
+          content?: string;
+          tests?: unknown[];
         };
-        setMessages((prev) => [...prev, newMessage]);
+        if (progress.type === "message" && progress.content) {
+          const newMessage: ChatMessage = {
+            id: `msg-${Date.now()}`,
+            role: "assistant",
+            content: progress.content,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, newMessage]);
+          setIsLoading(false);
+        } else if (progress.type === "tests") {
+          // Handle tests if needed
+          setIsLoading(false);
+        }
+      },
+      onComplete: () => {
         setIsLoading(false);
-      } else if (message.command === WebviewMessages.chatError) {
-        // Display error as a system message
+      },
+      onError: (error) => {
         const errorMessage: ChatMessage = {
           id: `error-${Date.now()}`,
           role: "system",
-          content: message.message || "An error occurred. Please try again.",
+          content:
+            error instanceof Error
+              ? error.message
+              : "An error occurred. Please try again.",
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errorMessage]);
         setIsLoading(false);
-      } else if (message.command === WebviewMessages.conversationHistory) {
-        if (message.messages) {
-          const historyMessages: ChatMessage[] = message.messages.map(
-            (msg: {
-              id: string;
-              role: string;
-              content: string;
-              createdAt: string;
-            }) => ({
-              id: msg.id,
-              role: msg.role as "user" | "assistant" | "system",
-              content: msg.content,
-              timestamp: new Date(msg.createdAt),
-            }),
-          );
-          setMessages(historyMessages);
-        }
-      }
-    };
+      },
+    },
+  );
 
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback(async () => {
     if (!inputValue.trim() || isLoading) {
       return;
     }
@@ -104,17 +125,47 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const messageContent = inputValue.trim();
     setInputValue("");
     setIsLoading(true);
 
-    // Send message to extension
-    vscode.postMessage({
-      command: WebviewMessages.sendChatMessage,
-      conversationId,
-      sourceFile,
-      message: userMessage.content,
-    });
-  }, [inputValue, isLoading, vscode, conversationId, sourceFile]);
+    try {
+      // Ensure we have a conversation
+      let currentConversationId = _conversationId;
+      if (!currentConversationId) {
+        const conversation = await startConversationMutation.mutateAsync({
+          sourceFile,
+        });
+        currentConversationId = conversation.conversationId;
+      }
+
+      // Send message via subscription
+      sendMessageSubscription.subscribe({
+        conversationId: currentConversationId,
+        sourceFile,
+        message: messageContent,
+      });
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: "system",
+        content:
+          error instanceof Error
+            ? error.message
+            : "An error occurred. Please try again.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      setIsLoading(false);
+    }
+  }, [
+    inputValue,
+    isLoading,
+    sourceFile,
+    _conversationId,
+    startConversationMutation,
+    sendMessageSubscription,
+  ]);
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {

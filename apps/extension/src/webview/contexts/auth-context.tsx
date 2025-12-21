@@ -1,9 +1,8 @@
 import { createContext, useContext, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { WebviewMessages } from "../../constants.js";
 import type { VSCodeAPI } from "../services/vscode.js";
-import { useMessageHandler } from "../hooks/use-message-handler.js";
+import { useRpc } from "../rpc/provider.js";
 
 export interface UserData {
   userId: string;
@@ -77,9 +76,7 @@ function decodeJWT(token: string): UserData | null {
         (parsed.lastName as string) ||
         undefined,
       username:
-        (parsed.username as string) ||
-        (parsed.name as string) ||
-        undefined,
+        (parsed.username as string) || (parsed.name as string) || undefined,
       imageUrl:
         (parsed.image as string) || // Better Auth uses 'image' field
         (parsed.image_url as string) ||
@@ -95,9 +92,19 @@ function decodeJWT(token: string): UserData | null {
 
 export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
   const queryClient = useQueryClient();
+  const rpc = useRpc();
 
-  // Load token from VS Code state using React Query
-  const { data: token, isLoading } = useQuery<string | null>({
+  // Check session using RPC
+  const {
+    data: sessionData,
+    isLoading: isCheckingSession,
+    refetch: refetchSession,
+  } = rpc.auth.checkSession.useQuery();
+
+  // Load token from VS Code state using React Query (fallback)
+  const { data: tokenFromState, isLoading: isLoadingState } = useQuery<
+    string | null
+  >({
     queryKey: AUTH_TOKEN_QUERY_KEY,
     queryFn: () => {
       try {
@@ -115,11 +122,22 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
     gcTime: Infinity, // Keep in cache indefinitely
   });
 
+  // Prefer token from RPC session check, fallback to state
+  const token = sessionData?.token ?? tokenFromState ?? null;
+  const isLoading = isCheckingSession || isLoadingState;
+
   // Decode user data from token
   const user = useMemo(() => {
     if (!token) return null;
     return decodeJWT(token);
   }, [token]);
+
+  // Store token mutation
+  const storeTokenMutation = rpc.auth.storeToken.useMutation({
+    onSuccess: () => {
+      refetchSession();
+    },
+  });
 
   // Save token to VS Code state and update React Query cache
   const saveToken = useCallback(
@@ -134,57 +152,38 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
         vscode.setState(newState);
         // Update React Query cache
         queryClient.setQueryData(AUTH_TOKEN_QUERY_KEY, newToken);
-        // Persist token to secret storage via extension
+        // Persist token to secret storage via RPC
         if (newToken) {
-          vscode.postMessage({
-            command: WebviewMessages.storeAuthToken,
-            token: newToken,
-          });
+          storeTokenMutation.mutate({ token: newToken });
         }
       } catch (error) {
         console.error("Failed to save token to VS Code state:", error);
       }
     },
-    [vscode, queryClient],
+    [vscode, queryClient, storeTokenMutation],
   );
 
-  // Listen for auth token messages from extension
-  useMessageHandler(
-    useCallback(
-      (event: MessageEvent) => {
-        const message = event.data;
-        if (message.command === WebviewMessages.authToken) {
-          const tokenValue = (message as { token?: string }).token;
-          if (tokenValue) {
-            saveToken(tokenValue);
-            // Notify extension that token was received
-            vscode.postMessage({
-              command: WebviewMessages.authTokenReceived,
-            });
-          }
-        }
-      },
-      [vscode, saveToken],
-    ),
-  );
+  const loginMutation = rpc.auth.openLogin.useMutation();
+  const logoutMutation = rpc.auth.logout.useMutation({
+    onSuccess: () => {
+      saveToken(null);
+      refetchSession();
+    },
+  });
 
   const login = useCallback(async () => {
-    // Open login page in browser via extension
-    vscode.postMessage({
-      command: WebviewMessages.openLoginPage,
-    });
-  }, [vscode]);
+    // Open login page in browser via RPC
+    loginMutation.mutate({ url: undefined });
+  }, [loginMutation]);
 
   const logout = useCallback(() => {
-    saveToken(null);
-  }, [saveToken]);
+    logoutMutation.mutate();
+  }, [logoutMutation]);
 
   const checkSession = useCallback(() => {
-    // Request session check from extension
-    vscode.postMessage({
-      command: WebviewMessages.checkSession,
-    });
-  }, [vscode]);
+    // Request session check from extension via RPC
+    refetchSession();
+  }, [refetchSession]);
 
   const setToken = useCallback(
     (newToken: string) => {

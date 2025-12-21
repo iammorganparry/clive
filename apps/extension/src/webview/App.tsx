@@ -1,5 +1,5 @@
 import type React from "react";
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import type { VSCodeAPI } from "./services/vscode.js";
 import { WebviewMessages } from "../constants.js";
 import { logger } from "./services/logger.js";
@@ -60,37 +60,14 @@ const App: React.FC<AppProps> = ({ vscode }) => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { route } = useRouter();
 
-  // Handle incoming messages from extension (for resolving promises)
-  const handleMessage = useCallback((event: MessageEvent) => {
-    const message = event.data as MessageData;
-    logger.message.receive(message.command, message);
-
-    // Check if there's a pending promise for this command
-    const pending = pendingPromises.get(message.command);
-    if (pending) {
-      if (message.error) {
-        pending.reject(new Error(message.error as string));
-      } else {
-        pending.resolve(message);
-      }
-    }
-  }, []);
-
-  // Set up message listener
+  // Notify extension that webview is ready
   useEffect(() => {
-    window.addEventListener("message", handleMessage);
-
-    // Notify extension that webview is ready
     logger.info("Webview ready, notifying extension");
     logger.message.send(WebviewMessages.ready);
     vscode.postMessage({
       command: WebviewMessages.ready,
     });
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [vscode, handleMessage]);
+  }, [vscode]);
 
   // Render page based on route
   const renderPage = () => {

@@ -6,6 +6,7 @@
  */
 
 import type { AppRouter } from "../../rpc/router.js";
+import type { InferRouterInput, InferRouterOutput } from "@clive/webview-rpc";
 
 /**
  * Re-export the router type for use in the webview
@@ -13,74 +14,13 @@ import type { AppRouter } from "../../rpc/router.js";
 export type { AppRouter };
 
 /**
- * RPC path types - these match the router structure
+ * Infer all input types from the router
+ * Usage: RouterInput["status"]["cypress"] for specific procedure input
  */
-export const RpcPaths = {
-  status: {
-    cypress: ["status", "cypress"],
-    branchChanges: ["status", "branchChanges"],
-  },
-  agents: {
-    planTests: ["agents", "planTests"],
-    generateTest: ["agents", "generateTest"],
-  },
-} as const;
+export type RouterInput = InferRouterInput<AppRouter>;
 
 /**
- * Type helpers for input/output inference
+ * Infer all output types from the router
+ * Usage: RouterOutput["status"]["cypress"] for specific procedure output
  */
-export type StatusCypressOutput = {
-  overallStatus: "installed" | "not_installed" | "partial";
-  packages: Array<{
-    name: string;
-    path: string;
-    relativePath: string;
-    hasCypressPackage: boolean;
-    hasCypressConfig: boolean;
-    isConfigured: boolean;
-  }>;
-  workspaceRoot: string;
-};
-
-export type BranchChangesOutput = {
-  branchName: string;
-  baseBranch: string;
-  files: Array<{
-    path: string;
-    relativePath: string;
-    status: "M" | "A" | "D" | "R";
-    isEligible: boolean;
-    reason?: string;
-  }>;
-  workspaceRoot: string;
-} | null;
-
-export type PlanTestsInput = {
-  files: string[];
-};
-
-export type PlanTestsOutput = {
-  tests: Array<{
-    id: string;
-    sourceFile: string;
-    targetTestPath: string;
-    description: string;
-    isUpdate: boolean;
-    proposedContent: string;
-    existingContent?: string;
-  }>;
-  error?: string;
-};
-
-export type GenerateTestInput = {
-  sourceFilePath: string;
-};
-
-export type GenerateTestProgress = {
-  status: "starting" | "generating";
-  message: string;
-};
-
-export type GenerateTestOutput =
-  | { success: true; testFilePath?: string; testContent?: string }
-  | { success: false; error: string };
+export type RouterOutput = InferRouterOutput<AppRouter>;

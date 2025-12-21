@@ -1,6 +1,10 @@
 import { createRouter } from "@clive/webview-rpc";
 import { statusRouter } from "./routers/status.js";
 import { agentsRouter } from "./routers/agents.js";
+import { authRouter } from "./routers/auth.js";
+import { configRouter } from "./routers/config.js";
+import { conversationsRouter } from "./routers/conversations.js";
+import { systemRouter } from "./routers/system.js";
 import type { RpcContext } from "./context.js";
 
 const { router } = createRouter<RpcContext>();
@@ -11,6 +15,10 @@ const { router } = createRouter<RpcContext>();
 export const appRouter = router({
   status: statusRouter,
   agents: agentsRouter,
+  auth: authRouter,
+  config: configRouter,
+  conversations: conversationsRouter,
+  system: systemRouter,
 });
 
 export type AppRouter = typeof appRouter;

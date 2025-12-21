@@ -2,7 +2,6 @@ import type React from "react";
 import { useCallback, useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { VSCodeAPI } from "../../services/vscode.js";
-import { WebviewMessages } from "../../../constants.js";
 import { logger } from "../../services/logger.js";
 import { useRpc } from "../../rpc/provider.js";
 import type {
@@ -107,17 +106,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         }
       }
 
-      // Update the query cache with the new status
-      if (message.command === WebviewMessages.cypressStatus && message.status) {
+      // Legacy message handlers - these are now handled by RPC hooks
+      // Keeping minimal handlers for backward compatibility during migration
+      if (message.command === "cypress-status" && message.status) {
         queryClient.setQueryData<CypressStatusData>(
           ["cypress-status"],
           message.status,
         );
       }
 
-      // Update the query cache with branch changes
       if (
-        message.command === WebviewMessages.branchChangesStatus &&
+        message.command === "branch-changes-status" &&
         message.changes !== undefined
       ) {
         queryClient.setQueryData<BranchChangesData | null>(
@@ -126,8 +125,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         );
       }
 
-      // Handle test generation progress (for individual file generation)
-      if (message.command === WebviewMessages.testGenerationProgress) {
+      if (message.command === "test-generation-progress") {
         const filePath = message.filePath;
         if (filePath) {
           setFileGenerationStates((prev) => {
@@ -161,115 +159,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         }
       }
 
-      // Handle test generation plan
-      if (message.command === WebviewMessages.testGenerationPlan) {
-        setIsPlanningTests(false);
-        setPlanningStatus("");
-        if (message.error) {
-          logger.error("Test generation plan error:", message.error);
-        } else if (message.tests) {
-          setTestPlan(message.tests);
-          // Initialize all tests as pending
-          const initialStatuses = new Map<string, TestExecutionStatus>();
-          message.tests.forEach((test) => {
-            initialStatuses.set(test.id, "pending");
-          });
-          setTestStatuses(initialStatuses);
-          setTestErrors(new Map());
-          setTestFilePaths(new Map());
-        }
-        // Set conversation ID and source file if provided
-        if (message.conversationId) {
-          setConversationId(message.conversationId);
-        }
-        if (message.sourceFile) {
-          setActiveSourceFile(message.sourceFile);
-        }
-      }
-
-      // Handle conversation started
-      if (message.command === WebviewMessages.startConversation) {
-        if (message.conversationId) {
-          setConversationId(message.conversationId);
-        }
-        if (message.sourceFile) {
-          setActiveSourceFile(message.sourceFile);
-        }
-      }
-
-      // Handle test execution updates
-      if (
-        message.command === WebviewMessages.testExecutionUpdate &&
-        message.id
-      ) {
-        const testId = message.id;
-        if (!testId) {
-          return;
-        }
-
-        setTestStatuses((prev) => {
-          const next = new Map(prev);
-          if (message.executionStatus) {
-            next.set(testId, message.executionStatus);
-          }
-          return next;
-        });
-
-        const testFilePath = message.testFilePath;
-        if (testFilePath) {
-          setTestFilePaths((prev) => {
-            const next = new Map(prev);
-            next.set(testId, testFilePath);
-            return next;
-          });
-        }
-
-        const error = message.error;
-        if (error) {
-          setTestErrors((prev) => {
-            const next = new Map(prev);
-            next.set(testId, error);
-            return next;
-          });
-        }
-      }
-
-      // Handle test generation status (for individual file generation)
-      if (message.command === WebviewMessages.testGenerationStatus) {
-        const filePath = message.filePath;
-        if (filePath) {
-          setFileGenerationStates((prev) => {
-            const next = new Map(prev);
-            const currentState = next.get(filePath) || {
-              status: "idle" as const,
-              statusMessage: "",
-              logs: [],
-            };
-
-            if (message.success !== undefined) {
-              if (message.success) {
-                // Generation completed successfully
-                next.set(filePath, {
-                  status: "completed" as const,
-                  statusMessage: message.testFilePath
-                    ? `Test created: ${message.testFilePath}`
-                    : "Test generation completed",
-                  logs: currentState.logs,
-                });
-              } else {
-                // Generation failed
-                next.set(filePath, {
-                  status: "error" as const,
-                  statusMessage: message.error || "Test generation failed",
-                  logs: currentState.logs,
-                  error: message.error,
-                });
-              }
-            }
-            return next;
-          });
-        }
-      }
+      // Legacy message handlers - these are now handled by RPC hooks
+      // Keeping for backward compatibility during migration
     },
     [queryClient, pendingPromises],
   );
@@ -295,6 +186,73 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     error: branchChangesError,
   } = rpc.status.branchChanges.useQuery();
 
+  // Generate test subscription
+  const generateTestSubscription = rpc.agents.generateTest.useSubscription({
+    enabled: false,
+    onData: (data: unknown) => {
+      const progress = data as {
+        status?: string;
+        message?: string;
+        filePath?: string;
+      };
+      if (progress.status === "starting" || progress.status === "generating") {
+        const filePath = progress.filePath;
+        if (filePath) {
+          setFileGenerationStates((prev) => {
+            const next = new Map(prev);
+            const currentState = next.get(filePath) || {
+              status: "idle" as const,
+              statusMessage: "",
+              logs: [],
+            };
+            next.set(filePath, {
+              status: "generating",
+              statusMessage: progress.message || currentState.statusMessage,
+              logs: progress.message
+                ? [...currentState.logs, progress.message]
+                : currentState.logs,
+            });
+            return next;
+          });
+        }
+      }
+    },
+    onComplete: (result: unknown) => {
+      const testResult = result as {
+        success: boolean;
+        testFilePath?: string;
+        error?: string;
+        filePath?: string;
+      };
+      const filePath = testResult.filePath;
+      if (filePath) {
+        setFileGenerationStates((prev) => {
+          const next = new Map(prev);
+          if (testResult.success) {
+            next.set(filePath, {
+              status: "completed" as const,
+              statusMessage: testResult.testFilePath
+                ? `Test created: ${testResult.testFilePath}`
+                : "Test generation completed",
+              logs: prev.get(filePath)?.logs || [],
+            });
+          } else {
+            next.set(filePath, {
+              status: "error" as const,
+              statusMessage: testResult.error || "Test generation failed",
+              logs: prev.get(filePath)?.logs || [],
+              error: testResult.error,
+            });
+          }
+          return next;
+        });
+      }
+    },
+    onError: (error) => {
+      logger.error("Test generation error", error);
+    },
+  });
+
   // Handler for creating test for a single file
   const handleCreateTestForFile = useCallback(
     (filePath: string) => {
@@ -309,13 +267,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         return next;
       });
 
-      vscode.postMessage({
-        command: WebviewMessages.createTestForFile,
-        filePath,
-      });
+      generateTestSubscription.subscribe({ sourceFilePath: filePath });
     },
-    [vscode],
+    [generateTestSubscription],
   );
+
+  // Plan tests mutation
+  const planTestsMutation = rpc.agents.planTests.useMutation({
+    onSuccess: (data) => {
+      setIsPlanningTests(false);
+      setPlanningStatus("");
+      if (data.error) {
+        logger.error("Test generation plan error:", data.error);
+      } else if (data.tests) {
+        setTestPlan(data.tests);
+        // Initialize all tests as pending
+        const initialStatuses = new Map<string, TestExecutionStatus>();
+        data.tests.forEach((test) => {
+          initialStatuses.set(test.id, "pending");
+        });
+        setTestStatuses(initialStatuses);
+        setTestErrors(new Map());
+        setTestFilePaths(new Map());
+      }
+    },
+    onError: (error) => {
+      setIsPlanningTests(false);
+      setPlanningStatus("");
+      logger.error("Failed to plan tests", error);
+    },
+  });
 
   // Handler for creating tests for all changed files
   const handleCreateAllTests = useCallback(() => {
@@ -323,12 +304,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       setIsPlanningTests(true);
       setPlanningStatus("Planning test generation for all files...");
       const filePaths = branchChanges.files.map((file) => file.path);
-      vscode.postMessage({
-        command: WebviewMessages.planTestGeneration,
-        files: filePaths,
-      });
+      planTestsMutation.mutate({ files: filePaths });
     }
-  }, [branchChanges, vscode]);
+  }, [branchChanges, planTestsMutation]);
 
   // Handler for accepting a test
   const handleAcceptTest = useCallback((id: string) => {
@@ -339,11 +317,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     });
   }, []);
 
+  // Preview diff mutation
+  const previewDiffMutation = rpc.agents.previewDiff.useMutation();
+
   // Handler for previewing test diff
   const handlePreviewTestDiff = useCallback(
     (test: ProposedTest) => {
-      vscode.postMessage({
-        command: WebviewMessages.previewTestDiff,
+      previewDiffMutation.mutate({
         test: {
           id: test.id,
           targetTestPath: test.targetTestPath,
@@ -353,8 +333,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         },
       });
     },
-    [vscode],
+    [previewDiffMutation],
   );
+
+  // Start conversation mutation
+  const startConversationMutation = rpc.conversations.start.useMutation({
+    onSuccess: (data) => {
+      if (data.conversationId) {
+        setConversationId(data.conversationId);
+      }
+      if (data.sourceFile) {
+        setActiveSourceFile(data.sourceFile);
+      }
+    },
+  });
 
   // Handler for navigating to chat view
   const handleNavigateToChat = useCallback(
@@ -362,13 +354,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       setActiveSourceFile(sourceFile);
       // If no conversation exists, start one
       if (!conversationId) {
-        vscode.postMessage({
-          command: WebviewMessages.startConversation,
-          sourceFile,
-        });
+        startConversationMutation.mutate({ sourceFile });
       }
     },
-    [vscode, conversationId],
+    [conversationId, startConversationMutation],
   );
 
   // Handler for rejecting a test
@@ -380,6 +369,42 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     });
   }, []);
 
+  // Execute test mutation
+  const executeTestMutation = rpc.agents.executeTest.useMutation({
+    onSuccess: (data) => {
+      if (data.executionStatus === "completed") {
+        setTestStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(data.id, "completed");
+          return next;
+        });
+        if (data.testFilePath) {
+          setTestFilePaths((prev) => {
+            const next = new Map(prev);
+            next.set(data.id, data.testFilePath || "");
+            return next;
+          });
+        }
+      } else {
+        setTestStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(data.id, data.executionStatus);
+          return next;
+        });
+        if (data.error) {
+          setTestErrors((prev) => {
+            const next = new Map(prev);
+            next.set(data.id, data.error);
+            return next;
+          });
+        }
+      }
+    },
+    onError: (error: Error) => {
+      logger.error("Failed to execute test", error);
+    },
+  });
+
   // Handler for generating accepted tests
   const handleGenerateTests = useCallback(
     (acceptedIds: string[]) => {
@@ -387,35 +412,55 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         return;
       }
 
-      vscode.postMessage({
-        command: WebviewMessages.confirmTestPlan,
-        acceptedIds,
-        tests: testPlan,
+      const testsToExecute = testPlan.filter((test) =>
+        acceptedIds.includes(test.id),
+      );
+
+      testsToExecute.forEach((test) => {
+        executeTestMutation.mutate({ test });
       });
     },
-    [vscode, testPlan],
+    [testPlan, executeTestMutation],
   );
+
+  // Cancel test mutation
+  const cancelTestMutation = rpc.agents.cancelTest.useMutation({
+    onSuccess: (data) => {
+      if (data.isFilePath) {
+        setFileGenerationStates((prev) => {
+          const next = new Map(prev);
+          next.set(data.testId, {
+            status: "error" as const,
+            statusMessage: "Test generation cancelled",
+            logs: prev.get(data.testId)?.logs || [],
+            error: "Test generation cancelled",
+          });
+          return next;
+        });
+      } else {
+        setTestStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(data.testId, "pending");
+          return next;
+        });
+      }
+    },
+  });
 
   // Handler for canceling a test
   const handleCancelTest = useCallback(
     (id: string) => {
-      vscode.postMessage({
-        command: WebviewMessages.cancelTest,
-        id,
-      });
+      cancelTestMutation.mutate({ testId: id });
     },
-    [vscode],
+    [cancelTestMutation],
   );
 
   // Handler for canceling a single file test
   const handleCancelFileTest = useCallback(
     (filePath: string) => {
-      vscode.postMessage({
-        command: WebviewMessages.cancelTest,
-        id: filePath,
-      });
+      cancelTestMutation.mutate({ testId: filePath });
     },
-    [vscode],
+    [cancelTestMutation],
   );
 
   if (isLoading && !cypressStatus) {

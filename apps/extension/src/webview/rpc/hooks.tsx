@@ -5,52 +5,7 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
-import type { RpcMessage } from "@clive/webview-rpc";
-
-// Define RpcHookFactories locally since it's not exported yet
-export interface RpcHookFactories {
-  useQuery: <TInput, TOutput>(
-    path: string[],
-    vscode: VSCodeAPI,
-  ) => (options?: { input?: TInput; enabled?: boolean }) => {
-    data: TOutput | undefined;
-    isLoading: boolean;
-    error: Error | null;
-    refetch: () => void;
-  };
-
-  useMutation: <TInput, TOutput>(
-    path: string[],
-    vscode: VSCodeAPI,
-  ) => (options?: {
-    onSuccess?: (data: TOutput) => void;
-    onError?: (error: Error) => void;
-  }) => {
-    mutate: (input: TInput) => void;
-    mutateAsync: (input: TInput) => Promise<TOutput>;
-    isPending: boolean;
-    error: Error | null;
-  };
-
-  useSubscription: <TInput, TOutput, TProgress = unknown>(
-    path: string[],
-    vscode: VSCodeAPI,
-  ) => (options?: {
-    input?: TInput;
-    onData?: (data: TProgress) => void;
-    onComplete?: (data: TOutput) => void;
-    onError?: (error: Error) => void;
-    enabled?: boolean;
-  }) => {
-    subscribe: (input?: TInput) => void;
-    data: TOutput | undefined;
-    progressData: TProgress | undefined;
-    status: "idle" | "subscribing" | "active" | "complete" | "error";
-    error: Error | null;
-    isLoading: boolean;
-    unsubscribe: () => void;
-  };
-}
+import type { RpcMessage, RpcHookFactories } from "@clive/webview-rpc";
 import type { VSCodeAPI } from "../services/vscode.js";
 
 // Pending request storage
@@ -315,11 +270,10 @@ export function useRpcSubscription<TInput, TOutput, TProgress = unknown>(
  * Create hook factories for use with createRpcClient
  * These factories return functions that, when called, return hooks
  */
-export function createRpcHookFactories(): RpcHookFactories {
+export function createRpcHookFactories(): RpcHookFactories<VSCodeAPI> {
   return {
     useQuery: <TInput, TOutput>(path: string[], vscode: VSCodeAPI) => {
       return (options?: { input?: TInput; enabled?: boolean }) => {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
         const result = useRpcQuery<TInput, TOutput>(
           vscode,
           path,
@@ -343,7 +297,6 @@ export function createRpcHookFactories(): RpcHookFactories {
         onSuccess?: (data: TOutput) => void;
         onError?: (error: Error) => void;
       }) => {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
         const mutation = useRpcMutation<TInput, TOutput>(vscode, path, options);
         return {
           mutate: mutation.mutate,
@@ -365,7 +318,6 @@ export function createRpcHookFactories(): RpcHookFactories {
         onError?: (error: Error) => void;
         enabled?: boolean;
       }) => {
-        // eslint-disable-next-line react-hooks/rules-of-hooks
         const subscription = useRpcSubscription<TInput, TOutput, TProgress>(
           vscode,
           path,

@@ -76,30 +76,50 @@ export type ProcedureType<TProcedure> =
   TProcedure extends Procedure<any, any, any, infer TType> ? TType : never;
 
 /**
+ * Shared hook return types for reuse across the codebase
+ */
+export type QueryHookReturn<TOutput> = {
+  data: TOutput | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
+};
+
+export type MutationHookReturn<TInput, TOutput> = {
+  mutate: (input: TInput) => void;
+  mutateAsync: (input: TInput) => Promise<TOutput>;
+  isPending: boolean;
+  error: Error | null;
+};
+
+export type SubscriptionHookReturn<TInput, TOutput, TProgress = unknown> = {
+  subscribe: (input?: TInput) => void;
+  data: TOutput | undefined;
+  progressData: TProgress | undefined;
+  status: "idle" | "subscribing" | "active" | "complete" | "error";
+  error: Error | null;
+  isLoading: boolean;
+  unsubscribe: () => void;
+};
+
+/**
  * Infer the client type from a procedure based on its type (query/mutation/subscription)
  */
 export type InferClientProcedure<TProcedure> =
   TProcedure extends Procedure<infer TInput, infer TOutput, any, infer TType>
     ? TType extends "query"
       ? {
-          useQuery: (options?: { input?: TInput; enabled?: boolean }) => {
-            data: TOutput | undefined;
-            isLoading: boolean;
-            error: Error | null;
-            refetch: () => void;
-          };
+          useQuery: (options?: {
+            input?: TInput;
+            enabled?: boolean;
+          }) => QueryHookReturn<TOutput>;
         }
       : TType extends "mutation"
         ? {
             useMutation: (options?: {
               onSuccess?: (data: TOutput) => void;
               onError?: (error: Error) => void;
-            }) => {
-              mutate: (input: TInput) => void;
-              mutateAsync: (input: TInput) => Promise<TOutput>;
-              isPending: boolean;
-              error: Error | null;
-            };
+            }) => MutationHookReturn<TInput, TOutput>;
           }
         : TType extends "subscription"
           ? {
@@ -109,20 +129,7 @@ export type InferClientProcedure<TProcedure> =
                 onComplete?: (data: TOutput) => void;
                 onError?: (error: Error) => void;
                 enabled?: boolean;
-              }) => {
-                subscribe: (input?: TInput) => void;
-                data: TOutput | undefined;
-                progressData: unknown;
-                status:
-                  | "idle"
-                  | "subscribing"
-                  | "active"
-                  | "complete"
-                  | "error";
-                error: Error | null;
-                isLoading: boolean;
-                unsubscribe: () => void;
-              };
+              }) => SubscriptionHookReturn<TInput, TOutput, unknown>;
             }
           : never
     : never;
