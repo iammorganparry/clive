@@ -337,14 +337,16 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
 
           // Get or create repository
           const userId = yield* repositoryService.getUserId();
+          const organizationId = yield* repositoryService.getOrganizationId();
           const workspaceName =
             workspaceRootPath.split("/").pop() || "workspace";
 
-          // Upsert repository
+          // Upsert repository (scoped to organization if available)
           const repository = yield* repositoryService.upsertRepository(
             userId,
             workspaceName,
             workspaceRootPath,
+            organizationId,
           );
           const repositoryId = repository.id;
 

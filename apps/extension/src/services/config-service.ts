@@ -26,6 +26,7 @@ class InvalidTokenError extends Data.TaggedError("InvalidTokenError")<{
  */
 interface JwtPayload {
   sub: string; // userId
+  activeOrganizationId?: string; // Better Auth organization plugin
   [key: string]: unknown;
 }
 
@@ -282,6 +283,46 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               `[ConfigService] UserId extracted: ${decoded.sub}`,
             );
             return decoded.sub;
+          }),
+
+        /**
+         * Gets the current organization ID from the auth token
+         * Decodes JWT to extract the activeOrganizationId from Better Auth's organization plugin
+         */
+        getOrganizationId: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[ConfigService] Extracting organizationId from auth token",
+            );
+            const service = yield* ConfigService;
+            const authToken = yield* service.getAuthToken();
+            if (!authToken) {
+              return yield* Effect.fail(
+                new AuthTokenMissingError({
+                  message: "Authentication required",
+                }),
+              );
+            }
+
+            // Decode JWT to extract organizationId
+            const decoded = yield* Effect.try({
+              try: () => jwtDecode<JwtPayload>(authToken),
+              catch: (error) =>
+                new InvalidTokenError({
+                  message:
+                    error instanceof Error
+                      ? `Failed to decode JWT: ${error.message}`
+                      : "Failed to decode JWT",
+                  cause: error,
+                }),
+            });
+
+            const organizationId = decoded.activeOrganizationId;
+
+            yield* Effect.logDebug(
+              `[ConfigService] OrganizationId extracted: ${organizationId ?? "none"}`,
+            );
+            return organizationId ?? null;
           }),
       };
     }),
