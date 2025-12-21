@@ -10,17 +10,18 @@ import {
   CYPRESS_PLANNING_SYSTEM_PROMPT,
   PromptFactory,
 } from "./prompts.js";
-import { streamFromAI } from "./stream-utils.js";
+import { streamFromAI } from "../../utils/stream-utils.js";
 import {
-  getCypressConfigTool,
-  getFileDiffTool,
-  globSearchTool,
-  grepSearchTool,
-  listFilesTool,
+  createGetCypressConfigTool,
+  createGetFileDiffTool,
+  createGlobSearchTool,
+  createGrepSearchTool,
+  createListFilesTool,
+  createReadFileTool,
   proposeTestTool,
-  readFileTool,
   writeTestFileTool,
 } from "./tools/index.js";
+import { makeTokenBudget } from "./token-budget.js";
 import type {
   ProposedTest,
   ProposeTestOutput,
@@ -141,11 +142,14 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
             );
           }
 
-          // Create tool set for content generation
+          // Create fresh budget for content generation phase
+          const contentBudget = yield* makeTokenBudget();
+
+          // Create tool set for content generation (budget-aware)
           const tools = {
-            readFile: readFileTool,
-            listFiles: listFilesTool,
-            getCypressConfig: getCypressConfigTool,
+            readFile: createReadFileTool(contentBudget),
+            listFiles: createListFilesTool(contentBudget),
+            getCypressConfig: createGetCypressConfigTool(contentBudget),
             writeTestFile: writeTestFileTool,
           };
 
@@ -506,15 +510,25 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
               );
             }
 
-            // Create tool set for planning (read-only tools + proposeTest + getFileDiff)
+            // Create fresh per-request token budget
+            const budgetStartTime = Date.now();
+            const budget = yield* makeTokenBudget();
+            const initialRemaining = yield* budget.remaining();
+            const initialMaxBudget = yield* budget.getMaxBudget();
+            const budgetDuration = Date.now() - budgetStartTime;
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
+            );
+
+            // Create budget-aware tools using factory functions
             const tools = {
-              readFile: readFileTool,
-              listFiles: listFilesTool,
-              grepSearch: grepSearchTool,
-              globSearch: globSearchTool,
-              getCypressConfig: getCypressConfigTool,
-              getFileDiff: getFileDiffTool,
-              proposeTest: proposeTestTool,
+              readFile: createReadFileTool(budget),
+              listFiles: createListFilesTool(budget),
+              grepSearch: createGrepSearchTool(budget),
+              globSearch: createGlobSearchTool(budget),
+              getCypressConfig: createGetCypressConfigTool(budget),
+              getFileDiff: createGetFileDiffTool(budget),
+              proposeTest: proposeTestTool, // No budget needed - output only
             };
 
             // Build initial prompt for this single file
@@ -897,6 +911,14 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
                 existingContent: contentResult.existingContent,
               });
             }
+
+            // Log final budget consumption
+            const consumed = yield* budget.getConsumed();
+            const remaining = yield* budget.remaining();
+            const maxBudget = yield* budget.getMaxBudget();
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Token budget: ${consumed}/${maxBudget} consumed, ${remaining} remaining`,
+            );
 
             const totalDuration = Date.now() - startTime;
             yield* Effect.logDebug(

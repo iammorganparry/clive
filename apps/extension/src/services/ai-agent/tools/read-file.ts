@@ -1,115 +1,147 @@
 import * as vscode from "vscode";
-import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { Effect, Runtime, Data } from "effect";
 import type { ReadFileInput, ReadFileOutput } from "../types.js";
+import { countTokensInText } from "../../../utils/token-utils.js";
+import type { TokenBudgetService } from "../token-budget.js";
 import {
-  countTokensInText,
-  MAX_FILE_TOKENS,
-  calculateTruncationLines,
-} from "../token-utils.js";
+  readFileAsStringEffect,
+  statFileEffect,
+  getRelativePath,
+  getWorkspaceRoot,
+  resolvePathToUri,
+} from "../../../lib/vscode-effects.js";
 
 /**
- * Tool for reading file contents from the workspace
+ * Error for when a path is a directory instead of a file
  */
-export const readFileTool = tool({
-  description:
-    "Read the contents of a file from the workspace. Use relative paths from the workspace root or absolute paths.",
-  inputSchema: z.object({
-    filePath: z
-      .string()
-      .describe(
-        "The path to the file to read. Can be relative to workspace root or absolute.",
-      ),
-  }),
-  execute: async ({ filePath }: ReadFileInput): Promise<ReadFileOutput> => {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      throw new Error("No workspace folder found");
-    }
+class IsDirectoryError extends Data.TaggedError("IsDirectoryError")<{
+  path: string;
+}> {}
 
-    const workspaceRoot = workspaceFolders[0].uri;
+/**
+ * Factory function to create readFileTool with token budget awareness
+ * When lineRange is provided, uses HIGH priority (focused context)
+ * When reading full file, uses LOW priority (only when necessary)
+ */
+export const createReadFileTool = (budget: TokenBudgetService) =>
+  tool({
+    description:
+      "Read the contents of a file from the workspace. Use relative paths from the workspace root or absolute paths. When you know specific line numbers from a diff, use lineRange to read only those lines for better token efficiency.",
+    inputSchema: z.object({
+      filePath: z
+        .string()
+        .describe(
+          "The path to the file to read. Can be relative to workspace root or absolute.",
+        ),
+      lineRange: z
+        .object({
+          start: z.number().describe("Start line number (1-indexed)"),
+          end: z.number().describe("End line number (1-indexed, inclusive)"),
+        })
+        .optional()
+        .describe(
+          "Optional line range to read. Use when you know specific lines from diff. This is more token-efficient than reading the entire file.",
+        ),
+    }),
+    execute: async ({
+      filePath,
+      lineRange,
+    }: ReadFileInput & {
+      lineRange?: { start: number; end: number };
+    }): Promise<ReadFileOutput> => {
+      return Runtime.runPromise(Runtime.defaultRuntime)(
+        Effect.gen(function* () {
+          const workspaceRoot = yield* getWorkspaceRoot();
+          const fileUri = yield* resolvePathToUri(filePath, workspaceRoot);
+          const relativePath = yield* getRelativePath(fileUri);
 
-    // Resolve path relative to workspace root if not absolute
-    let fileUri: vscode.Uri;
-    if (path.isAbsolute(filePath)) {
-      fileUri = vscode.Uri.file(filePath);
-    } else {
-      fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
-    }
+          // Check if path exists and is a file (not a directory)
+          const stat = yield* statFileEffect(fileUri);
+          if (stat.type === vscode.FileType.Directory) {
+            return yield* Effect.fail(
+              new IsDirectoryError({ path: relativePath }),
+            );
+          }
 
-    try {
-      // Check if path exists and is a file (not a directory)
-      const stat = await vscode.workspace.fs.stat(fileUri);
-      if (stat.type === vscode.FileType.Directory) {
-        const relativePath = vscode.workspace.asRelativePath(fileUri, false);
-        throw new Error(
-          `Path is a directory, not a file: ${relativePath}. Use listFiles tool to list directory contents.`,
-        );
-      }
+          // Read file content
+          const text = yield* readFileAsStringEffect(fileUri);
+          const lines = text.split("\n");
+          const totalLines = lines.length;
 
-      const content = await vscode.workspace.fs.readFile(fileUri);
-      const text = Buffer.from(content).toString("utf-8");
-      const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+          let contentToProcess: string;
+          let wasRangeLimited = false;
 
-      // Count actual tokens using Anthropic tokenizer
-      const tokenCount = countTokensInText(text);
-      const lines = text.split("\n");
-      const totalLines = lines.length;
+          // If lineRange is provided, extract only those lines
+          if (lineRange) {
+            const start = Math.max(0, lineRange.start - 1); // Convert to 0-indexed
+            const end = Math.min(totalLines, lineRange.end); // End is inclusive
+            const selectedLines = lines.slice(start, end);
+            contentToProcess = selectedLines.join("\n");
+            wasRangeLimited = true;
+          } else {
+            contentToProcess = text;
+          }
 
-      if (tokenCount > MAX_FILE_TOKENS) {
-        // Truncate the file - keep beginning and end
-        const { keepFromStart, keepFromEnd } = calculateTruncationLines(lines);
-        const startLines = lines.slice(0, keepFromStart);
-        const endLines = lines.slice(-keepFromEnd);
-        const truncatedContent = [
-          ...startLines,
-          "",
-          `// ... [File truncated: ${totalLines - keepFromStart - keepFromEnd} lines omitted] ...`,
-          "",
-          ...endLines,
-        ].join("\n");
+          // Apply budget-aware truncation
+          // Use HIGH priority if lineRange was provided (focused context)
+          // Use LOW priority if reading full file (only when necessary)
+          const priority = wasRangeLimited ? "high" : "low";
+          const { content: truncated, wasTruncated } =
+            yield* budget.truncateToFit(contentToProcess, priority);
 
-        // Count tokens in truncated content
-        const truncatedTokenCount = countTokensInText(truncatedContent);
+          // Consume tokens for the truncated content
+          const tokens = countTokensInText(truncated);
+          yield* budget.consume(tokens);
 
-        return {
-          content: truncatedContent,
-          filePath: relativePath,
-          exists: true,
-          wasTruncated: true,
-          totalLines,
-          returnedLines: keepFromStart + keepFromEnd,
-          truncationNote: `File was truncated from ${totalLines} lines (${tokenCount} tokens) to ${keepFromStart + keepFromEnd} lines (${truncatedTokenCount} tokens, max ${MAX_FILE_TOKENS}). Showing first ${keepFromStart} and last ${keepFromEnd} lines.`,
-        };
-      }
-
-      return {
-        content: text,
-        filePath: relativePath,
-        exists: true,
-        wasTruncated: false,
-        totalLines,
-        returnedLines: totalLines,
-      };
-    } catch (error: unknown) {
-      console.error("Error reading file:", error);
-      // Re-throw directory errors so the AI knows what went wrong
-      if (
-        error instanceof Error &&
-        (error.message.includes("directory") ||
-          (error as { code?: string }).code === "EISDIR" ||
-          (error as { code?: string }).code === "FileIsADirectory")
-      ) {
-        throw error;
-      }
-      // File doesn't exist or can't be read
-      const relativePath = vscode.workspace.asRelativePath(fileUri, false);
-      return {
-        content: "",
-        filePath: relativePath,
-        exists: false,
-      };
-    }
-  },
-});
+          return {
+            content: truncated,
+            filePath: relativePath,
+            exists: true,
+            wasTruncated: wasTruncated || wasRangeLimited,
+            totalLines,
+            returnedLines: truncated.split("\n").length,
+            ...(wasRangeLimited &&
+              lineRange && {
+                truncationNote: `Read lines ${lineRange.start}-${lineRange.end} from file (${totalLines} total lines).`,
+              }),
+          };
+        }).pipe(
+          Effect.catchTag("IsDirectoryError", (error) =>
+            Effect.fail(
+              new Error(
+                `Path is a directory, not a file: ${error.path}. Use listFiles tool to list directory contents.`,
+              ),
+            ),
+          ),
+          Effect.catchAll((error) => {
+            // For other errors (file not found, etc.), return exists: false
+            if (error instanceof Error && error.message.includes("directory")) {
+              return Effect.fail(error);
+            }
+            // Get relative path for error response
+            return Effect.gen(function* () {
+              const workspaceRoot = yield* getWorkspaceRoot();
+              const fileUri = yield* resolvePathToUri(filePath, workspaceRoot);
+              const relativePath = yield* getRelativePath(fileUri);
+              return {
+                content: "",
+                filePath: relativePath,
+                exists: false,
+              };
+            }).pipe(
+              // If even this fails, return a basic error response
+              Effect.catchAll(() =>
+                Effect.succeed({
+                  content: "",
+                  filePath,
+                  exists: false,
+                }),
+              ),
+            );
+          }),
+        ),
+      );
+    },
+  });

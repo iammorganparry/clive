@@ -1,116 +1,199 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import { tool } from "ai";
 import { z } from "zod";
+import { Effect, Runtime } from "effect";
 import type { GrepSearchInput, GrepSearchOutput } from "../types.js";
+import type { TokenBudgetService } from "../token-budget.js";
+import { countTokensInText } from "../../../utils/token-utils.js";
+import {
+  findFilesEffect,
+  readFileAsStringEffect,
+  getRelativePath,
+  getWorkspaceRoot,
+} from "../../../lib/vscode-effects.js";
+import {
+  TOOL_CONCURRENCY,
+  SEARCH_LIMITS,
+} from "../../../consts/tool-constants.js";
 
 /**
- * Tool for searching file contents using file reading and regex matching
- * Efficient for searching across workspace files
+ * Search a single file for pattern matches
+ * Returns matches found in the file
  */
-export const grepSearchTool = tool({
-  description:
-    "Search for text patterns in files across the workspace using efficient grep-like search. Supports regex patterns.",
-  inputSchema: z.object({
-    pattern: z
-      .string()
-      .describe(
-        "The search pattern (regex supported). Example: 'import.*ComponentName' or 'export const'",
-      ),
-    path: z
-      .string()
-      .optional()
-      .describe(
-        "Optional path to limit search scope. Defaults to entire workspace.",
-      ),
-    fileType: z
-      .string()
-      .optional()
-      .describe(
-        "Optional file type filter (e.g., 'tsx', 'ts', 'js'). Searches all files if not specified.",
-      ),
-    maxResults: z
-      .number()
-      .optional()
-      .default(50)
-      .describe("Maximum number of results to return (default: 50)"),
-  }),
-  execute: async ({
-    pattern,
-    path: searchPath,
-    fileType,
-    maxResults = 50,
-  }: GrepSearchInput): Promise<GrepSearchOutput> => {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      throw new Error("No workspace folder found");
+const searchFileForPattern = (
+  fileUri: vscode.Uri,
+  regex: RegExp,
+  maxResults: number,
+  currentMatchCount: number,
+) =>
+  Effect.gen(function* () {
+    const text = yield* readFileAsStringEffect(fileUri);
+    const lines = text.split("\n");
+    const relativePath = yield* getRelativePath(fileUri);
+
+    const matches: GrepSearchOutput["matches"] = [];
+    const remainingSlots = maxResults - currentMatchCount;
+
+    for (let i = 0; i < lines.length && matches.length < remainingSlots; i++) {
+      const line = lines[i];
+      if (regex.test(line)) {
+        matches.push({
+          filePath: fileUri.fsPath,
+          relativePath,
+          lineNumber: i + 1, // 1-indexed
+          lineContent: line.trim(),
+        });
+      }
     }
 
-    try {
-      // Build include pattern
-      let includePattern = "**/*";
-      if (fileType) {
-        includePattern = `**/*.${fileType}`;
-      }
-      if (searchPath) {
-        includePattern = `${searchPath}/${includePattern}`;
-      }
+    return matches;
+  }).pipe(
+    // Silently skip files that can't be read (binary files, etc.)
+    Effect.catchAll(() => Effect.succeed([] as GrepSearchOutput["matches"])),
+  );
 
-      const excludePattern =
-        "**/node_modules/**,**/dist/**,**/build/**,**/.next/**,**/out/**";
+/**
+ * Factory function to create grepSearchTool with token budget awareness
+ * Uses MEDIUM priority - up to 25% of remaining budget
+ * Implements bounded concurrency for file reading
+ */
+export const createGrepSearchTool = (budget: TokenBudgetService) =>
+  tool({
+    description:
+      "Search for text patterns in files across the workspace using efficient grep-like search. Supports regex patterns.",
+    inputSchema: z.object({
+      pattern: z
+        .string()
+        .describe(
+          "The search pattern (regex supported). Example: 'import.*ComponentName' or 'export const'",
+        ),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          "Optional path to limit search scope. Defaults to entire workspace.",
+        ),
+      fileType: z
+        .string()
+        .optional()
+        .describe(
+          "Optional file type filter (e.g., 'tsx', 'ts', 'js'). Searches all files if not specified.",
+        ),
+      maxResults: z
+        .number()
+        .optional()
+        .default(SEARCH_LIMITS.GREP_MAX_RESULTS)
+        .describe(
+          `Maximum number of results to return (default: ${SEARCH_LIMITS.GREP_MAX_RESULTS})`,
+        ),
+    }),
+    execute: async ({
+      pattern,
+      path: searchPath,
+      fileType,
+      maxResults = SEARCH_LIMITS.GREP_MAX_RESULTS,
+    }: GrepSearchInput): Promise<GrepSearchOutput> => {
+      return Runtime.runPromise(Runtime.defaultRuntime)(
+        Effect.gen(function* () {
+          // Validate workspace
+          yield* getWorkspaceRoot();
 
-      // Find files matching the pattern
-      const files = await vscode.workspace.findFiles(
-        includePattern,
-        excludePattern,
-        maxResults * 10, // Get more files to search through
-      );
+          // Build include pattern
+          let includePattern = "**/*";
+          if (fileType) {
+            includePattern = `**/*.${fileType}`;
+          }
+          if (searchPath) {
+            includePattern = `${searchPath}/${includePattern}`;
+          }
 
-      const matches: GrepSearchOutput["matches"] = [];
-      const regex = new RegExp(pattern, "i"); // Case-insensitive regex
+          const excludePattern =
+            "**/node_modules/**,**/dist/**,**/build/**,**/.next/**,**/out/**";
 
-      // Search through files
-      for (const fileUri of files) {
-        if (matches.length >= maxResults) {
-          break;
-        }
+          // Find files using Effect
+          const files = yield* findFilesEffect(
+            includePattern,
+            excludePattern,
+            maxResults * SEARCH_LIMITS.FILE_SEARCH_MULTIPLIER,
+          );
 
-        try {
-          const content = await vscode.workspace.fs.readFile(fileUri);
-          const text = Buffer.from(content).toString("utf-8");
-          const lines = text.split("\n");
+          const regex = new RegExp(pattern, "i"); // Case-insensitive regex
 
-          const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+          // Process files with bounded concurrency
+          // We need to track total matches across all files
+          const allMatches: GrepSearchOutput["matches"] = [];
 
-          // Search each line
-          for (let i = 0; i < lines.length; i++) {
-            if (matches.length >= maxResults) {
-              break;
-            }
+          // Process in batches with bounded concurrency
+          const batchSize = TOOL_CONCURRENCY.FILE_READ;
+          for (
+            let i = 0;
+            i < files.length && allMatches.length < maxResults;
+            i += batchSize
+          ) {
+            const batch = files.slice(i, i + batchSize);
 
-            const line = lines[i];
-            if (regex.test(line)) {
-              matches.push({
-                filePath: fileUri.fsPath,
-                relativePath,
-                lineNumber: i + 1, // 1-indexed
-                lineContent: line.trim(),
-              });
+            const batchResults = yield* Effect.all(
+              batch.map((fileUri) =>
+                searchFileForPattern(
+                  fileUri,
+                  regex,
+                  maxResults,
+                  allMatches.length,
+                ),
+              ),
+              { concurrency: TOOL_CONCURRENCY.FILE_READ },
+            );
+
+            // Flatten and add to results
+            for (const matches of batchResults) {
+              for (const match of matches) {
+                if (allMatches.length < maxResults) {
+                  allMatches.push(match);
+                }
+              }
             }
           }
-        } catch {
-          // Skip files that can't be read (binary files, etc.)
-        }
-      }
 
-      return {
-        matches,
-        pattern,
-        totalMatches: matches.length,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      throw new Error(`Grep search failed: ${errorMessage}`);
-    }
-  },
-});
+          // Format results as a string for token counting
+          const resultsText = JSON.stringify(allMatches, null, 2);
+
+          // Apply budget-aware truncation (MEDIUM priority)
+          const { content: truncated, wasTruncated } =
+            yield* budget.truncateToFit(resultsText, "medium");
+
+          // Consume tokens for the truncated content
+          const tokens = countTokensInText(truncated);
+          yield* budget.consume(tokens);
+
+          // Parse back to matches array if truncated
+          let finalMatches = allMatches;
+          if (wasTruncated) {
+            try {
+              finalMatches = JSON.parse(truncated);
+            } catch {
+              // If parsing fails, return original matches but truncated
+              finalMatches = allMatches.slice(
+                0,
+                Math.floor(allMatches.length * 0.5),
+              );
+            }
+          }
+
+          return {
+            matches: finalMatches,
+            pattern,
+            totalMatches: finalMatches.length,
+            wasTruncated,
+          };
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.fail(
+              new Error(
+                `Grep search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  });
