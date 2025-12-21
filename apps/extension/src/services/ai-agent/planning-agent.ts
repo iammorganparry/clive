@@ -1,4 +1,7 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
+import {
+  createAnthropic,
+  type AnthropicProviderOptions,
+} from "@ai-sdk/anthropic";
 import type { ToolCall, ToolResult } from "@ai-sdk/provider-utils";
 import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Layer, Match, Stream } from "effect";
@@ -206,8 +209,29 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
                 model: anthropic("claude-opus-4-5"),
                 tools,
                 stopWhen: stepCountIs(10),
-                system: CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
-                prompt,
+                // System prompt with cache control for cost optimization
+                messages: [
+                  {
+                    role: "system",
+                    content: CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
+                    providerOptions: {
+                      anthropic: { cacheControl: { type: "ephemeral" } },
+                    },
+                  },
+                  {
+                    role: "user",
+                    content: prompt,
+                  },
+                ],
+                // Enable extended thinking for test content generation (lower budget than planning)
+                providerOptions: {
+                  anthropic: {
+                    thinking: { type: "enabled", budgetTokens: 5000 },
+                  } satisfies AnthropicProviderOptions,
+                },
+                headers: {
+                  "anthropic-beta": "interleaved-thinking-2025-05-14",
+                },
               }),
             catch: (error) =>
               new PlanningAgentError({
@@ -626,15 +650,29 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
                 return streamText({
                   model: anthropic("claude-opus-4-5"),
                   tools,
-                  messages:
-                    conversationHistory.length > 0
-                      ? (messages as Array<{
-                          role: "user" | "assistant";
-                          content: string;
-                        }>)
-                      : [],
                   stopWhen: stepCountIs(20),
-                  system: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                  // System prompt with cache control, followed by conversation messages
+                  messages: [
+                    {
+                      role: "system" as const,
+                      content: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                      providerOptions: {
+                        anthropic: {
+                          cacheControl: { type: "ephemeral" },
+                        },
+                      },
+                    },
+                    ...messages,
+                  ],
+                  // Enable extended thinking for complex test planning
+                  providerOptions: {
+                    anthropic: {
+                      thinking: { type: "enabled", budgetTokens: 10000 },
+                    } satisfies AnthropicProviderOptions,
+                  },
+                  headers: {
+                    "anthropic-beta": "interleaved-thinking-2025-05-14",
+                  },
                 });
               },
               catch: (error) =>
