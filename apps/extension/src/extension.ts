@@ -101,6 +101,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   commandCenter.registerAll(context);
 
   // Start codebase indexing in the background (non-blocking)
+  // Only runs if user is authenticated
   const indexingLayer = Layer.merge(
     Layer.merge(
       Layer.merge(ConfigService.Default, createSecretStorageLayer(context)),
@@ -110,6 +111,17 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
 
   Effect.gen(function* () {
+    // Check authentication before indexing
+    const configService = yield* ConfigService;
+    const authToken = yield* configService.getAuthToken();
+
+    if (!authToken) {
+      yield* Effect.logDebug(
+        "[Extension] Skipping indexing - user not authenticated",
+      );
+      return;
+    }
+
     yield* Effect.logDebug(
       "[Extension] Starting codebase indexing in background...",
     );

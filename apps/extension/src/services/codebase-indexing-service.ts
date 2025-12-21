@@ -48,6 +48,59 @@ class EmbeddingError extends Data.TaggedError("EmbeddingError")<{
 const inMemoryIndex = new Map<string, IndexedFile>();
 
 /**
+ * File patterns to include for indexing (source files only)
+ * Components, services, utils, hooks, etc.
+ */
+export const INDEXING_INCLUDE_PATTERNS = [
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.jsx",
+] as const;
+
+/**
+ * File patterns to exclude from indexing
+ * Excludes test files, configs, build artifacts, and type definitions
+ */
+export const INDEXING_EXCLUDE_PATTERNS = [
+  // Build artifacts and dependencies
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/.next/**",
+  "**/out/**",
+  "**/coverage/**",
+  // Test files (we generate tests, not index them)
+  "**/*.test.ts",
+  "**/*.test.tsx",
+  "**/*.spec.ts",
+  "**/*.spec.tsx",
+  "**/*.cy.ts",
+  "**/*.cy.tsx",
+  "**/__tests__/**",
+  "**/__mocks__/**",
+  "**/test/**",
+  "**/tests/**",
+  // Config files
+  "**/*.config.ts",
+  "**/*.config.js",
+  "**/*.config.mjs",
+  "**/vite.config.*",
+  "**/vitest.config.*",
+  "**/jest.config.*",
+  "**/tailwind.config.*",
+  "**/postcss.config.*",
+  "**/tsconfig.json",
+  "**/package.json",
+  "**/biome.json",
+  // Type definitions
+  "**/*.d.ts",
+  // Scripts and tooling
+  "**/scripts/**",
+  "**/tooling/**",
+] as const;
+
+/**
  * Service for indexing codebase files with embeddings and semantic search
  * Uses OpenAI embeddings and Supabase Vector Buckets for storage (or in-memory fallback)
  */
@@ -299,32 +352,16 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             `[CodebaseIndexing] Using repository: ${repositoryId}`,
           );
 
-          // Find all relevant files (TypeScript, JavaScript, TSX, JSX)
-          const patterns = [
-            "**/*.ts",
-            "**/*.tsx",
-            "**/*.js",
-            "**/*.jsx",
-            "**/*.cy.ts",
-            "**/*.spec.ts",
-          ];
-
-          const excludePatterns = [
-            "**/node_modules/**",
-            "**/dist/**",
-            "**/build/**",
-            "**/.next/**",
-            "**/out/**",
-          ];
-
+          // Find source files relevant for test generation
           const files: vscode.Uri[] = [];
+          const excludePattern = INDEXING_EXCLUDE_PATTERNS.join(",");
 
-          for (const pattern of patterns) {
+          for (const pattern of INDEXING_INCLUDE_PATTERNS) {
             const foundFiles = yield* Effect.tryPromise({
               try: () =>
                 vscodeService.workspace.findFiles(
                   pattern,
-                  excludePatterns.join(","),
+                  excludePattern,
                   1000, // Limit to 1000 files
                 ),
               catch: () => new Error("Failed to find files"),
@@ -339,43 +376,88 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           ).map((path) => vscode.Uri.file(path));
 
           yield* Effect.logDebug(
-            `[CodebaseIndexing] Found ${uniqueFiles.length} files to index`,
+            `[CodebaseIndexing] Found ${uniqueFiles.length} files to check`,
           );
 
-          // Index files in batches
+          // Single batch query - get all existing file hashes for O(1) lookups
+          const existingHashes = yield* repositoryService
+            .getFileHashes(repositoryId)
+            .pipe(
+              Effect.catchAll(() =>
+                Effect.gen(function* () {
+                  yield* Effect.logDebug(
+                    "[CodebaseIndexing] Failed to fetch existing hashes, will index all files",
+                  );
+                  return new Map<string, string>();
+                }),
+              ),
+            );
+
+          yield* Effect.logDebug(
+            `[CodebaseIndexing] Retrieved ${existingHashes.size} existing file hashes`,
+          );
+
+          // Index files in batches, skipping unchanged files
           const batchSize = 10;
           let indexed = 0;
+          let skipped = 0;
 
           for (let i = 0; i < uniqueFiles.length; i += batchSize) {
             const batch = uniqueFiles.slice(i, i + batchSize);
 
-            yield* Effect.all(
+            const results = yield* Effect.all(
               batch.map((fileUri) =>
                 Effect.gen(function* () {
                   const relativePath = yield* getRelativePath(fileUri);
+
+                  // Read file content and compute hash
+                  const content = yield* readFileAsStringEffect(fileUri);
+                  const contentHash = computeContentHash(content);
+
+                  // O(1) lookup in Map - skip if unchanged
+                  const existingHash = existingHashes.get(relativePath);
+                  if (existingHash === contentHash) {
+                    yield* Effect.logDebug(
+                      `[CodebaseIndexing] Skipping unchanged: ${relativePath}`,
+                    );
+                    return { indexed: false };
+                  }
+
+                  // File is new or changed - compute embedding and store
                   return yield* indexFile(relativePath, repositoryId).pipe(
+                    Effect.map(() => ({ indexed: true })),
                     Effect.catchAll((error) =>
                       Effect.gen(function* () {
                         yield* Effect.logDebug(
                           `[CodebaseIndexing] Failed to index ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
                         );
-                        return null;
+                        return { indexed: false };
                       }),
                     ),
                   );
-                }),
+                }).pipe(
+                  Effect.catchAll(() => Effect.succeed({ indexed: false })),
+                ),
               ),
               { concurrency: batchSize },
             );
 
-            indexed += batch.length;
+            // Count indexed vs skipped
+            for (const result of results) {
+              if (result.indexed) {
+                indexed++;
+              } else {
+                skipped++;
+              }
+            }
+
             yield* Effect.logDebug(
-              `[CodebaseIndexing] Indexed ${indexed}/${uniqueFiles.length} files`,
+              `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${uniqueFiles.length} files`,
             );
           }
 
           yield* Effect.logDebug(
-            `[CodebaseIndexing] Workspace indexing complete: ${indexed} files indexed`,
+            `[CodebaseIndexing] Workspace indexing complete: ${indexed} files indexed, ${skipped} unchanged files skipped`,
           );
 
           // Update status to complete

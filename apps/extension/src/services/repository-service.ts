@@ -294,6 +294,46 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         });
 
       /**
+       * Get all file hashes for a repository (batch query for incremental sync)
+       * Returns a Map<relativePath, contentHash> for O(1) lookups
+       */
+      const getFileHashes = (repositoryId: string) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug(
+            `[RepositoryService] Getting file hashes for repository: ${repositoryId}`,
+          );
+
+          const results = yield* Effect.tryPromise({
+            try: async () => {
+              return await db
+                .select({
+                  relativePath: files.relativePath,
+                  contentHash: files.contentHash,
+                })
+                .from(files)
+                .where(eq(files.repositoryId, repositoryId));
+            },
+            catch: (error) =>
+              new RepositoryError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          // Return as Map for O(1) lookups
+          const hashMap = new Map<string, string>(
+            results.map((f) => [f.relativePath, f.contentHash]),
+          );
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Retrieved ${hashMap.size} file hashes`,
+          );
+
+          return hashMap;
+        });
+
+      /**
        * Get indexing status for a repository
        */
       const getIndexingStatus = (userId: string, rootPath: string) =>
@@ -348,6 +388,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         upsertFile,
         deleteFile,
         getFileByPath,
+        getFileHashes,
         searchFiles,
         getIndexingStatus,
       };
