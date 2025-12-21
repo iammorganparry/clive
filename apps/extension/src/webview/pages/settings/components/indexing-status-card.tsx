@@ -168,20 +168,16 @@ export const IndexingStatusCard: React.FC = () => {
         {data &&
           "errorMessage" in data &&
           data.errorMessage &&
-          (() => {
-            const errorDisplay = getErrorDisplay(data.errorMessage);
-            if (!errorDisplay) return null;
-            return (
-              <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
-                <p className="font-medium text-red-800 dark:text-red-200">
-                  {errorDisplay.title}
-                </p>
-                <p className="text-red-700 dark:text-red-300 mt-1">
-                  {errorDisplay.message}
-                </p>
-              </div>
-            );
-          })()}
+          getErrorDisplay(data.errorMessage) && (
+            <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
+              <p className="font-medium text-red-800 dark:text-red-200">
+                {getErrorDisplay(data.errorMessage)?.title}
+              </p>
+              <p className="text-red-700 dark:text-red-300 mt-1">
+                {getErrorDisplay(data.errorMessage)?.message}
+              </p>
+            </div>
+          )}
 
         <Button
           onClick={() => reindexMutation.mutate()}

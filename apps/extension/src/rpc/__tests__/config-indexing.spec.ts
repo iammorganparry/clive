@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Effect, Runtime, Layer } from "effect";
 
-// Import deep mock for Drizzle client BEFORE importing services that use it
 import drizzleMock from "../../__mocks__/drizzle-client.js";
 
-// Mock getWorkspaceRoot
 vi.mock("../../lib/vscode-effects.js", () => ({
   getWorkspaceRoot: vi.fn().mockReturnValue(
     Effect.succeed({
@@ -23,7 +21,6 @@ vi.mock("../../lib/vscode-effects.js", () => ({
   },
 }));
 
-// Import services AFTER mocks are set up
 import { configRouter } from "../routers/config.js";
 import { ConfigService } from "../../services/config-service.js";
 import { ApiKeyService } from "../../services/api-key-service.js";
@@ -55,7 +52,6 @@ describe("Config Router - Indexing Endpoints", () => {
       },
     };
 
-    // Mock JWT token with userId
     storedTokens.set(
       "clive.auth_token",
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test",
@@ -183,7 +179,6 @@ describe("Config Router - Indexing Endpoints", () => {
 
   describe("getIndexingStatus", () => {
     it("should return merged status from repo and in-memory state", async () => {
-      // Configure drizzle mock for repository queries
       const mockRepository = {
         id: "test-user-123-/workspace",
         userId: "test-user-123",
@@ -202,12 +197,10 @@ describe("Config Router - Indexing Endpoints", () => {
       // biome-ignore lint/suspicious/noExplicitAny: Test mock type
       drizzleMock.select.mockReturnValue(mockSelect as any);
 
-      // Configure count query
       const mockSelectCount = {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockResolvedValue([{ count: 42 }]),
       };
-      // Use different mock for second select call (count)
       drizzleMock.select
         // biome-ignore lint/suspicious/noExplicitAny: Test mock type
         .mockReturnValueOnce(mockSelect as any)
@@ -269,11 +262,10 @@ describe("Config Router - Indexing Endpoints", () => {
     });
 
     it("should return idle when no repository exists and no indexing in progress", async () => {
-      // Configure drizzle mock for repository queries - no repository found
       const mockSelect = {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([]), // No repository found
+        limit: vi.fn().mockResolvedValue([]),
       };
       // biome-ignore lint/suspicious/noExplicitAny: Test mock type
       drizzleMock.select.mockReturnValue(mockSelect as any);
@@ -314,12 +306,10 @@ describe("Config Router - Indexing Endpoints", () => {
         input: undefined,
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      // When no repository exists and no indexing is in progress, status should be idle
       expect((result as { status: string }).status).toBe("idle");
     });
 
     it("should handle RepositoryError", async () => {
-      // Configure drizzle mock to throw an error
       const mockSelect = {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
@@ -446,7 +436,6 @@ describe("Config Router - Indexing Endpoints", () => {
         createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
       );
 
-      // Should still return success because errors are caught in fork
       const handler = configRouter.triggerReindex._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
