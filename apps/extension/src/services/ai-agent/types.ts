@@ -117,6 +117,12 @@ export interface ProposedTest {
   isUpdate: boolean;
   proposedContent: string; // The actual test code that will be written
   existingContent?: string; // Current file content (for updates)
+  // E2E-specific fields
+  navigationPath?: string; // URL/route to navigate to
+  pageContext?: string; // Page component containing this feature
+  prerequisites?: string[]; // Auth, data setup requirements
+  relatedTests?: string[]; // Existing tests that may be impacted
+  userFlow?: string; // Description of the E2E user journey
 }
 
 export interface TestGenerationPlan {
@@ -136,6 +142,12 @@ export interface ProposeTestInput {
   targetTestPath: string;
   description: string;
   isUpdate: boolean;
+  // E2E-specific fields
+  navigationPath?: string; // URL/route to navigate to
+  pageContext?: string; // Page component containing this feature
+  prerequisites?: string[]; // Auth, data setup requirements
+  relatedTests?: string[]; // Existing tests that may be impacted
+  userFlow?: string; // Description of the E2E user journey
 }
 
 export interface ProposeTestOutput {

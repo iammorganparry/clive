@@ -1,4 +1,5 @@
 import { Data, Effect } from "effect";
+import { jwtDecode } from "jwt-decode";
 import { SecretStorageService } from "./vs-code.js";
 import { ApiKeyService } from "./api-key-service.js";
 import { SecretKeys, ConfigFile } from "../constants.js";
@@ -14,6 +15,19 @@ class GatewayTokenError extends Data.TaggedError("GatewayTokenError")<{
 class AuthTokenMissingError extends Data.TaggedError("AuthTokenMissingError")<{
   message: string;
 }> {}
+
+class InvalidTokenError extends Data.TaggedError("InvalidTokenError")<{
+  message: string;
+  cause?: unknown;
+}> {}
+
+/**
+ * JWT payload structure
+ */
+interface JwtPayload {
+  sub: string; // userId
+  [key: string]: unknown;
+}
 
 export const Secrets = {
   AiApiKey: "clive.ai_api_key",
@@ -223,6 +237,52 @@ export class ConfigService extends Effect.Service<ConfigService>()(
          */
         getMaxConcurrentFiles: () =>
           Effect.succeed(ConfigFile.defaults.maxConcurrentFiles),
+
+        /**
+         * Gets the current user ID from the auth token
+         * Decodes JWT to extract the user ID from the 'sub' claim
+         */
+        getUserId: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[ConfigService] Extracting userId from auth token",
+            );
+            const service = yield* ConfigService;
+            const authToken = yield* service.getAuthToken();
+            if (!authToken) {
+              return yield* Effect.fail(
+                new AuthTokenMissingError({
+                  message: "Authentication required",
+                }),
+              );
+            }
+
+            // Decode JWT to extract userId
+            const decoded = yield* Effect.try({
+              try: () => jwtDecode<JwtPayload>(authToken),
+              catch: (error) =>
+                new InvalidTokenError({
+                  message:
+                    error instanceof Error
+                      ? `Failed to decode JWT: ${error.message}`
+                      : "Failed to decode JWT",
+                  cause: error,
+                }),
+            });
+
+            if (!decoded.sub) {
+              return yield* Effect.fail(
+                new InvalidTokenError({
+                  message: "Invalid token: missing user ID (sub claim)",
+                }),
+              );
+            }
+
+            yield* Effect.logDebug(
+              `[ConfigService] UserId extracted: ${decoded.sub}`,
+            );
+            return decoded.sub;
+          }),
       };
     }),
     dependencies: [SecretStorageService.Default, ApiKeyService.Default],

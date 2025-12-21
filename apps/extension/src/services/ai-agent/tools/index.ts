@@ -11,6 +11,7 @@ export { createGrepSearchTool } from "./grep-search.js";
 export { createGlobSearchTool } from "./glob-search.js";
 export { createGetCypressConfigTool } from "./get-cypress-config.js";
 export { createGetFileDiffTool } from "./get-file-diff.js";
+export { createSemanticSearchTool } from "./semantic-search.js";
 
 // Tools that don't need budget awareness
 export { writeTestFileTool } from "./write-test-file.js";

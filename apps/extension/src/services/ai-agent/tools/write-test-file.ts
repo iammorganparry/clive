@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
+import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 
 /**
  * Tool for writing Cypress test files
@@ -73,8 +74,11 @@ export const writeTestFileTool = tool({
         await vscode.workspace.fs.createDirectory(parentDir);
       }
 
+      // Normalize escaped characters - convert literal escape sequences to actual characters
+      const normalizedContent = normalizeEscapedChars(testContent);
+
       // Write file
-      const content = Buffer.from(testContent, "utf-8");
+      const content = Buffer.from(normalizedContent, "utf-8");
       await vscode.workspace.fs.writeFile(fileUri, content);
 
       const relativePath = vscode.workspace.asRelativePath(fileUri, false);

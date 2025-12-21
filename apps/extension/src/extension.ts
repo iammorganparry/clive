@@ -6,8 +6,11 @@ import { CommandCenter } from "./commands/command-center.js";
 import { DiffContentProvider } from "./services/diff-content-provider.js";
 import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
-import { createSecretStorageLayer } from "./services/vs-code.js";
+import { ApiKeyService } from "./services/api-key-service.js";
+import { createSecretStorageLayer, VSCodeService } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
+import { CodebaseIndexingService } from "./services/codebase-indexing-service.js";
+import { RepositoryService } from "./services/repository-service.js";
 
 const commandCenter = new CommandCenter();
 
@@ -96,6 +99,45 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
 
   // Register all commands via CommandCenter
   commandCenter.registerAll(context);
+
+  // Start codebase indexing in the background (non-blocking)
+  const indexingLayer = Layer.merge(
+    Layer.merge(
+      Layer.merge(ConfigService.Default, createSecretStorageLayer(context)),
+      Layer.merge(VSCodeService.Default, RepositoryService.Default),
+    ),
+    Layer.merge(ApiKeyService.Default, loggerLayer),
+  );
+
+  Effect.gen(function* () {
+    yield* Effect.logDebug(
+      "[Extension] Starting codebase indexing in background...",
+    );
+    const indexingService = yield* CodebaseIndexingService;
+
+    // Index workspace asynchronously (don't block activation)
+    yield* indexingService.indexWorkspace().pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug(
+            `[Extension] Codebase indexing error (non-fatal): ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }),
+      ),
+    );
+  })
+    .pipe(
+      Effect.provide(
+        Layer.merge(CodebaseIndexingService.Default, indexingLayer),
+      ),
+      Runtime.runPromise(Runtime.defaultRuntime),
+    )
+    .catch(() => {
+      // Ignore indexing errors - extension should still work without indexing
+      outputChannel.appendLine(
+        "Codebase indexing failed (extension will continue without it)",
+      );
+    });
 
   // Return exports for testing
   return { context };

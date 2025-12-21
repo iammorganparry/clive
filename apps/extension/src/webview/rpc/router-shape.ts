@@ -50,6 +50,8 @@ export const routerShape: RouterRecord = {
     getApiKeys: createProcedureShape("query"),
     saveApiKey: createProcedureShape("mutation"),
     deleteApiKey: createProcedureShape("mutation"),
+    getIndexingStatus: createProcedureShape("query"),
+    triggerReindex: createProcedureShape("mutation"),
   },
   conversations: {
     start: createProcedureShape("mutation"),

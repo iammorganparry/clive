@@ -235,6 +235,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 ? `Test created: ${testResult.testFilePath}`
                 : "Test generation completed",
               logs: prev.get(filePath)?.logs || [],
+              testFilePath: testResult.testFilePath,
             });
           } else {
             next.set(filePath, {
@@ -334,6 +335,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       });
     },
     [previewDiffMutation],
+  );
+
+  // Handler for viewing test file
+  const handleViewTest = useCallback(
+    (testFilePath: string) => {
+      vscode.postMessage({
+        command: "open-file",
+        filePath: testFilePath,
+      });
+    },
+    [vscode],
   );
 
   // Start conversation mutation
@@ -506,6 +518,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           isGenerating={isPlanningTests}
           generationStatus={planningStatus}
           onCancelTest={handleCancelFileTest}
+          onViewTest={handleViewTest}
         />
       )}
     </div>

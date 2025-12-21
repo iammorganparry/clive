@@ -1,6 +1,7 @@
 import type * as vscode from "vscode";
 import { streamText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { AIModels } from "../ai-models.js";
 import {
   createReadFileTool,
   createListFilesTool,
@@ -87,8 +88,9 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
           if (writeResults.length > 0) {
             const lastWrite = writeResults[writeResults.length - 1] as {
               result?: unknown;
+              output?: unknown;
             };
-            const toolOutput = lastWrite.result;
+            const toolOutput = lastWrite.result ?? lastWrite.output;
             if (toolOutput && isWriteTestFileOutput(toolOutput)) {
               yield* Effect.logDebug(
                 `[ExecutionAgent] Extracted test file: ${toolOutput.filePath} (success: ${toolOutput.success})`,
@@ -193,9 +195,9 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
             const streamResult = yield* Effect.try({
               try: () =>
                 streamText({
-                  model: anthropic("claude-haiku-4-5"),
+                  model: anthropic(AIModels.anthropic.execution),
                   tools,
-                  stopWhen: stepCountIs(10), // Fewer steps needed since we're just executing
+                  stopWhen: stepCountIs(20), // Increased for iteration and file reading
                   system: CYPRESS_EXECUTION_SYSTEM_PROMPT,
                   prompt,
                   abortSignal,

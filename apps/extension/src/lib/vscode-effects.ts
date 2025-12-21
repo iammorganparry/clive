@@ -36,6 +36,20 @@ export class NoWorkspaceFolderError extends Data.TaggedError(
   message: string;
 }> {}
 
+export class VSCodeDocumentOpenError extends Data.TaggedError(
+  "VSCodeDocumentOpenError",
+)<{
+  uri: string;
+  cause: unknown;
+}> {}
+
+export class VSCodeDocumentShowError extends Data.TaggedError(
+  "VSCodeDocumentShowError",
+)<{
+  uri: string;
+  cause: unknown;
+}> {}
+
 /**
  * Get workspace root, failing if not available
  */
@@ -136,4 +150,55 @@ export const resolvePathToUri = (filePath: string, workspaceRoot: vscode.Uri) =>
       return vscode.Uri.file(filePath);
     }
     return vscode.Uri.joinPath(workspaceRoot, filePath);
+  });
+
+/**
+ * Resolve a file path to a URI, using workspace root if available
+ */
+export const resolveFileUri = (filePath: string) =>
+  Effect.gen(function* () {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders && workspaceFolders.length > 0) {
+      const workspaceRoot = workspaceFolders[0].uri;
+      return yield* resolvePathToUri(filePath, workspaceRoot);
+    }
+    return vscode.Uri.file(filePath);
+  });
+
+/**
+ * Open a text document
+ */
+export const openTextDocumentEffect = (uri: vscode.Uri) =>
+  Effect.tryPromise({
+    try: () => vscode.workspace.openTextDocument(uri),
+    catch: (error) =>
+      new VSCodeDocumentOpenError({
+        uri: uri.fsPath,
+        cause: error,
+      }),
+  });
+
+/**
+ * Show a text document in the editor
+ */
+export const showTextDocumentEffect = (
+  document: vscode.TextDocument,
+  column?: vscode.ViewColumn,
+  preserveFocus?: boolean,
+) =>
+  Effect.tryPromise({
+    try: () => vscode.window.showTextDocument(document, column, preserveFocus),
+    catch: (error) =>
+      new VSCodeDocumentShowError({
+        uri: document.uri.fsPath,
+        cause: error,
+      }),
+  });
+
+/**
+ * Show an error message to the user
+ */
+export const showErrorMessageEffect = (message: string) =>
+  Effect.sync(() => {
+    vscode.window.showErrorMessage(message);
   });
