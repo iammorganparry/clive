@@ -104,7 +104,7 @@ export const conversationsRouter = {
         const messages = yield* conversationService
           .getMessages(conversation.id)
           .pipe(
-            Effect.catchTag("ApiError", (error) =>
+            Effect.catchTag("ApiError", (_error) =>
               Effect.sync(() => {
                 return [] as Message[];
               }),
@@ -139,7 +139,7 @@ export const conversationsRouter = {
     .subscription(async function* ({
       input,
       ctx,
-      signal,
+      signal: _signal,
       onProgress,
     }: {
       input: {
@@ -197,7 +197,7 @@ export const conversationsRouter = {
           const history = yield* conversationService
             .getMessages(input.conversationId)
             .pipe(
-              Effect.catchTag("ApiError", (error) =>
+              Effect.catchTag("ApiError", (_error) =>
                 Effect.sync(() => {
                   return [] as Message[];
                 }),
@@ -320,7 +320,7 @@ export const conversationsRouter = {
         const conversation = yield* conversationService
           .getOrCreateConversation(input.sourceFile)
           .pipe(
-            Effect.catchTag("ApiError", (error) =>
+            Effect.catchTag("ApiError", (_error) =>
               Effect.sync(() => {
                 return null;
               }),
@@ -343,7 +343,7 @@ export const conversationsRouter = {
         const messages = yield* conversationService
           .getMessages(conversation.id)
           .pipe(
-            Effect.catchTag("ApiError", (error) =>
+            Effect.catchTag("ApiError", (_error) =>
               Effect.sync(() => {
                 return [] as Message[];
               }),

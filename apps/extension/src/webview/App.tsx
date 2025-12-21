@@ -14,11 +14,6 @@ interface AppProps {
   vscode: VSCodeAPI;
 }
 
-interface MessageData {
-  command: string;
-  [key: string]: unknown;
-}
-
 // Store pending promises for message responses (shared across pages)
 const pendingPromises = new Map<
   string,

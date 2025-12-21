@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { logger } from "../../../services/logger.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import { useRpc } from "../../../rpc/provider.js";
 
@@ -25,18 +24,6 @@ interface ApiKeyFormProps {
     command: string,
     expectedResponseCommand: string,
   ) => Promise<unknown>;
-}
-
-interface ApiKeyStatus {
-  provider: "anthropic";
-  hasKey: boolean;
-  maskedKey?: string;
-}
-
-interface MessageData {
-  command: string;
-  statuses?: ApiKeyStatus[];
-  error?: string;
 }
 
 type ErrorCategory = "validation" | "timeout" | "storage" | "unknown";

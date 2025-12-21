@@ -4,9 +4,7 @@ import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import { getWebviewHtml } from "./webview-html.js";
 import { Views } from "../constants.js";
 import { Effect, Layer } from "effect";
-import { ReactFileFilter as ReactFileFilterService } from "../services/react-file-filter.js";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
-import { ConfigService as ConfigServiceEffect } from "../services/config-service.js";
 import { VSCodeService } from "../services/vs-code.js";
 import { handleRpcMessage, isRpcMessage } from "../rpc/handler.js";
 import type { RpcContext } from "../rpc/context.js";
@@ -126,7 +124,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
           input: { token },
         };
         const response = await handleRpcMessage(rpcMessage, rpcContext);
-        if (response && response.success) {
+        if (response?.success) {
           // Send token to webview
           this._webviewView.webview.postMessage({
             command: "auth-token",
@@ -177,7 +175,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   /**
    * Set up file system watchers for status updates
    */
-  private setupFileWatchers(webviewView: vscode.WebviewView): void {
+  private setupFileWatchers(_webviewView: vscode.WebviewView): void {
     // Watch for package.json changes (status is now handled via RPC queries)
     const packageWatcher =
       vscode.workspace.createFileSystemWatcher("**/package.json");

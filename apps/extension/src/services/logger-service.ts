@@ -1,5 +1,5 @@
 import { Effect, Layer, Logger, LogLevel } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 
 /**
  * Logger service for Effect-based logging
