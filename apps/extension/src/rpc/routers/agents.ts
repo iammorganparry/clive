@@ -327,4 +327,159 @@ export const agentsRouter = {
       // Return final result
       return result;
     }),
+
+  /**
+   * Execute confirmed test plan
+   */
+  executeTest: procedure
+    .input(
+      z.object({
+        test: z.object({
+          id: z.string(),
+          sourceFile: z.string(),
+          targetTestPath: z.string(),
+          description: z.string(),
+          isUpdate: z.boolean(),
+        }),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        const testAgent = yield* CypressTestAgent;
+        const abortController = new AbortController();
+
+        const result = yield* testAgent.executeTest(
+          {
+            sourceFile: input.test.sourceFile,
+            targetTestPath: input.test.targetTestPath,
+            description: input.test.description,
+            isUpdate: input.test.isUpdate,
+          },
+          ctx.outputChannel,
+          ctx.isDev,
+          abortController.signal,
+        );
+
+        if (result.success) {
+          return {
+            id: input.test.id,
+            executionStatus: "completed" as const,
+            testFilePath: result.testFilePath,
+            message: result.testContent,
+          };
+        } else {
+          return {
+            id: input.test.id,
+            executionStatus: result.error?.includes("cancelled")
+              ? ("pending" as const)
+              : ("error" as const),
+            error: result.error || "Unknown error",
+          };
+        }
+      }).pipe(
+        Effect.catchAll((error: unknown) =>
+          Effect.succeed({
+            id: input.test.id,
+            executionStatus: "error" as const,
+            error: error instanceof Error ? error.message : "Unknown error",
+          }),
+        ),
+        Effect.provide(createServiceLayer(ctx)),
+      ),
+    ),
+
+  /**
+   * Cancel a running test
+   */
+  cancelTest: procedure
+    .input(
+      z.object({
+        testId: z.string(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[AgentsRouter] Cancelling test: ${input.testId}`,
+        );
+
+        // Note: AbortController tracking would need to be managed at a higher level
+        // For now, we'll return a success response indicating cancellation was requested
+        const isFilePath =
+          input.testId.includes("/") || input.testId.includes("\\");
+
+        return {
+          testId: input.testId,
+          isFilePath,
+          cancelled: true,
+        };
+      }).pipe(Effect.provide(createServiceLayer(ctx))),
+    ),
+
+  /**
+   * Preview test diff
+   */
+  previewDiff: procedure
+    .input(
+      z.object({
+        test: z.object({
+          id: z.string(),
+          targetTestPath: z.string(),
+          proposedContent: z.string(),
+          existingContent: z.string().optional(),
+          isUpdate: z.boolean(),
+        }),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.tryPromise({
+        try: () => {
+          const proposedUri = ctx.diffProvider.storeContent(
+            input.test.id,
+            input.test.proposedContent,
+            "proposed",
+          );
+
+          let originalUri: vscode.Uri;
+          if (input.test.isUpdate && input.test.existingContent) {
+            originalUri = ctx.diffProvider.storeContent(
+              input.test.id,
+              input.test.existingContent,
+              "existing",
+            );
+          } else {
+            originalUri = ctx.diffProvider.storeContent(
+              input.test.id,
+              "",
+              "empty",
+            );
+          }
+
+          return vscode.commands.executeCommand(
+            "vscode.diff",
+            originalUri,
+            proposedUri,
+            `${input.test.targetTestPath} (Preview)`,
+            {
+              viewColumn: vscode.ViewColumn.Active,
+            },
+          );
+        },
+        catch: (error) =>
+          new Error(error instanceof Error ? error.message : "Unknown error"),
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function* () {
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+            yield* Effect.promise(() =>
+              vscode.window.showErrorMessage(
+                `Failed to preview test diff: ${errorMessage}`,
+              ),
+            );
+            return yield* Effect.fail(new Error(errorMessage));
+          }),
+        ),
+      ),
+    ),
 };

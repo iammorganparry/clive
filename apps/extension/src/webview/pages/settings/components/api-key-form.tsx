@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import type React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@clive/ui/button";
 import { Input } from "@clive/ui/input";
 import {
@@ -10,9 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { WebviewMessages } from "../../../../constants.js";
 import { logger } from "../../../services/logger.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
+import { useRpc } from "../../../rpc/provider.js";
 
 interface ApiKeyFormProps {
   vscode: VSCodeAPI;
@@ -143,122 +143,38 @@ const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onRetry }) => {
 };
 
 export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
-  vscode,
-  pendingPromises,
-  createMessagePromise,
+  vscode: _vscode,
+  pendingPromises: _pendingPromises,
+  createMessagePromise: _createMessagePromise,
 }) => {
   const queryClient = useQueryClient();
+  const rpc = useRpc();
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleMessage = useCallback(
-    (event: MessageEvent) => {
-      const message = event.data as MessageData;
-      logger.message.receive(message.command, message);
-
-      const pending = pendingPromises.get(message.command);
-      if (pending) {
-        if (message.error) {
-          pending.reject(new Error(message.error));
-        } else {
-          pending.resolve(message);
-        }
-      }
-
-      if (
-        message.command === WebviewMessages.apiKeysStatus &&
-        message.statuses !== undefined
-      ) {
-        queryClient.setQueryData<ApiKeyStatus[]>(
-          ["api-keys-status"],
-          message.statuses,
-        );
-      }
-    },
-    [queryClient, pendingPromises],
-  );
-
-  useEffect(() => {
-    window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [handleMessage]);
-
   const {
-    data: apiKeysStatus,
+    data: apiKeysData,
     isLoading,
     error: queryError,
     refetch: refetchApiKeys,
-  } = useQuery<ApiKeyStatus[], Error>({
-    queryKey: ["api-keys-status"],
-    queryFn: async () => {
-      logger.query.start("api-keys-status");
-      try {
-        const message = (await createMessagePromise(
-          vscode,
-          WebviewMessages.getApiKeys,
-          WebviewMessages.apiKeysStatus,
-        )) as MessageData;
+  } = rpc.config.getApiKeys.useQuery();
 
-        if (!message.statuses) {
-          throw new Error("No status received");
-        }
-
-        logger.query.success("api-keys-status", message.statuses);
-        return message.statuses;
-      } catch (error) {
-        logger.query.error("api-keys-status", error);
-        throw error;
-      }
-    },
-    refetchInterval: false,
-  });
+  const apiKeysStatus = apiKeysData?.statuses || [];
 
   const anthropicStatus = apiKeysStatus?.find(
     (s) => s.provider === "anthropic",
   );
 
-  const saveMutation = useMutation({
-    mutationFn: async (key: string) => {
-      logger.debug("Saving API key");
-      try {
-        vscode.postMessage({
-          command: WebviewMessages.saveApiKey,
-          provider: "anthropic",
-          key,
-        });
-
-        return new Promise<MessageData>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("Request timeout"));
-          }, 10000);
-
-          const checkResponse = (event: MessageEvent) => {
-            const msg = event.data as MessageData;
-            if (msg.command === WebviewMessages.apiKeysStatus) {
-              clearTimeout(timeout);
-              window.removeEventListener("message", checkResponse);
-              if (msg.error) {
-                reject(new Error(msg.error));
-              } else {
-                resolve(msg);
-              }
-            }
-          };
-
-          window.addEventListener("message", checkResponse);
-        });
-      } catch (error) {
-        logger.error("Failed to save API key", error);
-        throw error;
+  const saveMutation = rpc.config.saveApiKey.useMutation({
+    onSuccess: (data) => {
+      if ("error" in data && data.error) {
+        setError(createErrorInfo(data.error));
+      } else {
+        queryClient.setQueryData(["api-keys-status"], data.statuses);
+        setApiKey("");
+        setError(null);
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["api-keys-status"] });
-      setApiKey("");
-      setError(null);
     },
     onError: (error) => {
       const errorMessage =
@@ -267,45 +183,16 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async () => {
-      logger.debug("Deleting API key");
-      try {
-        vscode.postMessage({
-          command: WebviewMessages.deleteApiKey,
-          provider: "anthropic",
-        });
-
-        return new Promise<MessageData>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("Request timeout"));
-          }, 10000);
-
-          const checkResponse = (event: MessageEvent) => {
-            const msg = event.data as MessageData;
-            if (msg.command === WebviewMessages.apiKeysStatus) {
-              clearTimeout(timeout);
-              window.removeEventListener("message", checkResponse);
-              if (msg.error) {
-                reject(new Error(msg.error));
-              } else {
-                resolve(msg);
-              }
-            }
-          };
-
-          window.addEventListener("message", checkResponse);
-        });
-      } catch (error) {
-        logger.error("Failed to delete API key", error);
-        throw error;
+  const deleteMutation = rpc.config.deleteApiKey.useMutation({
+    onSuccess: (data) => {
+      if ("error" in data && data.error) {
+        setError(createErrorInfo(data.error));
+      } else {
+        queryClient.setQueryData(["api-keys-status"], data.statuses);
+        setApiKey("");
+        setError(null);
+        setShowDeleteConfirm(false);
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["api-keys-status"] });
-      setApiKey("");
-      setError(null);
-      setShowDeleteConfirm(false);
     },
     onError: (error) => {
       const errorMessage =
@@ -322,11 +209,11 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
       return;
     }
     setError(null);
-    saveMutation.mutate(apiKey.trim());
+    saveMutation.mutate({ provider: "anthropic", key: apiKey.trim() });
   }, [apiKey, saveMutation]);
 
   const handleDelete = useCallback(() => {
-    deleteMutation.mutate();
+    deleteMutation.mutate({ provider: "anthropic" });
   }, [deleteMutation]);
 
   const handleDeleteClick = useCallback(() => {
