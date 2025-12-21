@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Import deep mock for Drizzle client BEFORE importing handlers that might use it
+import "../../__mocks__/drizzle-client.js";
+
 import { handleRpcMessage, isRpcMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
 import type * as vscode from "vscode";

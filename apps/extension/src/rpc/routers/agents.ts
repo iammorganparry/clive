@@ -96,54 +96,95 @@ export const agentsRouter = {
           const maxConcurrentFiles =
             yield* configService.getMaxConcurrentFiles();
 
-          // Process all files in parallel using Effect.all
-          const results = yield* Effect.all(
-            input.files.map((filePath: string, _index: number) =>
-              Effect.gen(function* () {
-                // Get or create conversation for this file
-                const conversation = yield* conversationService
-                  .getOrCreateConversation(filePath)
-                  .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-                // Get conversation history if exists
-                let conversationHistory: Array<{
-                  role: "user" | "assistant" | "system";
-                  content: string;
-                }> = [];
-                if (conversation) {
-                  const messages = yield* conversationService
-                    .getMessages(conversation.id)
-                    .pipe(Effect.catchAll(() => Effect.succeed([])));
-                  conversationHistory = messages.map((msg) => ({
-                    role: msg.role as "user" | "assistant" | "system",
-                    content: msg.content,
-                  }));
+          // Check if any files have conversation history
+          // If so, process individually to preserve per-file conversations
+          // Otherwise, batch process for efficiency
+          const hasConversationHistory = yield* Effect.gen(function* () {
+            for (const filePath of input.files) {
+              const conversation = yield* conversationService
+                .getOrCreateConversation(filePath)
+                .pipe(Effect.catchAll(() => Effect.succeed(null)));
+              if (conversation) {
+                const messages = yield* conversationService
+                  .getMessages(conversation.id)
+                  .pipe(Effect.catchAll(() => Effect.succeed([])));
+                if (messages.length > 0) {
+                  return true;
                 }
+              }
+            }
+            return false;
+          }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-                // Plan test for this file
-                const result = yield* planningAgent.planTestForFile(
-                  filePath,
-                  conversationHistory,
-                  ctx.outputChannel,
-                  () => {}, // Progress callback - handled by subscription for generateTest
-                );
+          let results: Array<{
+            tests: ProposedTest[];
+            conversationId?: string;
+            sourceFile: string;
+          }>;
 
-                // Save assistant response to conversation if we have one
-                if (conversation && result.response) {
-                  yield* conversationService
-                    .addMessage(conversation.id, "assistant", result.response)
-                    .pipe(Effect.catchAll(() => Effect.void));
-                }
+          if (hasConversationHistory) {
+            // Process files individually to preserve per-file conversation history
+            results = yield* Effect.all(
+              input.files.map((filePath: string) =>
+                Effect.gen(function* () {
+                  // Get or create conversation for this file
+                  const conversation = yield* conversationService
+                    .getOrCreateConversation(filePath)
+                    .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-                return {
-                  tests: result.tests,
-                  conversationId: conversation?.id,
-                  sourceFile: filePath,
-                };
-              }),
-            ),
-            { concurrency: maxConcurrentFiles },
-          );
+                  // Get conversation history if exists
+                  let conversationHistory: Array<{
+                    role: "user" | "assistant" | "system";
+                    content: string;
+                  }> = [];
+                  if (conversation) {
+                    const messages = yield* conversationService
+                      .getMessages(conversation.id)
+                      .pipe(Effect.catchAll(() => Effect.succeed([])));
+                    conversationHistory = messages.map((msg) => ({
+                      role: msg.role as "user" | "assistant" | "system",
+                      content: msg.content,
+                    }));
+                  }
+
+                  // Plan test for this file with conversation history
+                  const result = yield* planningAgent.planTest(filePath, {
+                    conversationHistory,
+                    outputChannel: ctx.outputChannel,
+                    progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
+                  });
+
+                  // Save assistant response to conversation if we have one
+                  if (conversation && result.response) {
+                    yield* conversationService
+                      .addMessage(conversation.id, "assistant", result.response)
+                      .pipe(Effect.catchAll(() => Effect.void));
+                  }
+
+                  return {
+                    tests: result.tests,
+                    conversationId: conversation?.id,
+                    sourceFile: filePath,
+                  };
+                }),
+              ),
+              { concurrency: maxConcurrentFiles },
+            );
+          } else {
+            // No conversation history - batch process for efficiency
+            const result = yield* planningAgent.planTest(input.files, {
+              outputChannel: ctx.outputChannel,
+              progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
+            });
+
+            // Convert to expected format
+            results = input.files.map((filePath) => ({
+              tests: result.tests.filter(
+                (test) => test.sourceFile === filePath,
+              ),
+              sourceFile: filePath,
+            }));
+          }
 
           // Aggregate all results
           const allTests = results.flatMap(
@@ -209,6 +250,7 @@ export const agentsRouter = {
         onProgress({
           status: "starting",
           message: `Starting test generation for ${input.sourceFilePath}...`,
+          filePath: input.sourceFilePath,
         });
       }
       yield {
@@ -216,6 +258,7 @@ export const agentsRouter = {
         data: {
           status: "starting",
           message: `Starting test generation for ${input.sourceFilePath}...`,
+          filePath: input.sourceFilePath,
         },
       };
 
@@ -225,6 +268,7 @@ export const agentsRouter = {
           onProgress({
             status: "generating",
             message,
+            filePath: input.sourceFilePath,
           });
         }
       };
@@ -282,6 +326,7 @@ export const agentsRouter = {
               success: true as const,
               testFilePath: testResult.testFilePath,
               testContent: testResult.testContent,
+              filePath: input.sourceFilePath,
             };
           } else {
             yield* Effect.promise(() =>
@@ -293,6 +338,7 @@ export const agentsRouter = {
             return {
               success: false as const,
               error: testResult.error || "Unknown error",
+              filePath: input.sourceFilePath,
             };
           }
         }).pipe(
@@ -311,6 +357,7 @@ export const agentsRouter = {
               return {
                 success: false as const,
                 error: errorMessage,
+                filePath: input.sourceFilePath,
               };
             }),
           ),

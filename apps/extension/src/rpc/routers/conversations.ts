@@ -211,13 +211,12 @@ export const conversationsRouter = {
             content: msg.content,
           }));
 
-          // Call planning agent with history
+          // Call planning agent with history using new API
           const result = yield* planningAgent
-            .planTestForFile(
-              input.sourceFile,
+            .planTest(input.sourceFile, {
               conversationHistory,
-              ctx.outputChannel,
-            )
+              outputChannel: ctx.outputChannel,
+            })
             .pipe(
               Effect.catchAll((error) =>
                 Effect.gen(function* () {

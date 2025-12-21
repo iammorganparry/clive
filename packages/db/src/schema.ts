@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { boolean, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  vector,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -130,3 +138,44 @@ export const conversationMessage = pgTable("conversation_message", {
   toolCalls: text("tool_calls"), // JSON string of tool calls if any
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// Codebase indexing tables
+export const repositories = pgTable("repositories", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // workspace name
+  rootPath: text("root_path").notNull(), // absolute path on user's machine
+  lastIndexedAt: timestamp("last_indexed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdateFn(() => sql`now()`),
+});
+
+export const files = pgTable(
+  "files",
+  {
+    id: text("id").primaryKey(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    relativePath: text("relative_path").notNull(),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(), // text-embedding-3-small
+    fileType: text("file_type").notNull(),
+    contentHash: text("content_hash").notNull(), // MD5 for change detection
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    // HNSW index for fast vector similarity search
+    index("files_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+    // Index for repository + path lookups
+    index("files_repo_path_idx").on(table.repositoryId, table.relativePath),
+  ],
+);

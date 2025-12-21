@@ -3,11 +3,37 @@ import { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import { getWebviewHtml } from "./webview-html.js";
 import { Views } from "../constants.js";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Runtime, pipe } from "effect";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
 import { VSCodeService } from "../services/vs-code.js";
 import { handleRpcMessage, isRpcMessage } from "../rpc/handler.js";
 import type { RpcContext } from "../rpc/context.js";
+import {
+  resolveFileUri,
+  openTextDocumentEffect,
+  showTextDocumentEffect,
+  showErrorMessageEffect,
+} from "../lib/vscode-effects.js";
+
+/**
+ * Message type for opening a file
+ */
+interface OpenFileMessage {
+  command: "open-file";
+  filePath: string;
+}
+
+/**
+ * Type guard for OpenFileMessage
+ */
+function isOpenFileMessage(message: unknown): message is OpenFileMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as OpenFileMessage).command === "open-file" &&
+    typeof (message as OpenFileMessage).filePath === "string"
+  );
+}
 
 /**
  * Webview view provider for Clive extension
@@ -64,10 +90,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       },
     );
 
-    // Set up RPC message handling
+    // Set up message handling
     webviewView.webview.onDidReceiveMessage(
       async (message) => {
-        // Only handle RPC messages
+        // Handle RPC messages
         if (isRpcMessage(message)) {
           const rpcContext = this.createRpcContext(webviewView);
           if (rpcContext) {
@@ -76,6 +102,27 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
               webviewView.webview.postMessage(response);
             }
           }
+          return;
+        }
+
+        // Handle non-RPC messages
+        if (isOpenFileMessage(message)) {
+          pipe(
+            resolveFileUri(message.filePath),
+            Effect.flatMap(openTextDocumentEffect),
+            Effect.flatMap((document) => showTextDocumentEffect(document)),
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                console.error("Failed to open file:", error);
+                yield* showErrorMessageEffect(
+                  `Failed to open file: ${message.filePath}`,
+                );
+              }),
+            ),
+            Runtime.runPromise(Runtime.defaultRuntime),
+          ).catch(() => {
+            // Error already handled in Effect pipeline
+          });
         }
       },
       null,

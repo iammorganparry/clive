@@ -8,6 +8,7 @@ import { Data, Effect, Layer, Match, Stream } from "effect";
 import vscode from "vscode";
 import { ConfigService } from "../config-service.js";
 import { SecretStorageService, VSCodeService } from "../vs-code.js";
+import { AIModels } from "../ai-models.js";
 import {
   CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
   CYPRESS_PLANNING_SYSTEM_PROMPT,
@@ -21,6 +22,7 @@ import {
   createGrepSearchTool,
   createListFilesTool,
   createReadFileTool,
+  createSemanticSearchTool,
   proposeTestTool,
   writeTestFileTool,
 } from "./tools/index.js";
@@ -153,15 +155,19 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
             readFile: createReadFileTool(contentBudget),
             listFiles: createListFilesTool(contentBudget),
             getCypressConfig: createGetCypressConfigTool(contentBudget),
+            semanticSearch: createSemanticSearchTool(contentBudget), // E2E: Can search for context if needed
             writeTestFile: writeTestFileTool,
           };
 
-          // Build prompt for content generation
+          // Build prompt for content generation with E2E metadata
           const prompt = PromptFactory.writeTestFile({
             sourceFile: test.sourceFile,
             targetTestPath: test.targetTestPath,
             description: test.description,
             isUpdate: test.isUpdate,
+            navigationPath: test.navigationPath,
+            prerequisites: test.prerequisites,
+            userFlow: test.userFlow,
           });
 
           yield* Effect.logDebug(
@@ -200,13 +206,13 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
 
           // Generate text using AI SDK
           yield* Effect.logDebug(
-            `[PlanningAgent:${correlationId}] Calling AI model (claude-opus-4-5) for content generation...`,
+            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.anthropic.planning}) for content generation...`,
           );
           const aiStartTime = Date.now();
           const streamResult = yield* Effect.try({
             try: () =>
               streamText({
-                model: anthropic("claude-opus-4-5"),
+                model: anthropic(AIModels.anthropic.planning),
                 tools,
                 stopWhen: stepCountIs(10),
                 // System prompt with cache control for cost optimization
@@ -442,6 +448,11 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
                     targetTestPath: string;
                     description: string;
                     isUpdate: boolean;
+                    navigationPath?: string;
+                    pageContext?: string;
+                    prerequisites?: string[];
+                    relatedTests?: string[];
+                    userFlow?: string;
                   };
 
                   const testProposal = {
@@ -452,6 +463,12 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
                     isUpdate: args.isUpdate,
                     proposedContent: "", // Will be populated during content generation
                     existingContent: undefined, // Will be populated during content generation if update
+                    // E2E fields
+                    navigationPath: args.navigationPath,
+                    pageContext: args.pageContext,
+                    prerequisites: args.prerequisites,
+                    relatedTests: args.relatedTests,
+                    userFlow: args.userFlow,
                   };
                   proposedTests.push(testProposal);
 
@@ -469,6 +486,505 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           return proposedTests;
         });
 
+      /**
+       * Internal helper: Plan tests for a single file
+       * This is the core planning logic extracted for reuse
+       */
+      const planTestForSingleFile = (
+        filePath: string,
+        conversationHistory: Array<{
+          role: "user" | "assistant" | "system";
+          content: string;
+        }>,
+        outputChannel?: vscode.OutputChannel,
+        progressCallback?: (status: string, message: string) => void,
+      ) =>
+        Effect.gen(function* () {
+          const correlationId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+          const startTime = Date.now();
+
+          const sendProgress = (status: string, message: string) => {
+            if (progressCallback) {
+              progressCallback(status, message);
+            }
+          };
+
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] ========== Starting test planning for single file ==========`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] File to analyze: ${filePath}`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Conversation history: ${conversationHistory.length} message(s)`,
+          );
+
+          sendProgress("planning", `Planning tests for ${filePath}...`);
+
+          // Check configuration first
+          const configStartTime = Date.now();
+          const configured = yield* configService.isConfigured();
+          const configDuration = Date.now() - configStartTime;
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Configuration check completed in ${configDuration}ms: ${configured ? "configured" : "not configured"}`,
+          );
+
+          if (!configured) {
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] ERROR: Not configured, aborting`,
+            );
+            return yield* Effect.fail(
+              new ConfigurationError({
+                message:
+                  "AI Gateway token not available. Please log in to authenticate.",
+              }),
+            );
+          }
+
+          // Create fresh per-request token budget
+          const budgetStartTime = Date.now();
+          const budget = yield* makeTokenBudget();
+          const initialRemaining = yield* budget.remaining();
+          const initialMaxBudget = yield* budget.getMaxBudget();
+          const budgetDuration = Date.now() - budgetStartTime;
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
+          );
+
+          // Create budget-aware tools using factory functions
+          const tools = {
+            readFile: createReadFileTool(budget),
+            listFiles: createListFilesTool(budget),
+            grepSearch: createGrepSearchTool(budget),
+            globSearch: createGlobSearchTool(budget),
+            getCypressConfig: createGetCypressConfigTool(budget),
+            getFileDiff: createGetFileDiffTool(budget),
+            semanticSearch: createSemanticSearchTool(budget), // E2E: Semantic search for application context
+            proposeTest: proposeTestTool, // No budget needed - output only
+          };
+
+          // Build initial prompt for this single file
+          const initialPrompt = PromptFactory.planTestForFile(filePath);
+
+          // Convert conversation history to AI SDK message format
+          const messages: Array<{
+            role: "user" | "assistant" | "system";
+            content: string;
+          }> = [];
+
+          if (conversationHistory.length === 0) {
+            messages.push({
+              role: "user",
+              content: initialPrompt,
+            });
+          } else {
+            // Include conversation history
+            messages.push(...conversationHistory);
+            // If the last message is from user, we're continuing the conversation
+            // Otherwise, add the initial prompt as context
+            if (
+              conversationHistory[conversationHistory.length - 1]?.role ===
+              "user"
+            ) {
+              // User just sent a message, continue conversation
+            } else {
+              // Add initial prompt as context for new user message
+              messages.push({
+                role: "user",
+                content: initialPrompt,
+              });
+            }
+          }
+
+          // Get AI Gateway OIDC token
+          const tokenStartTime = Date.now();
+          const gatewayToken = yield* configService.getAiApiKey().pipe(
+            Effect.mapError(
+              (error) =>
+                new ConfigurationError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            ),
+          );
+          const tokenDuration = Date.now() - tokenStartTime;
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Retrieved gateway token in ${tokenDuration}ms`,
+          );
+
+          if (!gatewayToken) {
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] ERROR: Gateway token not available`,
+            );
+            return yield* Effect.fail(
+              new ConfigurationError({
+                message: "AI Gateway token not available. Please log in.",
+              }),
+            );
+          }
+
+          // Create Anthropic client with OIDC token (SDK auto-detects gateway)
+          const anthropic = createAnthropic({
+            apiKey: gatewayToken,
+          });
+
+          // Generate text using AI SDK
+          sendProgress("analyzing", `Analyzing ${filePath} with AI model...`);
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.anthropic.planning}) for file: ${filePath}`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Mode: ${conversationHistory.length > 0 ? "conversation continuation" : "initial planning"}`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Initial prompt length: ${initialPrompt.length} chars`,
+          );
+
+          const aiStartTime = Date.now();
+          if (conversationHistory.length > 0) {
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Using conversation history with ${messages.length} message(s)`,
+            );
+          } else {
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Using initial prompt`,
+            );
+          }
+
+          // Create streamText result (synchronous call, returns StreamTextResult)
+          const streamResult = yield* Effect.try({
+            try: () => {
+              // Use messages for conversation continuation
+              return streamText({
+                model: anthropic(AIModels.anthropic.planning),
+                tools,
+                stopWhen: stepCountIs(20),
+                // System prompt with cache control, followed by conversation messages
+                messages: [
+                  {
+                    role: "system" as const,
+                    content: CYPRESS_PLANNING_SYSTEM_PROMPT,
+                    providerOptions: {
+                      anthropic: {
+                        cacheControl: { type: "ephemeral" },
+                      },
+                    },
+                  },
+                  ...messages,
+                ],
+                // Enable extended thinking for complex test planning
+                providerOptions: {
+                  anthropic: {
+                    thinking: { type: "enabled", budgetTokens: 10000 },
+                  } satisfies AnthropicProviderOptions,
+                },
+                headers: {
+                  "anthropic-beta": "interleaved-thinking-2025-05-14",
+                },
+              });
+            },
+            catch: (error) =>
+              new PlanningAgentError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          // Convert to Effect Stream and process events in real-time
+          const eventStream = streamFromAI(streamResult);
+          yield* eventStream.pipe(
+            Stream.mapError(
+              (error) =>
+                new PlanningAgentError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+            ),
+            Stream.runForEach((event) =>
+              Effect.gen(function* () {
+                const effect = Match.value(event.type).pipe(
+                  Match.when("tool-call", () => {
+                    const toolName = event.toolName || "unknown";
+                    return Effect.gen(function* () {
+                      yield* Effect.logDebug(
+                        `[PlanningAgent:${correlationId}] Tool call: ${toolName}`,
+                      );
+
+                      // Send progress update for tool calls using Match
+                      Match.value(toolName).pipe(
+                        Match.when("getFileDiff", () => {
+                          sendProgress(
+                            "analyzing",
+                            "Getting git diff to see what changed...",
+                          );
+                        }),
+                        Match.when("readFile", () => {
+                          const args = event.toolArgs as
+                            | { filePath?: string }
+                            | undefined;
+                          const filePath = args?.filePath || "unknown";
+                          sendProgress(
+                            "analyzing",
+                            `Reading component file: ${filePath.split("/").pop()}...`,
+                          );
+                        }),
+                        Match.when("listFiles", () => {
+                          sendProgress(
+                            "analyzing",
+                            "Checking for existing tests...",
+                          );
+                        }),
+                        Match.when("grepSearch", () => {
+                          sendProgress("analyzing", "Searching codebase...");
+                        }),
+                        Match.when("globSearch", () => {
+                          sendProgress(
+                            "analyzing",
+                            "Finding files by pattern...",
+                          );
+                        }),
+                        Match.when("getCypressConfig", () => {
+                          sendProgress(
+                            "analyzing",
+                            "Reading Cypress config...",
+                          );
+                        }),
+                        Match.when("proposeTest", () => {
+                          sendProgress(
+                            "analyzing",
+                            "Proposing test structure...",
+                          );
+                        }),
+                        Match.orElse(() => {
+                          // Unknown tool name - no progress update
+                        }),
+                      );
+                    });
+                  }),
+                  Match.when("text-delta", () => {
+                    return Effect.gen(function* () {
+                      if (event.content) {
+                        // Log AI's streaming text response
+                        yield* Effect.logDebug(
+                          `[PlanningAgent:${correlationId}] AI text: ${event.content}`,
+                        );
+                        // Stream text deltas to UI for real-time feedback
+                        sendProgress("analyzing", event.content);
+                      }
+                    });
+                  }),
+                  Match.when("tool-result", () => {
+                    return Effect.gen(function* () {
+                      yield* Effect.logDebug(
+                        `[PlanningAgent:${correlationId}] Tool result: ${event.toolName}`,
+                      );
+                      if (event.toolResult) {
+                        const resultStr =
+                          typeof event.toolResult === "string"
+                            ? event.toolResult
+                            : JSON.stringify(event.toolResult, null, 2);
+                        // Truncate very long results for readability
+                        const truncated =
+                          resultStr.length > 500
+                            ? `${resultStr.substring(0, 500)}... (truncated)`
+                            : resultStr;
+                        yield* Effect.logDebug(
+                          `[PlanningAgent:${correlationId}]   Result: ${truncated}`,
+                        );
+                      }
+                    });
+                  }),
+                  Match.when("step-finish", () => {
+                    return Effect.logDebug(
+                      `[PlanningAgent:${correlationId}] Step ${event.stepIndex || "unknown"} finished`,
+                    );
+                  }),
+                  Match.when("finish", () => {
+                    return Effect.logDebug(
+                      `[PlanningAgent:${correlationId}] Planning stream finished`,
+                    );
+                  }),
+                  Match.orElse(() => {
+                    // Other event types - no action needed
+                    return Effect.void;
+                  }),
+                );
+                yield* effect;
+              }),
+            ),
+          );
+
+          // Get final result for extraction (await after stream processing)
+          const result = yield* Effect.promise(async () => {
+            // StreamTextResult is thenable, so we can await it
+            return await streamResult;
+          });
+          const aiDuration = Date.now() - aiStartTime;
+
+          // Await steps before using them
+          const awaitedSteps = yield* Effect.promise(async () => {
+            return await result.steps;
+          });
+
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] AI model completed in ${aiDuration}ms. Steps: ${awaitedSteps.length}`,
+          );
+
+          // Log step details (progress updates are now handled in stream processing)
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Step breakdown:`,
+          );
+          for (let idx = 0; idx < awaitedSteps.length; idx++) {
+            const step = awaitedSteps[idx];
+            const toolCalls = step.toolCalls || [];
+            const toolResults = step.toolResults || [];
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}]   Step ${idx + 1}: ${toolCalls.length} tool call(s), ${toolResults.length} result(s)`,
+            );
+            for (let callIdx = 0; callIdx < toolCalls.length; callIdx++) {
+              const call = toolCalls[callIdx];
+              const toolCall = call as {
+                toolName?: string;
+                args?: unknown;
+              };
+              const toolName = toolCall.toolName || "unknown";
+              yield* Effect.logDebug(
+                `[PlanningAgent:${correlationId}] Tool call ${callIdx + 1}: ${toolName}`,
+              );
+
+              if (toolCall.args) {
+                yield* Effect.logDebug(
+                  `[PlanningAgent:${correlationId}] Args: ${JSON.stringify(toolCall.args, null, 2)}`,
+                );
+              }
+            }
+            for (
+              let resultIdx = 0;
+              resultIdx < toolResults.length;
+              resultIdx++
+            ) {
+              const toolResult = toolResults[resultIdx] as {
+                toolName?: string;
+                result?: unknown;
+              };
+              yield* Effect.logDebug(
+                `[PlanningAgent:${correlationId}] Tool result ${resultIdx + 1}: ${toolResult.toolName || "unknown"}`,
+              );
+              if (toolResult.result) {
+                const resultStr = JSON.stringify(toolResult.result, null, 2);
+                yield* Effect.logDebug(
+                  `[PlanningAgent:${correlationId}] Result: ${resultStr.substring(0, 500)}${resultStr.length > 500 ? "..." : ""}`,
+                );
+              }
+            }
+          }
+
+          // Extract ProposedTest objects from tool results
+          const proposedTests = yield* extractProposedTests({
+            ...result,
+            steps: awaitedSteps,
+          });
+
+          yield* Effect.logDebug(
+            `[PlanningAgent] Proposed ${proposedTests.length} test file(s) for ${filePath}`,
+          );
+
+          // Log proposed test details
+          for (const test of proposedTests) {
+            yield* Effect.logDebug(
+              `[PlanningAgent] Proposed test: ${test.id} - ${test.targetTestPath} (${test.isUpdate ? "update" : "new"})`,
+            );
+          }
+
+          // Generate test content for each proposed test
+          sendProgress(
+            "generating_content",
+            `Generating test content for ${proposedTests.length} test(s)...`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Generating content for ${proposedTests.length} proposed test(s)...`,
+          );
+          const testsWithContent: ProposedTest[] = [];
+          for (let i = 0; i < proposedTests.length; i++) {
+            const test = proposedTests[i];
+            sendProgress(
+              "generating_content",
+              `Generating content for test ${i + 1}/${proposedTests.length}: ${test.targetTestPath}...`,
+            );
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Generating content for test ${i + 1}/${proposedTests.length}: ${test.targetTestPath}`,
+            );
+
+            const contentStartTime = Date.now();
+            const contentResult = yield* generateTestContent(
+              test,
+              outputChannel,
+            ).pipe(
+              Effect.catchTags({
+                ConfigurationError: (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
+                    );
+                    return {
+                      proposedContent: `// Failed to generate content: ${error.message}`,
+                      existingContent: undefined,
+                    };
+                  }),
+                PlanningAgentError: (error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
+                    );
+                    return {
+                      proposedContent: `// Failed to generate content: ${error.message}`,
+                      existingContent: undefined,
+                    };
+                  }),
+              }),
+            );
+
+            const contentDuration = Date.now() - contentStartTime;
+            yield* Effect.logDebug(
+              `[PlanningAgent:${correlationId}] Generated content for ${test.targetTestPath} in ${contentDuration}ms (${contentResult.proposedContent.length} chars)`,
+            );
+
+            testsWithContent.push({
+              ...test,
+              proposedContent: contentResult.proposedContent,
+              existingContent: contentResult.existingContent,
+            });
+          }
+
+          // Log final budget consumption
+          const consumed = yield* budget.getConsumed();
+          const remaining = yield* budget.remaining();
+          const maxBudget = yield* budget.getMaxBudget();
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Token budget: ${consumed}/${maxBudget} consumed, ${remaining} remaining`,
+          );
+
+          const totalDuration = Date.now() - startTime;
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] ========== Planning complete in ${totalDuration}ms ==========`,
+          );
+          yield* Effect.logDebug(
+            `[PlanningAgent:${correlationId}] Generated ${testsWithContent.length} test(s) with content`,
+          );
+
+          // Extract the assistant's response text (await the Promise)
+          const assistantResponse = yield* Effect.promise(async () => {
+            return (await result.text) || "";
+          });
+
+          return {
+            tests: testsWithContent,
+            response: assistantResponse,
+          } as TestGenerationPlan & { response: string };
+        });
+
       return {
         /**
          * Check if the agent is properly configured
@@ -479,501 +995,71 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           }),
 
         /**
-         * Plan Cypress tests for a single React component file
-         * Analyzes the file with git diff context and proposes test files without writing them
+         * Plan Cypress tests for one or more React component files
+         * Analyzes files with git diff context and proposes test files without writing them
          * Supports multi-turn conversations for refining plans
+         * Handles single file or multiple files with internal batching
          */
-        planTestForFile: (
-          filePath: string,
-          conversationHistory: Array<{
-            role: "user" | "assistant" | "system";
-            content: string;
-          }>,
-          outputChannel?: vscode.OutputChannel,
-          progressCallback?: (status: string, message: string) => void,
-        ) =>
-          Effect.gen(function* () {
-            const correlationId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-            const startTime = Date.now();
-
-            const sendProgress = (status: string, message: string) => {
-              if (progressCallback) {
-                progressCallback(status, message);
-              }
-            };
-
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] ========== Starting test planning for single file ==========`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] File to analyze: ${filePath}`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Conversation history: ${conversationHistory.length} message(s)`,
-            );
-
-            sendProgress("planning", `Planning tests for ${filePath}...`);
-
-            // Check configuration first
-            const configStartTime = Date.now();
-            const configured = yield* configService.isConfigured();
-            const configDuration = Date.now() - configStartTime;
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Configuration check completed in ${configDuration}ms: ${configured ? "configured" : "not configured"}`,
-            );
-
-            if (!configured) {
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] ERROR: Not configured, aborting`,
-              );
-              return yield* Effect.fail(
-                new ConfigurationError({
-                  message:
-                    "AI Gateway token not available. Please log in to authenticate.",
-                }),
-              );
-            }
-
-            // Create fresh per-request token budget
-            const budgetStartTime = Date.now();
-            const budget = yield* makeTokenBudget();
-            const initialRemaining = yield* budget.remaining();
-            const initialMaxBudget = yield* budget.getMaxBudget();
-            const budgetDuration = Date.now() - budgetStartTime;
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
-            );
-
-            // Create budget-aware tools using factory functions
-            const tools = {
-              readFile: createReadFileTool(budget),
-              listFiles: createListFilesTool(budget),
-              grepSearch: createGrepSearchTool(budget),
-              globSearch: createGlobSearchTool(budget),
-              getCypressConfig: createGetCypressConfigTool(budget),
-              getFileDiff: createGetFileDiffTool(budget),
-              proposeTest: proposeTestTool, // No budget needed - output only
-            };
-
-            // Build initial prompt for this single file
-            const initialPrompt = PromptFactory.planTestForFile(filePath);
-
-            // Convert conversation history to AI SDK message format
-            const messages: Array<{
+        planTest: (
+          filePaths: string | string[],
+          options?: {
+            conversationHistory?: Array<{
               role: "user" | "assistant" | "system";
               content: string;
-            }> = [];
+            }>;
+            outputChannel?: vscode.OutputChannel;
+            progressCallback?: (status: string, message: string) => void;
+          },
+        ) =>
+          Effect.gen(function* () {
+            // Normalize to array
+            const files = Array.isArray(filePaths) ? filePaths : [filePaths];
+            const conversationHistory = options?.conversationHistory ?? [];
+            const outputChannel = options?.outputChannel;
+            const progressCallback = options?.progressCallback;
 
-            if (conversationHistory.length === 0) {
-              messages.push({
-                role: "user",
-                content: initialPrompt,
-              });
-            } else {
-              // Include conversation history
-              messages.push(...conversationHistory);
-              // If the last message is from user, we're continuing the conversation
-              // Otherwise, add the initial prompt as context
-              if (
-                conversationHistory[conversationHistory.length - 1]?.role ===
-                "user"
-              ) {
-                // User just sent a message, continue conversation
-              } else {
-                // Add initial prompt as context for new user message
-                messages.push({
-                  role: "user",
-                  content: initialPrompt,
-                });
-              }
-            }
-
-            // Get AI Gateway OIDC token
-            const tokenStartTime = Date.now();
-            const gatewayToken = yield* configService.getAiApiKey().pipe(
-              Effect.mapError(
-                (error) =>
-                  new ConfigurationError({
-                    message:
-                      error instanceof Error ? error.message : "Unknown error",
-                  }),
-              ),
-            );
-            const tokenDuration = Date.now() - tokenStartTime;
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Retrieved gateway token in ${tokenDuration}ms`,
-            );
-
-            if (!gatewayToken) {
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] ERROR: Gateway token not available`,
-              );
-              return yield* Effect.fail(
-                new ConfigurationError({
-                  message: "AI Gateway token not available. Please log in.",
-                }),
-              );
-            }
-
-            // Create Anthropic client with OIDC token (SDK auto-detects gateway)
-            const anthropic = createAnthropic({
-              apiKey: gatewayToken,
-            });
-
-            // Generate text using AI SDK
-            sendProgress("analyzing", `Analyzing ${filePath} with AI model...`);
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Calling AI model (claude-opus-4-5) for file: ${filePath}`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Mode: ${conversationHistory.length > 0 ? "conversation continuation" : "initial planning"}`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Initial prompt length: ${initialPrompt.length} chars`,
-            );
-
-            const aiStartTime = Date.now();
-            if (conversationHistory.length > 0) {
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] Using conversation history with ${messages.length} message(s)`,
-              );
-            } else {
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] Using initial prompt`,
-              );
-            }
-
-            // Create streamText result (synchronous call, returns StreamTextResult)
-            const streamResult = yield* Effect.try({
-              try: () => {
-                // Use messages for conversation continuation
-                return streamText({
-                  model: anthropic("claude-opus-4-5"),
-                  tools,
-                  stopWhen: stepCountIs(20),
-                  // System prompt with cache control, followed by conversation messages
-                  messages: [
-                    {
-                      role: "system" as const,
-                      content: CYPRESS_PLANNING_SYSTEM_PROMPT,
-                      providerOptions: {
-                        anthropic: {
-                          cacheControl: { type: "ephemeral" },
-                        },
-                      },
-                    },
-                    ...messages,
-                  ],
-                  // Enable extended thinking for complex test planning
-                  providerOptions: {
-                    anthropic: {
-                      thinking: { type: "enabled", budgetTokens: 10000 },
-                    } satisfies AnthropicProviderOptions,
-                  },
-                  headers: {
-                    "anthropic-beta": "interleaved-thinking-2025-05-14",
-                  },
-                });
-              },
-              catch: (error) =>
-                new PlanningAgentError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
-                  cause: error,
-                }),
-            });
-
-            // Convert to Effect Stream and process events in real-time
-            const eventStream = streamFromAI(streamResult);
-            yield* eventStream.pipe(
-              Stream.mapError(
-                (error) =>
-                  new PlanningAgentError({
-                    message:
-                      error instanceof Error ? error.message : "Unknown error",
-                    cause: error,
-                  }),
-              ),
-              Stream.runForEach((event) =>
-                Effect.gen(function* () {
-                  const effect = Match.value(event.type).pipe(
-                    Match.when("tool-call", () => {
-                      const toolName = event.toolName || "unknown";
-                      return Effect.gen(function* () {
-                        yield* Effect.logDebug(
-                          `[PlanningAgent:${correlationId}] Tool call: ${toolName}`,
-                        );
-
-                        // Send progress update for tool calls using Match
-                        Match.value(toolName).pipe(
-                          Match.when("getFileDiff", () => {
-                            sendProgress(
-                              "analyzing",
-                              "Getting git diff to see what changed...",
-                            );
-                          }),
-                          Match.when("readFile", () => {
-                            const args = event.toolArgs as
-                              | { filePath?: string }
-                              | undefined;
-                            const filePath = args?.filePath || "unknown";
-                            sendProgress(
-                              "analyzing",
-                              `Reading component file: ${filePath.split("/").pop()}...`,
-                            );
-                          }),
-                          Match.when("listFiles", () => {
-                            sendProgress(
-                              "analyzing",
-                              "Checking for existing tests...",
-                            );
-                          }),
-                          Match.when("grepSearch", () => {
-                            sendProgress("analyzing", "Searching codebase...");
-                          }),
-                          Match.when("globSearch", () => {
-                            sendProgress(
-                              "analyzing",
-                              "Finding files by pattern...",
-                            );
-                          }),
-                          Match.when("getCypressConfig", () => {
-                            sendProgress(
-                              "analyzing",
-                              "Reading Cypress config...",
-                            );
-                          }),
-                          Match.when("proposeTest", () => {
-                            sendProgress(
-                              "analyzing",
-                              "Proposing test structure...",
-                            );
-                          }),
-                          Match.orElse(() => {
-                            // Unknown tool name - no progress update
-                          }),
-                        );
-                      });
-                    }),
-                    Match.when("text-delta", () => {
-                      return Effect.gen(function* () {
-                        if (event.content) {
-                          // Log AI's streaming text response
-                          yield* Effect.logDebug(
-                            `[PlanningAgent:${correlationId}] AI text: ${event.content}`,
-                          );
-                          // Stream text deltas to UI for real-time feedback
-                          sendProgress("analyzing", event.content);
-                        }
-                      });
-                    }),
-                    Match.when("tool-result", () => {
-                      return Effect.gen(function* () {
-                        yield* Effect.logDebug(
-                          `[PlanningAgent:${correlationId}] Tool result: ${event.toolName}`,
-                        );
-                        if (event.toolResult) {
-                          const resultStr =
-                            typeof event.toolResult === "string"
-                              ? event.toolResult
-                              : JSON.stringify(event.toolResult, null, 2);
-                          // Truncate very long results for readability
-                          const truncated =
-                            resultStr.length > 500
-                              ? `${resultStr.substring(0, 500)}... (truncated)`
-                              : resultStr;
-                          yield* Effect.logDebug(
-                            `[PlanningAgent:${correlationId}]   Result: ${truncated}`,
-                          );
-                        }
-                      });
-                    }),
-                    Match.when("step-finish", () => {
-                      return Effect.logDebug(
-                        `[PlanningAgent:${correlationId}] Step ${event.stepIndex || "unknown"} finished`,
-                      );
-                    }),
-                    Match.when("finish", () => {
-                      return Effect.logDebug(
-                        `[PlanningAgent:${correlationId}] Planning stream finished`,
-                      );
-                    }),
-                    Match.orElse(() => {
-                      // Other event types - no action needed
-                      return Effect.void;
-                    }),
-                  );
-                  yield* effect;
-                }),
-              ),
-            );
-
-            // Get final result for extraction (await after stream processing)
-            const result = yield* Effect.promise(async () => {
-              // StreamTextResult is thenable, so we can await it
-              return await streamResult;
-            });
-            const aiDuration = Date.now() - aiStartTime;
-
-            // Await steps before using them
-            const awaitedSteps = yield* Effect.promise(async () => {
-              return await result.steps;
-            });
-
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] AI model completed in ${aiDuration}ms. Steps: ${awaitedSteps.length}`,
-            );
-
-            // Log step details (progress updates are now handled in stream processing)
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Step breakdown:`,
-            );
-            for (let idx = 0; idx < awaitedSteps.length; idx++) {
-              const step = awaitedSteps[idx];
-              const toolCalls = step.toolCalls || [];
-              const toolResults = step.toolResults || [];
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}]   Step ${idx + 1}: ${toolCalls.length} tool call(s), ${toolResults.length} result(s)`,
-              );
-              for (let callIdx = 0; callIdx < toolCalls.length; callIdx++) {
-                const call = toolCalls[callIdx];
-                const toolCall = call as {
-                  toolName?: string;
-                  args?: unknown;
-                };
-                const toolName = toolCall.toolName || "unknown";
-                yield* Effect.logDebug(
-                  `[PlanningAgent:${correlationId}] Tool call ${callIdx + 1}: ${toolName}`,
-                );
-
-                if (toolCall.args) {
-                  yield* Effect.logDebug(
-                    `[PlanningAgent:${correlationId}] Args: ${JSON.stringify(toolCall.args, null, 2)}`,
-                  );
-                }
-              }
-              for (
-                let resultIdx = 0;
-                resultIdx < toolResults.length;
-                resultIdx++
-              ) {
-                const toolResult = toolResults[resultIdx] as {
-                  toolName?: string;
-                  result?: unknown;
-                };
-                yield* Effect.logDebug(
-                  `[PlanningAgent:${correlationId}] Tool result ${resultIdx + 1}: ${toolResult.toolName || "unknown"}`,
-                );
-                if (toolResult.result) {
-                  const resultStr = JSON.stringify(toolResult.result, null, 2);
-                  yield* Effect.logDebug(
-                    `[PlanningAgent:${correlationId}] Result: ${resultStr.substring(0, 500)}${resultStr.length > 500 ? "..." : ""}`,
-                  );
-                }
-              }
-            }
-
-            // Extract ProposedTest objects from tool results
-            const proposedTests = yield* extractProposedTests({
-              ...result,
-              steps: awaitedSteps,
-            });
-
-            yield* Effect.logDebug(
-              `[PlanningAgent] Proposed ${proposedTests.length} test file(s) for ${filePath}`,
-            );
-
-            // Log proposed test details
-            for (const test of proposedTests) {
-              yield* Effect.logDebug(
-                `[PlanningAgent] Proposed test: ${test.id} - ${test.targetTestPath} (${test.isUpdate ? "update" : "new"})`,
-              );
-            }
-
-            // Generate test content for each proposed test
-            sendProgress(
-              "generating_content",
-              `Generating test content for ${proposedTests.length} test(s)...`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Generating content for ${proposedTests.length} proposed test(s)...`,
-            );
-            const testsWithContent: ProposedTest[] = [];
-            for (let i = 0; i < proposedTests.length; i++) {
-              const test = proposedTests[i];
-              sendProgress(
-                "generating_content",
-                `Generating content for test ${i + 1}/${proposedTests.length}: ${test.targetTestPath}...`,
-              );
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] Generating content for test ${i + 1}/${proposedTests.length}: ${test.targetTestPath}`,
-              );
-
-              const contentStartTime = Date.now();
-              const contentResult = yield* generateTestContent(
-                test,
+            // If single file, use the original single-file logic
+            if (files.length === 1) {
+              return yield* planTestForSingleFile(
+                files[0],
+                conversationHistory,
                 outputChannel,
-              ).pipe(
-                Effect.catchTags({
-                  ConfigurationError: (error) =>
-                    Effect.gen(function* () {
-                      yield* Effect.logDebug(
-                        `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
-                      );
-                      return {
-                        proposedContent: `// Failed to generate content: ${error.message}`,
-                        existingContent: undefined,
-                      };
-                    }),
-                  PlanningAgentError: (error) =>
-                    Effect.gen(function* () {
-                      yield* Effect.logDebug(
-                        `[PlanningAgent] Failed to generate content for ${test.targetTestPath}: ${error.message}`,
-                      );
-                      return {
-                        proposedContent: `// Failed to generate content: ${error.message}`,
-                        existingContent: undefined,
-                      };
-                    }),
-                }),
+                progressCallback,
               );
-
-              const contentDuration = Date.now() - contentStartTime;
-              yield* Effect.logDebug(
-                `[PlanningAgent:${correlationId}] Generated content for ${test.targetTestPath} in ${contentDuration}ms (${contentResult.proposedContent.length} chars)`,
-              );
-
-              testsWithContent.push({
-                ...test,
-                proposedContent: contentResult.proposedContent,
-                existingContent: contentResult.existingContent,
-              });
             }
 
-            // Log final budget consumption
-            const consumed = yield* budget.getConsumed();
-            const remaining = yield* budget.remaining();
-            const maxBudget = yield* budget.getMaxBudget();
+            // Multiple files - batch process with concurrency
+            const maxConcurrentFiles =
+              yield* configService.getMaxConcurrentFiles();
+
             yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Token budget: ${consumed}/${maxBudget} consumed, ${remaining} remaining`,
+              `[PlanningAgent] Planning tests for ${files.length} file(s) with concurrency limit: ${maxConcurrentFiles}`,
             );
 
-            const totalDuration = Date.now() - startTime;
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] ========== Planning complete in ${totalDuration}ms ==========`,
-            );
-            yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] Generated ${testsWithContent.length} test(s) with content`,
+            const results = yield* Effect.all(
+              files.map((filePath) =>
+                planTestForSingleFile(
+                  filePath,
+                  [], // Each file gets empty conversation history in batch mode
+                  outputChannel,
+                  progressCallback,
+                ),
+              ),
+              { concurrency: maxConcurrentFiles },
             );
 
-            // Extract the assistant's response text (await the Promise)
-            const assistantResponse = yield* Effect.promise(async () => {
-              return (await result.text) || "";
-            });
+            // Aggregate all tests from all files
+            const allTests = results.flatMap((result) => result.tests);
+            const lastResponse =
+              results.length > 0 ? results[results.length - 1].response : "";
+
+            yield* Effect.logDebug(
+              `[PlanningAgent] Aggregated ${allTests.length} test(s) from ${files.length} file(s)`,
+            );
 
             return {
-              tests: testsWithContent,
-              response: assistantResponse,
+              tests: allTests,
+              response: lastResponse,
             } as TestGenerationPlan & { response: string };
           }).pipe(
             Effect.catchTag("ConfigurationError", (error) =>
@@ -1003,25 +1089,6 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
               }),
             ),
           ),
-
-        /**
-         * Plan Cypress tests for a single React component (convenience method)
-         * Calls planTestForFile with empty history
-         */
-        planTest: (
-          filePath: string,
-          outputChannel?: vscode.OutputChannel,
-          progressCallback?: (status: string, message: string) => void,
-        ) =>
-          Effect.gen(function* () {
-            const service = yield* PlanningAgent;
-            return yield* service.planTestForFile(
-              filePath,
-              [],
-              outputChannel,
-              progressCallback,
-            );
-          }),
       };
     }),
     dependencies: [ConfigService.Default, VSCodeService.Default],

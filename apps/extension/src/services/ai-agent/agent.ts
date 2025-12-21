@@ -43,7 +43,7 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
         /**
          * Plan Cypress tests for multiple React components
          * Uses PlanningAgent with Claude Opus 4.5 for intelligent analysis
-         * Processes files in parallel with a concurrency limit
+         * Processes files in parallel with a concurrency limit (handled internally by PlanningAgent)
          */
         planTests: (
           files: string[],
@@ -52,16 +52,12 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
         ) =>
           Effect.gen(function* () {
             const planningAgent = yield* PlanningAgent;
-            const configService = yield* ConfigService;
-            const maxConcurrentFiles =
-              yield* configService.getMaxConcurrentFiles();
-            const results = yield* Effect.all(
-              files.map((file) => planningAgent.planTest(file, outputChannel)),
-              { concurrency: maxConcurrentFiles },
-            );
-            // Aggregate all tests from all files
+            // PlanningAgent now handles batching internally
+            const result = yield* planningAgent.planTest(files, {
+              outputChannel,
+            });
             return {
-              tests: results.flatMap((result) => result.tests),
+              tests: result.tests,
             };
           }).pipe(
             Effect.provide(
