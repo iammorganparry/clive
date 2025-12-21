@@ -1,8 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMachine } from "@xstate/react";
 import { Button } from "@clive/ui/button";
 import {
   Card,
@@ -11,9 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { Input } from "@clive/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@clive/ui/field";
-import { Building2, Users, Loader2, LogOut, AlertCircle } from "lucide-react";
+import { Input } from "@clive/ui/input";
+import { useMachine } from "@xstate/react";
+import { AlertCircle, Building2, Loader2, LogOut, Users } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 import { onboardingMachine } from "./onboarding-machine";
 
 export default function OnboardingPage() {

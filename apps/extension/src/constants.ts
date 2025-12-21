@@ -93,3 +93,13 @@ export const ConfigFile = {
     maxConcurrentFiles: 3,
   },
 } as const;
+
+/**
+ * Indexing configuration constants
+ */
+export const IndexingConfig = {
+  /** Debounce time in ms - wait after last change before indexing a file */
+  debounceMs: 10000,
+  /** Batch processor interval in ms - how often to check for files ready to index */
+  batchIntervalMs: 5000,
+} as const;
