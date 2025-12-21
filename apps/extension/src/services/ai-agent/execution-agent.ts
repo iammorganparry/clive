@@ -2,9 +2,9 @@ import type * as vscode from "vscode";
 import { streamText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
-  readFileTool,
-  listFilesTool,
-  getCypressConfigTool,
+  createReadFileTool,
+  createListFilesTool,
+  createGetCypressConfigTool,
   writeTestFileTool,
 } from "./tools/index.js";
 import type {
@@ -16,7 +16,8 @@ import { Data, Effect, Match, Stream } from "effect";
 import { ConfigService } from "../config-service.js";
 import { VSCodeService } from "../vs-code.js";
 import { CYPRESS_EXECUTION_SYSTEM_PROMPT, PromptFactory } from "./prompts.js";
-import { streamFromAI } from "./stream-utils.js";
+import { streamFromAI } from "../../utils/stream-utils.js";
+import { makeTokenBudget } from "./token-budget.js";
 
 class ExecutionAgentError extends Data.TaggedError("ExecutionAgentError")<{
   message: string;
@@ -150,11 +151,14 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
               `[ExecutionAgent] Executing test generation for: ${input.sourceFile}`,
             );
 
-            // Create tool set for execution (minimal tools needed)
+            // Create fresh budget for execution phase
+            const budget = yield* makeTokenBudget();
+
+            // Create tool set for execution (minimal tools needed, budget-aware)
             const tools = {
-              readFile: readFileTool,
-              listFiles: listFilesTool,
-              getCypressConfig: getCypressConfigTool,
+              readFile: createReadFileTool(budget),
+              listFiles: createListFilesTool(budget),
+              getCypressConfig: createGetCypressConfigTool(budget),
               writeTestFile: writeTestFileTool,
             };
 
@@ -186,28 +190,35 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
             });
 
             // Generate text using AI SDK with streaming
-            const streamResult = yield* Effect.sync(() => {
-              try {
-                return streamText({
+            const streamResult = yield* Effect.try({
+              try: () =>
+                streamText({
                   model: anthropic("claude-haiku-4-5"),
                   tools,
                   stopWhen: stepCountIs(10), // Fewer steps needed since we're just executing
                   system: CYPRESS_EXECUTION_SYSTEM_PROMPT,
                   prompt,
                   abortSignal,
-                });
-              } catch (error) {
-                throw new ExecutionAgentError({
+                }),
+              catch: (error) =>
+                new ExecutionAgentError({
                   message:
                     error instanceof Error ? error.message : "Unknown error",
                   cause: error,
-                });
-              }
+                }),
             });
 
             // Process stream for real-time feedback
             const eventStream = streamFromAI(streamResult);
             yield* eventStream.pipe(
+              // Map stream errors to ExecutionAgentError
+              Stream.mapError(
+                (error) =>
+                  new ExecutionAgentError({
+                    message: error.message,
+                    cause: error,
+                  }),
+              ),
               Stream.runForEach((event) =>
                 Effect.gen(function* () {
                   const effect = Match.value(event.type).pipe(
@@ -288,13 +299,25 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
             );
 
             // Get final result for extraction
-            const result = yield* Effect.promise(async () => {
-              return await streamResult;
+            const result = yield* Effect.tryPromise({
+              try: async () => await streamResult,
+              catch: (error) =>
+                new ExecutionAgentError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
             });
 
             // Await steps before using them
-            const awaitedSteps = yield* Effect.promise(async () => {
-              return await result.steps;
+            const awaitedSteps = yield* Effect.tryPromise({
+              try: async () => await result.steps,
+              catch: (error) =>
+                new ExecutionAgentError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
             });
 
             yield* Effect.logDebug(
@@ -348,28 +371,22 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
 
             return output;
           }).pipe(
-            Effect.catchAll((error) => {
-              if (error instanceof ConfigurationError) {
-                return Effect.succeed({
+            Effect.catchTags({
+              ConfigurationError: (error) =>
+                Effect.succeed({
                   success: false,
                   error: error.message,
-                } as ExecuteTestOutput);
-              }
-              return Effect.gen(function* () {
-                const errorMessage =
-                  error instanceof ExecutionAgentError
-                    ? error.message
-                    : error instanceof Error
-                      ? error.message
-                      : "Unknown error";
-                yield* Effect.logDebug(
-                  `[ExecutionAgent] Error: ${errorMessage}`,
-                );
-                return {
-                  success: false,
-                  error: errorMessage,
-                } as ExecuteTestOutput;
-              });
+                } as ExecuteTestOutput),
+              ExecutionAgentError: (error) =>
+                Effect.gen(function* () {
+                  yield* Effect.logDebug(
+                    `[ExecutionAgent] Error: ${error.message}`,
+                  );
+                  return {
+                    success: false,
+                    error: error.message,
+                  } as ExecuteTestOutput;
+                }),
             }),
           ),
       };
