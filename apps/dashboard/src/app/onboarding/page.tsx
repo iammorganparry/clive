@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { authClient } from "@clive/auth/client";
+import { useMachine } from "@xstate/react";
 import { Button } from "@clive/ui/button";
 import {
   Card,
@@ -14,166 +13,49 @@ import {
 } from "@clive/ui/card";
 import { Input } from "@clive/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@clive/ui/field";
-import { Building2, Users, Loader2, LogOut } from "lucide-react";
-
-type OnboardingMode = "choice" | "create" | "join";
+import { Building2, Users, Loader2, LogOut, AlertCircle } from "lucide-react";
+import { onboardingMachine } from "./onboarding-machine";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callback_url");
 
-  // Check session - redirect to sign-in if not logged in
-  const { isLoading: isCheckingSession } = useQuery({
-    queryKey: ["session-check"],
-    queryFn: async () => {
-      const { data } = await authClient.getSession();
-      if (!data?.session) {
-        router.push("/sign-in");
-        return null;
-      }
-      return data.session;
-    },
-    retry: false,
-    refetchOnWindowFocus: false,
+  const [state, send] = useMachine(onboardingMachine, {
+    input: { callbackUrl },
   });
 
-  const [mode, setMode] = useState<OnboardingMode>("choice");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Create org form state
-  const [orgName, setOrgName] = useState("");
-  const [orgSlug, setOrgSlug] = useState("");
-
-  // Join org form state
-  const [inviteCode, setInviteCode] = useState("");
-
-  const handleLogout = async () => {
-    await authClient.signOut();
-    router.push("/sign-in");
-  };
-
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
-  };
-
-  const handleNameChange = (name: string) => {
-    setOrgName(name);
-    if (!orgSlug || orgSlug === generateSlug(orgName)) {
-      setOrgSlug(generateSlug(name));
+  // Handle redirects when machine reaches final states
+  useEffect(() => {
+    if (state.matches("redirectingToSignIn")) {
+      router.push("/sign-in");
+    } else if (state.matches("redirecting")) {
+      const url = state.context.callbackUrl
+        ? `/callback?callback_url=${encodeURIComponent(state.context.callbackUrl)}`
+        : "/";
+      router.push(url);
     }
-  };
+  }, [state, router]);
 
-  const handleCreateOrg = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orgName.trim() || !orgSlug.trim()) {
-      setError("Please fill in all required fields");
-      return;
-    }
+  const { orgName, orgSlug, inviteCode, error } = state.context;
 
-    setIsLoading(true);
-    setError(null);
+  const isCheckingSession = state.matches("checkingSession");
+  const isError = state.matches("error");
+  const isChoice = state.matches("choice");
+  const isCreateForm = state.matches("createForm");
+  const isCreatingOrg = state.matches("creatingOrg");
+  const isJoinForm = state.matches("joinForm");
+  const isJoiningOrg = state.matches("joiningOrg");
+  const isSettingActiveOrg = state.matches("settingActiveOrg");
+  const isSigningOut = state.matches("signingOut");
 
-    try {
-      const result = await authClient.organization.create({
-        name: orgName.trim(),
-        slug: orgSlug.trim(),
-      });
+  const isLoading =
+    isCreatingOrg || isJoiningOrg || isSettingActiveOrg || isSigningOut;
+  const showCreateForm = isCreateForm || isCreatingOrg || isSettingActiveOrg;
+  const showJoinForm = isJoinForm || isJoiningOrg;
+  const isCreateSubmitting = isCreatingOrg || isSettingActiveOrg;
 
-      if (result.error) {
-        setError(result.error.message || "Failed to create organization");
-        setIsLoading(false);
-        return;
-      }
-
-      // Set the new organization as active
-      const setActiveResult = await authClient.organization.setActive({
-        organizationId: result.data?.id,
-      });
-
-      if (setActiveResult.error) {
-        setError(
-          setActiveResult.error.message ||
-            "Team created but failed to activate. Please try again.",
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      // Redirect to callback or home
-      if (callbackUrl) {
-        router.push(
-          `/callback?callback_url=${encodeURIComponent(callbackUrl)}`,
-        );
-      } else {
-        router.push("/");
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to create organization";
-      setError(errorMessage);
-      setIsLoading(false);
-    }
-  };
-
-  const handleJoinOrg = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteCode.trim()) {
-      setError("Please enter an invite code");
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const result = await authClient.organization.acceptInvitation({
-        invitationId: inviteCode.trim(),
-      });
-
-      if (result.error) {
-        setError(result.error.message || "Failed to join organization");
-        setIsLoading(false);
-        return;
-      }
-
-      // Set the joined organization as active
-      if (result.data?.member?.organizationId) {
-        const setActiveResult = await authClient.organization.setActive({
-          organizationId: result.data.member.organizationId,
-        });
-
-        if (setActiveResult.error) {
-          setError(
-            setActiveResult.error.message ||
-              "Joined team but failed to activate. Please try again.",
-          );
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Redirect to callback or home
-      if (callbackUrl) {
-        router.push(
-          `/callback?callback_url=${encodeURIComponent(callbackUrl)}`,
-        );
-      } else {
-        router.push("/");
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to join organization";
-      setError(errorMessage);
-      setIsLoading(false);
-    }
-  };
-
-  // Show loading while checking session
+  // Loading state - checking session
   if (isCheckingSession) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6">
@@ -187,7 +69,30 @@ export default function OnboardingPage() {
     );
   }
 
-  if (mode === "choice") {
+  // Error state - failed to activate org
+  if (isError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-destructive/10">
+              <AlertCircle className="size-6 text-destructive" />
+            </div>
+            <CardTitle>Something went wrong</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => send({ type: "RETRY" })} className="w-full">
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Choice state - select create or join
+  if (isChoice) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6">
         <Card className="w-full max-w-md">
@@ -198,10 +103,16 @@ export default function OnboardingPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {error && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
             <Button
               variant="outline"
               className="w-full h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => setMode("create")}
+              onClick={() => send({ type: "SELECT_CREATE" })}
             >
               <Building2 className="size-8" />
               <div className="text-center">
@@ -215,7 +126,7 @@ export default function OnboardingPage() {
             <Button
               variant="outline"
               className="w-full h-24 flex flex-col items-center justify-center gap-2"
-              onClick={() => setMode("join")}
+              onClick={() => send({ type: "SELECT_JOIN" })}
             >
               <Users className="size-8" />
               <div className="text-center">
@@ -230,7 +141,8 @@ export default function OnboardingPage() {
               <Button
                 variant="ghost"
                 className="w-full text-muted-foreground"
-                onClick={handleLogout}
+                onClick={() => send({ type: "LOGOUT" })}
+                disabled={isLoading}
               >
                 <LogOut className="mr-2 size-4" />
                 Sign out and use a different account
@@ -242,7 +154,8 @@ export default function OnboardingPage() {
     );
   }
 
-  if (mode === "create") {
+  // Create form state
+  if (showCreateForm) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6">
         <Card className="w-full max-w-md">
@@ -253,7 +166,12 @@ export default function OnboardingPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleCreateOrg}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send({ type: "SUBMIT_CREATE" });
+              }}
+            >
               <FieldGroup>
                 {error && (
                   <Field>
@@ -269,9 +187,11 @@ export default function OnboardingPage() {
                     type="text"
                     placeholder="Acme Inc."
                     value={orgName}
-                    onChange={(e) => handleNameChange(e.target.value)}
+                    onChange={(e) =>
+                      send({ type: "UPDATE_ORG_NAME", name: e.target.value })
+                    }
                     required
-                    disabled={isLoading}
+                    disabled={isCreateSubmitting}
                   />
                 </Field>
                 <Field>
@@ -285,9 +205,11 @@ export default function OnboardingPage() {
                       type="text"
                       placeholder="acme-inc"
                       value={orgSlug}
-                      onChange={(e) => setOrgSlug(e.target.value)}
+                      onChange={(e) =>
+                        send({ type: "UPDATE_ORG_SLUG", slug: e.target.value })
+                      }
                       required
-                      disabled={isLoading}
+                      disabled={isCreateSubmitting}
                       className="flex-1"
                     />
                   </div>
@@ -296,16 +218,17 @@ export default function OnboardingPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setMode("choice");
-                      setError(null);
-                    }}
-                    disabled={isLoading}
+                    onClick={() => send({ type: "BACK" })}
+                    disabled={isCreateSubmitting}
                   >
                     Back
                   </Button>
-                  <Button type="submit" disabled={isLoading} className="flex-1">
-                    {isLoading ? (
+                  <Button
+                    type="submit"
+                    disabled={isCreateSubmitting}
+                    className="flex-1"
+                  >
+                    {isCreateSubmitting ? (
                       <>
                         <Loader2 className="mr-2 size-4 animate-spin" />
                         Creating...
@@ -323,63 +246,85 @@ export default function OnboardingPage() {
     );
   }
 
-  // mode === "join"
+  // Join form state
+  if (showJoinForm) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle>Join a Team</CardTitle>
+            <CardDescription>
+              Enter the invite code you received from your team admin
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send({ type: "SUBMIT_JOIN" });
+              }}
+            >
+              <FieldGroup>
+                {error && (
+                  <Field>
+                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                      {error}
+                    </div>
+                  </Field>
+                )}
+                <Field>
+                  <FieldLabel htmlFor="inviteCode">Invite Code</FieldLabel>
+                  <Input
+                    id="inviteCode"
+                    type="text"
+                    placeholder="Enter your invite code"
+                    value={inviteCode}
+                    onChange={(e) =>
+                      send({ type: "UPDATE_INVITE_CODE", code: e.target.value })
+                    }
+                    required
+                    disabled={isJoiningOrg}
+                  />
+                </Field>
+                <Field className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => send({ type: "BACK" })}
+                    disabled={isJoiningOrg}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isJoiningOrg}
+                    className="flex-1"
+                  >
+                    {isJoiningOrg ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Joining...
+                      </>
+                    ) : (
+                      "Join Team"
+                    )}
+                  </Button>
+                </Field>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Fallback loading state for any other states (redirecting, etc.)
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle>Join a Team</CardTitle>
-          <CardDescription>
-            Enter the invite code you received from your team admin
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleJoinOrg}>
-            <FieldGroup>
-              {error && (
-                <Field>
-                  <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                    {error}
-                  </div>
-                </Field>
-              )}
-              <Field>
-                <FieldLabel htmlFor="inviteCode">Invite Code</FieldLabel>
-                <Input
-                  id="inviteCode"
-                  type="text"
-                  placeholder="Enter your invite code"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </Field>
-              <Field className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setMode("choice");
-                    setError(null);
-                  }}
-                  disabled={isLoading}
-                >
-                  Back
-                </Button>
-                <Button type="submit" disabled={isLoading} className="flex-1">
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Joining...
-                    </>
-                  ) : (
-                    "Join Team"
-                  )}
-                </Button>
-              </Field>
-            </FieldGroup>
-          </form>
+        <CardContent className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="size-8 animate-spin text-primary" />
+          <p className="mt-4 text-sm text-muted-foreground">Please wait...</p>
         </CardContent>
       </Card>
     </div>
