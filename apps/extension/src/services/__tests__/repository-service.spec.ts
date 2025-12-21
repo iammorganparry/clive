@@ -460,4 +460,90 @@ describe("RepositoryService", () => {
       expect(result.fileCount).toBe(0);
     });
   });
+
+  describe("getFileHashes", () => {
+    it("should return a Map of file paths to content hashes", async () => {
+      const { db } = await import("@clive/db/client");
+      const mockFiles = [
+        { relativePath: "src/test.ts", contentHash: "abc123" },
+        { relativePath: "src/utils.ts", contentHash: "def456" },
+        { relativePath: "src/components/Button.tsx", contentHash: "ghi789" },
+      ];
+
+      const mockSelect = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue(mockFiles),
+      };
+
+      vi.mocked(db.select).mockReturnValue(mockSelect as any);
+
+      const layer = Layer.mergeAll(
+        RepositoryService.Default,
+        ConfigService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const result = await Effect.gen(function* () {
+        const service = yield* RepositoryService;
+        return yield* service.getFileHashes("repo-id");
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(3);
+      expect(result.get("src/test.ts")).toBe("abc123");
+      expect(result.get("src/utils.ts")).toBe("def456");
+      expect(result.get("src/components/Button.tsx")).toBe("ghi789");
+    });
+
+    it("should return empty Map when no files exist", async () => {
+      const { db } = await import("@clive/db/client");
+
+      const mockSelect = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([]),
+      };
+
+      vi.mocked(db.select).mockReturnValue(mockSelect as any);
+
+      const layer = Layer.mergeAll(
+        RepositoryService.Default,
+        ConfigService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      const result = await Effect.gen(function* () {
+        const service = yield* RepositoryService;
+        return yield* service.getFileHashes("repo-id");
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+
+      expect(result).toBeInstanceOf(Map);
+      expect(result.size).toBe(0);
+    });
+
+    it("should handle database errors gracefully", async () => {
+      const { db } = await import("@clive/db/client");
+
+      const mockSelect = {
+        from: vi.fn().mockReturnThis(),
+        where: vi
+          .fn()
+          .mockRejectedValue(new Error("Database connection error")),
+      };
+
+      vi.mocked(db.select).mockReturnValue(mockSelect as any);
+
+      const layer = Layer.mergeAll(
+        RepositoryService.Default,
+        ConfigService.Default,
+        createMockSecretStorageLayer(mockSecrets),
+      );
+
+      await expect(
+        Effect.gen(function* () {
+          const service = yield* RepositoryService;
+          return yield* service.getFileHashes("repo-id");
+        }).pipe(Effect.provide(layer), Runtime.runPromise(runtime)),
+      ).rejects.toThrow();
+    });
+  });
 });
