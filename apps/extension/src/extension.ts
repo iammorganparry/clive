@@ -85,19 +85,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
 
   context.subscriptions.push(webviewProviderDisposable);
 
-  // Register URI handler for OAuth callback
-  const uriHandler = vscode.window.registerUriHandler({
-    handleUri: async (uri: vscode.Uri) => {
-      console.log(`Received URI: ${uri.toString()}`);
-      try {
-        await provider.handleOAuthCallback(uri);
-      } catch (error) {
-        console.error("OAuth callback error:", error);
-      }
-    },
-  });
-  context.subscriptions.push(uriHandler);
-
   // Register all commands via CommandCenter
   commandCenter.registerAll(context);
 

@@ -143,19 +143,6 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Handle OAuth callback from URI handler (legacy - deprecated)
-   * Device authorization is now the primary auth flow
-   */
-  public async handleOAuthCallback(uri: vscode.Uri): Promise<void> {
-    console.log(
-      "[CliveViewProvider] OAuth callback received (legacy flow):",
-      uri.toString(),
-    );
-    // Device authorization is now used - this handler is kept for backwards compatibility
-    // but the primary auth flow no longer uses URL callbacks
-  }
-
-  /**
    * Create RPC context with required dependencies
    */
   private createRpcContext(webviewView: vscode.WebviewView): RpcContext | null {
