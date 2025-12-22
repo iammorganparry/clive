@@ -3,14 +3,30 @@ import { Effect, Runtime } from "effect";
 
 // Mock AI SDK
 vi.mock("ai", () => {
-  const mockEmbed = vi.fn().mockResolvedValue({
-    embedding: Array(1536)
+  // Generate embeddings with positive values to ensure positive cosine similarity
+  // This prevents flaky tests where random negative values cause negative similarity
+  const generateEmbedding = () =>
+    Array(1536)
       .fill(0)
-      .map(() => Math.random() * 2 - 1),
+      .map(() => Math.random() * 0.5 + 0.1); // Values between 0.1 and 0.6 (positive)
+
+  const mockEmbed = vi.fn().mockResolvedValue({
+    embedding: generateEmbedding(),
+  });
+
+  const mockEmbedMany = vi.fn().mockImplementation(async ({ values }) => {
+    // Generate one embedding per input text
+    // Use similar base values with small variations to ensure positive similarity
+    const baseEmbedding = generateEmbedding();
+    const embeddings = values.map(() =>
+      baseEmbedding.map((val) => val + (Math.random() - 0.5) * 0.2), // Small variation
+    );
+    return { embeddings };
   });
 
   return {
     embed: mockEmbed,
+    embedMany: mockEmbedMany,
   };
 });
 
@@ -198,6 +214,13 @@ describe("CodebaseIndexingService", () => {
   const runtime = Runtime.defaultRuntime;
 
   beforeEach(async () => {
+    // Mock global.fetch for gateway token requests
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ token: "test-gateway-token" }),
+      text: async () => "",
+    } as Response);
+
     // Reset findFiles mock to return empty array by default
     const vscode = await import("vscode");
     vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([]);
@@ -264,7 +287,7 @@ describe("CodebaseIndexingService", () => {
     it("should compute embedding for text using AI SDK", async () => {
       const layer = createTestLayer();
 
-      const { embed } = await import("ai");
+      const { embedMany } = await import("ai");
 
       const result = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -273,7 +296,7 @@ describe("CodebaseIndexingService", () => {
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       expect(result.embedding).toHaveLength(1536);
-      expect(embed).toHaveBeenCalled();
+      expect(embedMany).toHaveBeenCalled();
     });
   });
 

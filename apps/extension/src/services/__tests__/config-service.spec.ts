@@ -333,7 +333,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toBe(gatewayToken);
+      expect(result).toEqual({ token: gatewayToken, isGateway: true });
     });
   });
 
@@ -353,7 +353,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toBe(storedApiKey);
+      expect(result).toEqual({ token: storedApiKey, isGateway: false });
       expect(global.fetch).not.toHaveBeenCalled(); // Should not call gateway
     });
 
@@ -375,7 +375,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toBe(gatewayToken);
+      expect(result).toEqual({ token: gatewayToken, isGateway: true });
       expect(global.fetch).toHaveBeenCalled();
     });
 
@@ -391,7 +391,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toBe(storedApiKey);
+      expect(result).toEqual({ token: storedApiKey, isGateway: false });
       expect(global.fetch).not.toHaveBeenCalled();
     });
   });
