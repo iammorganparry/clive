@@ -17,10 +17,19 @@ import {
   IconUserCircle,
 } from "@tabler/icons-react";
 import { useAuth } from "../contexts/auth-context.js";
+import { useRouter, Routes } from "../router/index.js";
 
 export function UserDropdown() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const { navigate, send } = useRouter();
+
   if (!user) return null;
+
+  const handleLogout = () => {
+    logout();
+    send({ type: "LOGOUT" });
+    navigate(Routes.login);
+  };
 
   const displayName = user.name || user.email || "User";
 
@@ -43,7 +52,7 @@ export function UserDropdown() {
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2">
         <Avatar className="h-8 w-8 rounded-lg shrink-0">
-          <AvatarImage src={user.image} alt={displayName} />
+          <AvatarImage src={user.image ?? undefined} alt={displayName} />
           <AvatarFallback className="rounded-lg">
             {getInitials()}
           </AvatarFallback>
@@ -64,7 +73,7 @@ export function UserDropdown() {
         <DropdownMenuLabel className="p-0 font-normal">
           <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
             <Avatar className="h-8 w-8 rounded-lg">
-              <AvatarImage src={user.image} alt={displayName} />
+              <AvatarImage src={user.image ?? undefined} alt={displayName} />
               <AvatarFallback className="rounded-lg">
                 {getInitials()}
               </AvatarFallback>
@@ -93,7 +102,7 @@ export function UserDropdown() {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={handleLogout}>
           <IconLogout />
           Log out
         </DropdownMenuItem>

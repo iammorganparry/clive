@@ -66,6 +66,13 @@ export const routerMachine = setup({
             }),
           },
         ],
+        LOGOUT: {
+          target: "unauthenticated",
+          actions: assign({
+            isAuthenticated: false,
+            onboardingComplete: false,
+          }),
+        },
       },
     },
     unauthenticated: {
@@ -82,6 +89,13 @@ export const routerMachine = setup({
           actions: assign({
             onboardingComplete: true,
             route: Routes.dashboard,
+          }),
+        },
+        LOGOUT: {
+          target: "unauthenticated",
+          actions: assign({
+            isAuthenticated: false,
+            onboardingComplete: false,
           }),
         },
       },

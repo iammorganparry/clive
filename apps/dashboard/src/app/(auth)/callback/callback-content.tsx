@@ -18,16 +18,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-/**
- * User info to be passed to the extension for display and API calls.
- * This is stored alongside the session token in the extension's secret storage.
- */
 export interface UserInfo {
   userId: string;
-  email: string;
-  name: string;
-  image?: string;
-  organizationId?: string;
+  email?: string | null;
+  name?: string | null;
+  image?: string | null;
+  organizationId?: string | null;
 }
 
 interface CallbackContentProps {

@@ -238,11 +238,31 @@ export class FileWatcherService extends Effect.Service<FileWatcherService>()(
             organizationId,
           );
 
-          // Index each file
-          yield* Effect.forEach(
-            filesToProcess,
-            (pendingFile) => indexPendingFile(pendingFile, repository.id),
-            { concurrency: 3 },
+          // Get relative paths for batch indexing
+          const relativePaths = yield* Effect.all(
+            filesToProcess.map((pendingFile) =>
+              getRelativePath(pendingFile.uri),
+            ),
+          );
+
+          // Batch index all files at once
+          yield* indexingService.indexFiles(relativePaths, repository.id).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[FileWatcher] Batch indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                // Fall back to individual indexing
+                yield* Effect.logDebug(
+                  "[FileWatcher] Falling back to individual file indexing",
+                );
+                yield* Effect.forEach(
+                  filesToProcess,
+                  (pendingFile) => indexPendingFile(pendingFile, repository.id),
+                  { concurrency: 3 },
+                );
+              }),
+            ),
           );
 
           yield* Effect.logDebug(

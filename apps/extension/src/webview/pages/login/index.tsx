@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { LoginForm } from "@clive/ui";
+import { LoginForm, DeviceAuthPending } from "@clive/ui";
 import { Button } from "@clive/ui/button";
 import { Input } from "@clive/ui/input";
 import {
@@ -14,7 +14,14 @@ import { useAuth } from "../../contexts/auth-context.js";
 import { useRouter } from "../../router/index.js";
 
 export const LoginPage: React.FC = () => {
-  const { login, isAuthenticated, setToken } = useAuth();
+  const {
+    login,
+    isAuthenticated,
+    setToken,
+    deviceAuthState,
+    isDeviceAuthPending,
+    cancelDeviceAuth,
+  } = useAuth();
   const { send } = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,15 +40,13 @@ export const LoginPage: React.FC = () => {
     setError(null);
 
     try {
-      // Open browser to login page - extension will handle opening browser
       await login();
-      // Note: The login() function opens the browser, but doesn't wait for completion
-      // The token will be received via message from extension when callback completes
     } catch (err) {
       const errorMessage =
-        err instanceof Error ? err.message : "Failed to sign in with GitHub";
+        err instanceof Error ? err.message : "Failed to start sign in";
       setError(errorMessage);
-      console.error("GitHub sign-in error:", err);
+      console.error("Sign-in error:", err);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -54,6 +59,22 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setToken(manualToken.trim());
   };
+
+  const handleCancel = () => {
+    cancelDeviceAuth();
+    setIsLoading(false);
+  };
+
+  // Show device auth pending state
+  if (isDeviceAuthPending && deviceAuthState) {
+    return (
+      <DeviceAuthPending
+        userCode={deviceAuthState.userCode}
+        verificationUri={deviceAuthState.verificationUriComplete}
+        onCancel={handleCancel}
+      />
+    );
+  }
 
   return (
     <div className="flex items-center justify-center h-screen p-6">

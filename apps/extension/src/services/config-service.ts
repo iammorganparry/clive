@@ -19,16 +19,20 @@ class UserInfoMissingError extends Data.TaggedError("UserInfoMissingError")<{
   message: string;
 }> {}
 
-/**
- * User info structure stored alongside auth token.
- * This is passed from the dashboard callback and stored in secret storage.
- */
 export interface UserInfo {
   userId: string;
-  email?: string;
-  name?: string;
-  image?: string;
-  organizationId?: string;
+  email?: string | null;
+  name?: string | null;
+  image?: string | null;
+  organizationId?: string | null;
+}
+
+/**
+ * Result from getAiApiKey indicating the token type
+ */
+export interface AiTokenResult {
+  token: string;
+  isGateway: boolean; // true = use gateway, false = direct provider
 }
 
 export const Secrets = {
@@ -114,9 +118,10 @@ export class ConfigService extends Effect.Service<ConfigService>()(
         getAiGatewayToken: fetchGatewayToken,
 
         /**
-         * Gets the AI API key
+         * Gets the AI API key with metadata
          * First checks for stored Anthropic API key via ApiKeyService
          * Falls back to fetching OIDC gateway token if no stored key exists
+         * Returns token with isGateway flag to indicate which provider to use
          */
         getAiApiKey: () =>
           Effect.gen(function* () {
@@ -126,16 +131,23 @@ export class ConfigService extends Effect.Service<ConfigService>()(
 
             if (storedKey && storedKey.length > 0) {
               yield* Effect.logDebug(
-                "[ConfigService] Using stored Anthropic API key",
+                "[ConfigService] Using stored Anthropic API key (direct provider)",
               );
-              return storedKey;
+              return {
+                token: storedKey,
+                isGateway: false,
+              } as AiTokenResult;
             }
 
             // Fall back to gateway token
             yield* Effect.logDebug(
               "[ConfigService] No stored key, fetching gateway token",
             );
-            return yield* fetchGatewayToken();
+            const gatewayToken = yield* fetchGatewayToken();
+            return {
+              token: gatewayToken,
+              isGateway: true,
+            } as AiTokenResult;
           }),
 
         /**

@@ -143,54 +143,16 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Handle OAuth callback from URI handler
+   * Handle OAuth callback from URI handler (legacy - deprecated)
+   * Device authorization is now the primary auth flow
    */
   public async handleOAuthCallback(uri: vscode.Uri): Promise<void> {
-    if (!this._webviewView || !this._context) {
-      return;
-    }
-
-    const params = new URLSearchParams(uri.query);
-    const token = params.get("token");
-    const userInfoStr = params.get("user");
-    const error = params.get("error");
-    const errorMessage = params.get("message");
-
-    if (error) {
-      console.error("OAuth error:", errorMessage || error);
-      return;
-    }
-
-    if (token) {
-      // Parse user info from URL if provided
-      let userInfo: Record<string, unknown> | undefined;
-      if (userInfoStr) {
-        try {
-          userInfo = JSON.parse(decodeURIComponent(userInfoStr));
-        } catch (e) {
-          console.error("Failed to parse user info:", e);
-        }
-      }
-
-      const rpcContext = this.createRpcContext(this._webviewView);
-      if (rpcContext) {
-        // Store token and user info via RPC
-        const rpcMessage = {
-          id: `oauth-${Date.now()}`,
-          type: "mutation" as const,
-          path: ["auth", "storeToken"],
-          input: { token, userInfo },
-        };
-        const response = await handleRpcMessage(rpcMessage, rpcContext);
-        if (response?.success) {
-          // Send token to webview
-          this._webviewView.webview.postMessage({
-            command: "auth-token",
-            token,
-          });
-        }
-      }
-    }
+    console.log(
+      "[CliveViewProvider] OAuth callback received (legacy flow):",
+      uri.toString(),
+    );
+    // Device authorization is now used - this handler is kept for backwards compatibility
+    // but the primary auth flow no longer uses URL callbacks
   }
 
   /**

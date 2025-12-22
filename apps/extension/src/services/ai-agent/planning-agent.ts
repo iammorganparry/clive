@@ -1,14 +1,12 @@
-import {
-  createAnthropic,
-  type AnthropicProviderOptions,
-} from "@ai-sdk/anthropic";
 import type { ToolCall, ToolResult } from "@ai-sdk/provider-utils";
+import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Layer, Match, Stream } from "effect";
 import vscode from "vscode";
 import { ConfigService } from "../config-service.js";
 import { SecretStorageService, VSCodeService } from "../vs-code.js";
 import { AIModels } from "../ai-models.js";
+import { createAnthropicProvider } from "../ai-provider-factory.js";
 import {
   CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
   CYPRESS_PLANNING_SYSTEM_PROMPT,
@@ -175,7 +173,7 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           );
 
           const tokenStartTime = Date.now();
-          const gatewayToken = yield* configService.getAiApiKey().pipe(
+          const tokenResult = yield* configService.getAiApiKey().pipe(
             Effect.mapError(
               (error) =>
                 new ConfigurationError({
@@ -186,23 +184,22 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           );
           const tokenDuration = Date.now() - tokenStartTime;
           yield* Effect.logDebug(
-            `[PlanningAgent:${correlationId}] Retrieved gateway token in ${tokenDuration}ms`,
+            `[PlanningAgent:${correlationId}] Retrieved AI token in ${tokenDuration}ms (gateway: ${tokenResult.isGateway})`,
           );
 
-          if (!gatewayToken) {
+          if (!tokenResult.token) {
             yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] ERROR: Gateway token not available`,
+              `[PlanningAgent:${correlationId}] ERROR: AI token not available`,
             );
             return yield* Effect.fail(
               new ConfigurationError({
-                message: "AI Gateway token not available. Please log in.",
+                message:
+                  "AI token not available. Please log in or provide API key.",
               }),
             );
           }
 
-          const anthropic = createAnthropic({
-            apiKey: gatewayToken,
-          });
+          const anthropic = createAnthropicProvider(tokenResult);
 
           // Generate text using AI SDK
           yield* Effect.logDebug(
@@ -596,9 +593,9 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
             }
           }
 
-          // Get AI Gateway OIDC token
+          // Get AI API key (user-provided or gateway token)
           const tokenStartTime = Date.now();
-          const gatewayToken = yield* configService.getAiApiKey().pipe(
+          const tokenResult = yield* configService.getAiApiKey().pipe(
             Effect.mapError(
               (error) =>
                 new ConfigurationError({
@@ -609,24 +606,23 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           );
           const tokenDuration = Date.now() - tokenStartTime;
           yield* Effect.logDebug(
-            `[PlanningAgent:${correlationId}] Retrieved gateway token in ${tokenDuration}ms`,
+            `[PlanningAgent:${correlationId}] Retrieved AI token in ${tokenDuration}ms (gateway: ${tokenResult.isGateway})`,
           );
 
-          if (!gatewayToken) {
+          if (!tokenResult.token) {
             yield* Effect.logDebug(
-              `[PlanningAgent:${correlationId}] ERROR: Gateway token not available`,
+              `[PlanningAgent:${correlationId}] ERROR: AI token not available`,
             );
             return yield* Effect.fail(
               new ConfigurationError({
-                message: "AI Gateway token not available. Please log in.",
+                message:
+                  "AI token not available. Please log in or provide API key.",
               }),
             );
           }
 
-          // Create Anthropic client with OIDC token (SDK auto-detects gateway)
-          const anthropic = createAnthropic({
-            apiKey: gatewayToken,
-          });
+          // Create Anthropic provider (direct or gateway)
+          const anthropic = createAnthropicProvider(tokenResult);
 
           // Generate text using AI SDK
           sendProgress("analyzing", `Analyzing ${filePath} with AI model...`);

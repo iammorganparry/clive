@@ -1,13 +1,13 @@
-import { Data, Effect, Layer, Ref } from "effect";
+import { Data, Effect, Ref } from "effect";
 import vscode from "vscode";
-import { embed } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
+import { embedMany } from "ai";
 import { createHash } from "crypto";
 import { VSCodeService } from "./vs-code.js";
 import { ConfigService } from "./config-service.js";
 import { RepositoryService, type FileData } from "./repository-service.js";
 import { AIModels } from "./ai-models.js";
 import type { IndexingStatus } from "./indexing-status.js";
+import { createEmbeddingProvider } from "./ai-provider-factory.js";
 import {
   readFileAsStringEffect,
   getWorkspaceRoot,
@@ -101,6 +101,12 @@ export const INDEXING_EXCLUDE_PATTERNS = [
 ] as const;
 
 /**
+ * Maximum number of files to index (for testing - set to a small number)
+ * Set to null or a large number to index all files
+ */
+export const MAX_FILES_TO_INDEX = 5;
+
+/**
  * Service for indexing codebase files with embeddings and semantic search
  * Uses OpenAI embeddings and Supabase Vector Buckets for storage (or in-memory fallback)
  */
@@ -123,31 +129,44 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
       });
 
       /**
-       * Compute embedding for text using AI SDK with gateway token
+       * Compute embeddings for multiple texts using AI SDK (batch processing)
+       * Uses gateway provider if gateway token is available, otherwise direct provider
        */
-      const computeEmbedding = (text: string) =>
+      const computeEmbeddings = (texts: string[]) =>
         Effect.gen(function* () {
+          if (texts.length === 0) {
+            return [];
+          }
+
           yield* Effect.logDebug(
-            `[CodebaseIndexing] Computing embedding for text (${text.length} chars)`,
+            `[CodebaseIndexing] Computing embeddings for ${texts.length} texts`,
           );
 
-          const gatewayToken = yield* configService.getAiApiKey();
+          // Always use gateway token for embeddings (OpenAI) - user's stored key is for Anthropic
+          const gatewayToken = yield* configService.getAiGatewayToken();
+          const provider = createEmbeddingProvider({
+            token: gatewayToken,
+            isGateway: true,
+          });
 
-          const embedding = yield* Effect.tryPromise({
+          const embeddings = yield* Effect.tryPromise({
             try: async () => {
-              // Use AI SDK with OpenAI provider via gateway
-              const openai = createOpenAI({ apiKey: gatewayToken });
-
-              const { embedding: embeddingResult } = await embed({
-                model: openai.embedding(AIModels.openai.embedding),
-                value: text,
+              const { embeddings: results } = await embedMany({
+                model: provider.embedding(AIModels.openai.embedding),
+                values: texts,
               });
 
-              if (!embeddingResult || embeddingResult.length === 0) {
-                throw new Error("No embedding returned from AI SDK");
+              if (!results || results.length === 0) {
+                throw new Error("No embeddings returned from AI SDK");
               }
 
-              return embeddingResult;
+              if (results.length !== texts.length) {
+                throw new Error(
+                  `Expected ${texts.length} embeddings but got ${results.length}`,
+                );
+              }
+
+              return results;
             },
             catch: (error) =>
               new EmbeddingError({
@@ -158,9 +177,18 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           });
 
           yield* Effect.logDebug(
-            `[CodebaseIndexing] Embedding computed (${embedding.length} dimensions)`,
+            `[CodebaseIndexing] Computed ${embeddings.length} embeddings`,
           );
-          return embedding;
+          return embeddings;
+        });
+
+      /**
+       * Compute embedding for a single text (wrapper for backward compatibility)
+       */
+      const computeEmbedding = (text: string) =>
+        Effect.gen(function* () {
+          const embeddings = yield* computeEmbeddings([text]);
+          return embeddings[0];
         });
 
       /**
@@ -322,6 +350,100 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         });
 
       /**
+       * Index multiple files in batch (efficient batch embedding)
+       */
+      const indexFiles = (filePaths: string[], repositoryId?: string) =>
+        Effect.gen(function* () {
+          if (filePaths.length === 0) {
+            return [];
+          }
+
+          yield* Effect.logDebug(
+            `[CodebaseIndexing] Batch indexing ${filePaths.length} files`,
+          );
+
+          const workspaceRoot = yield* getWorkspaceRoot();
+
+          // Read all files in parallel
+          const fileData = yield* Effect.all(
+            filePaths.map((filePath) =>
+              Effect.gen(function* () {
+                const fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
+                const content = yield* readFileAsStringEffect(fileUri);
+                const relativePath = yield* getRelativePath(fileUri);
+
+                // Get file stats
+                const stats = yield* Effect.tryPromise({
+                  try: () => vscodeService.workspace.fs.stat(fileUri),
+                  catch: () => new Error("Failed to stat file"),
+                });
+
+                // Determine file type
+                const fileType = filePath.split(".").pop() || "unknown";
+
+                return {
+                  filePath,
+                  relativePath,
+                  content,
+                  fileUri,
+                  fileType,
+                  lastModified: stats.mtime,
+                };
+              }),
+            ),
+            { concurrency: 10 },
+          );
+
+          // Batch embed all texts at once
+          const texts = fileData.map((f) => f.content);
+          const embeddings = yield* computeEmbeddings(texts);
+
+          // Create indexed files with embeddings
+          const indexedFiles: IndexedFile[] = fileData.map((file, idx) => ({
+            filePath: file.fileUri.fsPath,
+            relativePath: file.relativePath,
+            content: file.content,
+            embedding: embeddings[idx],
+            fileType: file.fileType,
+            lastModified: file.lastModified,
+          }));
+
+          // Store all files (in parallel)
+          if (repositoryId) {
+            yield* Effect.all(
+              indexedFiles.map((indexedFile) =>
+                storeFile(repositoryId, indexedFile).pipe(
+                  Effect.catchAll(() =>
+                    Effect.gen(function* () {
+                      // Store in-memory as fallback
+                      inMemoryIndex.set(indexedFile.relativePath, indexedFile);
+                      yield* Effect.logDebug(
+                        `[CodebaseIndexing] Stored in-memory: ${indexedFile.relativePath}`,
+                      );
+                    }),
+                  ),
+                ),
+              ),
+              { concurrency: 10 },
+            );
+          } else {
+            // Store in-memory if no repository context
+            for (const indexedFile of indexedFiles) {
+              inMemoryIndex.set(indexedFile.relativePath, indexedFile);
+              yield* Effect.logDebug(
+                `[CodebaseIndexing] Stored in-memory: ${indexedFile.relativePath}`,
+              );
+            }
+          }
+
+          yield* Effect.logDebug(
+            `[CodebaseIndexing] Batch indexed ${indexedFiles.length} files`,
+          );
+
+          return indexedFiles;
+        });
+
+      /**
        * Index all relevant files in the workspace
        */
       const indexWorkspace = () =>
@@ -377,8 +499,13 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             new Set(files.map((f) => f.fsPath)),
           ).map((path) => vscode.Uri.file(path));
 
+          // Limit files for testing
+          const filesToIndex = MAX_FILES_TO_INDEX
+            ? uniqueFiles.slice(0, MAX_FILES_TO_INDEX)
+            : uniqueFiles;
+
           yield* Effect.logDebug(
-            `[CodebaseIndexing] Found ${uniqueFiles.length} files to check`,
+            `[CodebaseIndexing] Found ${uniqueFiles.length} files, limiting to ${filesToIndex.length} for indexing`,
           );
 
           // Single batch query - get all existing file hashes for O(1) lookups
@@ -399,63 +526,80 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             `[CodebaseIndexing] Retrieved ${existingHashes.size} existing file hashes`,
           );
 
-          // Index files in batches, skipping unchanged files
-          const batchSize = 10;
+          // Read all files and identify which need indexing
+          const readConcurrency = 20;
+          const fileData = yield* Effect.all(
+            filesToIndex.map((fileUri) =>
+              Effect.gen(function* () {
+                const relativePath = yield* getRelativePath(fileUri);
+                const content = yield* readFileAsStringEffect(fileUri);
+                const contentHash = computeContentHash(content);
+                const existingHash = existingHashes.get(relativePath);
+
+                return {
+                  fileUri,
+                  relativePath,
+                  content,
+                  contentHash,
+                  needsIndexing: existingHash !== contentHash,
+                };
+              }),
+            ),
+            { concurrency: readConcurrency },
+          );
+
+          // Separate files that need indexing from unchanged ones
+          const filesToEmbed = fileData.filter((f) => f.needsIndexing);
+          const unchangedFiles = fileData.filter((f) => !f.needsIndexing);
+
+          let skipped = unchangedFiles.length;
           let indexed = 0;
-          let skipped = 0;
 
-          for (let i = 0; i < uniqueFiles.length; i += batchSize) {
-            const batch = uniqueFiles.slice(i, i + batchSize);
-
-            const results = yield* Effect.all(
-              batch.map((fileUri) =>
-                Effect.gen(function* () {
-                  const relativePath = yield* getRelativePath(fileUri);
-
-                  // Read file content and compute hash
-                  const content = yield* readFileAsStringEffect(fileUri);
-                  const contentHash = computeContentHash(content);
-
-                  // O(1) lookup in Map - skip if unchanged
-                  const existingHash = existingHashes.get(relativePath);
-                  if (existingHash === contentHash) {
-                    yield* Effect.logDebug(
-                      `[CodebaseIndexing] Skipping unchanged: ${relativePath}`,
-                    );
-                    return { indexed: false };
-                  }
-
-                  // File is new or changed - compute embedding and store
-                  return yield* indexFile(relativePath, repositoryId).pipe(
-                    Effect.map(() => ({ indexed: true })),
-                    Effect.catchAll((error) =>
-                      Effect.gen(function* () {
-                        yield* Effect.logDebug(
-                          `[CodebaseIndexing] Failed to index ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
-                        );
-                        return { indexed: false };
-                      }),
-                    ),
-                  );
-                }).pipe(
-                  Effect.catchAll(() => Effect.succeed({ indexed: false })),
-                ),
-              ),
-              { concurrency: batchSize },
-            );
-
-            // Count indexed vs skipped
-            for (const result of results) {
-              if (result.indexed) {
-                indexed++;
-              } else {
-                skipped++;
-              }
-            }
-
+          // Log skipped files
+          for (const file of unchangedFiles) {
             yield* Effect.logDebug(
-              `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${uniqueFiles.length} files`,
+              `[CodebaseIndexing] Skipping unchanged: ${file.relativePath}`,
             );
+          }
+
+          // Batch embed all files that need indexing (in chunks if too many)
+          if (filesToEmbed.length > 0) {
+            const maxEmbeddingBatchSize = 100; // Reasonable limit to avoid timeouts
+
+            // Process in chunks if needed
+            for (
+              let i = 0;
+              i < filesToEmbed.length;
+              i += maxEmbeddingBatchSize
+            ) {
+              const chunk = filesToEmbed.slice(i, i + maxEmbeddingBatchSize);
+              const chunkPaths = chunk.map((f) => f.relativePath);
+
+              yield* Effect.logDebug(
+                `[CodebaseIndexing] Processing chunk ${Math.floor(i / maxEmbeddingBatchSize) + 1} of ${Math.ceil(filesToEmbed.length / maxEmbeddingBatchSize)} (${chunk.length} files)`,
+              );
+
+              const indexedFiles = yield* indexFiles(
+                chunkPaths,
+                repositoryId,
+              ).pipe(
+                Effect.catchAll((error) =>
+                  Effect.gen(function* () {
+                    yield* Effect.logDebug(
+                      `[CodebaseIndexing] Batch indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                    return [];
+                  }),
+                ),
+              );
+
+              indexed += indexedFiles.length;
+              skipped += chunk.length - indexedFiles.length;
+
+              yield* Effect.logDebug(
+                `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${filesToIndex.length} files`,
+              );
+            }
           }
 
           yield* Effect.logDebug(
@@ -527,6 +671,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
 
       return {
         indexFile,
+        indexFiles,
         indexWorkspace,
         semanticSearch,
         getStatus,

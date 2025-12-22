@@ -3,6 +3,7 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import { auth } from "@clive/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { env } from "~/env.js";
 
 class UnauthorizedError {
   readonly _tag = "UnauthorizedError";
@@ -25,6 +26,12 @@ const getOidcToken = Effect.gen(function* () {
     return yield* Effect.fail(new UnauthorizedError());
   }
 
+  // Check for local development fallback first
+  if (env.AI_GATEWAY_API_KEY) {
+    return { token: env.AI_GATEWAY_API_KEY };
+  }
+
+  // Otherwise use Vercel OIDC (production)
   const token = yield* Effect.promise(() => getVercelOidcToken()).pipe(
     Effect.catchAll((error: unknown) => {
       const errorMessage =

@@ -8,31 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
+import { FeatureList } from "@clive/ui";
 import { Search, Shield, Settings, Zap } from "lucide-react";
 import { useRpc } from "../../rpc/provider.js";
 import { useRouter } from "../../router/index.js";
-
-interface FeatureItemProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}
-
-const FeatureItem: React.FC<FeatureItemProps> = ({
-  icon,
-  title,
-  description,
-}) => (
-  <div className="flex items-start gap-3">
-    <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-      {icon}
-    </div>
-    <div>
-      <h3 className="font-medium text-sm">{title}</h3>
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </div>
-  </div>
-);
 
 export const OnboardingPage: React.FC = () => {
   const rpc = useRpc();
@@ -76,18 +55,22 @@ export const OnboardingPage: React.FC = () => {
 
         <CardContent className="space-y-6">
           {/* Features */}
-          <div className="space-y-4">
-            <FeatureItem
-              icon={<Zap className="w-4 h-4" />}
-              title="Intelligent Code Search"
-              description="Find relevant code using natural language queries"
-            />
-            <FeatureItem
-              icon={<Search className="w-4 h-4" />}
-              title="Contextual Assistance"
-              description="Get more accurate suggestions based on your codebase"
-            />
-          </div>
+          <FeatureList
+            features={[
+              {
+                icon: <Zap className="w-4 h-4" />,
+                title: "Intelligent Code Search",
+                description:
+                  "Find relevant code using natural language queries",
+              },
+              {
+                icon: <Search className="w-4 h-4" />,
+                title: "Contextual Assistance",
+                description:
+                  "Get more accurate suggestions based on your codebase",
+              },
+            ]}
+          />
 
           {/* Privacy Section */}
           <div className="rounded-lg bg-muted/50 p-4 space-y-2">

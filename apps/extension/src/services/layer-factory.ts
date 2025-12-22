@@ -24,6 +24,7 @@ import { ReactFileFilterLive } from "./react-file-filter.js";
 import { CypressTestAgentLive } from "./ai-agent/agent.js";
 import { PlanningAgentLive } from "./ai-agent/planning-agent.js";
 import { FileWatcherServiceLive } from "./file-watcher-service.js";
+import { DeviceAuthServiceLive } from "./device-auth-service.js";
 
 /**
  * Context required to create the core layer
@@ -167,11 +168,16 @@ export function createAgentServiceLayer(ctx: LayerContext) {
 
 /**
  * Convenience: Auth layer (minimal)
- * For auth router
+ * For auth router - includes DeviceAuthService for device authorization flow
  */
 export function createAuthServiceLayer(ctx: LayerContext) {
   const coreLayer = createCoreLayer(ctx);
-  return createBaseLayer(coreLayer);
+  const baseLayer = createBaseLayer(coreLayer);
+
+  // DeviceAuthService depends on ConfigService (in baseLayer)
+  const deviceAuthLayer = DeviceAuthServiceLive.pipe(Layer.provide(baseLayer));
+
+  return Layer.mergeAll(baseLayer, deviceAuthLayer);
 }
 
 /**

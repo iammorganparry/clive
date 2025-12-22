@@ -86,8 +86,8 @@ export type QueryHookReturn<TOutput> = {
 };
 
 export type MutationHookReturn<TInput, TOutput> = {
-  mutate: (input: TInput) => void;
-  mutateAsync: (input: TInput) => Promise<TOutput>;
+  mutate: (input?: TInput) => void;
+  mutateAsync: (input?: TInput) => Promise<TOutput>;
   isPending: boolean;
   error: Error | null;
 };
@@ -112,6 +112,7 @@ export type InferClientProcedure<TProcedure> =
           useQuery: (options?: {
             input?: TInput;
             enabled?: boolean;
+            refetchInterval?: number | false;
           }) => QueryHookReturn<TOutput>;
         }
       : TType extends "mutation"

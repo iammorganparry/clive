@@ -40,6 +40,8 @@ export const routerShape: RouterRecord = {
     previewDiff: createProcedureShape("mutation"),
   },
   auth: {
+    startDeviceAuth: createProcedureShape("mutation"),
+    cancelDeviceAuth: createProcedureShape("mutation"),
     openLogin: createProcedureShape("mutation"),
     openSignup: createProcedureShape("mutation"),
     checkSession: createProcedureShape("query"),
