@@ -1,4 +1,4 @@
-import { Data, Effect, Ref } from "effect";
+import { Data, Effect, Layer, Ref } from "effect";
 import vscode from "vscode";
 import { embed } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -532,13 +532,19 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         getStatus,
       };
     }),
-    dependencies: [
-      VSCodeService.Default,
-      ConfigService.Default,
-      RepositoryService.Default,
-    ],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use CodebaseIndexingService.Default in tests with mocked deps.
+ */
+export const CodebaseIndexingServiceLive = CodebaseIndexingService.Default.pipe(
+  Layer.provide(VSCodeService.Default),
+  Layer.provide(ConfigService.Default),
+  Layer.provide(RepositoryService.Default),
+);
 
 /**
  * Helper function to compute cosine similarity between two vectors

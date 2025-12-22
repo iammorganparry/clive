@@ -15,6 +15,7 @@ import {
   FileWatcherService,
   FileWatcherDisposable,
 } from "./services/file-watcher-service.js";
+import { GlobalStateKeys } from "./constants.js";
 
 const commandCenter = new CommandCenter();
 
@@ -126,7 +127,25 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   fileWatcherDisposable.setServiceLayer(fullIndexingLayer);
   context.subscriptions.push(fileWatcherDisposable);
 
+  // Check if indexing is enabled (opt-in)
+  const isIndexingEnabled =
+    context.globalState.get<boolean>(GlobalStateKeys.indexingEnabled) ?? false;
+
+  if (!isIndexingEnabled) {
+    outputChannel.appendLine(
+      "Codebase indexing is disabled (opt-in required via Settings)",
+    );
+  }
+
   Effect.gen(function* () {
+    // Check if indexing is enabled (opt-in)
+    if (!isIndexingEnabled) {
+      yield* Effect.logDebug(
+        "[Extension] Skipping indexing - not enabled (opt-in required)",
+      );
+      return;
+    }
+
     // Check authentication before indexing
     const configService = yield* ConfigService;
     const authToken = yield* configService.getAuthToken();
@@ -165,11 +184,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     )
     .then(() => {
       // Start file watcher after initial indexing (outside Effect context)
-      fileWatcherDisposable.start().catch((error) => {
-        outputChannel.appendLine(
-          `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
+      // Only if indexing is enabled
+      if (isIndexingEnabled) {
+        fileWatcherDisposable.start().catch((error) => {
+          outputChannel.appendLine(
+            `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }
     })
     .catch(() => {
       // Ignore indexing errors - extension should still work without indexing

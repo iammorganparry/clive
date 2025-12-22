@@ -5,6 +5,7 @@ export const Routes = {
   login: "/login",
   dashboard: "/",
   settings: "/settings",
+  onboarding: "/onboarding",
 } as const;
 
 export type Route = (typeof Routes)[keyof typeof Routes];

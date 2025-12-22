@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { ConfigService } from "./config-service.js";
 import { parseTrpcError } from "../lib/error-messages.js";
 
@@ -258,8 +258,16 @@ export class ConversationService extends Effect.Service<ConversationService>()(
           callTrpcQuery<Conversation[]>("conversation.list", {}),
       };
     }),
-    dependencies: [ConfigService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use ConversationService.Default in tests with mocked deps.
+ */
+export const ConversationServiceLive = ConversationService.Default.pipe(
+  Layer.provide(ConfigService.Default),
+);
 
 export type { ApiError, NetworkError, AuthTokenMissingError };

@@ -11,27 +11,22 @@ import {
 } from "@clive/ui/card";
 import { Field, FieldGroup } from "@clive/ui/field";
 import { useAuth } from "../../contexts/auth-context.js";
-import { useRouter, Routes } from "../../router/index.js";
+import { useRouter } from "../../router/index.js";
 
 export const LoginPage: React.FC = () => {
-  const {
-    login,
-    isLoading: authLoading,
-    isAuthenticated,
-    setToken,
-  } = useAuth();
-  const { navigate } = useRouter();
+  const { login, isAuthenticated, setToken } = useAuth();
+  const { send } = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
 
-  // Monitor authentication state - when user becomes authenticated, navigate to dashboard
+  // When user becomes authenticated, send LOGIN_SUCCESS to trigger onboarding check
   useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      navigate(Routes.dashboard);
+    if (isAuthenticated) {
+      send({ type: "LOGIN_SUCCESS" });
     }
-  }, [isAuthenticated, authLoading, navigate]);
+  }, [isAuthenticated, send]);
 
   const handleGitHubLogin = async () => {
     setIsLoading(true);
@@ -59,23 +54,6 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setToken(manualToken.trim());
   };
-
-  // Show loading state while auth is initializing
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen p-6">
-        <div className="w-full max-w-md">
-          <LoginForm
-            onGitHubClick={() => {
-              // Loading state - button disabled
-            }}
-            isLoading={true}
-            error={null}
-          />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex items-center justify-center h-screen p-6">

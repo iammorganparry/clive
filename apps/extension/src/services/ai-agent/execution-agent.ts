@@ -13,7 +13,7 @@ import type {
   ExecuteTestOutput,
   WriteTestFileOutput,
 } from "./types.js";
-import { Data, Effect, Match, Stream } from "effect";
+import { Data, Effect, Layer, Match, Stream } from "effect";
 import { ConfigService } from "../config-service.js";
 import { VSCodeService } from "../vs-code.js";
 import { CYPRESS_EXECUTION_SYSTEM_PROMPT, PromptFactory } from "./prompts.js";
@@ -393,6 +393,15 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
           ),
       };
     }),
-    dependencies: [ConfigService.Default, VSCodeService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use ExecutionAgent.Default in tests with mocked deps.
+ */
+export const ExecutionAgentLive = ExecutionAgent.Default.pipe(
+  Layer.provide(ConfigService.Default),
+  Layer.provide(VSCodeService.Default),
+);

@@ -103,3 +103,13 @@ export const IndexingConfig = {
   /** Batch processor interval in ms - how often to check for files ready to index */
   batchIntervalMs: 5000,
 } as const;
+
+/**
+ * GlobalState keys for persistent user preferences
+ */
+export const GlobalStateKeys = {
+  /** Whether codebase indexing is enabled (opt-in) */
+  indexingEnabled: "clive.indexingEnabled",
+  /** Whether the user has completed onboarding */
+  onboardingComplete: "clive.onboardingComplete",
+} as const;

@@ -1,8 +1,8 @@
-import { Data, Effect } from "effect";
-import { eq, desc } from "drizzle-orm";
-import { db } from "@clive/db/client";
-import { conversationMessage } from "@clive/db/schema";
 import { randomUUID } from "node:crypto";
+import { conversationMessage } from "@clive/db/schema";
+import { desc, eq } from "drizzle-orm";
+import { Data, Effect } from "effect";
+import { DrizzleDB, DrizzleDBLive } from "./drizzle-db.js";
 
 class MessageError extends Data.TaggedError("MessageError")<{
   message: string;
@@ -25,11 +25,13 @@ export interface Message {
 export class MessageRepository extends Effect.Service<MessageRepository>()(
   "MessageRepository",
   {
-    effect: Effect.succeed({
+    effect: Effect.gen(function* () {
+      const db = yield* DrizzleDB;
+
       /**
        * Create a new message
        */
-      create: (
+      const create = (
         conversationId: string,
         role: "user" | "assistant" | "system",
         content: string,
@@ -65,12 +67,12 @@ export class MessageRepository extends Effect.Service<MessageRepository>()(
             toolCalls: toolCallsJson,
             createdAt: new Date(),
           } satisfies Message;
-        }),
+        });
 
       /**
        * Find message by ID
        */
-      findById: (id: string) =>
+      const findById = (id: string) =>
         Effect.gen(function* () {
           const result = yield* Effect.tryPromise({
             try: () =>
@@ -99,12 +101,12 @@ export class MessageRepository extends Effect.Service<MessageRepository>()(
             toolCalls: result.toolCalls,
             createdAt: result.createdAt,
           } satisfies Message;
-        }),
+        });
 
       /**
        * Find all messages for a conversation
        */
-      findByConversation: (conversationId: string) =>
+      const findByConversation = (conversationId: string) =>
         Effect.gen(function* () {
           const results = yield* Effect.tryPromise({
             try: () =>
@@ -131,9 +133,15 @@ export class MessageRepository extends Effect.Service<MessageRepository>()(
                 createdAt: result.createdAt,
               }) satisfies Message,
           );
-        }),
+        });
+
+      return {
+        create,
+        findById,
+        findByConversation,
+      };
     }),
-    dependencies: [],
+    dependencies: [DrizzleDBLive],
   },
 ) {}
 

@@ -151,6 +151,15 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
           }),
       };
     }),
-    dependencies: [ConfigService.Default, VSCodeService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use CypressTestAgent.Default in tests with mocked deps.
+ */
+export const CypressTestAgentLive = CypressTestAgent.Default.pipe(
+  Layer.provide(ConfigService.Default),
+  Layer.provide(VSCodeService.Default),
+);

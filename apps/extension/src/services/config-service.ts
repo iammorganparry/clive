@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { jwtDecode } from "jwt-decode";
 import { SecretStorageService } from "./vs-code.js";
 import { ApiKeyService } from "./api-key-service.js";
@@ -326,6 +326,15 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           }),
       };
     }),
-    dependencies: [SecretStorageService.Default, ApiKeyService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use ConfigService.Default in tests with mocked deps.
+ */
+export const ConfigServiceLive = ConfigService.Default.pipe(
+  Layer.provide(SecretStorageService.Default),
+  Layer.provide(ApiKeyService.Default),
+);

@@ -1,4 +1,10 @@
 export {
+  DrizzleDB,
+  DrizzleDBLive,
+  type DrizzleClient,
+} from "./drizzle-db.js";
+
+export {
   ConversationRepository,
   ConversationRepositoryDefault,
   type Conversation,
@@ -13,3 +19,14 @@ export {
   type MessageError,
   type MessageNotFoundError,
 } from "./message-repository.js";
+
+export {
+  RepositoryRepository,
+  RepositoryRepositoryDefault,
+  type Repository,
+  type FileData,
+  type FileSearchResult,
+  type IndexingStatusInfo,
+  type RepositoryError,
+  type RepositoryNotFoundError,
+} from "./repository-repository.js";

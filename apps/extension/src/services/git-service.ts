@@ -2,7 +2,7 @@ import * as path from "node:path";
 import { Uri } from "vscode";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { VSCodeService } from "./vs-code.js";
 
 const execAsync = promisify(exec);
@@ -290,5 +290,13 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         }),
     };
   }),
-  dependencies: [VSCodeService.Default],
+  // No dependencies - allows test injection via Layer.provide()
 }) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use GitService.Default in tests with mocked deps.
+ */
+export const GitServiceLive = GitService.Default.pipe(
+  Layer.provide(VSCodeService.Default),
+);

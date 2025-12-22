@@ -1,4 +1,4 @@
-import { Effect, Layer, Runtime } from "effect";
+import { Effect, Runtime } from "effect";
 import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
@@ -6,12 +6,7 @@ import { CypressTestAgent } from "../../services/ai-agent/agent.js";
 import { PlanningAgent } from "../../services/ai-agent/planning-agent.js";
 import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import { ApiKeyService } from "../../services/api-key-service.js";
-import {
-  VSCodeService,
-  createSecretStorageLayer,
-} from "../../services/vs-code.js";
-import { createLoggerLayer } from "../../services/logger-service.js";
+import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 import type { ProposedTest } from "../../services/ai-agent/types.js";
 
@@ -19,20 +14,20 @@ const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
 
 /**
- * Helper to create the service layer from context
+ * Get the agent layer - uses override if provided, otherwise creates default.
+ * Returns a function that can be used with Effect.provide in a pipe.
  */
-function createServiceLayer(ctx: RpcContext) {
-  return Layer.mergeAll(
-    CypressTestAgent.Default,
-    PlanningAgent.Default,
-    ConversationServiceEffect.Default,
-    ConfigServiceEffect.Default,
-    ApiKeyService.Default,
-    VSCodeService.Default,
-    createSecretStorageLayer(ctx.context),
-    createLoggerLayer(ctx.outputChannel, ctx.isDev),
-  );
-}
+const provideAgentLayer = (ctx: RpcContext) => {
+  const layer = ctx.agentLayer ?? createAgentServiceLayer(ctx.layerContext);
+  return <A, E>(effect: Effect.Effect<A, E, unknown>) =>
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>;
+};
+
+/**
+ * Get the agent layer directly for use in subscriptions
+ */
+const getAgentLayer = (ctx: RpcContext) =>
+  ctx.agentLayer ?? createAgentServiceLayer(ctx.layerContext);
 
 /**
  * Agents router - handles AI agent operations
@@ -47,182 +42,178 @@ export const agentsRouter = {
         files: z.array(z.string()),
       }),
     )
-    .mutation(
-      ({ input, ctx }: { input: { files: string[] }; ctx: RpcContext }) =>
-        Effect.gen(function* () {
-          const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-          const startTime = Date.now();
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        const startTime = Date.now();
 
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] ========== Starting test generation planning ==========`,
+        );
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
+        );
+
+        const testAgent = yield* CypressTestAgent;
+        const isConfigured = yield* testAgent.isConfigured();
+
+        if (!isConfigured) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ========== Starting test generation planning ==========`,
+            `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
           );
+          yield* Effect.promise(() =>
+            vscode.window.showErrorMessage(
+              "AI Gateway token not available. Please log in to authenticate.",
+            ),
+          );
+          return {
+            tests: [] as ProposedTest[],
+            error: "API key not configured",
+          };
+        }
+
+        if (input.files.length === 0) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
+            `[RpcRouter:${requestId}] ERROR: No files provided`,
           );
+          return { tests: [] as ProposedTest[], error: "No files provided" };
+        }
 
-          const testAgent = yield* CypressTestAgent;
-          const isConfigured = yield* testAgent.isConfigured();
+        // Fire-and-forget informational notification
+        vscode.window.showInformationMessage(
+          `Planning Cypress tests for ${input.files.length} file(s)...`,
+        );
 
-          if (!isConfigured) {
-            yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
-            );
-            yield* Effect.promise(() =>
-              vscode.window.showErrorMessage(
-                "AI Gateway token not available. Please log in to authenticate.",
-              ),
-            );
-            return {
-              tests: [] as ProposedTest[],
-              error: "API key not configured",
-            };
-          }
+        const planningAgent = yield* PlanningAgent;
+        const conversationService = yield* ConversationServiceEffect;
+        const configService = yield* ConfigServiceEffect;
+        const maxConcurrentFiles = yield* configService.getMaxConcurrentFiles();
 
-          if (input.files.length === 0) {
-            yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] ERROR: No files provided`,
-            );
-            return { tests: [] as ProposedTest[], error: "No files provided" };
-          }
-
-          // Fire-and-forget informational notification
-          vscode.window.showInformationMessage(
-            `Planning Cypress tests for ${input.files.length} file(s)...`,
-          );
-
-          const planningAgent = yield* PlanningAgent;
-          const conversationService = yield* ConversationServiceEffect;
-          const configService = yield* ConfigServiceEffect;
-          const maxConcurrentFiles =
-            yield* configService.getMaxConcurrentFiles();
-
-          // Check if any files have conversation history
-          // If so, process individually to preserve per-file conversations
-          // Otherwise, batch process for efficiency
-          const hasConversationHistory = yield* Effect.gen(function* () {
-            for (const filePath of input.files) {
-              const conversation = yield* conversationService
-                .getOrCreateConversation(filePath)
-                .pipe(Effect.catchAll(() => Effect.succeed(null)));
-              if (conversation) {
-                const messages = yield* conversationService
-                  .getMessages(conversation.id)
-                  .pipe(Effect.catchAll(() => Effect.succeed([])));
-                if (messages.length > 0) {
-                  return true;
-                }
+        // Check if any files have conversation history
+        // If so, process individually to preserve per-file conversations
+        // Otherwise, batch process for efficiency
+        const hasConversationHistory = yield* Effect.gen(function* () {
+          for (const filePath of input.files) {
+            const conversation = yield* conversationService
+              .getOrCreateConversation(filePath)
+              .pipe(Effect.catchAll(() => Effect.succeed(null)));
+            if (conversation) {
+              const messages = yield* conversationService
+                .getMessages(conversation.id)
+                .pipe(Effect.catchAll(() => Effect.succeed([])));
+              if (messages.length > 0) {
+                return true;
               }
             }
-            return false;
-          }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+          }
+          return false;
+        }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-          let results: Array<{
+        let results: Array<{
+          tests: ProposedTest[];
+          conversationId?: string;
+          sourceFile: string;
+        }>;
+
+        if (hasConversationHistory) {
+          // Process files individually to preserve per-file conversation history
+          results = yield* Effect.all(
+            input.files.map((filePath: string) =>
+              Effect.gen(function* () {
+                // Get or create conversation for this file
+                const conversation = yield* conversationService
+                  .getOrCreateConversation(filePath)
+                  .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+                // Get conversation history if exists
+                let conversationHistory: Array<{
+                  role: "user" | "assistant" | "system";
+                  content: string;
+                }> = [];
+                if (conversation) {
+                  const messages = yield* conversationService
+                    .getMessages(conversation.id)
+                    .pipe(Effect.catchAll(() => Effect.succeed([])));
+                  conversationHistory = messages.map((msg) => ({
+                    role: msg.role as "user" | "assistant" | "system",
+                    content: msg.content,
+                  }));
+                }
+
+                // Plan test for this file with conversation history
+                const result = yield* planningAgent.planTest(filePath, {
+                  conversationHistory,
+                  outputChannel: ctx.outputChannel,
+                  progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
+                });
+
+                // Save assistant response to conversation if we have one
+                if (conversation && result.response) {
+                  yield* conversationService
+                    .addMessage(conversation.id, "assistant", result.response)
+                    .pipe(Effect.catchAll(() => Effect.void));
+                }
+
+                return {
+                  tests: result.tests,
+                  conversationId: conversation?.id,
+                  sourceFile: filePath,
+                };
+              }),
+            ),
+            { concurrency: maxConcurrentFiles },
+          );
+        } else {
+          // No conversation history - batch process for efficiency
+          const result = yield* planningAgent.planTest(input.files, {
+            outputChannel: ctx.outputChannel,
+            progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
+          });
+
+          // Convert to expected format
+          results = input.files.map((filePath) => ({
+            tests: result.tests.filter((test) => test.sourceFile === filePath),
+            sourceFile: filePath,
+          }));
+        }
+
+        // Aggregate all results
+        const allTests = results.flatMap(
+          (r: {
             tests: ProposedTest[];
             conversationId?: string;
             sourceFile: string;
-          }>;
+          }) => r.tests,
+        );
 
-          if (hasConversationHistory) {
-            // Process files individually to preserve per-file conversation history
-            results = yield* Effect.all(
-              input.files.map((filePath: string) =>
-                Effect.gen(function* () {
-                  // Get or create conversation for this file
-                  const conversation = yield* conversationService
-                    .getOrCreateConversation(filePath)
-                    .pipe(Effect.catchAll(() => Effect.succeed(null)));
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] Aggregated ${allTests.length} test(s) from ${results.length} file(s)`,
+        );
 
-                  // Get conversation history if exists
-                  let conversationHistory: Array<{
-                    role: "user" | "assistant" | "system";
-                    content: string;
-                  }> = [];
-                  if (conversation) {
-                    const messages = yield* conversationService
-                      .getMessages(conversation.id)
-                      .pipe(Effect.catchAll(() => Effect.succeed([])));
-                    conversationHistory = messages.map((msg) => ({
-                      role: msg.role as "user" | "assistant" | "system",
-                      content: msg.content,
-                    }));
-                  }
+        const totalDuration = Date.now() - startTime;
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] ========== Test generation planning completed in ${totalDuration}ms ==========`,
+        );
 
-                  // Plan test for this file with conversation history
-                  const result = yield* planningAgent.planTest(filePath, {
-                    conversationHistory,
-                    outputChannel: ctx.outputChannel,
-                    progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
-                  });
-
-                  // Save assistant response to conversation if we have one
-                  if (conversation && result.response) {
-                    yield* conversationService
-                      .addMessage(conversation.id, "assistant", result.response)
-                      .pipe(Effect.catchAll(() => Effect.void));
-                  }
-
-                  return {
-                    tests: result.tests,
-                    conversationId: conversation?.id,
-                    sourceFile: filePath,
-                  };
-                }),
-              ),
-              { concurrency: maxConcurrentFiles },
+        return { tests: allTests };
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function* () {
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+            yield* Effect.logDebug(
+              `[RpcRouter] Planning failed: ${errorMessage}`,
             );
-          } else {
-            // No conversation history - batch process for efficiency
-            const result = yield* planningAgent.planTest(input.files, {
-              outputChannel: ctx.outputChannel,
-              progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
-            });
-
-            // Convert to expected format
-            results = input.files.map((filePath) => ({
-              tests: result.tests.filter(
-                (test) => test.sourceFile === filePath,
+            yield* Effect.promise(() =>
+              vscode.window.showErrorMessage(
+                `Failed to plan tests: ${errorMessage}`,
               ),
-              sourceFile: filePath,
-            }));
-          }
-
-          // Aggregate all results
-          const allTests = results.flatMap(
-            (r: {
-              tests: ProposedTest[];
-              conversationId?: string;
-              sourceFile: string;
-            }) => r.tests,
-          );
-
-          yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] Aggregated ${allTests.length} test(s) from ${results.length} file(s)`,
-          );
-
-          const totalDuration = Date.now() - startTime;
-          yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ========== Test generation planning completed in ${totalDuration}ms ==========`,
-          );
-
-          return { tests: allTests };
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
-              yield* Effect.logDebug(
-                `[RpcRouter] Planning failed: ${errorMessage}`,
-              );
-              yield* Effect.promise(() =>
-                vscode.window.showErrorMessage(
-                  `Failed to plan tests: ${errorMessage}`,
-                ),
-              );
-              return { tests: [] as ProposedTest[], error: errorMessage };
-            }),
-          ),
-          Effect.provide(createServiceLayer(ctx)),
+            );
+            return { tests: [] as ProposedTest[], error: errorMessage };
+          }),
         ),
+        provideAgentLayer(ctx),
+      ),
     ),
 
   /**
@@ -273,13 +264,7 @@ export const agentsRouter = {
         }
       };
 
-      const serviceLayer = Layer.mergeAll(
-        CypressTestAgent.Default,
-        ApiKeyService.Default,
-        VSCodeService.Default,
-        createSecretStorageLayer(ctx.context),
-        createLoggerLayer(ctx.outputChannel, ctx.isDev),
-      );
+      const serviceLayer = getAgentLayer(ctx);
 
       const result = await Runtime.runPromise(runtime)(
         Effect.gen(function* () {
@@ -425,7 +410,7 @@ export const agentsRouter = {
             error: error instanceof Error ? error.message : "Unknown error",
           }),
         ),
-        Effect.provide(createServiceLayer(ctx)),
+        provideAgentLayer(ctx),
       ),
     ),
 
@@ -454,7 +439,7 @@ export const agentsRouter = {
           isFilePath,
           cancelled: true,
         };
-      }).pipe(Effect.provide(createServiceLayer(ctx))),
+      }).pipe(provideAgentLayer(ctx)),
     ),
 
   /**

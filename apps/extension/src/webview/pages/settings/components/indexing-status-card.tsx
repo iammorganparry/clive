@@ -10,6 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
+import { Switch } from "@clive/ui/switch";
+import { Label } from "@clive/ui/label";
+import { Shield } from "lucide-react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { IndexingStatus } from "../../../../services/indexing-status.js";
 
@@ -78,11 +81,32 @@ export const IndexingStatusCard: React.FC = () => {
   const rpc = useRpc();
   const queryClient = useQueryClient();
 
+  // Fetch indexing preference (enabled state)
+  const { data: prefData, isLoading: prefLoading } =
+    rpc.config.getIndexingPreference.useQuery();
+  const isEnabled = prefData?.enabled ?? false;
+
+  // Mutation to toggle indexing
+  const setEnabledMutation = rpc.config.setIndexingEnabled.useMutation({
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["rpc", "config", "getIndexingPreference"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["rpc", "config", "getIndexingStatus"],
+      });
+    },
+  });
+
+  const handleToggle = (checked: boolean) => {
+    setEnabledMutation.mutate({ enabled: checked });
+  };
+
   const { data, isLoading } = rpc.config.getIndexingStatus.useQuery();
 
-  // Set up polling based on status
+  // Set up polling based on status (only when enabled)
   React.useEffect(() => {
-    if (!data || !data.status) return;
+    if (!isEnabled || !data || !data.status) return;
 
     const interval = data.status === "in_progress" ? 2000 : 30000;
     const timer = setInterval(() => {
@@ -92,23 +116,25 @@ export const IndexingStatusCard: React.FC = () => {
     }, interval);
 
     return () => clearInterval(timer);
-  }, [data, queryClient]);
+  }, [isEnabled, data, queryClient]);
 
   const reindexMutation = rpc.config.triggerReindex.useMutation({
     onSuccess: () => {
       // Refetch status after triggering re-index
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["indexingStatus"] });
+        queryClient.invalidateQueries({
+          queryKey: ["rpc", "config", "getIndexingStatus"],
+        });
       }, 1000);
     },
   });
 
-  if (isLoading && !data) {
+  if (prefLoading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Codebase Index</CardTitle>
-          <CardDescription>Semantic search index status</CardDescription>
+          <CardDescription>Smart code understanding</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-sm text-muted-foreground">Loading...</div>
@@ -125,70 +151,112 @@ export const IndexingStatusCard: React.FC = () => {
     <Card>
       <CardHeader>
         <CardTitle>Codebase Index</CardTitle>
-        <CardDescription>Semantic search index status</CardDescription>
+        <CardDescription>Smart code understanding</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Enable/Disable Toggle */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div
-              className={`h-3 w-3 rounded-full ${statusColor} ${
-                status === "in_progress" ? "animate-pulse" : ""
-              }`}
-            />
-            <span className="text-sm font-medium">{statusLabel}</span>
+          <div className="space-y-0.5">
+            <Label htmlFor="indexing-toggle" className="text-sm font-medium">
+              Enable Indexing
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Allow Clive to index your codebase for smarter assistance
+            </p>
           </div>
-          {data?.fileCount !== undefined && (
-            <span className="text-sm text-muted-foreground">
-              {data.fileCount} file{data.fileCount !== 1 ? "s" : ""}
-            </span>
-          )}
+          <Switch
+            id="indexing-toggle"
+            checked={isEnabled}
+            onCheckedChange={handleToggle}
+            disabled={setEnabledMutation.isPending}
+          />
         </div>
 
-        {data?.repositoryName && (
-          <div className="space-y-1 text-sm">
-            <div>
-              <span className="text-muted-foreground">Repository: </span>
-              <span className="font-medium">{data.repositoryName}</span>
+        {/* Privacy note */}
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md p-2">
+          <Shield className="w-3 h-3 mt-0.5 flex-shrink-0 text-green-600 dark:text-green-400" />
+          <span>
+            Your code stays private. Only semantic embeddings are stored
+            securely.
+          </span>
+        </div>
+
+        {/* Status section - only show when enabled */}
+        {isEnabled && (
+          <>
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`h-3 w-3 rounded-full ${statusColor} ${
+                      status === "in_progress" ? "animate-pulse" : ""
+                    }`}
+                  />
+                  <span className="text-sm font-medium">{statusLabel}</span>
+                </div>
+                {data?.fileCount !== undefined && (
+                  <span className="text-sm text-muted-foreground">
+                    {data.fileCount} file{data.fileCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
             </div>
-            {data.repositoryPath && (
-              <div>
-                <span className="text-muted-foreground">Path: </span>
-                <span className="font-mono text-xs">{data.repositoryPath}</span>
+
+            {data?.repositoryName && (
+              <div className="space-y-1 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Repository: </span>
+                  <span className="font-medium">{data.repositoryName}</span>
+                </div>
+                {data.repositoryPath && (
+                  <div>
+                    <span className="text-muted-foreground">Path: </span>
+                    <span className="font-mono text-xs">
+                      {data.repositoryPath}
+                    </span>
+                  </div>
+                )}
+                {data.lastIndexedAt && (
+                  <div>
+                    <span className="text-muted-foreground">
+                      Last indexed:{" "}
+                    </span>
+                    <span>{formatTimeAgo(data.lastIndexedAt)}</span>
+                  </div>
+                )}
               </div>
             )}
-            {data.lastIndexedAt && (
-              <div>
-                <span className="text-muted-foreground">Last indexed: </span>
-                <span>{formatTimeAgo(data.lastIndexedAt)}</span>
-              </div>
-            )}
-          </div>
+
+            {data &&
+              "errorMessage" in data &&
+              data.errorMessage &&
+              getErrorDisplay(data.errorMessage) && (
+                <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
+                  <p className="font-medium text-red-800 dark:text-red-200">
+                    {getErrorDisplay(data.errorMessage)?.title}
+                  </p>
+                  <p className="text-red-700 dark:text-red-300 mt-1">
+                    {getErrorDisplay(data.errorMessage)?.message}
+                  </p>
+                </div>
+              )}
+
+            <Button
+              onClick={() => reindexMutation.mutate()}
+              disabled={
+                status === "in_progress" ||
+                reindexMutation.isPending ||
+                isLoading
+              }
+              variant="outline"
+              className="w-full"
+            >
+              {status === "in_progress" || reindexMutation.isPending
+                ? "Indexing..."
+                : "Re-index Codebase"}
+            </Button>
+          </>
         )}
-
-        {data &&
-          "errorMessage" in data &&
-          data.errorMessage &&
-          getErrorDisplay(data.errorMessage) && (
-            <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
-              <p className="font-medium text-red-800 dark:text-red-200">
-                {getErrorDisplay(data.errorMessage)?.title}
-              </p>
-              <p className="text-red-700 dark:text-red-300 mt-1">
-                {getErrorDisplay(data.errorMessage)?.message}
-              </p>
-            </div>
-          )}
-
-        <Button
-          onClick={() => reindexMutation.mutate()}
-          disabled={status === "in_progress" || reindexMutation.isPending}
-          variant="outline"
-          className="w-full"
-        >
-          {status === "in_progress" || reindexMutation.isPending
-            ? "Indexing..."
-            : "Re-index Codebase"}
-        </Button>
       </CardContent>
     </Card>
   );

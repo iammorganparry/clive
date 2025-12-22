@@ -1,18 +1,17 @@
 import type React from "react";
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-} from "react";
+import { createContext, useContext, useCallback, useEffect } from "react";
+import { useMachine } from "@xstate/react";
 import { Routes, type Route } from "./routes.js";
 import { useAuth } from "../contexts/auth-context.js";
+import { useRpc } from "../rpc/provider.js";
+import { routerMachine, type RouterMachineEvent } from "./router-machine.js";
 
 interface RouterContextValue {
   route: Route;
+  isInitializing: boolean;
   navigate: (route: Route) => void;
   goBack: () => void;
+  send: (event: RouterMachineEvent) => void;
 }
 
 const RouterContext = createContext<RouterContextValue | undefined>(undefined);
@@ -22,42 +21,62 @@ interface RouterProviderProps {
 }
 
 export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [route, setRoute] = useState<Route>(Routes.login);
-  const [_history, setHistory] = useState<Route[]>([Routes.login]);
+  const { isAuthenticated, isLoading: authLoading, token } = useAuth();
+  const rpc = useRpc();
 
-  // Auth-aware navigation: redirect unauthenticated users to login
+  const [state, send] = useMachine(routerMachine);
+
+  // Fetch onboarding status only when authenticated and in checkingOnboarding state
+  const { data: indexingPreference, isLoading: prefLoading } =
+    rpc.config.getIndexingPreference.useQuery({
+      enabled: isAuthenticated && state.matches("checkingOnboarding"),
+    });
+
+  // Send AUTH_RESULT when auth loading completes
   useEffect(() => {
-    if (!authLoading) {
-      if (!isAuthenticated && route !== Routes.login) {
-        setRoute(Routes.login);
-        setHistory([Routes.login]);
-      } else if (isAuthenticated && route === Routes.login) {
-        setRoute(Routes.dashboard);
-        setHistory([Routes.dashboard]);
-      }
+    if (!authLoading && state.matches("initializing")) {
+      send({ type: "AUTH_RESULT", isAuthenticated, token: token ?? null });
     }
-  }, [isAuthenticated, authLoading, route]);
+  }, [authLoading, isAuthenticated, token, state, send]);
 
-  const navigate = useCallback((newRoute: Route) => {
-    setRoute(newRoute);
-    setHistory((prev) => [...prev, newRoute]);
-  }, []);
+  // Send ONBOARDING_RESULT when preference loading completes
+  useEffect(() => {
+    if (
+      !prefLoading &&
+      indexingPreference !== undefined &&
+      state.matches("checkingOnboarding")
+    ) {
+      send({
+        type: "ONBOARDING_RESULT",
+        onboardingComplete: indexingPreference?.onboardingComplete ?? false,
+      });
+    }
+  }, [prefLoading, indexingPreference, state, send]);
+
+  // Derive initialization state from machine state
+  const isInitializing =
+    state.matches("initializing") || state.matches("checkingOnboarding");
+
+  // Get current route from machine context
+  const route = state.context.route;
+
+  const navigate = useCallback(
+    (newRoute: Route) => {
+      send({ type: "NAVIGATE", route: newRoute });
+    },
+    [send],
+  );
 
   const goBack = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.length > 1) {
-        const newHistory = prev.slice(0, -1);
-        const previousRoute = newHistory[newHistory.length - 1];
-        setRoute(previousRoute);
-        return newHistory;
-      }
-      return prev;
-    });
-  }, []);
+    // For simplicity, navigate to dashboard when going back
+    // Could be enhanced with history tracking in machine context if needed
+    send({ type: "NAVIGATE", route: Routes.dashboard });
+  }, [send]);
 
   return (
-    <RouterContext.Provider value={{ route, navigate, goBack }}>
+    <RouterContext.Provider
+      value={{ route, isInitializing, navigate, goBack, send }}
+    >
       {children}
     </RouterContext.Provider>
   );

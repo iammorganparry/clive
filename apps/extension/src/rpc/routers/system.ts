@@ -1,30 +1,23 @@
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
-import { ReactFileFilter as ReactFileFilterService } from "../../services/react-file-filter.js";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import {
-  VSCodeService,
-  createSecretStorageLayer,
-} from "../../services/vs-code.js";
-import { createLoggerLayer } from "../../services/logger-service.js";
+import { ReactFileFilter as ReactFileFilterService } from "../../services/react-file-filter.js";
+import { createSystemServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
 
 /**
- * Helper to create the service layer from context
+ * Get the system layer - uses override if provided, otherwise creates default.
+ * Returns a function that can be used with Effect.provide in a pipe.
  */
-function createServiceLayer(ctx: RpcContext) {
-  return Layer.mergeAll(
-    ReactFileFilterService.Default,
-    ConfigServiceEffect.Default,
-    VSCodeService.Default,
-    createSecretStorageLayer(ctx.context),
-    createLoggerLayer(ctx.outputChannel, ctx.isDev),
-  );
-}
+const provideSystemLayer = (ctx: RpcContext) => {
+  const layer = ctx.systemLayer ?? createSystemServiceLayer(ctx.layerContext);
+  return <A, E>(effect: Effect.Effect<A, E, unknown>) =>
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>;
+};
 
 /**
  * System router - handles system-level operations
@@ -82,7 +75,7 @@ export const systemRouter = {
         },
         authToken: token || null,
       };
-    }).pipe(Effect.provide(createServiceLayer(ctx))),
+    }).pipe(provideSystemLayer(ctx)),
   ),
 
   /**

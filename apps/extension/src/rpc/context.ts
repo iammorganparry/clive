@@ -4,18 +4,46 @@ import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import type { GitService } from "../services/git-service.js";
 import type { ReactFileFilter } from "../services/react-file-filter.js";
 import type { ConfigService } from "../services/config-service.js";
+import type {
+  LayerContext,
+  createConfigServiceLayer,
+  createAgentServiceLayer,
+  createAuthServiceLayer,
+  createSystemServiceLayer,
+} from "../services/layer-factory.js";
+
+/**
+ * Layer types inferred from the layer factory functions
+ */
+export type ConfigLayerType = ReturnType<typeof createConfigServiceLayer>;
+export type AgentLayerType = ReturnType<typeof createAgentServiceLayer>;
+export type AuthLayerType = ReturnType<typeof createAuthServiceLayer>;
+export type SystemLayerType = ReturnType<typeof createSystemServiceLayer>;
 
 /**
  * RPC request context - provides access to extension services
  */
 export interface RpcContext {
+  // Core VS Code context
   webviewView: vscode.WebviewView;
   context: vscode.ExtensionContext;
   outputChannel: vscode.OutputChannel;
   isDev: boolean;
+
+  // Extension services
   cypressDetector: CypressDetector;
   gitService: GitService;
   reactFileFilter: ReactFileFilter;
   diffProvider: DiffContentProvider;
   configService: ConfigService;
+
+  // Layer context for building default Effect layers
+  layerContext: LayerContext;
+
+  // Optional layer overrides - if provided, routers use these instead of defaults
+  // This enables dependency injection for testing
+  configLayer?: ConfigLayerType;
+  agentLayer?: AgentLayerType;
+  authLayer?: AuthLayerType;
+  systemLayer?: SystemLayerType;
 }

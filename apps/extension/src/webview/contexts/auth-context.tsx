@@ -1,18 +1,29 @@
-import { createContext, useContext, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { VSCodeAPI } from "../services/vscode.js";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { useRpc } from "../rpc/provider.js";
+
+/**
+ * Better Auth JWT payload structure
+ * Based on the JWT plugin output from better-auth
+ */
+interface BetterAuthJwtPayload {
+  sub: string; // userId
+  email?: string;
+  name?: string;
+  image?: string;
+  activeOrganizationId?: string;
+  iat?: number;
+  exp?: number;
+  [key: string]: unknown;
+}
 
 export interface UserData {
   userId: string;
   email?: string;
-  firstName?: string;
-  lastName?: string;
-  username?: string;
+  name?: string;
   imageUrl?: string;
   organizationId?: string;
-  [key: string]: unknown;
 }
 
 interface AuthContextType {
@@ -30,11 +41,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
   children: ReactNode;
-  vscode: VSCodeAPI;
 }
-
-const TOKEN_STORAGE_KEY = "auth_token";
-const AUTH_TOKEN_QUERY_KEY = ["auth-token"];
 
 /**
  * Decodes a JWT token and extracts user data from the payload
@@ -57,39 +64,20 @@ function decodeJWT(token: string): UserData | null {
 
     // Decode base64
     const decoded = atob(padded);
-    const parsed = JSON.parse(decoded) as Record<string, unknown>;
+    const parsed = JSON.parse(decoded) as BetterAuthJwtPayload;
 
-    // Extract user data from Better Auth JWT payload
-    // Better Auth uses 'id' for userId, 'email', 'name', 'image', etc.
-    // Organization plugin adds 'activeOrganizationId' to session
+    // Better Auth JWT uses 'sub' for userId
+    if (!parsed.sub) {
+      console.error("Invalid JWT: missing sub claim");
+      return null;
+    }
+
     return {
-      userId:
-        (parsed.id as string) ||
-        (parsed.sub as string) ||
-        (parsed.user_id as string) ||
-        "",
-      email: parsed.email as string | undefined,
-      firstName:
-        (parsed.first_name as string) ||
-        (parsed.firstName as string) ||
-        undefined,
-      lastName:
-        (parsed.last_name as string) ||
-        (parsed.lastName as string) ||
-        undefined,
-      username:
-        (parsed.username as string) || (parsed.name as string) || undefined,
-      imageUrl:
-        (parsed.image as string) || // Better Auth uses 'image' field
-        (parsed.image_url as string) ||
-        (parsed.imageUrl as string) ||
-        undefined,
-      organizationId:
-        (parsed.activeOrganizationId as string) ||
-        (parsed.organization_id as string) ||
-        (parsed.organizationId as string) ||
-        undefined,
-      ...parsed,
+      userId: parsed.sub,
+      email: parsed.email,
+      name: parsed.name,
+      imageUrl: parsed.image,
+      organizationId: parsed.activeOrganizationId,
     };
   } catch (error) {
     console.error("Failed to decode JWT token:", error);
@@ -97,41 +85,20 @@ function decodeJWT(token: string): UserData | null {
   }
 }
 
-export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
+export const AuthProvider = ({ children }: AuthProviderProps) => {
   const queryClient = useQueryClient();
   const rpc = useRpc();
 
-  // Check session using RPC
+  // Check session using RPC - reads from secret storage (single source of truth)
   const {
     data: sessionData,
     isLoading: isCheckingSession,
     refetch: refetchSession,
   } = rpc.auth.checkSession.useQuery();
 
-  // Load token from VS Code state using React Query (fallback)
-  const { data: tokenFromState, isLoading: isLoadingState } = useQuery<
-    string | null
-  >({
-    queryKey: AUTH_TOKEN_QUERY_KEY,
-    queryFn: () => {
-      try {
-        const state = vscode.getState() as
-          | { [TOKEN_STORAGE_KEY]?: string }
-          | undefined;
-        const storedToken = state?.[TOKEN_STORAGE_KEY];
-        return storedToken || null;
-      } catch (error) {
-        console.error("Failed to load token from VS Code state:", error);
-        return null;
-      }
-    },
-    staleTime: Infinity, // Token doesn't change unless explicitly updated
-    gcTime: Infinity, // Keep in cache indefinitely
-  });
-
-  // Prefer token from RPC session check, fallback to state
-  const token = sessionData?.token ?? tokenFromState ?? null;
-  const isLoading = isCheckingSession || isLoadingState;
+  // Token comes exclusively from secret storage via RPC
+  const token = sessionData?.token ?? null;
+  const isLoading = isCheckingSession;
 
   // Decode user data from token
   const user = useMemo(() => {
@@ -139,42 +106,23 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
     return decodeJWT(token);
   }, [token]);
 
-  // Store token mutation
+  // Store token mutation - persists to secret storage
   const storeTokenMutation = rpc.auth.storeToken.useMutation({
     onSuccess: () => {
-      refetchSession();
+      // Invalidate session query to refetch the new token
+      queryClient.invalidateQueries({
+        queryKey: ["rpc", "auth", "checkSession"],
+      });
     },
   });
-
-  // Save token to VS Code state and update React Query cache
-  const saveToken = useCallback(
-    (newToken: string | null) => {
-      try {
-        const currentState =
-          (vscode.getState() as Record<string, unknown>) || {};
-        const newState = {
-          ...currentState,
-          [TOKEN_STORAGE_KEY]: newToken,
-        };
-        vscode.setState(newState);
-        // Update React Query cache
-        queryClient.setQueryData(AUTH_TOKEN_QUERY_KEY, newToken);
-        // Persist token to secret storage via RPC
-        if (newToken) {
-          storeTokenMutation.mutate({ token: newToken });
-        }
-      } catch (error) {
-        console.error("Failed to save token to VS Code state:", error);
-      }
-    },
-    [vscode, queryClient, storeTokenMutation],
-  );
 
   const loginMutation = rpc.auth.openLogin.useMutation();
   const logoutMutation = rpc.auth.logout.useMutation({
     onSuccess: () => {
-      saveToken(null);
-      refetchSession();
+      // Invalidate session query to clear the token
+      queryClient.invalidateQueries({
+        queryKey: ["rpc", "auth", "checkSession"],
+      });
     },
   });
 
@@ -194,13 +142,14 @@ export const AuthProvider = ({ children, vscode }: AuthProviderProps) => {
 
   const setToken = useCallback(
     (newToken: string) => {
-      saveToken(newToken);
+      // Store token in secret storage via RPC
+      storeTokenMutation.mutate({ token: newToken });
     },
-    [saveToken],
+    [storeTokenMutation],
   );
 
   const value: AuthContextType = {
-    token: token ?? null,
+    token,
     user,
     isAuthenticated: !!token,
     isLoading,

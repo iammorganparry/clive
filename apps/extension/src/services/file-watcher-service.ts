@@ -1,12 +1,4 @@
-import {
-  Effect,
-  Ref,
-  Runtime,
-  type Layer,
-  Schedule,
-  Fiber,
-  pipe,
-} from "effect";
+import { Effect, Ref, Runtime, Layer, Schedule, Fiber, pipe } from "effect";
 import * as vscode from "vscode";
 import { IndexingConfig } from "../constants.js";
 import {
@@ -421,15 +413,21 @@ export class FileWatcherService extends Effect.Service<FileWatcherService>()(
         isRunning,
       };
     }),
-    dependencies: [
-      ConfigService.Default,
-      RepositoryService.Default,
-      CodebaseIndexingService.Default,
-      VSCodeService.Default,
-      ApiKeyService.Default,
-    ],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use FileWatcherService.Default in tests with mocked deps.
+ */
+export const FileWatcherServiceLive = FileWatcherService.Default.pipe(
+  Layer.provide(ConfigService.Default),
+  Layer.provide(RepositoryService.Default),
+  Layer.provide(CodebaseIndexingService.Default),
+  Layer.provide(VSCodeService.Default),
+  Layer.provide(ApiKeyService.Default),
+);
 
 /**
  * Wrapper class for VS Code Disposable integration

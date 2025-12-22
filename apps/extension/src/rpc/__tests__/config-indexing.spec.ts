@@ -1,7 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Effect, Runtime, Layer } from "effect";
-
-import drizzleMock from "../../__mocks__/drizzle-client.js";
+import { Effect, Runtime } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../lib/vscode-effects.js", () => ({
   getWorkspaceRoot: vi.fn().mockReturnValue(
@@ -21,51 +19,44 @@ vi.mock("../../lib/vscode-effects.js", () => ({
   },
 }));
 
-import { configRouter } from "../routers/config.js";
-import { ConfigService } from "../../services/config-service.js";
-import { ApiKeyService } from "../../services/api-key-service.js";
-import { RepositoryService } from "../../services/repository-service.js";
-import { CodebaseIndexingService } from "../../services/codebase-indexing-service.js";
-import { VSCodeService } from "../../services/vs-code.js";
-import { createMockSecretStorageLayer } from "../../__mocks__/secret-storage-service.js";
-import { createLoggerLayer } from "../../services/logger-service.js";
 import type * as vscode from "vscode";
+import {
+  createConfigTestLayer,
+  setAnthropicApiKey,
+  setAuthToken,
+} from "../../__tests__/test-layer-factory.js";
 import type { RpcContext } from "../context.js";
+import type { LayerContext } from "../../services/layer-factory.js";
+import { configRouter } from "../routers/config.js";
+
+/**
+ * Create a mock LayerContext for testing.
+ * This is only used as a fallback - tests should provide configLayer directly.
+ */
+const createMockLayerContext = (): LayerContext => ({
+  extensionContext: {} as vscode.ExtensionContext,
+  outputChannel: { appendLine: vi.fn() } as unknown as vscode.OutputChannel,
+  isDev: false,
+});
 
 describe("Config Router - Indexing Endpoints", () => {
   const runtime = Runtime.defaultRuntime;
-  let mockSecrets: Partial<vscode.SecretStorage>;
-  let storedTokens: Map<string, string>;
+  let testContext: ReturnType<typeof createConfigTestLayer>;
   let mockContext: RpcContext;
 
   beforeEach(() => {
-    storedTokens = new Map();
-    mockSecrets = {
-      get: async (key: string) => {
-        return storedTokens.get(key) || undefined;
-      },
-      store: async (key: string, value: string) => {
-        storedTokens.set(key, value);
-      },
-      delete: async (key: string) => {
-        storedTokens.delete(key);
-      },
-    };
+    testContext = createConfigTestLayer();
 
-    storedTokens.set(
-      "clive.auth_token",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test",
-    );
-    storedTokens.set("clive.anthropic_api_key", "sk-ant-api03-test-key");
+    // Pre-populate tokens
+    setAuthToken(testContext.storedTokens);
+    setAnthropicApiKey(testContext.storedTokens);
 
     mockContext = {
       context: {
-        secrets: mockSecrets as vscode.SecretStorage,
+        secrets: testContext.mockSecrets as unknown as vscode.SecretStorage,
       } as vscode.ExtensionContext,
-      outputChannel: {
-        appendLine: vi.fn(),
-        show: vi.fn(),
-      } as unknown as vscode.OutputChannel,
+      outputChannel:
+        testContext.mockOutputChannel as unknown as vscode.OutputChannel,
       isDev: false,
       webviewView: {
         webview: {
@@ -85,174 +76,50 @@ describe("Config Router - Indexing Endpoints", () => {
       reactFileFilter: {} as unknown as RpcContext["reactFileFilter"],
       diffProvider: {} as unknown as RpcContext["diffProvider"],
       configService: {} as unknown as RpcContext["configService"],
+      // Layer context (fallback) and layer override for testing
+      layerContext: createMockLayerContext(),
+      configLayer: testContext.layer,
     } as unknown as RpcContext;
   });
 
-  function createMockVSCodeLayer() {
-    const mockWorkspace = {
-      fs: {
-        stat: vi.fn().mockResolvedValue({
-          type: 1,
-          ctime: Date.now(),
-          mtime: Date.now(),
-          size: 100,
-        }),
-        readFile: vi
-          .fn()
-          .mockResolvedValue(Buffer.from("export const test = 1;")),
-      },
-      findFiles: vi.fn().mockResolvedValue([]),
-      workspaceFolders: [
-        {
-          uri: { fsPath: "/workspace", scheme: "file" },
-          name: "workspace",
-          index: 0,
-        },
-      ],
-    } as unknown as vscode.Workspace;
-
-    return Layer.succeed(VSCodeService, {
-      _tag: "VSCodeService",
-      workspace: mockWorkspace,
-    });
-  }
-
-  function createMockRepositoryService(
-    overrides: Partial<{
-      getUserId: ReturnType<typeof vi.fn>;
-      upsertRepository: ReturnType<typeof vi.fn>;
-      upsertFile: ReturnType<typeof vi.fn>;
-      getRepository: ReturnType<typeof vi.fn>;
-      deleteFile: ReturnType<typeof vi.fn>;
-      getFileByPath: ReturnType<typeof vi.fn>;
-      getIndexingStatus: ReturnType<typeof vi.fn>;
-      searchFiles: ReturnType<typeof vi.fn>;
-    }> = {},
-  ) {
-    const defaults = {
-      getUserId: vi.fn().mockReturnValue(Effect.succeed("test-user-123")),
-      upsertRepository: vi.fn().mockReturnValue(Effect.succeed({})),
-      upsertFile: vi.fn().mockReturnValue(Effect.void),
-      getRepository: vi.fn().mockReturnValue(Effect.succeed(null)),
-      deleteFile: vi.fn().mockReturnValue(Effect.void),
-      getFileByPath: vi.fn().mockReturnValue(Effect.succeed(null)),
-      getIndexingStatus: vi.fn().mockReturnValue(
-        Effect.succeed({
-          status: "idle" as const,
-          repositoryName: null,
-          repositoryPath: null,
-          lastIndexedAt: null,
-          fileCount: 0,
-        }),
-      ),
-      searchFiles: vi.fn().mockReturnValue(Effect.succeed([])),
-    };
-
-    return Layer.succeed(RepositoryService, {
-      _tag: "RepositoryService",
-      ...defaults,
-      ...overrides,
-    } as unknown as RepositoryService);
-  }
-
-  function createMockIndexingService(
-    overrides: Partial<{
-      indexFile: ReturnType<typeof vi.fn>;
-      indexWorkspace: ReturnType<typeof vi.fn>;
-      semanticSearch: ReturnType<typeof vi.fn>;
-      getStatus: ReturnType<typeof vi.fn>;
-    }> = {},
-  ) {
-    const defaults = {
-      indexFile: vi.fn().mockReturnValue(Effect.succeed({})),
-      indexWorkspace: vi.fn().mockReturnValue(Effect.void),
-      semanticSearch: vi.fn().mockReturnValue(Effect.succeed([])),
-      getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
-    };
-
-    return Layer.succeed(CodebaseIndexingService, {
-      _tag: "CodebaseIndexingService",
-      ...defaults,
-      ...overrides,
-    } as unknown as CodebaseIndexingService);
-  }
-
   describe("getIndexingStatus", () => {
     it("should return merged status from repo and in-memory state", async () => {
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const mockSelect = {
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelect as any);
-
-      const mockSelectCount = {
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockResolvedValue([{ count: 42 }]),
-      };
-      drizzleMock.select
-        // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-        .mockReturnValueOnce(mockSelect as any)
-        // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-        .mockReturnValueOnce(mockSelectCount as any);
-
-      const repoLayer = createMockRepositoryService({
-        getRepository: vi.fn().mockReturnValue(
-          Effect.succeed({
-            id: "repo-id",
-            userId: "test-user-123",
-            name: "workspace",
-            rootPath: "/workspace",
-            lastIndexedAt: new Date(),
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }),
-        ),
-        getIndexingStatus: vi.fn().mockReturnValue(
-          Effect.succeed({
-            status: "complete" as const,
-            repositoryName: "workspace",
-            repositoryPath: "/workspace",
-            lastIndexedAt: new Date(),
-            fileCount: 42,
-          }),
-        ),
+      // Create test layer with custom overrides
+      const ctx = createConfigTestLayer({
+        repositoryOverrides: {
+          getIndexingStatus: vi.fn().mockReturnValue(
+            Effect.succeed({
+              status: "complete" as const,
+              repositoryName: "workspace",
+              repositoryPath: "/workspace",
+              lastIndexedAt: new Date(),
+              fileCount: 42,
+            }),
+          ),
+        },
+        indexingOverrides: {
+          getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
+        },
       });
+      setAuthToken(ctx.storedTokens);
 
-      const indexingLayer = createMockIndexingService({
-        getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
-      });
-
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
+      // Inject the test layer via context
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
+      };
 
       const handler = configRouter.getIndexingStatus._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { status: string }).status).toBe("complete");
       expect((result as { repositoryName: string }).repositoryName).toBe(
@@ -262,126 +129,101 @@ describe("Config Router - Indexing Endpoints", () => {
     });
 
     it("should return idle when no repository exists and no indexing in progress", async () => {
-      const mockSelect = {
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([]),
+      const ctx = createConfigTestLayer({
+        repositoryOverrides: {
+          getIndexingStatus: vi.fn().mockReturnValue(
+            Effect.succeed({
+              status: "idle" as const,
+              repositoryName: null,
+              repositoryPath: null,
+              lastIndexedAt: null,
+              fileCount: 0,
+            }),
+          ),
+        },
+        indexingOverrides: {
+          getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
+        },
+      });
+      setAuthToken(ctx.storedTokens);
+
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
       };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelect as any);
-
-      const repoLayer = createMockRepositoryService({
-        getIndexingStatus: vi.fn().mockReturnValue(
-          Effect.succeed({
-            status: "idle" as const,
-            repositoryName: null,
-            repositoryPath: null,
-            lastIndexedAt: null,
-            fileCount: 0,
-          }),
-        ),
-      });
-
-      const indexingLayer = createMockIndexingService({
-        getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
-      });
-
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
 
       const handler = configRouter.getIndexingStatus._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { status: string }).status).toBe("idle");
     });
 
     it("should handle RepositoryError", async () => {
-      const mockSelect = {
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        limit: vi
-          .fn()
-          .mockRejectedValue(new Error("Database connection failed")),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelect as any);
-
-      const repoLayer = createMockRepositoryService({
-        getIndexingStatus: vi.fn().mockReturnValue(
-          Effect.fail({
-            _tag: "RepositoryError",
-            message: "Database connection failed",
-          }),
-        ),
+      const ctx = createConfigTestLayer({
+        repositoryOverrides: {
+          getIndexingStatus: vi.fn().mockReturnValue(
+            Effect.fail({
+              _tag: "RepositoryError",
+              message: "API connection failed",
+            }),
+          ),
+        },
       });
+      setAuthToken(ctx.storedTokens);
 
-      const indexingLayer = createMockIndexingService();
-
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
+      };
 
       const handler = configRouter.getIndexingStatus._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { status: string }).status).toBe("error");
       expect((result as { errorMessage: string }).errorMessage).toBe(
-        "Database connection failed",
+        "API connection failed",
       );
     });
 
     it("should handle AuthTokenMissingError", async () => {
-      storedTokens.delete("clive.auth_token");
+      // Create context WITHOUT setting auth token
+      const ctx = createConfigTestLayer();
+      // Don't set auth token - ctx.storedTokens is empty
 
-      const repoLayer = createMockRepositoryService();
-      const indexingLayer = createMockIndexingService();
-
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
+      };
 
       const handler = configRouter.getIndexingStatus._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { status: string }).status).toBe("error");
       expect((result as { errorMessage: string }).errorMessage).toContain(
@@ -392,59 +234,55 @@ describe("Config Router - Indexing Endpoints", () => {
 
   describe("triggerReindex", () => {
     it("should fork indexing in background and return success", async () => {
-      const repoLayer = createMockRepositoryService();
-      const indexingLayer = createMockIndexingService();
+      const ctx = createConfigTestLayer();
+      setAuthToken(ctx.storedTokens);
 
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
+      };
 
       const handler = configRouter.triggerReindex._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { success: boolean }).success).toBe(true);
     });
 
     it("should return success even when errors occur", async () => {
-      const repoLayer = createMockRepositoryService();
-      const indexingLayer = createMockIndexingService({
-        indexWorkspace: vi
-          .fn()
-          .mockReturnValue(Effect.fail(new Error("Indexing failed"))),
+      const ctx = createConfigTestLayer({
+        indexingOverrides: {
+          indexWorkspace: vi
+            .fn()
+            .mockReturnValue(Effect.fail(new Error("Indexing failed"))),
+        },
       });
+      setAuthToken(ctx.storedTokens);
 
-      const layer = Layer.mergeAll(
-        ConfigService.Default,
-        ApiKeyService.Default,
-        repoLayer,
-        indexingLayer,
-        createMockVSCodeLayer(),
-        createMockSecretStorageLayer(mockSecrets),
-        createLoggerLayer(mockContext.outputChannel, mockContext.isDev),
-      );
+      const testMockContext = {
+        ...mockContext,
+        configLayer: ctx.layer,
+      };
 
       const handler = configRouter.triggerReindex._def.handler as (opts: {
         ctx: RpcContext;
         input: undefined;
-      }) => Effect.Effect<unknown, unknown, unknown>;
+      }) => Effect.Effect<unknown, unknown, never>;
 
-      const result = await handler({
-        ctx: mockContext,
-        input: undefined,
-      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+      const result = await Runtime.runPromise(runtime)(
+        handler({
+          ctx: testMockContext,
+          input: undefined,
+        }),
+      );
 
       expect((result as { success: boolean }).success).toBe(true);
     });

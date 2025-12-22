@@ -189,7 +189,12 @@ function createClientProxy<TVscode>(
         ]);
       }
 
-      return undefined;
+      // Procedure not found - throw helpful error for developers
+      const fullPath = [...path, prop].join(".");
+      throw new Error(
+        `RPC procedure "${fullPath}" not found. ` +
+          `Did you forget to add it to router-shape.ts?`,
+      );
     },
   });
 }

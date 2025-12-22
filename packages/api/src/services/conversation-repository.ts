@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { db } from "@clive/db/client";
 import { conversation } from "@clive/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { Data, Effect } from "effect";
+import { DrizzleDB, DrizzleDBLive } from "./drizzle-db.js";
 
 class ConversationError extends Data.TaggedError("ConversationError")<{
   message: string;
@@ -27,11 +27,13 @@ export interface Conversation {
 export class ConversationRepository extends Effect.Service<ConversationRepository>()(
   "ConversationRepository",
   {
-    effect: Effect.succeed({
+    effect: Effect.gen(function* () {
+      const db = yield* DrizzleDB;
+
       /**
        * Create a new conversation
        */
-      create: (userId: string, sourceFile: string) =>
+      const create = (userId: string, sourceFile: string) =>
         Effect.gen(function* () {
           const id = randomUUID();
           const now = new Date();
@@ -62,12 +64,12 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             createdAt: now,
             updatedAt: now,
           } satisfies Conversation;
-        }),
+        });
 
       /**
        * Find conversation by ID
        */
-      findById: (id: string) =>
+      const findById = (id: string) =>
         Effect.gen(function* () {
           const result = yield* Effect.tryPromise({
             try: () =>
@@ -96,12 +98,12 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
           } satisfies Conversation;
-        }),
+        });
 
       /**
        * Find conversation by user ID and source file
        */
-      findByUserAndFile: (userId: string, sourceFile: string) =>
+      const findByUserAndFile = (userId: string, sourceFile: string) =>
         Effect.gen(function* () {
           const result = yield* Effect.tryPromise({
             try: () =>
@@ -132,12 +134,12 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
           } satisfies Conversation;
-        }),
+        });
 
       /**
        * Update conversation status
        */
-      updateStatus: (
+      const updateStatus = (
         id: string,
         status: "planning" | "confirmed" | "completed",
       ) =>
@@ -156,15 +158,14 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
               }),
           });
 
-          // Re-fetch the updated conversation
-          const repo = yield* ConversationRepository;
-          return yield* repo.findById(id);
-        }),
+          // Re-fetch the updated conversation - call findById directly
+          return yield* findById(id);
+        });
 
       /**
        * List conversations for a user
        */
-      list: (userId: string) =>
+      const list = (userId: string) =>
         Effect.gen(function* () {
           const results = yield* Effect.tryPromise({
             try: () =>
@@ -191,12 +192,12 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
                 updatedAt: result.updatedAt,
               }) satisfies Conversation,
           );
-        }),
+        });
 
       /**
        * Delete a conversation
        */
-      delete: (id: string) =>
+      const deleteConversation = (id: string) =>
         Effect.gen(function* () {
           yield* Effect.tryPromise({
             try: () => db.delete(conversation).where(eq(conversation.id, id)),
@@ -207,9 +208,18 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
                 cause: error,
               }),
           });
-        }),
+        });
+
+      return {
+        create,
+        findById,
+        findByUserAndFile,
+        updateStatus,
+        list,
+        delete: deleteConversation,
+      };
     }),
-    dependencies: [],
+    dependencies: [DrizzleDBLive],
   },
 ) {}
 

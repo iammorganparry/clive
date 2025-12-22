@@ -1,4 +1,5 @@
 import type React from "react";
+import { useCallback } from "react";
 import { ArrowLeft, LogOut, Settings } from "lucide-react";
 import { Button } from "../../../components/ui/button.js";
 import { UserDropdown } from "../user-dropdown.js";
@@ -7,7 +8,12 @@ import { useAuth } from "../../contexts/auth-context.js";
 
 export const Header: React.FC = () => {
   const { logout } = useAuth();
-  const { route, navigate, goBack } = useRouter();
+  const { route, navigate, goBack, send } = useRouter();
+
+  const handleLogout = useCallback(() => {
+    logout();
+    send({ type: "LOGOUT" });
+  }, [logout, send]);
 
   return (
     <div className="flex items-center w-full justify-between border-b border-border px-4 py-2">
@@ -38,7 +44,7 @@ export const Header: React.FC = () => {
         <Button
           variant="ghost"
           size="icon"
-          onClick={logout}
+          onClick={handleLogout}
           title="Logout"
           className="h-8 w-8"
         >

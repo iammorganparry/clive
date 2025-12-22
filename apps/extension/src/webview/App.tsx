@@ -9,6 +9,8 @@ import { Header } from "./components/layout/header.js";
 import { LoginPage } from "./pages/login/index.js";
 import { DashboardPage } from "./pages/dashboard/index.js";
 import { SettingsPage } from "./pages/settings/index.js";
+import { OnboardingPage } from "./pages/onboarding/index.js";
+import { InitializingScreen } from "./components/initializing-screen.js";
 
 interface AppProps {
   vscode: VSCodeAPI;
@@ -52,8 +54,8 @@ const createMessagePromise = (
 
 const App: React.FC<AppProps> = ({ vscode }) => {
   logger.component.render("App", { vscodeAvailable: !!vscode });
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const { route } = useRouter();
+  const { isAuthenticated } = useAuth();
+  const { route, isInitializing } = useRouter();
 
   // Notify extension that webview is ready
   useEffect(() => {
@@ -64,10 +66,19 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     });
   }, [vscode]);
 
+  // Show loading screen while initializing
+  if (isInitializing) {
+    return <InitializingScreen />;
+  }
+
   // Render page based on route
   const renderPage = () => {
     if (route === Routes.login) {
       return <LoginPage />;
+    }
+
+    if (route === Routes.onboarding) {
+      return <OnboardingPage />;
     }
 
     if (route === Routes.settings) {
@@ -90,9 +101,13 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     );
   };
 
+  // Don't show header during login or onboarding
+  const showHeader =
+    isAuthenticated && route !== Routes.login && route !== Routes.onboarding;
+
   return (
     <div className="w-full h-full flex flex-col bg-background text-foreground">
-      {isAuthenticated && !authLoading && <Header />}
+      {showHeader && <Header />}
       <div className="flex-1 overflow-auto">{renderPage()}</div>
     </div>
   );

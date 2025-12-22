@@ -1091,6 +1091,15 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
           ),
       };
     }),
-    dependencies: [ConfigService.Default, VSCodeService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use PlanningAgent.Default in tests with mocked deps.
+ */
+export const PlanningAgentLive = PlanningAgent.Default.pipe(
+  Layer.provide(ConfigService.Default),
+  Layer.provide(VSCodeService.Default),
+);

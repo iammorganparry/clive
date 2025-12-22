@@ -1,15 +1,11 @@
-import { DeepMockProxy, mockDeep, mockReset } from "vitest-mock-extended";
-import { beforeEach, vi } from "vitest";
-import type { db } from "@clive/db/client";
+import {
+  createMockDrizzleClient,
+  type DeepMockProxy,
+} from "../__tests__/test-layer-factory.js";
+import type { DrizzleClient } from "../services/drizzle-db.js";
 
-export const drizzleMock: DeepMockProxy<typeof db> = mockDeep();
-
-vi.mock("@clive/db/client", () => ({
-  db: drizzleMock,
-}));
-
-beforeEach(() => {
-  mockReset(drizzleMock);
-});
+// Create a singleton mock for backward compatibility
+export const drizzleMock: DeepMockProxy<DrizzleClient> =
+  createMockDrizzleClient();
 
 export default drizzleMock;
