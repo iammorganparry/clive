@@ -331,10 +331,8 @@ export class ConfigService extends Effect.Service<ConfigService>()(
 ) {}
 
 /**
- * Production layer with all dependencies composed.
- * Use this in production code; use ConfigService.Default in tests with mocked deps.
+ * Production layer - ConfigService.Default requires SecretStorageService and ApiKeyService.
+ * SecretStorageService is context-specific and must be provided at the composition site.
+ * Use ConfigService.Default directly - dependencies provided at composition site.
  */
-export const ConfigServiceLive = ConfigService.Default.pipe(
-  Layer.provide(SecretStorageService.Default),
-  Layer.provide(ApiKeyService.Default),
-);
+export const ConfigServiceLive = ConfigService.Default;

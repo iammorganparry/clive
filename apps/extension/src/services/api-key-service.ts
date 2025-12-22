@@ -263,9 +263,8 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
 ) {}
 
 /**
- * Production layer with all dependencies composed.
- * Use this in production code; use ApiKeyService.Default in tests with mocked deps.
+ * Production layer - ApiKeyService.Default requires SecretStorageService to be provided.
+ * SecretStorageService is context-specific and must be provided at the composition site.
+ * Use ApiKeyService.Default directly and provide SecretStorageService from context.
  */
-export const ApiKeyServiceLive = ApiKeyService.Default.pipe(
-  Layer.provide(SecretStorageService.Default),
-);
+export const ApiKeyServiceLive = ApiKeyService.Default;

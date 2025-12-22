@@ -23,6 +23,7 @@ import { ConversationServiceLive } from "./conversation-service.js";
 import { ReactFileFilterLive } from "./react-file-filter.js";
 import { CypressTestAgentLive } from "./ai-agent/agent.js";
 import { PlanningAgentLive } from "./ai-agent/planning-agent.js";
+import { FileWatcherServiceLive } from "./file-watcher-service.js";
 
 /**
  * Context required to create the core layer
@@ -46,46 +47,106 @@ export function createCoreLayer(ctx: LayerContext) {
 }
 
 /**
- * Tier 1: Base Layer
+ * Create Tier 1: Base Layer
  * Common business services that most handlers need
- * Uses *Live layers with all dependencies composed
+ * Must be provided with core layer (SecretStorageService)
  */
-export const BaseServiceLayer = Layer.mergeAll(
-  ConfigServiceLive,
-  ApiKeyServiceLive,
-);
+export function createBaseLayer(coreLayer: ReturnType<typeof createCoreLayer>) {
+  // ApiKeyService depends on SecretStorageService
+  const apiKeyLayer = ApiKeyServiceLive.pipe(Layer.provide(coreLayer));
+
+  // ConfigService depends on SecretStorageService and ApiKeyService
+  const configLayer = ConfigServiceLive.pipe(
+    Layer.provide(coreLayer),
+    Layer.provide(apiKeyLayer),
+  );
+
+  return Layer.mergeAll(coreLayer, apiKeyLayer, configLayer);
+}
 
 /**
- * Tier 2: Domain Layers
+ * Create Tier 2: Domain Layers
  * Specific domain services - include as needed
- * Uses *Live layers with all dependencies composed
  */
-export const RepositoryLayer = RepositoryServiceLive;
-export const ConversationLayer = ConversationServiceLive;
-export const ReactFileFilterLayer = ReactFileFilterLive;
+export function createDomainLayer(
+  baseLayer: ReturnType<typeof createBaseLayer>,
+) {
+  // RepositoryService depends on ConfigService
+  const repoLayer = RepositoryServiceLive.pipe(Layer.provide(baseLayer));
+
+  // ConversationService depends on ConfigService
+  const convLayer = ConversationServiceLive.pipe(Layer.provide(baseLayer));
+
+  // ReactFileFilter depends on VSCodeService (in baseLayer via coreLayer)
+  const reactFilterLayer = ReactFileFilterLive.pipe(Layer.provide(baseLayer));
+
+  return Layer.mergeAll(baseLayer, repoLayer, convLayer, reactFilterLayer);
+}
 
 /**
- * Tier 3: Feature Layers
+ * Create Tier 3: Feature Layers
  * High-level feature services
- * Uses *Live layers with all dependencies composed
  */
-export const IndexingLayer = CodebaseIndexingServiceLive;
-export const AgentLayer = Layer.mergeAll(
-  CypressTestAgentLive,
-  PlanningAgentLive,
-);
+export function createFeatureLayer(
+  domainLayer: ReturnType<typeof createDomainLayer>,
+) {
+  // CodebaseIndexingService depends on VSCodeService, ConfigService, RepositoryService
+  const indexingLayer = CodebaseIndexingServiceLive.pipe(
+    Layer.provide(domainLayer),
+  );
+
+  // CypressTestAgent depends on VSCodeService, ConfigService
+  const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
+
+  // PlanningAgent depends on VSCodeService, ConfigService
+  const planningLayer = PlanningAgentLive.pipe(Layer.provide(domainLayer));
+
+  return Layer.mergeAll(
+    domainLayer,
+    indexingLayer,
+    cypressLayer,
+    planningLayer,
+  );
+}
+
+/**
+ * Create a layer with FileWatcherService and CodebaseIndexingService
+ * For extension activation indexing
+ */
+export function createIndexingLayer(ctx: LayerContext) {
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer);
+
+  // CodebaseIndexingService depends on domain services
+  const indexingLayer = CodebaseIndexingServiceLive.pipe(
+    Layer.provide(domainLayer),
+  );
+
+  // FileWatcherService depends on domain + indexing services
+  const domainWithIndexing = Layer.mergeAll(domainLayer, indexingLayer);
+  const fileWatcherLayer = FileWatcherServiceLive.pipe(
+    Layer.provide(domainWithIndexing),
+  );
+
+  return Layer.mergeAll(domainWithIndexing, fileWatcherLayer);
+}
 
 /**
  * Convenience: Config + Indexing layer
  * For config router and similar handlers
  */
 export function createConfigServiceLayer(ctx: LayerContext) {
-  return Layer.mergeAll(
-    createCoreLayer(ctx),
-    BaseServiceLayer,
-    RepositoryLayer,
-    IndexingLayer,
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer);
+
+  // Add indexing layer
+  const indexingLayer = CodebaseIndexingServiceLive.pipe(
+    Layer.provide(domainLayer),
   );
+
+  return Layer.mergeAll(domainLayer, indexingLayer);
 }
 
 /**
@@ -93,12 +154,15 @@ export function createConfigServiceLayer(ctx: LayerContext) {
  * For agent router and similar handlers
  */
 export function createAgentServiceLayer(ctx: LayerContext) {
-  return Layer.mergeAll(
-    createCoreLayer(ctx),
-    BaseServiceLayer,
-    AgentLayer,
-    ConversationLayer,
-  );
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer);
+
+  // Add agent layers
+  const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
+  const planningLayer = PlanningAgentLive.pipe(Layer.provide(domainLayer));
+
+  return Layer.mergeAll(domainLayer, cypressLayer, planningLayer);
 }
 
 /**
@@ -106,7 +170,8 @@ export function createAgentServiceLayer(ctx: LayerContext) {
  * For auth router
  */
 export function createAuthServiceLayer(ctx: LayerContext) {
-  return Layer.mergeAll(createCoreLayer(ctx), BaseServiceLayer);
+  const coreLayer = createCoreLayer(ctx);
+  return createBaseLayer(coreLayer);
 }
 
 /**
@@ -114,11 +179,10 @@ export function createAuthServiceLayer(ctx: LayerContext) {
  * For system router
  */
 export function createSystemServiceLayer(ctx: LayerContext) {
-  return Layer.mergeAll(
-    createCoreLayer(ctx),
-    BaseServiceLayer,
-    ReactFileFilterLayer,
-  );
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer);
+  return domainLayer;
 }
 
 /**
@@ -126,15 +190,10 @@ export function createSystemServiceLayer(ctx: LayerContext) {
  * Use sparingly - prefer specific layers
  */
 export function createFullServiceLayer(ctx: LayerContext) {
-  return Layer.mergeAll(
-    createCoreLayer(ctx),
-    BaseServiceLayer,
-    RepositoryLayer,
-    ConversationLayer,
-    ReactFileFilterLayer,
-    IndexingLayer,
-    AgentLayer,
-  );
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer);
+  return createFeatureLayer(domainLayer);
 }
 
 /**

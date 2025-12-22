@@ -197,9 +197,9 @@ export class GitignoreReader extends Effect.Service<GitignoreReader>()(
  * Production layer with all dependencies composed.
  * Use this in production code; use GitignoreReader.Default in tests with mocked deps.
  */
-export const GitignoreReaderLive = GitignoreReader.Default.pipe(
-  Layer.provide(VSCodeService.Default),
-);
+// GitignoreReader depends on VSCodeService (context-specific)
+// Provide VSCodeService at the composition site
+export const GitignoreReaderLive = GitignoreReader.Default;
 
 // Export convenience functions for backward compatibility
 export async function findGitignoreFiles(

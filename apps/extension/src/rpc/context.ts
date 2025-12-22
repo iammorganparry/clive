@@ -13,7 +13,7 @@ import type {
 } from "../services/layer-factory.js";
 
 /**
- * Layer types inferred from the layer factory functions
+ * Layer types inferred from the layer factory functions for type safety
  */
 export type ConfigLayerType = ReturnType<typeof createConfigServiceLayer>;
 export type AgentLayerType = ReturnType<typeof createAgentServiceLayer>;

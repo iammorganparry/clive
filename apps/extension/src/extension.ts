@@ -6,15 +6,11 @@ import { CommandCenter } from "./commands/command-center.js";
 import { DiffContentProvider } from "./services/diff-content-provider.js";
 import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
-import { ApiKeyService } from "./services/api-key-service.js";
-import { createSecretStorageLayer, VSCodeService } from "./services/vs-code.js";
+import { createSecretStorageLayer } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
 import { CodebaseIndexingService } from "./services/codebase-indexing-service.js";
-import { RepositoryService } from "./services/repository-service.js";
-import {
-  FileWatcherService,
-  FileWatcherDisposable,
-} from "./services/file-watcher-service.js";
+import { FileWatcherDisposable } from "./services/file-watcher-service.js";
+import { createIndexingLayer } from "./services/layer-factory.js";
 import { GlobalStateKeys } from "./constants.js";
 
 const commandCenter = new CommandCenter();
@@ -107,19 +103,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
 
   // Start codebase indexing in the background (non-blocking)
   // Only runs if user is authenticated
-  const indexingLayer = Layer.merge(
-    Layer.merge(
-      Layer.merge(ConfigService.Default, createSecretStorageLayer(context)),
-      Layer.merge(VSCodeService.Default, RepositoryService.Default),
-    ),
-    Layer.merge(ApiKeyService.Default, loggerLayer),
-  );
-
-  // Full service layer including CodebaseIndexingService and FileWatcherService
-  const fullIndexingLayer = Layer.merge(
-    Layer.merge(CodebaseIndexingService.Default, FileWatcherService.Default),
-    indexingLayer,
-  );
+  // Use the layer factory to create a properly composed layer
+  const fullIndexingLayer = createIndexingLayer({
+    extensionContext: context,
+    outputChannel,
+    isDev: isDev,
+  });
 
   // Create file watcher disposable for incremental indexing
   const fileWatcherDisposable = new FileWatcherDisposable();

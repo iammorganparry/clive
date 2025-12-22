@@ -31,6 +31,8 @@ import { ConfigService } from "../services/config-service.js";
 import { ApiKeyService } from "../services/api-key-service.js";
 import { RepositoryService } from "../services/repository-service.js";
 import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
+import { ConversationService } from "../services/conversation-service.js";
+import { ReactFileFilter } from "../services/react-file-filter.js";
 
 // =============================================================================
 // Types
@@ -252,6 +254,54 @@ export function createMockIndexingServiceLayer(
   } as unknown as CodebaseIndexingService);
 }
 
+export interface ConversationServiceOverrides {
+  sendMessage?: Mock;
+  listConversations?: Mock;
+}
+
+/**
+ * Create a mock ConversationService layer
+ */
+export function createMockConversationServiceLayer(
+  overrides: ConversationServiceOverrides = {},
+): Layer.Layer<ConversationService> {
+  const defaults = {
+    sendMessage: vi.fn().mockReturnValue(Effect.succeed({ response: "" })),
+    listConversations: vi.fn().mockReturnValue(Effect.succeed([])),
+  };
+
+  return Layer.succeed(ConversationService, {
+    _tag: "ConversationService",
+    ...defaults,
+    ...overrides,
+  } as unknown as ConversationService);
+}
+
+export interface ReactFileFilterOverrides {
+  checkFileEligibility?: Mock;
+  filterEligibleFiles?: Mock;
+}
+
+/**
+ * Create a mock ReactFileFilter layer
+ */
+export function createMockReactFileFilterLayer(
+  overrides: ReactFileFilterOverrides = {},
+): Layer.Layer<ReactFileFilter> {
+  const defaults = {
+    checkFileEligibility: vi
+      .fn()
+      .mockReturnValue(Effect.succeed({ isEligible: true })),
+    filterEligibleFiles: vi.fn().mockReturnValue(Effect.succeed([])),
+  };
+
+  return Layer.succeed(ReactFileFilter, {
+    _tag: "ReactFileFilter",
+    ...defaults,
+    ...overrides,
+  } as unknown as ReactFileFilter);
+}
+
 // =============================================================================
 // Composed Test Layers (mirror production layer-factory.ts)
 // =============================================================================
@@ -317,12 +367,15 @@ export function createBaseTestLayer(
 
 /**
  * Create Config test layer (for config router tests)
- * Includes: Base + RepositoryService, IndexingService
+ * Includes: Base + RepositoryService, IndexingService, ConversationService, ReactFileFilter
+ * This matches the type signature of createConfigServiceLayer from layer-factory.ts
  */
 export function createConfigTestLayer(
   options?: Parameters<typeof createCoreTestLayer>[0] & {
     repositoryOverrides?: RepositoryServiceOverrides;
     indexingOverrides?: IndexingServiceOverrides;
+    conversationOverrides?: ConversationServiceOverrides;
+    reactFileFilterOverrides?: ReactFileFilterOverrides;
   },
 ) {
   const base = createBaseTestLayer(options);
@@ -331,6 +384,8 @@ export function createConfigTestLayer(
     base.layer,
     createMockRepositoryServiceLayer(options?.repositoryOverrides),
     createMockIndexingServiceLayer(options?.indexingOverrides),
+    createMockConversationServiceLayer(options?.conversationOverrides),
+    createMockReactFileFilterLayer(options?.reactFileFilterOverrides),
   );
 
   return { ...base, layer };
