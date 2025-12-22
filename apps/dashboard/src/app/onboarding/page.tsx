@@ -13,10 +13,10 @@ import { Input } from "@clive/ui/input";
 import { useMachine } from "@xstate/react";
 import { AlertCircle, Building2, Loader2, LogOut, Users } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { onboardingMachine } from "./onboarding-machine";
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callback_url");
@@ -328,5 +328,26 @@ export default function OnboardingPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function OnboardingFallback() {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center p-6">
+      <Card className="w-full max-w-md">
+        <CardContent className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="size-8 animate-spin text-primary" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<OnboardingFallback />}>
+      <OnboardingContent />
+    </Suspense>
   );
 }

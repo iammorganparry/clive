@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { auth } from "@clive/auth";
-import { CallbackContent } from "./callback-content";
+import { CallbackContent, type UserInfo } from "./callback-content";
 
 interface CallbackPageProps {
   searchParams: Promise<{ callback_url?: string }>;
@@ -34,22 +34,25 @@ export default async function CallbackPage({
     redirect(onboardingUrl);
   }
 
-  // Generate token server-side
-  let token: string | null = null;
-  let error: string | null = null;
+  // Use session token for Bearer auth (not JWT from getToken)
+  // The bearer() plugin in better-auth validates session tokens, not JWTs
+  const token: string | null = session.session.token;
 
-  try {
-    const tokenResponse = await auth.api.getToken({ headers: reqHeaders });
-    token = tokenResponse?.token ?? null;
-  } catch (e) {
-    error = e instanceof Error ? e.message : "Failed to generate token";
-  }
+  // Extract user info from session for extension UI
+  const userInfo: UserInfo | null = {
+    userId: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    image: session.user.image ?? undefined,
+    organizationId: session.session.activeOrganizationId ?? undefined,
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <CallbackContent
         token={token}
-        error={error}
+        userInfo={userInfo}
+        error={null}
         callbackUrl={callbackUrl ?? null}
       />
     </div>

@@ -426,13 +426,36 @@ export function createRealIndexingTestLayer(
 // =============================================================================
 
 /**
- * Pre-populate auth token in test storage
+ * Default test user info
+ */
+export const defaultTestUserInfo = {
+  userId: "test-user-123",
+  email: "test@example.com",
+  name: "Test User",
+  organizationId: "test-org-123",
+};
+
+/**
+ * Pre-populate auth token and user info in test storage
+ * Since we no longer decode JWTs, we also need to set user info
  */
 export function setAuthToken(
   storedTokens: Map<string, string>,
-  token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test",
+  token = "test-session-token",
+  userInfo = defaultTestUserInfo,
 ) {
   storedTokens.set("clive.auth_token", token);
+  storedTokens.set("clive.user_info", JSON.stringify(userInfo));
+}
+
+/**
+ * Pre-populate only user info in test storage (without token)
+ */
+export function setUserInfo(
+  storedTokens: Map<string, string>,
+  userInfo = defaultTestUserInfo,
+) {
+  storedTokens.set("clive.user_info", JSON.stringify(userInfo));
 }
 
 /**

@@ -144,7 +144,6 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 
   /**
    * Handle OAuth callback from URI handler
-   * OAuth callbacks are now handled via RPC auth.storeToken
    */
   public async handleOAuthCallback(uri: vscode.Uri): Promise<void> {
     if (!this._webviewView || !this._context) {
@@ -153,6 +152,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 
     const params = new URLSearchParams(uri.query);
     const token = params.get("token");
+    const userInfoStr = params.get("user");
     const error = params.get("error");
     const errorMessage = params.get("message");
 
@@ -162,14 +162,24 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (token) {
+      // Parse user info from URL if provided
+      let userInfo: Record<string, unknown> | undefined;
+      if (userInfoStr) {
+        try {
+          userInfo = JSON.parse(decodeURIComponent(userInfoStr));
+        } catch (e) {
+          console.error("Failed to parse user info:", e);
+        }
+      }
+
       const rpcContext = this.createRpcContext(this._webviewView);
       if (rpcContext) {
-        // Store token via RPC
+        // Store token and user info via RPC
         const rpcMessage = {
           id: `oauth-${Date.now()}`,
           type: "mutation" as const,
           path: ["auth", "storeToken"],
-          input: { token },
+          input: { token, userInfo },
         };
         const response = await handleRpcMessage(rpcMessage, rpcContext);
         if (response?.success) {
@@ -191,19 +201,18 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       return null;
     }
 
-    // Create a proxy for GitService that matches the expected interface
-    const gitServiceProxy = {
-      getBranchChanges: () => {
-        return Effect.gen(function* () {
+    // Create a typed proxy for GitService that wraps the Effect-based service
+    const gitService: RpcContext["gitService"] = {
+      getBranchChanges: () =>
+        Effect.gen(function* () {
           const gitService = yield* GitServiceEffect;
           return yield* gitService.getBranchChanges();
         }).pipe(
           Effect.provide(
             Layer.merge(GitServiceEffect.Default, VSCodeService.Default),
           ),
-        );
-      },
-    } as unknown as import("../services/git-service.js").GitService;
+        ),
+    };
 
     return {
       webviewView,
@@ -211,12 +220,8 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       outputChannel: this._outputChannel,
       isDev: this._isDev,
       cypressDetector: new CypressDetector(),
-      gitService: gitServiceProxy,
-      reactFileFilter:
-        {} as import("../services/react-file-filter.js").ReactFileFilter,
+      gitService,
       diffProvider: this.diffProvider,
-      configService:
-        {} as import("../services/config-service.js").ConfigService,
       // Layer context for building Effect layers in routers
       layerContext: toLayerContext({
         context: this._context,

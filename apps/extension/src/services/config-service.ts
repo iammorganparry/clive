@@ -1,5 +1,4 @@
-import { Data, Effect, Layer } from "effect";
-import { jwtDecode } from "jwt-decode";
+import { Data, Effect } from "effect";
 import { SecretStorageService } from "./vs-code.js";
 import { ApiKeyService } from "./api-key-service.js";
 import { SecretKeys, ConfigFile } from "../constants.js";
@@ -16,18 +15,20 @@ class AuthTokenMissingError extends Data.TaggedError("AuthTokenMissingError")<{
   message: string;
 }> {}
 
-class InvalidTokenError extends Data.TaggedError("InvalidTokenError")<{
+class UserInfoMissingError extends Data.TaggedError("UserInfoMissingError")<{
   message: string;
-  cause?: unknown;
 }> {}
 
 /**
- * JWT payload structure
+ * User info structure stored alongside auth token.
+ * This is passed from the dashboard callback and stored in secret storage.
  */
-interface JwtPayload {
-  sub: string; // userId
-  activeOrganizationId?: string; // Better Auth organization plugin
-  [key: string]: unknown;
+export interface UserInfo {
+  userId: string;
+  email?: string;
+  name?: string;
+  image?: string;
+  organizationId?: string;
 }
 
 export const Secrets = {
@@ -206,6 +207,91 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           }),
 
         /**
+         * Stores user info in secret storage
+         */
+        storeUserInfo: (userInfo: UserInfo) =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug("[ConfigService] Storing user info");
+            const secretStorage = yield* SecretStorageService;
+            yield* Effect.tryPromise({
+              try: () =>
+                secretStorage.secrets.store(
+                  SecretKeys.userInfo,
+                  JSON.stringify(userInfo),
+                ),
+              catch: (error) =>
+                new SecretStorageError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            });
+            yield* Effect.logDebug(
+              "[ConfigService] User info stored successfully",
+            );
+          }),
+
+        /**
+         * Gets user info from secret storage
+         */
+        getUserInfo: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[ConfigService] Getting user info from secret storage",
+            );
+            const secretStorage = yield* SecretStorageService;
+            const userInfoStr = yield* Effect.tryPromise({
+              try: async () => {
+                return await secretStorage.secrets.get(SecretKeys.userInfo);
+              },
+              catch: (error) =>
+                new SecretStorageError({
+                  message:
+                    error instanceof Error
+                      ? `Failed to get user info: ${error.message}`
+                      : "Unknown error",
+                }),
+            });
+
+            if (!userInfoStr) {
+              yield* Effect.logDebug("[ConfigService] User info not found");
+              return null;
+            }
+
+            try {
+              const userInfo = JSON.parse(userInfoStr) as UserInfo;
+              yield* Effect.logDebug(
+                `[ConfigService] User info found: userId=${userInfo.userId}`,
+              );
+              return userInfo;
+            } catch {
+              yield* Effect.logDebug(
+                "[ConfigService] Failed to parse user info",
+              );
+              return null;
+            }
+          }),
+
+        /**
+         * Deletes user info from secret storage
+         */
+        deleteUserInfo: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug("[ConfigService] Deleting user info");
+            const secretStorage = yield* SecretStorageService;
+            yield* Effect.tryPromise({
+              try: () => secretStorage.secrets.delete(SecretKeys.userInfo),
+              catch: (error) =>
+                new SecretStorageError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            });
+            yield* Effect.logDebug(
+              "[ConfigService] User info deleted successfully",
+            );
+          }),
+
+        /**
          * Checks if the service is configured
          * Returns true if either a stored API key OR auth token exists
          */
@@ -240,89 +326,63 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           Effect.succeed(ConfigFile.defaults.maxConcurrentFiles),
 
         /**
-         * Gets the current user ID from the auth token
-         * Decodes JWT to extract the user ID from the 'sub' claim
+         * Gets the current user ID from stored user info
          */
         getUserId: () =>
           Effect.gen(function* () {
             yield* Effect.logDebug(
-              "[ConfigService] Extracting userId from auth token",
+              "[ConfigService] Getting userId from stored user info",
             );
             const service = yield* ConfigService;
-            const authToken = yield* service.getAuthToken();
-            if (!authToken) {
+            const userInfo = yield* service.getUserInfo();
+
+            if (!userInfo) {
               return yield* Effect.fail(
-                new AuthTokenMissingError({
-                  message: "Authentication required",
+                new UserInfoMissingError({
+                  message: "Authentication required. Please log in.",
                 }),
               );
             }
 
-            // Decode JWT to extract userId
-            const decoded = yield* Effect.try({
-              try: () => jwtDecode<JwtPayload>(authToken),
-              catch: (error) =>
-                new InvalidTokenError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to decode JWT: ${error.message}`
-                      : "Failed to decode JWT",
-                  cause: error,
-                }),
-            });
-
-            if (!decoded.sub) {
+            if (!userInfo.userId) {
               return yield* Effect.fail(
-                new InvalidTokenError({
-                  message: "Invalid token: missing user ID (sub claim)",
+                new UserInfoMissingError({
+                  message: "Invalid user info: missing userId",
                 }),
               );
             }
 
             yield* Effect.logDebug(
-              `[ConfigService] UserId extracted: ${decoded.sub}`,
+              `[ConfigService] UserId found: ${userInfo.userId}`,
             );
-            return decoded.sub;
+            return userInfo.userId;
           }),
 
         /**
-         * Gets the current organization ID from the auth token
-         * Decodes JWT to extract the activeOrganizationId from Better Auth's organization plugin
+         * Gets the current organization ID from stored user info
          */
         getOrganizationId: () =>
           Effect.gen(function* () {
             yield* Effect.logDebug(
-              "[ConfigService] Extracting organizationId from auth token",
+              "[ConfigService] Getting organizationId from stored user info",
             );
             const service = yield* ConfigService;
-            const authToken = yield* service.getAuthToken();
-            if (!authToken) {
+            const userInfo = yield* service.getUserInfo();
+
+            if (!userInfo) {
               return yield* Effect.fail(
-                new AuthTokenMissingError({
-                  message: "Authentication required",
+                new UserInfoMissingError({
+                  message: "Authentication required. Please log in.",
                 }),
               );
             }
 
-            // Decode JWT to extract organizationId
-            const decoded = yield* Effect.try({
-              try: () => jwtDecode<JwtPayload>(authToken),
-              catch: (error) =>
-                new InvalidTokenError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to decode JWT: ${error.message}`
-                      : "Failed to decode JWT",
-                  cause: error,
-                }),
-            });
-
-            const organizationId = decoded.activeOrganizationId;
+            const organizationId = userInfo.organizationId ?? null;
 
             yield* Effect.logDebug(
-              `[ConfigService] OrganizationId extracted: ${organizationId ?? "none"}`,
+              `[ConfigService] OrganizationId: ${organizationId ?? "none"}`,
             );
-            return organizationId ?? null;
+            return organizationId;
           }),
       };
     }),

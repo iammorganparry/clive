@@ -1,9 +1,8 @@
+import type { Effect } from "effect";
 import type * as vscode from "vscode";
 import type { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
-import type { GitService } from "../services/git-service.js";
-import type { ReactFileFilter } from "../services/react-file-filter.js";
-import type { ConfigService } from "../services/config-service.js";
+import type { BranchChanges } from "../services/git-service.js";
 import type {
   LayerContext,
   createConfigServiceLayer,
@@ -20,6 +19,10 @@ export type AgentLayerType = ReturnType<typeof createAgentServiceLayer>;
 export type AuthLayerType = ReturnType<typeof createAuthServiceLayer>;
 export type SystemLayerType = ReturnType<typeof createSystemServiceLayer>;
 
+export interface GitServiceContext {
+  getBranchChanges: () => Effect.Effect<BranchChanges | null>;
+}
+
 /**
  * RPC request context - provides access to extension services
  */
@@ -30,12 +33,10 @@ export interface RpcContext {
   outputChannel: vscode.OutputChannel;
   isDev: boolean;
 
-  // Extension services
+  // Extension services (classes/objects, not Effect services)
   cypressDetector: CypressDetector;
-  gitService: GitService;
-  reactFileFilter: ReactFileFilter;
+  gitService: GitServiceContext;
   diffProvider: DiffContentProvider;
-  configService: ConfigService;
 
   // Layer context for building default Effect layers
   layerContext: LayerContext;

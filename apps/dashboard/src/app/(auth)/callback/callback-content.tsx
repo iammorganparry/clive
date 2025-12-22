@@ -18,14 +18,28 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+/**
+ * User info to be passed to the extension for display and API calls.
+ * This is stored alongside the session token in the extension's secret storage.
+ */
+export interface UserInfo {
+  userId: string;
+  email: string;
+  name: string;
+  image?: string;
+  organizationId?: string;
+}
+
 interface CallbackContentProps {
   token: string | null;
+  userInfo: UserInfo | null;
   error: string | null;
   callbackUrl: string | null;
 }
 
 export function CallbackContent({
   token,
+  userInfo,
   error,
   callbackUrl,
 }: CallbackContentProps) {
@@ -36,9 +50,12 @@ export function CallbackContent({
   const editorName = callbackUrl?.startsWith("cursor://")
     ? "Cursor"
     : "VS Code";
+
+  // Build deep link URL with token and user info
+  // The extension will parse both from the URL and store them
   const deepLinkUrl =
     callbackUrl && token
-      ? `${callbackUrl}?token=${encodeURIComponent(token)}`
+      ? `${callbackUrl}?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(userInfo))}`
       : null;
 
   // Auto-redirect to deep link when token is available

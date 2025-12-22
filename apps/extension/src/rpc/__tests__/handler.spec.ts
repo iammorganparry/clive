@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { Effect } from "effect";
 
 import { handleRpcMessage, isRpcMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
@@ -96,11 +97,9 @@ describe("handleRpcMessage", () => {
         }),
       } as unknown as RpcContext["cypressDetector"],
       gitService: {
-        getBranchChanges: vi.fn().mockResolvedValue(null),
-      } as unknown as RpcContext["gitService"],
-      reactFileFilter: {} as unknown as RpcContext["reactFileFilter"],
+        getBranchChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
+      },
       diffProvider: {} as unknown as RpcContext["diffProvider"],
-      configService: {} as unknown as RpcContext["configService"],
     } as unknown as RpcContext;
   });
 
