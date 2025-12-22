@@ -122,48 +122,6 @@ export const authRouter = {
     ),
 
   /**
-   * Open login page in browser (legacy - kept for compatibility)
-   */
-  openLogin: procedure
-    .input(
-      z.object({
-        url: z.string().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      Effect.gen(function* () {
-        const callbackUrl = "vscode://clive.auth/callback";
-        const loginUrl =
-          input.url ||
-          `http://localhost:3000/sign-in?callback_url=${encodeURIComponent(callbackUrl)}`;
-        yield* Effect.promise(() =>
-          vscode.env.openExternal(vscode.Uri.parse(loginUrl)),
-        );
-      }).pipe(provideAuthLayer(ctx)),
-    ),
-
-  /**
-   * Open signup page in browser (legacy - kept for compatibility)
-   */
-  openSignup: procedure
-    .input(
-      z.object({
-        url: z.string().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      Effect.gen(function* () {
-        const callbackUrl = "vscode://clive.auth/callback";
-        const signupUrl =
-          input.url ||
-          `http://localhost:3000/sign-up?callback_url=${encodeURIComponent(callbackUrl)}`;
-        yield* Effect.promise(() =>
-          vscode.env.openExternal(vscode.Uri.parse(signupUrl)),
-        );
-      }).pipe(provideAuthLayer(ctx)),
-    ),
-
-  /**
    * Check session - returns stored auth token and user info
    */
   checkSession: procedure.input(z.void()).query(({ ctx }) =>

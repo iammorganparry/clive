@@ -47,7 +47,9 @@ export function isZodSchema(value: unknown): value is ZodSchema {
 
 // Use a recursive type that avoids circular reference
 export type RouterRecord = {
-  [key: string]: RouterRecord | Procedure<any, any, any, any>;
+  [key: string]:
+    | RouterRecord
+    | Procedure<any, any, any, "query" | "mutation" | "subscription">;
 };
 
 export type InferProcedureInput<TProcedure> =
