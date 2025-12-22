@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Effect, Runtime, Layer } from "effect";
-
-// Import deep mock for Drizzle client BEFORE importing services that use it
-import drizzleMock from "../../__mocks__/drizzle-client.js";
+import { Effect, Runtime } from "effect";
 
 // Mock AI SDK
 vi.mock("ai", () => {
@@ -123,10 +120,13 @@ import {
   INDEXING_INCLUDE_PATTERNS,
   INDEXING_EXCLUDE_PATTERNS,
 } from "../codebase-indexing-service.js";
-import { RepositoryService } from "../repository-service.js";
-import { ConfigService } from "../config-service.js";
-import { ApiKeyService } from "../api-key-service.js";
-import { createMockSecretStorageLayer } from "../../__mocks__/secret-storage-service.js";
+import {
+  createRealIndexingTestLayer,
+  setAuthToken,
+  setAnthropicApiKey,
+  type RepositoryServiceOverrides,
+  createMockWorkspace,
+} from "../../__tests__/test-layer-factory.js";
 import type * as vscode from "vscode";
 
 describe("Indexing File Patterns", () => {
@@ -196,73 +196,23 @@ describe("Indexing File Patterns", () => {
 
 describe("CodebaseIndexingService", () => {
   const runtime = Runtime.defaultRuntime;
-  let mockSecrets: Partial<vscode.SecretStorage>;
-  let storedTokens: Map<string, string>;
 
   beforeEach(async () => {
-    storedTokens = new Map();
-    mockSecrets = {
-      get: async (key: string) => {
-        return storedTokens.get(key) || undefined;
-      },
-      store: async (key: string, value: string) => {
-        storedTokens.set(key, value);
-      },
-      delete: async (key: string) => {
-        storedTokens.delete(key);
-      },
-    };
-
-    storedTokens.set("clive.anthropic_api_key", "sk-ant-api03-test-key");
-    storedTokens.set(
-      "clive.auth_token",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test",
-    );
-
     // Reset findFiles mock to return empty array by default
     const vscode = await import("vscode");
     vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([]);
   });
 
-  function createTestLayer(
-    repoServiceOverrides?: Parameters<
-      typeof createMockRepositoryServiceWithOverrides
-    >[0],
-  ) {
-    const secretStorageMock = createMockSecretStorageLayer(mockSecrets);
-    const apiKeyLayer = Layer.mergeAll(
-      ApiKeyService.Default,
-      secretStorageMock,
-    );
-    const configLayer = Layer.mergeAll(
-      ConfigService.Default,
-      secretStorageMock,
-      apiKeyLayer,
-    );
-    const repoLayer =
-      createMockRepositoryServiceWithOverrides(repoServiceOverrides);
-
-    return Layer.mergeAll(
-      CodebaseIndexingService.Default,
-      configLayer,
-      repoLayer,
-    );
-  }
-
-  function createMockRepositoryServiceWithOverrides(
-    overrides?: Partial<{
-      getUserId: ReturnType<typeof vi.fn>;
-      upsertRepository: ReturnType<typeof vi.fn>;
-      getRepository: ReturnType<typeof vi.fn>;
-      upsertFile: ReturnType<typeof vi.fn>;
-      deleteFile: ReturnType<typeof vi.fn>;
-      getFileByPath: ReturnType<typeof vi.fn>;
-      getFileHashes: ReturnType<typeof vi.fn>;
-      searchFiles: ReturnType<typeof vi.fn>;
-      getIndexingStatus: ReturnType<typeof vi.fn>;
-    }>,
-  ) {
-    const defaults = {
+  /**
+   * Create a test layer with the REAL CodebaseIndexingService.Default
+   * and mocked dependencies (RepositoryService, ConfigService, etc.)
+   */
+  function createTestLayer(options?: {
+    repoServiceOverrides?: RepositoryServiceOverrides;
+    mockWorkspace?: ReturnType<typeof createMockWorkspace>;
+  }) {
+    // Create mock repository service with defaults + overrides
+    const repoDefaults: RepositoryServiceOverrides = {
       getUserId: vi.fn().mockReturnValue(Effect.succeed("test-user-123")),
       upsertRepository: vi.fn().mockReturnValue(
         Effect.succeed({
@@ -294,11 +244,20 @@ describe("CodebaseIndexingService", () => {
       ),
     };
 
-    return Layer.succeed(RepositoryService, {
-      _tag: "RepositoryService",
-      ...defaults,
-      ...overrides,
-    } as unknown as RepositoryService);
+    // Use the new factory that provides the REAL CodebaseIndexingService
+    const ctx = createRealIndexingTestLayer({
+      repositoryOverrides: {
+        ...repoDefaults,
+        ...options?.repoServiceOverrides,
+      },
+      mockWorkspace: options?.mockWorkspace,
+    });
+
+    // Pre-populate tokens
+    setAuthToken(ctx.storedTokens);
+    setAnthropicApiKey(ctx.storedTokens);
+
+    return ctx.layer;
   }
 
   describe("computeEmbedding", () => {
@@ -376,9 +335,11 @@ describe("CodebaseIndexingService", () => {
 
     it("should fall back to in-memory search when repository search fails", async () => {
       const layer = createTestLayer({
-        searchFiles: vi
-          .fn()
-          .mockReturnValue(Effect.fail(new Error("DB error"))),
+        repoServiceOverrides: {
+          searchFiles: vi
+            .fn()
+            .mockReturnValue(Effect.fail(new Error("DB error"))),
+        },
       });
 
       await Effect.gen(function* () {
@@ -398,25 +359,23 @@ describe("CodebaseIndexingService", () => {
 
   describe("indexWorkspace", () => {
     it("should find files and index them in batches", async () => {
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
-      const layer = createTestLayer();
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          upsertRepository: upsertRepositoryMock,
+        },
+      });
 
       const status = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -425,18 +384,19 @@ describe("CodebaseIndexingService", () => {
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       expect(status).toBe("complete");
+      expect(upsertRepositoryMock).toHaveBeenCalled();
     });
 
     it("should update status to error on failure", async () => {
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockRejectedValue(new Error("Database error")),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
+      const upsertRepositoryMock = vi
+        .fn()
+        .mockReturnValue(Effect.fail(new Error("API error")));
 
-      const layer = createTestLayer();
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          upsertRepository: upsertRepositoryMock,
+        },
+      });
 
       const status = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -452,25 +412,23 @@ describe("CodebaseIndexingService", () => {
 
   describe("status transitions", () => {
     it("should transition from idle -> in_progress -> complete", async () => {
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
-      const layer = createTestLayer();
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          upsertRepository: upsertRepositoryMock,
+        },
+      });
 
       const { initialStatus, finalStatus } = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -487,30 +445,6 @@ describe("CodebaseIndexingService", () => {
 
   describe("incremental sync", () => {
     it("should skip files with unchanged content hash", async () => {
-      const vscode = await import("vscode");
-      // Mock findFiles to return a file
-      vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([
-        { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
-      ]);
-
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
       // Mock existing file hashes - hash matches current content "export const test = 1;"
       // MD5 of "export const test = 1;" is computed by the service
       const { createHash } = await import("crypto");
@@ -521,10 +455,36 @@ describe("CodebaseIndexingService", () => {
       const existingHashes = new Map([["src/test.ts", contentHash]]);
 
       const upsertFileMock = vi.fn().mockReturnValue(Effect.void);
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
+
+      // Create mockWorkspace with findFiles mock
+      const mockWorkspace = createMockWorkspace({
+        findFiles: vi
+          .fn()
+          .mockResolvedValue([
+            { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
+          ]),
+      });
 
       const layer = createTestLayer({
-        getFileHashes: vi.fn().mockReturnValue(Effect.succeed(existingHashes)),
-        upsertFile: upsertFileMock,
+        repoServiceOverrides: {
+          getFileHashes: vi
+            .fn()
+            .mockReturnValue(Effect.succeed(existingHashes)),
+          upsertFile: upsertFileMock,
+          upsertRepository: upsertRepositoryMock,
+        },
+        mockWorkspace,
       });
 
       await Effect.gen(function* () {
@@ -537,45 +497,40 @@ describe("CodebaseIndexingService", () => {
     });
 
     it("should re-index files with changed content hash", async () => {
-      const vscode = await import("vscode");
-      // Mock findFiles to return a file
-      vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([
-        { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
-      ]);
-
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      // Track if insert was called for files (not just repository)
-      const fileInsertMock = vi.fn().mockReturnThis();
-      const mockInsert = {
-        values: fileInsertMock,
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
       // Mock getFileHashes to return a different hash than current content
-      const mockSelectHashes = {
-        from: vi.fn().mockReturnThis(),
-        where: vi
+      const existingHashes = new Map([["src/test.ts", "old-hash-different"]]);
+      const upsertFileMock = vi.fn().mockReturnValue(Effect.void);
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
+
+      // Create mockWorkspace with findFiles mock
+      const mockWorkspace = createMockWorkspace({
+        findFiles: vi
           .fn()
           .mockResolvedValue([
-            { relativePath: "src/test.ts", contentHash: "old-hash-different" },
+            { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
           ]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelectHashes as any);
+      });
 
-      const layer = createTestLayer();
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          getFileHashes: vi
+            .fn()
+            .mockReturnValue(Effect.succeed(existingHashes)),
+          upsertFile: upsertFileMock,
+          upsertRepository: upsertRepositoryMock,
+        },
+        mockWorkspace,
+      });
 
       const status = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -583,46 +538,46 @@ describe("CodebaseIndexingService", () => {
         return yield* service.getStatus();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      // Should complete and have called insert for the file (hash was different)
+      // Should complete and have called upsertFile for the file (hash was different)
       expect(status).toBe("complete");
-      // insert is called for both repository upsert and file upsert
-      expect(drizzleMock.insert).toHaveBeenCalled();
+      expect(upsertFileMock).toHaveBeenCalled();
     });
 
     it("should index new files not in existing hashes", async () => {
-      const vscode = await import("vscode");
-      // Mock findFiles to return a file
-      vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([
-        { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
-      ]);
-
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
       // Empty existing hashes - all files are new
-      const mockSelectHashes = {
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockResolvedValue([]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelectHashes as any);
+      const existingHashes = new Map<string, string>();
+      const upsertFileMock = vi.fn().mockReturnValue(Effect.void);
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
-      const layer = createTestLayer();
+      // Create mockWorkspace with findFiles mock
+      const mockWorkspace = createMockWorkspace({
+        findFiles: vi
+          .fn()
+          .mockResolvedValue([
+            { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
+          ]),
+      });
+
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          getFileHashes: vi
+            .fn()
+            .mockReturnValue(Effect.succeed(existingHashes)),
+          upsertFile: upsertFileMock,
+          upsertRepository: upsertRepositoryMock,
+        },
+        mockWorkspace,
+      });
 
       const status = await Effect.gen(function* () {
         const service = yield* CodebaseIndexingService;
@@ -632,46 +587,44 @@ describe("CodebaseIndexingService", () => {
 
       // Should complete - new files should be indexed
       expect(status).toBe("complete");
-      // insert is called for both repository upsert and file upsert
-      expect(drizzleMock.insert).toHaveBeenCalled();
+      // upsertFile should be called for the new file
+      expect(upsertFileMock).toHaveBeenCalled();
     });
 
     it("should handle getFileHashes failure gracefully and index all files", async () => {
-      const vscode = await import("vscode");
-      // Mock findFiles to return a file
-      vi.mocked(vscode.default.workspace.findFiles).mockResolvedValue([
-        { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
-      ]);
+      const upsertFileMock = vi.fn().mockReturnValue(Effect.void);
+      const upsertRepositoryMock = vi.fn().mockReturnValue(
+        Effect.succeed({
+          id: "test-user-123-/workspace",
+          userId: "test-user-123",
+          name: "workspace",
+          rootPath: "/workspace",
+          lastIndexedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
-      const mockRepository = {
-        id: "test-user-123-/workspace",
-        userId: "test-user-123",
-        name: "workspace",
-        rootPath: "/workspace",
-        lastIndexedAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const mockInsert = {
-        values: vi.fn().mockReturnThis(),
-        onConflictDoUpdate: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([mockRepository]),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.insert.mockReturnValue(mockInsert as any);
-
-      // Simulate getFileHashes database error - first call fails
-      const mockSelectError = {
-        from: vi.fn().mockReturnThis(),
-        where: vi
+      // Create mockWorkspace with findFiles mock
+      const mockWorkspace = createMockWorkspace({
+        findFiles: vi
           .fn()
-          .mockRejectedValue(new Error("Database connection error")),
-      };
-      // biome-ignore lint/suspicious/noExplicitAny: Test mock type
-      drizzleMock.select.mockReturnValue(mockSelectError as any);
+          .mockResolvedValue([
+            { fsPath: "/workspace/src/test.ts", scheme: "file" } as vscode.Uri,
+          ]),
+      });
 
-      const layer = createTestLayer();
+      const layer = createTestLayer({
+        repoServiceOverrides: {
+          // Simulate getFileHashes API error
+          getFileHashes: vi
+            .fn()
+            .mockReturnValue(Effect.fail(new Error("API connection error"))),
+          upsertFile: upsertFileMock,
+          upsertRepository: upsertRepositoryMock,
+        },
+        mockWorkspace,
+      });
 
       // Should not throw - should handle error gracefully and still complete
       const status = await Effect.gen(function* () {
@@ -682,8 +635,8 @@ describe("CodebaseIndexingService", () => {
 
       // Should still complete because error is handled gracefully
       expect(status).toBe("complete");
-      // insert should still be called (fallback to indexing all files)
-      expect(drizzleMock.insert).toHaveBeenCalled();
+      // upsertFile should still be called (fallback to indexing all files)
+      expect(upsertFileMock).toHaveBeenCalled();
     });
   });
 });

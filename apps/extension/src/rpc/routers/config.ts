@@ -1,19 +1,27 @@
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { z } from "zod";
 import { createRouter } from "@clive/webview-rpc";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
 import { ApiKeyService } from "../../services/api-key-service.js";
 import { CodebaseIndexingService } from "../../services/codebase-indexing-service.js";
 import { RepositoryService } from "../../services/repository-service.js";
-import {
-  VSCodeService,
-  createSecretStorageLayer,
-} from "../../services/vs-code.js";
-import { createLoggerLayer } from "../../services/logger-service.js";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
+import { GlobalStateKeys } from "../../constants.js";
+import { createConfigServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
+
+/**
+ * Get the config layer - uses override if provided, otherwise creates default.
+ * Returns a function that can be used with Effect.provide in a pipe.
+ * The type assertion ensures compatibility with the RPC framework's expected types.
+ */
+const provideConfigLayer = (ctx: RpcContext) => {
+  const layer = ctx.configLayer ?? createConfigServiceLayer(ctx.layerContext);
+  return <A, E>(effect: Effect.Effect<A, E, unknown>) =>
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>;
+};
 
 /**
  * Helper to create error response for indexing status errors
@@ -35,23 +43,6 @@ function createIndexingStatusErrorResponse(
       errorMessage: error.message,
     };
   });
-}
-
-/**
- * Helper to create the service layer from context
- */
-function createServiceLayer(ctx: RpcContext) {
-  // Merge all layers - Effect-TS will automatically resolve dependencies
-  // when all required services are included in the merge
-  return Layer.mergeAll(
-    ConfigServiceEffect.Default,
-    ApiKeyService.Default,
-    VSCodeService.Default,
-    RepositoryService.Default,
-    CodebaseIndexingService.Default,
-    createSecretStorageLayer(ctx.context),
-    createLoggerLayer(ctx.outputChannel, ctx.isDev),
-  );
 }
 
 /**
@@ -78,7 +69,7 @@ export const configRouter = {
           return { statuses: [], error: errorMessage };
         }),
       ),
-      Effect.provide(createServiceLayer(ctx)),
+      provideConfigLayer(ctx),
     ),
   ),
 
@@ -116,7 +107,7 @@ export const configRouter = {
             return { statuses: [], error: errorMessage };
           }),
         ),
-        Effect.provide(createServiceLayer(ctx)),
+        provideConfigLayer(ctx),
       ),
     ),
 
@@ -150,7 +141,7 @@ export const configRouter = {
             return { statuses: [], error: errorMessage };
           }),
         ),
-        Effect.provide(createServiceLayer(ctx)),
+        provideConfigLayer(ctx),
       ),
     ),
 
@@ -200,12 +191,12 @@ export const configRouter = {
         createIndexingStatusErrorResponse("Invalid token", error),
       ),
       Effect.catchTag("AuthTokenMissingError", (error) =>
-        createIndexingStatusErrorResponse("Auth token missing", error),
+        createIndexingStatusErrorResponse("Authentication required", error),
       ),
       Effect.catchTag("NoWorkspaceFolderError", (error) =>
         createIndexingStatusErrorResponse("No workspace folder", error),
       ),
-      Effect.provide(createServiceLayer(ctx)),
+      provideConfigLayer(ctx),
     ),
   ),
 
@@ -225,6 +216,89 @@ export const configRouter = {
       );
 
       return { success: true };
-    }).pipe(Effect.provide(createServiceLayer(ctx))),
+    }).pipe(provideConfigLayer(ctx)),
   ),
+
+  /**
+   * Get indexing preference (enabled state and onboarding status)
+   */
+  getIndexingPreference: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Getting indexing preference");
+      const { globalState } = ctx.context;
+      const enabled =
+        globalState.get<boolean>(GlobalStateKeys.indexingEnabled) ?? false;
+      const onboardingComplete =
+        globalState.get<boolean>(GlobalStateKeys.onboardingComplete) ?? false;
+
+      return { enabled, onboardingComplete };
+    }).pipe(provideConfigLayer(ctx)),
+  ),
+
+  /**
+   * Set indexing enabled preference
+   */
+  setIndexingEnabled: procedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConfigRouter] Setting indexing enabled: ${input.enabled}`,
+        );
+        const { globalState } = ctx.context;
+
+        yield* Effect.promise(() =>
+          globalState.update(GlobalStateKeys.indexingEnabled, input.enabled),
+        );
+
+        // If enabling, trigger indexing in background
+        if (input.enabled) {
+          const indexingService = yield* CodebaseIndexingService;
+          yield* indexingService.indexWorkspace().pipe(
+            Effect.fork,
+            Effect.catchAll(() => Effect.void),
+          );
+        }
+
+        return { success: true, enabled: input.enabled };
+      }).pipe(provideConfigLayer(ctx)),
+    ),
+
+  /**
+   * Complete onboarding
+   */
+  completeOnboarding: procedure
+    .input(z.object({ enableIndexing: z.boolean() }))
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConfigRouter] Completing onboarding, enableIndexing: ${input.enableIndexing}`,
+        );
+        const { globalState } = ctx.context;
+
+        // Mark onboarding as complete
+        yield* Effect.promise(() =>
+          globalState.update(GlobalStateKeys.onboardingComplete, true),
+        );
+
+        // Set indexing preference
+        yield* Effect.promise(() =>
+          globalState.update(
+            GlobalStateKeys.indexingEnabled,
+            input.enableIndexing,
+          ),
+        );
+
+        // If enabling, trigger indexing in background
+        if (input.enableIndexing) {
+          const indexingService = yield* CodebaseIndexingService;
+          yield* indexingService.indexWorkspace().pipe(
+            Effect.fork,
+            Effect.catchAll(() => Effect.void),
+          );
+        }
+
+        return { success: true };
+      }).pipe(provideConfigLayer(ctx)),
+    ),
 };

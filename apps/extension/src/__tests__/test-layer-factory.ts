@@ -1,0 +1,398 @@
+/**
+ * Test Layer Factory for Extension
+ *
+ * Centralized test utilities that mirror the production layer-factory.ts pattern.
+ * Provides reusable mock factories and test layers for Effect-based services.
+ *
+ * Tier Architecture (mirrors production):
+ * - Tier 0 (Core): VSCodeService, SecretStorage, Logger
+ * - Tier 1 (Base): ConfigService, ApiKeyService
+ * - Tier 2 (Domain): RepositoryService, ConversationService, ReactFileFilter
+ * - Tier 3 (Features): CodebaseIndexingService, Agents
+ *
+ * Usage:
+ * ```typescript
+ * const { layer, mockSecrets, storedTokens } = createBaseTestLayer();
+ *
+ * const result = await Effect.gen(function* () {
+ *   const configService = yield* ConfigService;
+ *   return yield* configService.isConfigured();
+ * }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+ * ```
+ */
+
+import { Layer, Effect } from "effect";
+import { vi, type Mock } from "vitest";
+import type * as vscode from "vscode";
+
+import { VSCodeService, SecretStorageService } from "../services/vs-code.js";
+import { createLoggerLayer } from "../services/logger-service.js";
+import { ConfigService } from "../services/config-service.js";
+import { ApiKeyService } from "../services/api-key-service.js";
+import { RepositoryService } from "../services/repository-service.js";
+import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface MockSecretStorage {
+  get: Mock<(key: string) => Promise<string | undefined>>;
+  store: Mock<(key: string, value: string) => Promise<void>>;
+  delete: Mock<(key: string) => Promise<void>>;
+  onDidChange: Mock;
+}
+
+export interface MockOutputChannel {
+  appendLine: Mock;
+  show: Mock;
+  clear: Mock;
+  dispose: Mock;
+}
+
+export interface TestLayerContext {
+  mockSecrets: MockSecretStorage;
+  storedTokens: Map<string, string>;
+  mockOutputChannel: MockOutputChannel;
+}
+
+// =============================================================================
+// Tier 0: Core Mock Factories
+// =============================================================================
+
+/**
+ * Create a mock SecretStorage with in-memory token storage
+ */
+export function createMockSecretStorage(): {
+  mockSecrets: MockSecretStorage;
+  storedTokens: Map<string, string>;
+} {
+  const storedTokens = new Map<string, string>();
+
+  const mockSecrets: MockSecretStorage = {
+    get: vi.fn(async (key: string) => storedTokens.get(key)),
+    store: vi.fn(async (key: string, value: string) => {
+      storedTokens.set(key, value);
+    }),
+    delete: vi.fn(async (key: string) => {
+      storedTokens.delete(key);
+    }),
+    onDidChange: vi.fn(),
+  };
+
+  return { mockSecrets, storedTokens };
+}
+
+/**
+ * Create a mock OutputChannel
+ */
+export function createMockOutputChannel(): MockOutputChannel {
+  return {
+    appendLine: vi.fn(),
+    show: vi.fn(),
+    clear: vi.fn(),
+    dispose: vi.fn(),
+  };
+}
+
+/**
+ * Create a mock VSCode workspace
+ */
+export function createMockWorkspace(
+  overrides: Partial<{
+    workspaceFolders: vscode.WorkspaceFolder[];
+    findFiles: Mock;
+    fs: Partial<typeof vscode.workspace.fs>;
+  }> = {},
+) {
+  const defaultWorkspaceFolders = [
+    {
+      uri: { fsPath: "/workspace", scheme: "file" },
+      name: "workspace",
+      index: 0,
+    },
+  ] as unknown as vscode.WorkspaceFolder[];
+
+  return {
+    workspaceFolders: overrides.workspaceFolders ?? defaultWorkspaceFolders,
+    findFiles: overrides.findFiles ?? vi.fn().mockResolvedValue([]),
+    fs: {
+      stat: vi.fn().mockResolvedValue({
+        type: 1,
+        ctime: Date.now(),
+        mtime: Date.now(),
+        size: 100,
+      }),
+      readFile: vi
+        .fn()
+        .mockResolvedValue(Buffer.from("export const test = 1;")),
+      ...overrides.fs,
+    },
+  } as unknown as typeof vscode.workspace;
+}
+
+// =============================================================================
+// Tier 0: Core Layer Factories
+// =============================================================================
+
+/**
+ * Create SecretStorageService test layer
+ */
+export function createSecretStorageTestLayer(
+  mockSecrets: MockSecretStorage,
+): Layer.Layer<SecretStorageService> {
+  return Layer.succeed(SecretStorageService, {
+    _tag: "SecretStorageService",
+    secrets: mockSecrets as unknown as vscode.SecretStorage,
+  });
+}
+
+/**
+ * Create VSCodeService test layer
+ */
+export function createVSCodeServiceTestLayer(
+  mockWorkspace?: ReturnType<typeof createMockWorkspace>,
+): Layer.Layer<VSCodeService> {
+  const workspace = mockWorkspace ?? createMockWorkspace();
+  return Layer.succeed(VSCodeService, {
+    _tag: "VSCodeService",
+    workspace,
+  });
+}
+
+/**
+ * Create Logger test layer
+ */
+export function createLoggerTestLayer(
+  mockOutputChannel?: MockOutputChannel,
+  isDev = false,
+): Layer.Layer<never, never, never> {
+  const outputChannel = mockOutputChannel ?? createMockOutputChannel();
+  return createLoggerLayer(
+    outputChannel as unknown as vscode.OutputChannel,
+    isDev,
+  );
+}
+
+// =============================================================================
+// Tier 2: Domain Mock Factories
+// =============================================================================
+
+export interface RepositoryServiceOverrides {
+  getUserId?: Mock;
+  getOrganizationId?: Mock;
+  upsertRepository?: Mock;
+  upsertFile?: Mock;
+  getRepository?: Mock;
+  deleteFile?: Mock;
+  getFileByPath?: Mock;
+  getFileHashes?: Mock;
+  getIndexingStatus?: Mock;
+  searchFiles?: Mock;
+}
+
+/**
+ * Create a mock RepositoryService layer
+ */
+export function createMockRepositoryServiceLayer(
+  overrides: RepositoryServiceOverrides = {},
+): Layer.Layer<RepositoryService> {
+  const defaults = {
+    getUserId: vi.fn().mockReturnValue(Effect.succeed("test-user-123")),
+    getOrganizationId: vi.fn().mockReturnValue(Effect.succeed(null)),
+    upsertRepository: vi.fn().mockReturnValue(Effect.succeed({})),
+    upsertFile: vi.fn().mockReturnValue(Effect.void),
+    getRepository: vi.fn().mockReturnValue(Effect.succeed(null)),
+    deleteFile: vi.fn().mockReturnValue(Effect.void),
+    getFileByPath: vi.fn().mockReturnValue(Effect.succeed(null)),
+    getFileHashes: vi.fn().mockReturnValue(Effect.succeed(new Map())),
+    getIndexingStatus: vi.fn().mockReturnValue(
+      Effect.succeed({
+        status: "idle" as const,
+        repositoryName: null,
+        repositoryPath: null,
+        lastIndexedAt: null,
+        fileCount: 0,
+      }),
+    ),
+    searchFiles: vi.fn().mockReturnValue(Effect.succeed([])),
+  };
+
+  return Layer.succeed(RepositoryService, {
+    _tag: "RepositoryService",
+    ...defaults,
+    ...overrides,
+  } as unknown as RepositoryService);
+}
+
+export interface IndexingServiceOverrides {
+  indexFile?: Mock;
+  indexWorkspace?: Mock;
+  semanticSearch?: Mock;
+  getStatus?: Mock;
+}
+
+/**
+ * Create a mock CodebaseIndexingService layer
+ */
+export function createMockIndexingServiceLayer(
+  overrides: IndexingServiceOverrides = {},
+): Layer.Layer<CodebaseIndexingService> {
+  const defaults = {
+    indexFile: vi.fn().mockReturnValue(Effect.succeed({})),
+    indexWorkspace: vi.fn().mockReturnValue(Effect.void),
+    semanticSearch: vi.fn().mockReturnValue(Effect.succeed([])),
+    getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
+  };
+
+  return Layer.succeed(CodebaseIndexingService, {
+    _tag: "CodebaseIndexingService",
+    ...defaults,
+    ...overrides,
+  } as unknown as CodebaseIndexingService);
+}
+
+// =============================================================================
+// Composed Test Layers (mirror production layer-factory.ts)
+// =============================================================================
+
+/**
+ * Create Tier 0 Core test layer
+ * Includes: SecretStorageService, VSCodeService, Logger
+ */
+export function createCoreTestLayer(options?: {
+  mockSecrets?: MockSecretStorage;
+  storedTokens?: Map<string, string>;
+  mockOutputChannel?: MockOutputChannel;
+  mockWorkspace?: ReturnType<typeof createMockWorkspace>;
+  isDev?: boolean;
+}) {
+  const { mockSecrets, storedTokens } = options?.mockSecrets
+    ? {
+        mockSecrets: options.mockSecrets,
+        storedTokens: options.storedTokens ?? new Map(),
+      }
+    : createMockSecretStorage();
+
+  const mockOutputChannel =
+    options?.mockOutputChannel ?? createMockOutputChannel();
+
+  const layer = Layer.mergeAll(
+    createSecretStorageTestLayer(mockSecrets),
+    createVSCodeServiceTestLayer(options?.mockWorkspace),
+    createLoggerTestLayer(mockOutputChannel, options?.isDev ?? false),
+  );
+
+  return { layer, mockSecrets, storedTokens, mockOutputChannel };
+}
+
+/**
+ * Create Tier 1 Base test layer
+ * Includes: Core + ConfigService, ApiKeyService
+ *
+ * Note: We need to provide the core layer to the service defaults
+ * because they have dependencies that need to be satisfied.
+ */
+export function createBaseTestLayer(
+  options?: Parameters<typeof createCoreTestLayer>[0],
+) {
+  const core = createCoreTestLayer(options);
+
+  // ApiKeyService depends on SecretStorageService
+  const apiKeyLayer = ApiKeyService.Default.pipe(
+    Layer.provide(createSecretStorageTestLayer(core.mockSecrets)),
+  );
+
+  // ConfigService depends on SecretStorageService and ApiKeyService
+  const configLayer = ConfigService.Default.pipe(
+    Layer.provide(apiKeyLayer),
+    Layer.provide(createSecretStorageTestLayer(core.mockSecrets)),
+  );
+
+  // Merge all layers together
+  const layer = Layer.mergeAll(core.layer, apiKeyLayer, configLayer);
+
+  return { ...core, layer };
+}
+
+/**
+ * Create Config test layer (for config router tests)
+ * Includes: Base + RepositoryService, IndexingService
+ */
+export function createConfigTestLayer(
+  options?: Parameters<typeof createCoreTestLayer>[0] & {
+    repositoryOverrides?: RepositoryServiceOverrides;
+    indexingOverrides?: IndexingServiceOverrides;
+  },
+) {
+  const base = createBaseTestLayer(options);
+
+  const layer = Layer.mergeAll(
+    base.layer,
+    createMockRepositoryServiceLayer(options?.repositoryOverrides),
+    createMockIndexingServiceLayer(options?.indexingOverrides),
+  );
+
+  return { ...base, layer };
+}
+
+/**
+ * Create a layer for testing the REAL CodebaseIndexingService implementation
+ * (not a mock). Use this when testing the service's actual behavior.
+ *
+ * Includes: Base + RepositoryService (mocked)
+ * Does NOT include IndexingService mock - uses real implementation
+ */
+export function createRealIndexingTestLayer(
+  options?: Parameters<typeof createCoreTestLayer>[0] & {
+    repositoryOverrides?: RepositoryServiceOverrides;
+  },
+) {
+  const base = createBaseTestLayer(options);
+
+  const layer = Layer.mergeAll(
+    base.layer,
+    createMockRepositoryServiceLayer(options?.repositoryOverrides),
+  );
+
+  // Provide all dependencies to the REAL CodebaseIndexingService.Default
+  const indexingLayer = CodebaseIndexingService.Default.pipe(
+    Layer.provide(layer),
+  );
+
+  // Merge the indexing layer with dependencies so all services are available
+  const fullLayer = Layer.mergeAll(layer, indexingLayer);
+
+  return { ...base, layer: fullLayer };
+}
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+/**
+ * Pre-populate auth token in test storage
+ */
+export function setAuthToken(
+  storedTokens: Map<string, string>,
+  token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test",
+) {
+  storedTokens.set("clive.auth_token", token);
+}
+
+/**
+ * Pre-populate Anthropic API key in test storage
+ */
+export function setAnthropicApiKey(
+  storedTokens: Map<string, string>,
+  key = "sk-ant-api03-test-key",
+) {
+  storedTokens.set("clive.anthropic_api_key", key);
+}
+
+/**
+ * Clear all stored tokens
+ */
+export function clearStoredTokens(storedTokens: Map<string, string>) {
+  storedTokens.clear();
+}

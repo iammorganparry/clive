@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 
 /**
  * Create a mock SecretStorageService layer for testing
+ * @deprecated Use createSecretStorageTestLayer from test-layer-factory.ts instead
  */
 export function createMockSecretStorageLayer(
   mockSecrets: Partial<vscode.SecretStorage>,
@@ -17,3 +18,9 @@ export function createMockSecretStorageLayer(
     } as vscode.SecretStorage,
   });
 }
+
+// Re-export new utilities for gradual migration
+export {
+  createMockSecretStorage,
+  createSecretStorageTestLayer,
+} from "../__tests__/test-layer-factory.js";

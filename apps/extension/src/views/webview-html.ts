@@ -20,7 +20,7 @@ export function getWebviewHtml(
 		<html lang="en">
 		<head>
 			<meta charset="UTF-8">
-			<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src http://localhost:3000;">
+			<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; connect-src http://localhost:3000 ${webview.cspSource};">
 			<meta name="viewport" content="width=device-width, initial-scale=1.0">
 			<title>Clive</title>
 			<link href="${webviewCssUri}" rel="stylesheet">

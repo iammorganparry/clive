@@ -1,36 +1,27 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Effect, Runtime, Layer } from "effect";
 import { ApiKeyService } from "../api-key-service.js";
-import { createMockSecretStorageLayer } from "../../__mocks__/secret-storage-service.js";
+import {
+  createMockSecretStorage,
+  createSecretStorageTestLayer,
+} from "../../__tests__/test-layer-factory.js";
 import { SecretKeys } from "../../constants.js";
-import type * as vscode from "vscode";
 
 describe("ApiKeyService", () => {
   const runtime = Runtime.defaultRuntime;
-  let mockSecrets: Partial<vscode.SecretStorage>;
-  let storedKeys: Map<string, string>;
 
-  beforeEach(() => {
-    storedKeys = new Map();
-    mockSecrets = {
-      get: async (key: string) => {
-        return storedKeys.get(key) || undefined;
-      },
-      store: async (key: string, value: string) => {
-        storedKeys.set(key, value);
-      },
-      delete: async (key: string) => {
-        storedKeys.delete(key);
-      },
-    };
-  });
+  function createTestLayer() {
+    const { mockSecrets, storedTokens } = createMockSecretStorage();
+    const layer = Layer.merge(
+      ApiKeyService.Default,
+      createSecretStorageTestLayer(mockSecrets),
+    );
+    return { layer, mockSecrets, storedTokens };
+  }
 
   describe("validateApiKey", () => {
     it("should reject empty key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -41,10 +32,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should reject key with invalid prefix", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -55,10 +43,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should reject key that is too short", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -69,10 +54,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should reject key with invalid characters", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -85,13 +67,10 @@ describe("ApiKeyService", () => {
     });
 
     it("should accept valid key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer } = createTestLayer();
       const validKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
+
       await expect(
         Effect.gen(function* () {
           const service = yield* ApiKeyService;
@@ -101,13 +80,10 @@ describe("ApiKeyService", () => {
     });
 
     it("should trim whitespace before validation", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer } = createTestLayer();
       const validKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
+
       await expect(
         Effect.gen(function* () {
           const service = yield* ApiKeyService;
@@ -119,14 +95,10 @@ describe("ApiKeyService", () => {
 
   describe("getApiKey", () => {
     it("should return key when it exists", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
-      storedKeys.set(SecretKeys.anthropicApiKey, testKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, testKey);
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -137,10 +109,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should return undefined when key does not exist", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -151,15 +120,11 @@ describe("ApiKeyService", () => {
     });
 
     it("should handle storage errors", async () => {
-      const errorMockSecrets: Partial<vscode.SecretStorage> = {
-        get: async () => {
-          throw new Error("Storage retrieval failed");
-        },
-      };
-
+      const { mockSecrets } = createMockSecretStorage();
+      mockSecrets.get.mockRejectedValue(new Error("Storage retrieval failed"));
       const layer = Layer.merge(
         ApiKeyService.Default,
-        createMockSecretStorageLayer(errorMockSecrets),
+        createSecretStorageTestLayer(mockSecrets),
       );
 
       await expect(
@@ -173,11 +138,7 @@ describe("ApiKeyService", () => {
 
   describe("setApiKey", () => {
     it("should store valid key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
 
@@ -186,15 +147,11 @@ describe("ApiKeyService", () => {
         yield* service.setApiKey("anthropic", testKey);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBe(testKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBe(testKey);
     });
 
     it("should trim key before storing", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
 
@@ -203,14 +160,11 @@ describe("ApiKeyService", () => {
         yield* service.setApiKey("anthropic", `  ${testKey}  `);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBe(testKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBe(testKey);
     });
 
     it("should reject empty key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer, storedTokens } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -219,14 +173,11 @@ describe("ApiKeyService", () => {
         }).pipe(Effect.provide(layer), Runtime.runPromise(runtime)),
       ).rejects.toThrow("API key cannot be empty");
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should reject key with invalid prefix", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer, storedTokens } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -235,14 +186,11 @@ describe("ApiKeyService", () => {
         }).pipe(Effect.provide(layer), Runtime.runPromise(runtime)),
       ).rejects.toThrow('API key must start with "sk-ant-"');
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should reject key that is too short", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer, storedTokens } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -251,14 +199,11 @@ describe("ApiKeyService", () => {
         }).pipe(Effect.provide(layer), Runtime.runPromise(runtime)),
       ).rejects.toThrow("API key must be at least 20 characters long");
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should reject key with invalid characters", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer, storedTokens } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -269,41 +214,33 @@ describe("ApiKeyService", () => {
         "API key contains invalid characters. Only letters, numbers, hyphens, and underscores are allowed.",
       );
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should overwrite existing key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const oldKey =
         "sk-ant-api03-oldkey12345678901234567890123456789012345678901234567890";
       const newKey =
         "sk-ant-api03-newkey12345678901234567890123456789012345678901234567890";
 
-      storedKeys.set(SecretKeys.anthropicApiKey, oldKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, oldKey);
 
       await Effect.gen(function* () {
         const service = yield* ApiKeyService;
         yield* service.setApiKey("anthropic", newKey);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBe(newKey);
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).not.toBe(oldKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBe(newKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).not.toBe(oldKey);
     });
 
     it("should handle storage errors", async () => {
-      const errorMockSecrets: Partial<vscode.SecretStorage> = {
-        store: async () => {
-          throw new Error("Storage failed");
-        },
-      };
-
+      const { mockSecrets } = createMockSecretStorage();
+      mockSecrets.store.mockRejectedValue(new Error("Storage failed"));
       const layer = Layer.merge(
         ApiKeyService.Default,
-        createMockSecretStorageLayer(errorMockSecrets),
+        createSecretStorageTestLayer(mockSecrets),
       );
 
       const validKey =
@@ -320,28 +257,21 @@ describe("ApiKeyService", () => {
 
   describe("deleteApiKey", () => {
     it("should delete existing key", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
-      storedKeys.set(SecretKeys.anthropicApiKey, testKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, testKey);
 
       await Effect.gen(function* () {
         const service = yield* ApiKeyService;
         yield* service.deleteApiKey("anthropic");
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should handle deletion when key does not exist", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       await expect(
         Effect.gen(function* () {
@@ -352,15 +282,11 @@ describe("ApiKeyService", () => {
     });
 
     it("should handle deletion errors", async () => {
-      const errorMockSecrets: Partial<vscode.SecretStorage> = {
-        delete: async () => {
-          throw new Error("Deletion failed");
-        },
-      };
-
+      const { mockSecrets } = createMockSecretStorage();
+      mockSecrets.delete.mockRejectedValue(new Error("Deletion failed"));
       const layer = Layer.merge(
         ApiKeyService.Default,
-        createMockSecretStorageLayer(errorMockSecrets),
+        createSecretStorageTestLayer(mockSecrets),
       );
 
       await expect(
@@ -374,14 +300,10 @@ describe("ApiKeyService", () => {
 
   describe("hasApiKey", () => {
     it("should return true when key exists", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
-      storedKeys.set(SecretKeys.anthropicApiKey, testKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, testKey);
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -392,10 +314,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should return false when key does not exist", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -406,12 +325,8 @@ describe("ApiKeyService", () => {
     });
 
     it("should return false when key is empty string", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
-      storedKeys.set(SecretKeys.anthropicApiKey, "");
+      const { layer, storedTokens } = createTestLayer();
+      storedTokens.set(SecretKeys.anthropicApiKey, "");
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -424,10 +339,7 @@ describe("ApiKeyService", () => {
 
   describe("getApiKeysStatus", () => {
     it("should return status for all providers", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -440,14 +352,10 @@ describe("ApiKeyService", () => {
     });
 
     it("should include masked key when key exists", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
-      storedKeys.set(SecretKeys.anthropicApiKey, testKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, testKey);
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -462,10 +370,7 @@ describe("ApiKeyService", () => {
     });
 
     it("should not include masked key when key does not exist", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -477,13 +382,9 @@ describe("ApiKeyService", () => {
     });
 
     it("should mask short keys correctly", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const shortKey = "sk-ant-abc";
-      storedKeys.set(SecretKeys.anthropicApiKey, shortKey);
+      storedTokens.set(SecretKeys.anthropicApiKey, shortKey);
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -496,10 +397,7 @@ describe("ApiKeyService", () => {
 
   describe("listProviders", () => {
     it("should return all supported providers", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
+      const { layer } = createTestLayer();
 
       const result = await Effect.gen(function* () {
         const service = yield* ApiKeyService;
@@ -513,11 +411,7 @@ describe("ApiKeyService", () => {
 
   describe("integration scenarios", () => {
     it("should handle complete lifecycle: set -> get -> verify -> delete -> verify deleted", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const testKey =
         "sk-ant-api03-abc123def456ghi789jkl012mno345pqr678stu901vwx234yz";
 
@@ -527,7 +421,7 @@ describe("ApiKeyService", () => {
         yield* service.setApiKey("anthropic", testKey);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBe(testKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBe(testKey);
 
       // 2. Get key
       const retrievedKey = await Effect.gen(function* () {
@@ -558,15 +452,11 @@ describe("ApiKeyService", () => {
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       expect(hasKeyAfterDelete).toBe(false);
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBeUndefined();
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBeUndefined();
     });
 
     it("should handle key update: set -> update -> verify new value", async () => {
-      const layer = Layer.merge(
-        ApiKeyService.Default,
-        createMockSecretStorageLayer(mockSecrets),
-      );
-
+      const { layer, storedTokens } = createTestLayer();
       const oldKey =
         "sk-ant-api03-oldkey12345678901234567890123456789012345678901234567890";
       const newKey =
@@ -578,7 +468,7 @@ describe("ApiKeyService", () => {
         yield* service.setApiKey("anthropic", oldKey);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(storedKeys.get(SecretKeys.anthropicApiKey)).toBe(oldKey);
+      expect(storedTokens.get(SecretKeys.anthropicApiKey)).toBe(oldKey);
 
       // 2. Update to new key
       await Effect.gen(function* () {
@@ -597,21 +487,13 @@ describe("ApiKeyService", () => {
     });
 
     it("should handle error recovery: storage failures gracefully", async () => {
-      const errorMockSecrets: Partial<vscode.SecretStorage> = {
-        get: async () => {
-          throw new Error("Storage unavailable");
-        },
-        store: async () => {
-          throw new Error("Storage unavailable");
-        },
-        delete: async () => {
-          throw new Error("Storage unavailable");
-        },
-      };
-
+      const { mockSecrets } = createMockSecretStorage();
+      mockSecrets.get.mockRejectedValue(new Error("Storage unavailable"));
+      mockSecrets.store.mockRejectedValue(new Error("Storage unavailable"));
+      mockSecrets.delete.mockRejectedValue(new Error("Storage unavailable"));
       const layer = Layer.merge(
         ApiKeyService.Default,
-        createMockSecretStorageLayer(errorMockSecrets),
+        createSecretStorageTestLayer(mockSecrets),
       );
 
       const validKey =

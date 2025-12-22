@@ -14,6 +14,7 @@ import {
   showTextDocumentEffect,
   showErrorMessageEffect,
 } from "../lib/vscode-effects.js";
+import { toLayerContext } from "../services/layer-factory.js";
 
 /**
  * Message type for opening a file
@@ -216,6 +217,13 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       diffProvider: this.diffProvider,
       configService:
         {} as import("../services/config-service.js").ConfigService,
+      // Layer context for building Effect layers in routers
+      layerContext: toLayerContext({
+        context: this._context,
+        outputChannel: this._outputChannel,
+        isDev: this._isDev,
+      }),
+      // No layer overrides in production - routers use defaults
     };
   }
 

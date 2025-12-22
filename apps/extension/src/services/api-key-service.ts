@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { SecretStorageService } from "./vs-code.js";
 import { SecretKeys } from "../constants.js";
 
@@ -258,6 +258,14 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
           Effect.sync(() => Object.keys(API_PROVIDERS) as ApiProvider[]),
       };
     }),
-    dependencies: [SecretStorageService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use ApiKeyService.Default in tests with mocked deps.
+ */
+export const ApiKeyServiceLive = ApiKeyService.Default.pipe(
+  Layer.provide(SecretStorageService.Default),
+);

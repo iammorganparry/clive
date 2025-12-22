@@ -59,7 +59,7 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <RpcProvider vscode={vscode}>
-        <AuthProvider vscode={vscode}>
+        <AuthProvider>
           <RouterProvider>
             <App vscode={vscode} />
           </RouterProvider>

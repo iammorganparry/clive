@@ -1,16 +1,10 @@
-import { Effect, Layer, Runtime } from "effect";
+import { Effect, Runtime } from "effect";
 import { z } from "zod";
 import { createRouter } from "@clive/webview-rpc";
 import { PlanningAgent } from "../../services/ai-agent/planning-agent.js";
 import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
-import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import { ApiKeyService } from "../../services/api-key-service.js";
-import {
-  VSCodeService,
-  createSecretStorageLayer,
-} from "../../services/vs-code.js";
-import { createLoggerLayer } from "../../services/logger-service.js";
 import { ErrorCode, getErrorMessage } from "../../lib/error-messages.js";
+import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 import type { Message } from "../../services/conversation-service.js";
 
@@ -18,21 +12,20 @@ const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
 
 /**
- * Helper to create the service layer from context
+ * Get the agent layer - uses override if provided, otherwise creates default.
+ * Returns a function that can be used with Effect.provide in a pipe.
  */
-function createServiceLayer(ctx: RpcContext) {
-  // Merge all layers - Effect-TS will automatically resolve dependencies
-  // when all required services are included in the merge
-  return Layer.mergeAll(
-    PlanningAgent.Default,
-    ConversationServiceEffect.Default,
-    ConfigServiceEffect.Default,
-    ApiKeyService.Default,
-    VSCodeService.Default,
-    createSecretStorageLayer(ctx.context),
-    createLoggerLayer(ctx.outputChannel, ctx.isDev),
-  );
-}
+const provideAgentLayer = (ctx: RpcContext) => {
+  const layer = ctx.agentLayer ?? createAgentServiceLayer(ctx.layerContext);
+  return <A, E>(effect: Effect.Effect<A, E, unknown>) =>
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>;
+};
+
+/**
+ * Get the agent layer directly for use in subscriptions
+ */
+const getAgentLayer = (ctx: RpcContext) =>
+  ctx.agentLayer ?? createAgentServiceLayer(ctx.layerContext);
 
 /**
  * Conversations router - handles chat/conversation operations
@@ -122,7 +115,7 @@ export const conversationsRouter = {
             createdAt: msg.createdAt.toISOString(),
           })),
         };
-      }).pipe(Effect.provide(createServiceLayer(ctx))),
+      }).pipe(provideAgentLayer(ctx)),
     ),
 
   /**
@@ -151,7 +144,7 @@ export const conversationsRouter = {
       signal: AbortSignal;
       onProgress?: (data: unknown) => void;
     }) {
-      const serviceLayer = createServiceLayer(ctx);
+      const serviceLayer = getAgentLayer(ctx);
 
       const result = await Runtime.runPromise(runtime)(
         Effect.gen(function* () {
@@ -359,6 +352,6 @@ export const conversationsRouter = {
             createdAt: msg.createdAt.toISOString(),
           })),
         };
-      }).pipe(Effect.provide(createServiceLayer(ctx))),
+      }).pipe(provideAgentLayer(ctx)),
     ),
 };

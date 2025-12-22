@@ -6,22 +6,22 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./src/index.ts"
+      "default": "./dist/index.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",
-      "default": "./src/client.ts"
+      "default": "./dist/client.js"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",
-      "default": "./src/schema.ts"
+      "default": "./dist/schema.js"
     }
   },
   "license": "MIT",
   "scripts": {
     "build": "rimraf dist && tsc",
     "clean": "git clean -xdf .cache .turbo dist node_modules",
-    "dev": "tsc",
+    "dev": "tsc --watch",
     "format": "biome check .",
     "format:fix": "biome check --write .",
     "lint": "biome lint .",
@@ -29,7 +29,7 @@
     "push": "yarn with-env drizzle-kit push",
     "generate": "yarn with-env drizzle-kit generate",
     "studio": "yarn with-env drizzle-kit studio",
-    "typecheck": "tsc --noEmit --emitDeclarationOnly false",
+    "typecheck": "tsc --noEmit",
     "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
@@ -45,6 +45,7 @@
     "@clive/tsconfig": "*",
     "@types/node": "^24.10.1",
     "drizzle-kit": "^0.31.5",
+    "rimraf": "^6.0.1",
     "typescript": "^5.9.3"
   }
 }

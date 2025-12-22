@@ -1,14 +1,41 @@
-import { Data, Effect } from "effect";
-import { eq, desc, sql, cosineDistance, count } from "drizzle-orm";
-import { db } from "@clive/db/client";
-import { repositories, files } from "@clive/db/schema";
+import { Data, Effect, Layer } from "effect";
 import { ConfigService } from "./config-service.js";
+import { parseTrpcError } from "../lib/error-messages.js";
 import type { IndexingStatusInfo } from "./indexing-status.js";
 
 class RepositoryError extends Data.TaggedError("RepositoryError")<{
   message: string;
   cause?: unknown;
 }> {}
+
+class ApiError extends Data.TaggedError("ApiError")<{
+  message: string;
+  status?: number;
+  cause?: unknown;
+}> {}
+
+class NetworkError extends Data.TaggedError("NetworkError")<{
+  message: string;
+  cause?: unknown;
+}> {}
+
+class AuthTokenMissingError extends Data.TaggedError("AuthTokenMissingError")<{
+  message: string;
+}> {}
+
+/**
+ * Repository entity
+ */
+export interface Repository {
+  id: string;
+  userId: string;
+  organizationId: string | null;
+  name: string;
+  rootPath: string;
+  lastIndexedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 /**
  * File data for indexing
@@ -34,7 +61,7 @@ export interface FileSearchResult {
 
 /**
  * Service for managing codebase repositories and file embeddings
- * Uses Drizzle ORM with pgvector for semantic search
+ * Calls backend API endpoints instead of direct database access
  */
 export class RepositoryService extends Effect.Service<RepositoryService>()(
   "RepositoryService",
@@ -43,69 +70,203 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
       const configService = yield* ConfigService;
 
       /**
+       * Helper to get auth token
+       */
+      const getAuthToken = () =>
+        Effect.gen(function* () {
+          const token = yield* configService.getAuthToken().pipe(
+            Effect.catchAll(() =>
+              Effect.fail(
+                new AuthTokenMissingError({
+                  message: "Failed to retrieve auth token. Please log in.",
+                }),
+              ),
+            ),
+          );
+          if (!token) {
+            return yield* Effect.fail(
+              new AuthTokenMissingError({
+                message: "Auth token not available. Please log in.",
+              }),
+            );
+          }
+          return token;
+        });
+
+      /**
+       * Helper to make tRPC API calls (queries)
+       */
+      const callTrpcQuery = <T>(procedure: string, input: unknown) =>
+        Effect.gen(function* () {
+          const authToken = yield* getAuthToken();
+          const backendUrl = "http://localhost:3000";
+
+          const response = yield* Effect.tryPromise({
+            try: async () => {
+              const inputStr = encodeURIComponent(JSON.stringify(input));
+              const url = `${backendUrl}/api/trpc/${procedure}?input=${inputStr}`;
+
+              return fetch(url, {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+              });
+            },
+            catch: (error) =>
+              new NetworkError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          if (!response.ok) {
+            const errorText = yield* Effect.tryPromise({
+              try: () => response.text(),
+              catch: () =>
+                new NetworkError({
+                  message: "Failed to read error response",
+                }),
+            });
+            const userMessage = parseTrpcError(errorText, response.status);
+            return yield* Effect.fail(
+              new ApiError({
+                message: userMessage,
+                status: response.status,
+                cause: errorText,
+              }),
+            );
+          }
+
+          const data = yield* Effect.tryPromise({
+            try: () => response.json() as Promise<{ result?: { data?: T } }>,
+            catch: (error) =>
+              new ApiError({
+                message: "Failed to parse API response",
+                cause: error,
+              }),
+          });
+
+          if (data.result?.data !== undefined) {
+            return data.result.data;
+          }
+
+          return yield* Effect.fail(
+            new ApiError({
+              message: "Invalid response format from API",
+            }),
+          );
+        });
+
+      /**
+       * Helper to make tRPC API calls (mutations)
+       */
+      const callTrpcMutation = <T>(procedure: string, input: unknown) =>
+        Effect.gen(function* () {
+          const authToken = yield* getAuthToken();
+          const backendUrl = "http://localhost:3000";
+
+          const response = yield* Effect.tryPromise({
+            try: async () => {
+              const url = `${backendUrl}/api/trpc/${procedure}`;
+              const body = JSON.stringify(input);
+
+              return fetch(url, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+                body,
+              });
+            },
+            catch: (error) =>
+              new NetworkError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          if (!response.ok) {
+            const errorText = yield* Effect.tryPromise({
+              try: () => response.text(),
+              catch: () =>
+                new NetworkError({
+                  message: "Failed to read error response",
+                }),
+            });
+            const userMessage = parseTrpcError(errorText, response.status);
+            return yield* Effect.fail(
+              new ApiError({
+                message: userMessage,
+                status: response.status,
+                cause: errorText,
+              }),
+            );
+          }
+
+          const data = yield* Effect.tryPromise({
+            try: () => response.json() as Promise<{ result?: { data?: T } }>,
+            catch: (error) =>
+              new ApiError({
+                message: "Failed to parse API response",
+                cause: error,
+              }),
+          });
+
+          if (data.result?.data !== undefined) {
+            return data.result.data;
+          }
+
+          return yield* Effect.fail(
+            new ApiError({
+              message: "Invalid response format from API",
+            }),
+          );
+        });
+
+      /**
        * Get current user ID from auth token
-       * Delegates to ConfigService which handles JWT decoding
        */
       const getUserId = () => configService.getUserId();
 
       /**
        * Get current organization ID from auth token
-       * Delegates to ConfigService which handles JWT decoding
        */
       const getOrganizationId = () => configService.getOrganizationId();
 
       /**
        * Upsert a repository (create or update)
-       * If organizationId is provided, the repository is scoped to the organization
+       * Note: userId is extracted from auth token on the server side
        */
       const upsertRepository = (
-        userId: string,
+        _userId: string,
         name: string,
         rootPath: string,
         organizationId?: string | null,
       ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Upserting repository: ${name} at ${rootPath} (org: ${organizationId ?? "none"})`,
+            `[RepositoryService] Upserting repository: ${name} at ${rootPath}`,
           );
 
-          const repositoryId = organizationId
-            ? `${organizationId}-${rootPath}`
-            : `${userId}-${rootPath}`;
-
-          const repository = yield* Effect.tryPromise({
-            try: async () => {
-              const [result] = await db
-                .insert(repositories)
-                .values({
-                  id: repositoryId,
-                  userId,
-                  organizationId: organizationId ?? undefined,
-                  name,
-                  rootPath,
-                  lastIndexedAt: new Date(),
-                })
-                .onConflictDoUpdate({
-                  target: repositories.id,
-                  set: {
-                    name,
-                    rootPath,
-                    organizationId: organizationId ?? undefined,
-                    lastIndexedAt: new Date(),
-                    updatedAt: new Date(),
-                  },
-                })
-                .returning();
-
-              return result;
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          const repository = yield* callTrpcMutation<Repository>(
+            "repository.upsert",
+            { name, rootPath, organizationId: organizationId ?? null },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           yield* Effect.logDebug(
             `[RepositoryService] Repository upserted: ${repository.id}`,
@@ -115,51 +276,32 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
       /**
        * Get repository by root path
-       * If organizationId is provided, looks up by organization first
+       * Note: userId is extracted from auth token on the server side
        */
       const getRepository = (
-        userId: string,
+        _userId: string,
         rootPath: string,
         organizationId?: string | null,
       ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Getting repository: ${rootPath} (org: ${organizationId ?? "user"})`,
+            `[RepositoryService] Getting repository: ${rootPath}`,
           );
 
-          const repository = yield* Effect.tryPromise({
-            try: async () => {
-              // If organization ID is provided, prioritize org-scoped lookup
-              if (organizationId) {
-                const [orgResult] = await db
-                  .select()
-                  .from(repositories)
-                  .where(
-                    sql`${repositories.organizationId} = ${organizationId} AND ${repositories.rootPath} = ${rootPath}`,
-                  )
-                  .limit(1);
-
-                if (orgResult) return orgResult;
-              }
-
-              // Fall back to user-scoped lookup
-              const [result] = await db
-                .select()
-                .from(repositories)
-                .where(
-                  sql`${repositories.userId} = ${userId} AND ${repositories.rootPath} = ${rootPath}`,
-                )
-                .limit(1);
-
-              return result || null;
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          const repository = yield* callTrpcQuery<Repository | null>(
+            "repository.get",
+            { rootPath, organizationId: organizationId ?? null },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           return repository;
         });
@@ -173,39 +315,20 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Upserting file: ${file.relativePath}`,
           );
 
-          const fileId = `${repositoryId}-${file.relativePath}`;
-
-          yield* Effect.tryPromise({
-            try: async () => {
-              await db
-                .insert(files)
-                .values({
-                  id: fileId,
-                  repositoryId,
-                  relativePath: file.relativePath,
-                  content: file.content,
-                  embedding: file.embedding,
-                  fileType: file.fileType,
-                  contentHash: file.contentHash,
-                  updatedAt: new Date(),
-                })
-                .onConflictDoUpdate({
-                  target: [files.repositoryId, files.relativePath],
-                  set: {
-                    content: file.content,
-                    embedding: file.embedding,
-                    contentHash: file.contentHash,
-                    updatedAt: new Date(),
-                  },
-                });
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          yield* callTrpcMutation<{ success: boolean }>(
+            "repository.upsertFile",
+            { repositoryId, file },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           yield* Effect.logDebug(
             `[RepositoryService] File upserted: ${file.relativePath}`,
@@ -221,21 +344,20 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Deleting file: ${relativePath}`,
           );
 
-          yield* Effect.tryPromise({
-            try: async () => {
-              await db
-                .delete(files)
-                .where(
-                  sql`${files.repositoryId} = ${repositoryId} AND ${files.relativePath} = ${relativePath}`,
-                );
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          yield* callTrpcMutation<{ success: boolean }>(
+            "repository.deleteFile",
+            { repositoryId, relativePath },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           yield* Effect.logDebug(
             `[RepositoryService] File deleted: ${relativePath}`,
@@ -251,31 +373,60 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Getting file: ${relativePath}`,
           );
 
-          const file = yield* Effect.tryPromise({
-            try: async () => {
-              const [result] = await db
-                .select()
-                .from(files)
-                .where(
-                  sql`${files.repositoryId} = ${repositoryId} AND ${files.relativePath} = ${relativePath}`,
-                )
-                .limit(1);
-
-              return result || null;
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          const file = yield* callTrpcQuery<unknown | null>(
+            "repository.getFileByPath",
+            { repositoryId, relativePath },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           return file;
         });
 
       /**
-       * Semantic search using Drizzle's cosineDistance
+       * Get all file hashes for a repository (batch query for incremental sync)
+       */
+      const getFileHashes = (repositoryId: string) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug(
+            `[RepositoryService] Getting file hashes for repository: ${repositoryId}`,
+          );
+
+          const hashMap = yield* callTrpcQuery<Record<string, string>>(
+            "repository.getFileHashes",
+            { repositoryId },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
+
+          // Convert back to Map for compatibility
+          const map = new Map<string, string>(Object.entries(hashMap));
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Retrieved ${map.size} file hashes`,
+          );
+
+          return map;
+        });
+
+      /**
+       * Semantic search using cosine distance
        */
       const searchFiles = (
         repositoryId: string,
@@ -284,136 +435,61 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
       ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Searching files in repository: ${repositoryId} (limit: ${limit})`,
+            `[RepositoryService] Searching files in repository: ${repositoryId}`,
           );
 
-          const results = yield* Effect.tryPromise({
-            try: async () => {
-              // Calculate similarity: 1 - cosineDistance (higher is more similar)
-              const similarity = sql<number>`1 - (${cosineDistance(
-                files.embedding,
-                queryEmbedding,
-              )})`;
-
-              const searchResults = await db
-                .select({
-                  id: files.id,
-                  relativePath: files.relativePath,
-                  content: files.content,
-                  fileType: files.fileType,
-                  similarity,
-                })
-                .from(files)
-                .where(eq(files.repositoryId, repositoryId))
-                .orderBy(desc(similarity))
-                .limit(limit);
-
-              return searchResults as FileSearchResult[];
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
+          const results = yield* callTrpcQuery<FileSearchResult[]>(
+            "repository.searchFiles",
+            { repositoryId, queryEmbedding, limit },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           yield* Effect.logDebug(
             `[RepositoryService] Found ${results.length} results`,
           );
+
           return results;
         });
 
       /**
-       * Get all file hashes for a repository (batch query for incremental sync)
-       * Returns a Map<relativePath, contentHash> for O(1) lookups
-       */
-      const getFileHashes = (repositoryId: string) =>
-        Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[RepositoryService] Getting file hashes for repository: ${repositoryId}`,
-          );
-
-          const results = yield* Effect.tryPromise({
-            try: async () => {
-              return await db
-                .select({
-                  relativePath: files.relativePath,
-                  contentHash: files.contentHash,
-                })
-                .from(files)
-                .where(eq(files.repositoryId, repositoryId));
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          // Return as Map for O(1) lookups
-          const hashMap = new Map<string, string>(
-            results.map((f) => [f.relativePath, f.contentHash]),
-          );
-
-          yield* Effect.logDebug(
-            `[RepositoryService] Retrieved ${hashMap.size} file hashes`,
-          );
-
-          return hashMap;
-        });
-
-      /**
        * Get indexing status for a repository
+       * Note: userId is extracted from auth token on the server side
        */
       const getIndexingStatus = (
-        userId: string,
+        _userId: string,
         rootPath: string,
         organizationId?: string | null,
       ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[RepositoryService] Getting indexing status for: ${rootPath} (org: ${organizationId ?? "user"})`,
+            `[RepositoryService] Getting indexing status for: ${rootPath}`,
           );
 
-          const repo = yield* getRepository(userId, rootPath, organizationId);
-          if (!repo) {
-            return {
-              status: "idle" as const,
-              repositoryName: null,
-              repositoryPath: null,
-              lastIndexedAt: null,
-              fileCount: 0,
-            } satisfies IndexingStatusInfo;
-          }
+          const status = yield* callTrpcQuery<IndexingStatusInfo>(
+            "repository.getStatus",
+            { rootPath, organizationId: organizationId ?? null },
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new RepositoryError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
-          // Get file count
-          const fileCountResult = yield* Effect.tryPromise({
-            try: async () => {
-              const result = await db
-                .select({ count: count() })
-                .from(files)
-                .where(eq(files.repositoryId, repo.id));
-              return result[0]?.count ?? 0;
-            },
-            catch: (error) =>
-              new RepositoryError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          return {
-            status: repo.lastIndexedAt
-              ? ("complete" as const)
-              : ("idle" as const),
-            repositoryName: repo.name,
-            repositoryPath: repo.rootPath,
-            lastIndexedAt: repo.lastIndexedAt,
-            fileCount: fileCountResult,
-          } satisfies IndexingStatusInfo;
+          return status;
         });
 
       return {
@@ -429,6 +505,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         getIndexingStatus,
       };
     }),
-    dependencies: [ConfigService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use RepositoryService.Default in tests with mocked deps.
+ */
+export const RepositoryServiceLive = RepositoryService.Default.pipe(
+  Layer.provide(ConfigService.Default),
+);

@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { Uri } from "vscode";
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { VSCodeService } from "./vs-code.js";
 import type { ChangedFile } from "./git-service.js";
 
@@ -143,6 +143,14 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
           }),
       };
     }),
-    dependencies: [VSCodeService.Default],
+    // No dependencies - allows test injection via Layer.provide()
   },
 ) {}
+
+/**
+ * Production layer with all dependencies composed.
+ * Use this in production code; use ReactFileFilter.Default in tests with mocked deps.
+ */
+export const ReactFileFilterLive = ReactFileFilter.Default.pipe(
+  Layer.provide(VSCodeService.Default),
+);

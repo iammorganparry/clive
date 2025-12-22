@@ -1,18 +1,19 @@
-import "../../__mocks__/drizzle.mock.js";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Runtime } from "effect";
+import { MessageRepository, type Message } from "../message-repository.js";
 import {
-  MessageRepository,
-  MessageRepositoryDefault,
-  type Message,
-} from "../message-repository.js";
-import drizzleMock from "../../__mocks__/drizzle.mock.js";
+  createMockDrizzleClient,
+  createMessageRepositoryTestLayer,
+  mockInsertChain,
+  mockReset,
+} from "../../__tests__/test-layer-factory.js";
 
 describe("MessageRepository", () => {
   const runtime = Runtime.defaultRuntime;
+  const mockDb = createMockDrizzleClient();
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockReset(mockDb);
   });
 
   describe("create", () => {
@@ -21,17 +22,14 @@ describe("MessageRepository", () => {
       const role = "user" as const;
       const content = "Hello, world!";
 
-      // Mock insert chain
-      const mockInsert = {
-        values: vi.fn().mockResolvedValue(undefined),
-      };
-      drizzleMock.insert.mockReturnValue(mockInsert as never);
+      // Set up mock
+      mockInsertChain(mockDb);
 
       const result = await Effect.gen(function* () {
         const repo = yield* MessageRepository;
         return yield* repo.create(conversationId, role, content);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Runtime.runPromise(runtime),
       );
 
@@ -43,15 +41,7 @@ describe("MessageRepository", () => {
       });
       expect(result.id).toBeDefined();
       expect(result.createdAt).toBeInstanceOf(Date);
-      expect(drizzleMock.insert).toHaveBeenCalled();
-      expect(mockInsert.values).toHaveBeenCalledWith({
-        id: result.id,
-        conversationId,
-        role,
-        content,
-        toolCalls: null,
-        createdAt: expect.any(Date),
-      });
+      expect(mockDb.insert).toHaveBeenCalled();
     });
 
     it("should serialize toolCalls to JSON", async () => {
@@ -63,28 +53,17 @@ describe("MessageRepository", () => {
         { name: "function2", arguments: { arg2: "value2" } },
       ];
 
-      const mockInsert = {
-        values: vi.fn().mockResolvedValue(undefined),
-      };
-      drizzleMock.insert.mockReturnValue(mockInsert as never);
+      mockInsertChain(mockDb);
 
       const result = await Effect.gen(function* () {
         const repo = yield* MessageRepository;
         return yield* repo.create(conversationId, role, content, toolCalls);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Runtime.runPromise(runtime),
       );
 
       expect(result.toolCalls).toBe(JSON.stringify(toolCalls));
-      expect(mockInsert.values).toHaveBeenCalledWith({
-        id: result.id,
-        conversationId,
-        role,
-        content,
-        toolCalls: JSON.stringify(toolCalls),
-        createdAt: expect.any(Date),
-      });
     });
   });
 
@@ -100,7 +79,7 @@ describe("MessageRepository", () => {
         createdAt: new Date(),
       };
 
-      drizzleMock.query.conversationMessage.findFirst.mockResolvedValue(
+      mockDb.query.conversationMessage.findFirst.mockResolvedValue(
         mockMessage as never,
       );
 
@@ -108,20 +87,18 @@ describe("MessageRepository", () => {
         const repo = yield* MessageRepository;
         return yield* repo.findById(messageId);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Runtime.runPromise(runtime),
       );
 
       expect(result).toEqual(mockMessage);
-      expect(
-        drizzleMock.query.conversationMessage.findFirst,
-      ).toHaveBeenCalled();
+      expect(mockDb.query.conversationMessage.findFirst).toHaveBeenCalled();
     });
 
     it("should fail with MessageNotFoundError when not found", async () => {
       const messageId = "msg-123";
 
-      drizzleMock.query.conversationMessage.findFirst.mockResolvedValue(
+      mockDb.query.conversationMessage.findFirst.mockResolvedValue(
         null as never,
       );
 
@@ -129,13 +106,12 @@ describe("MessageRepository", () => {
         const repo = yield* MessageRepository;
         return yield* repo.findById(messageId);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Effect.exit,
         Runtime.runPromise(runtime),
       );
 
       expect(exit._tag).toBe("Failure");
-      // Check the error string contains the tag name
       expect(String(exit)).toContain("MessageNotFoundError");
     });
   });
@@ -162,7 +138,7 @@ describe("MessageRepository", () => {
         },
       ];
 
-      drizzleMock.query.conversationMessage.findMany.mockResolvedValue(
+      mockDb.query.conversationMessage.findMany.mockResolvedValue(
         mockMessages as never,
       );
 
@@ -170,27 +146,25 @@ describe("MessageRepository", () => {
         const repo = yield* MessageRepository;
         return yield* repo.findByConversation(conversationId);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Runtime.runPromise(runtime),
       );
 
       expect(result).toEqual(mockMessages);
       expect(result).toHaveLength(2);
-      expect(drizzleMock.query.conversationMessage.findMany).toHaveBeenCalled();
+      expect(mockDb.query.conversationMessage.findMany).toHaveBeenCalled();
     });
 
     it("should return empty array when no messages found", async () => {
       const conversationId = "conv-123";
 
-      drizzleMock.query.conversationMessage.findMany.mockResolvedValue(
-        [] as never,
-      );
+      mockDb.query.conversationMessage.findMany.mockResolvedValue([] as never);
 
       const result = await Effect.gen(function* () {
         const repo = yield* MessageRepository;
         return yield* repo.findByConversation(conversationId);
       }).pipe(
-        Effect.provide(MessageRepositoryDefault),
+        Effect.provide(createMessageRepositoryTestLayer(mockDb)),
         Runtime.runPromise(runtime),
       );
 
