@@ -297,6 +297,6 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
  * Production layer with all dependencies composed.
  * Use this in production code; use GitService.Default in tests with mocked deps.
  */
-export const GitServiceLive = GitService.Default.pipe(
-  Layer.provide(VSCodeService.Default),
-);
+// GitService depends on VSCodeService (context-specific)
+// Provide VSCodeService at the composition site
+export const GitServiceLive = GitService.Default;

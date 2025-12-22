@@ -1098,8 +1098,9 @@ export class PlanningAgent extends Effect.Service<PlanningAgent>()(
 /**
  * Production layer with all dependencies composed.
  * Use this in production code; use PlanningAgent.Default in tests with mocked deps.
+
+ * PlanningAgent depends on VSCodeService (context-specific) and ConfigService.
+ * All have context-specific deps in their chain.
+ * Use PlanningAgent.Default directly - dependencies provided at composition site.
  */
-export const PlanningAgentLive = PlanningAgent.Default.pipe(
-  Layer.provide(ConfigService.Default),
-  Layer.provide(VSCodeService.Default),
-);
+export const PlanningAgentLive = PlanningAgent.Default;

@@ -420,14 +420,12 @@ export class FileWatcherService extends Effect.Service<FileWatcherService>()(
 /**
  * Production layer with all dependencies composed.
  * Use this in production code; use FileWatcherService.Default in tests with mocked deps.
+
+ * FileWatcherService depends on VSCodeService (context-specific), ConfigService, etc.
+ * All have context-specific deps in their chain.
+ * Use FileWatcherService.Default directly - dependencies provided at composition site.
  */
-export const FileWatcherServiceLive = FileWatcherService.Default.pipe(
-  Layer.provide(ConfigService.Default),
-  Layer.provide(RepositoryService.Default),
-  Layer.provide(CodebaseIndexingService.Default),
-  Layer.provide(VSCodeService.Default),
-  Layer.provide(ApiKeyService.Default),
-);
+export const FileWatcherServiceLive = FileWatcherService.Default;
 
 /**
  * Wrapper class for VS Code Disposable integration

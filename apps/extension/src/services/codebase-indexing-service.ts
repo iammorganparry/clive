@@ -540,11 +540,12 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
  * Production layer with all dependencies composed.
  * Use this in production code; use CodebaseIndexingService.Default in tests with mocked deps.
  */
-export const CodebaseIndexingServiceLive = CodebaseIndexingService.Default.pipe(
-  Layer.provide(VSCodeService.Default),
-  Layer.provide(ConfigService.Default),
-  Layer.provide(RepositoryService.Default),
-);
+/**
+ * CodebaseIndexingService depends on VSCodeService (context-specific), ConfigService, RepositoryService.
+ * All have context-specific deps in their chain.
+ * Use CodebaseIndexingService.Default directly - dependencies provided at composition site.
+ */
+export const CodebaseIndexingServiceLive = CodebaseIndexingService.Default;
 
 /**
  * Helper function to compute cosine similarity between two vectors

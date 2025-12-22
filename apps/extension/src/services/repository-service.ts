@@ -513,6 +513,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
  * Production layer with all dependencies composed.
  * Use this in production code; use RepositoryService.Default in tests with mocked deps.
  */
-export const RepositoryServiceLive = RepositoryService.Default.pipe(
-  Layer.provide(ConfigService.Default),
-);
+/**
+ * RepositoryService depends on ConfigService which has context-specific deps.
+ * Use RepositoryService.Default directly - dependencies provided at composition site.
+ */
+export const RepositoryServiceLive = RepositoryService.Default;

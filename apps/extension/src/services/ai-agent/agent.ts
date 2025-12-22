@@ -158,8 +158,9 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
 /**
  * Production layer with all dependencies composed.
  * Use this in production code; use CypressTestAgent.Default in tests with mocked deps.
+ *
+ * CypressTestAgent depends on VSCodeService (context-specific) and ConfigService.
+ * All have context-specific deps in their chain.
+ * Use CypressTestAgent.Default directly - dependencies provided at composition site.
  */
-export const CypressTestAgentLive = CypressTestAgent.Default.pipe(
-  Layer.provide(ConfigService.Default),
-  Layer.provide(VSCodeService.Default),
-);
+export const CypressTestAgentLive = CypressTestAgent.Default;

@@ -266,8 +266,10 @@ export class ConversationService extends Effect.Service<ConversationService>()(
  * Production layer with all dependencies composed.
  * Use this in production code; use ConversationService.Default in tests with mocked deps.
  */
-export const ConversationServiceLive = ConversationService.Default.pipe(
-  Layer.provide(ConfigService.Default),
-);
+/**
+ * ConversationService depends on ConfigService which has context-specific deps.
+ * Use ConversationService.Default directly - dependencies provided at composition site.
+ */
+export const ConversationServiceLive = ConversationService.Default;
 
 export type { ApiError, NetworkError, AuthTokenMissingError };

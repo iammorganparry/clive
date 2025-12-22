@@ -2,12 +2,17 @@ import { tool } from "ai";
 import { z } from "zod";
 import { Effect, Runtime, Layer } from "effect";
 import type { TokenBudgetService } from "../token-budget.js";
-import { CodebaseIndexingService } from "../../codebase-indexing-service.js";
-import { VSCodeService } from "../../vs-code.js";
-import { ConfigService } from "../../config-service.js";
-import { ApiKeyService } from "../../api-key-service.js";
-import { SecretStorageService } from "../../vs-code.js";
-import { RepositoryService } from "../../repository-service.js";
+import {
+  CodebaseIndexingServiceLive,
+  CodebaseIndexingService,
+} from "../../codebase-indexing-service.js";
+import { VSCodeService, SecretStorageService } from "../../vs-code.js";
+import { ConfigServiceLive, ConfigService } from "../../config-service.js";
+import { ApiKeyServiceLive, ApiKeyService } from "../../api-key-service.js";
+import {
+  RepositoryServiceLive,
+  RepositoryService,
+} from "../../repository-service.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 
 export interface SemanticSearchInput {
@@ -114,19 +119,45 @@ export const createSemanticSearchTool = (budget: TokenBudgetService) =>
           return finalOutput;
         }).pipe(
           Effect.provide(
-            Layer.merge(
-              Layer.merge(
-                CodebaseIndexingService.Default,
-                Layer.merge(
-                  VSCodeService.Default,
-                  Layer.merge(ConfigService.Default, ApiKeyService.Default),
-                ),
-              ),
-              Layer.merge(
-                RepositoryService.Default,
+            (() => {
+              // Build layer with proper dependency ordering
+              const coreLayer = Layer.mergeAll(
+                VSCodeService.Default,
                 SecretStorageService.Default,
-              ),
-            ),
+              );
+
+              // ApiKeyService depends on SecretStorageService
+              const apiKeyLayer = ApiKeyServiceLive.pipe(
+                Layer.provide(coreLayer),
+              );
+
+              // ConfigService depends on SecretStorageService and ApiKeyService
+              const configLayer = ConfigServiceLive.pipe(
+                Layer.provide(coreLayer),
+                Layer.provide(apiKeyLayer),
+              );
+
+              // Base layer with all core + base services
+              const baseLayer = Layer.mergeAll(
+                coreLayer,
+                apiKeyLayer,
+                configLayer,
+              );
+
+              // RepositoryService depends on ConfigService
+              const repoLayer = RepositoryServiceLive.pipe(
+                Layer.provide(baseLayer),
+              );
+
+              const domainLayer = Layer.mergeAll(baseLayer, repoLayer);
+
+              // CodebaseIndexingService depends on domain services
+              const indexingLayer = CodebaseIndexingServiceLive.pipe(
+                Layer.provide(domainLayer),
+              );
+
+              return Layer.mergeAll(domainLayer, indexingLayer);
+            })(),
           ),
           Effect.catchAll((error) =>
             Effect.gen(function* () {

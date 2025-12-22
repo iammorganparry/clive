@@ -400,8 +400,9 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
 /**
  * Production layer with all dependencies composed.
  * Use this in production code; use ExecutionAgent.Default in tests with mocked deps.
+
+ * ExecutionAgent depends on VSCodeService (context-specific) and ConfigService.
+ * All have context-specific deps in their chain.
+ * Use ExecutionAgent.Default directly - dependencies provided at composition site.
  */
-export const ExecutionAgentLive = ExecutionAgent.Default.pipe(
-  Layer.provide(ConfigService.Default),
-  Layer.provide(VSCodeService.Default),
-);
+export const ExecutionAgentLive = ExecutionAgent.Default;

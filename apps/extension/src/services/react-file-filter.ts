@@ -151,6 +151,6 @@ export class ReactFileFilter extends Effect.Service<ReactFileFilter>()(
  * Production layer with all dependencies composed.
  * Use this in production code; use ReactFileFilter.Default in tests with mocked deps.
  */
-export const ReactFileFilterLive = ReactFileFilter.Default.pipe(
-  Layer.provide(VSCodeService.Default),
-);
+// ReactFileFilter depends on VSCodeService (context-specific)
+// Provide VSCodeService at the composition site
+export const ReactFileFilterLive = ReactFileFilter.Default;
