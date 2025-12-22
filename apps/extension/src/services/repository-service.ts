@@ -1,4 +1,5 @@
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect } from "effect";
+import SuperJSON from "superjson";
 import { ConfigService } from "./config-service.js";
 import { parseTrpcError } from "../lib/error-messages.js";
 import type { IndexingStatusInfo } from "./indexing-status.js";
@@ -103,7 +104,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
           const response = yield* Effect.tryPromise({
             try: async () => {
-              const inputStr = encodeURIComponent(JSON.stringify(input));
+              const serializedInput = SuperJSON.serialize(input);
+              const inputStr = encodeURIComponent(
+                JSON.stringify(serializedInput),
+              );
               const url = `${backendUrl}/api/trpc/${procedure}?input=${inputStr}`;
 
               return fetch(url, {
@@ -154,7 +158,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
           );
 
           const data = yield* Effect.try({
-            try: () => JSON.parse(responseText) as { result?: { data?: T } },
+            try: () =>
+              JSON.parse(responseText) as { result?: { data?: unknown } },
             catch: (error) =>
               new ApiError({
                 message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
@@ -162,8 +167,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
               }),
           });
 
-          if (data.result?.data !== undefined) {
-            return data.result.data;
+          if (data.result?.data !== undefined && data.result.data !== null) {
+            return SuperJSON.deserialize<T>(
+              data.result.data as Parameters<typeof SuperJSON.deserialize>[0],
+            );
           }
 
           return yield* Effect.fail(
@@ -184,7 +191,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
           const response = yield* Effect.tryPromise({
             try: async () => {
               const url = `${backendUrl}/api/trpc/${procedure}`;
-              const body = JSON.stringify(input);
+              const serializedInput = SuperJSON.serialize(input);
+              const body = JSON.stringify(serializedInput);
 
               return fetch(url, {
                 method: "POST",
@@ -235,7 +243,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
           );
 
           const data = yield* Effect.try({
-            try: () => JSON.parse(responseText) as { result?: { data?: T } },
+            try: () =>
+              JSON.parse(responseText) as { result?: { data?: unknown } },
             catch: (error) =>
               new ApiError({
                 message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
@@ -243,8 +252,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
               }),
           });
 
-          if (data.result?.data !== undefined) {
-            return data.result.data;
+          if (data.result?.data !== undefined && data.result.data !== null) {
+            return SuperJSON.deserialize<T>(
+              data.result.data as Parameters<typeof SuperJSON.deserialize>[0],
+            );
           }
 
           return yield* Effect.fail(

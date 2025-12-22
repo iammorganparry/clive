@@ -18,6 +18,7 @@ export interface RpcHookFactories<TVscode = unknown> {
   ) => (options?: {
     input?: TInput;
     enabled?: boolean;
+    refetchInterval?: number | false;
   }) => QueryHookReturn<TOutput>;
 
   useMutation: <TInput, TOutput>(
@@ -67,6 +68,7 @@ export interface ClientProcedure<
   useQuery: (options?: {
     input?: InferProcedureInput<TProcedure>;
     enabled?: boolean;
+    refetchInterval?: number | false;
   }) => QueryHookReturn<InferProcedureOutput<TProcedure>>;
 
   useMutation: (options?: {
@@ -135,6 +137,7 @@ function createClientProxy<TVscode>(
         >(options?: {
           input?: TInput;
           enabled?: boolean;
+          refetchInterval?: number | false;
         }) => {
           data: TOutput | undefined;
           isLoading: boolean;

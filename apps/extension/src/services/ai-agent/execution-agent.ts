@@ -1,6 +1,5 @@
 import type * as vscode from "vscode";
 import { streamText, stepCountIs } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { AIModels } from "../ai-models.js";
 import {
   createReadFileTool,
@@ -19,6 +18,7 @@ import { VSCodeService } from "../vs-code.js";
 import { CYPRESS_EXECUTION_SYSTEM_PROMPT, PromptFactory } from "./prompts.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
 import { makeTokenBudget } from "./token-budget.js";
+import { createAnthropicProvider } from "../ai-provider-factory.js";
 
 class ExecutionAgentError extends Data.TaggedError("ExecutionAgentError")<{
   message: string;
@@ -176,20 +176,19 @@ export class ExecutionAgent extends Effect.Service<ExecutionAgent>()(
               "[ExecutionAgent] Calling AI model for execution...",
             );
 
-            // Get AI Gateway OIDC token
-            const gatewayToken = yield* configService.getAiApiKey();
-            if (!gatewayToken) {
+            // Get AI API key (user-provided or gateway token)
+            const tokenResult = yield* configService.getAiApiKey();
+            if (!tokenResult.token) {
               return yield* Effect.fail(
                 new ConfigurationError({
-                  message: "AI Gateway token not available. Please log in.",
+                  message:
+                    "AI token not available. Please log in or provide API key.",
                 }),
               );
             }
 
-            // Create Anthropic client with OIDC token (SDK auto-detects gateway)
-            const anthropic = createAnthropic({
-              apiKey: gatewayToken,
-            });
+            // Create Anthropic provider (direct or gateway)
+            const anthropic = createAnthropicProvider(tokenResult);
 
             // Generate text using AI SDK with streaming
             const streamResult = yield* Effect.try({

@@ -278,13 +278,18 @@ export function useRpcSubscription<TInput, TOutput, TProgress = unknown>(
 export function createRpcHookFactories(): RpcHookFactories<VSCodeAPI> {
   return {
     useQuery: <TInput, TOutput>(path: string[], vscode: VSCodeAPI) => {
-      return (options?: { input?: TInput; enabled?: boolean }) => {
+      return (options?: {
+        input?: TInput;
+        enabled?: boolean;
+        refetchInterval?: number | false;
+      }) => {
         const result = useRpcQuery<TInput, TOutput>(
           vscode,
           path,
           options?.input,
           {
             enabled: options?.enabled,
+            refetchInterval: options?.refetchInterval,
           },
         );
         // Narrow down to match the interface

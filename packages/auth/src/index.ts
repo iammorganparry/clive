@@ -1,8 +1,14 @@
 import { db } from "@clive/db/client";
+import * as schema from "@clive/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { jwt, bearer, organization } from "better-auth/plugins";
+import {
+  jwt,
+  bearer,
+  organization,
+  deviceAuthorization,
+} from "better-auth/plugins";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -38,6 +44,7 @@ export const auth = betterAuth({
   },
   database: drizzleAdapter(db, {
     provider: "pg",
+    schema,
   }),
   socialProviders: {
     github: {
@@ -47,12 +54,15 @@ export const auth = betterAuth({
   },
   plugins: [
     nextCookies(),
-    jwt(), // Provides /api/auth/token endpoint for JWT generation
-    bearer(), // Enables Bearer token validation in getSession()
+    jwt(),
+    bearer(),
     organization({
       allowUserToCreateOrganization: true,
       creatorRole: "owner",
       membershipLimit: 100,
+    }),
+    deviceAuthorization({
+      verificationUri: "/device",
     }),
   ],
 });

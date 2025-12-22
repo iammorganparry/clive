@@ -209,9 +209,14 @@ export const configRouter = {
       const indexingService = yield* CodebaseIndexingService;
 
       // Trigger indexing in background (don't wait for completion)
-      // Fork the effect - errors in the forked effect are handled by the indexing service itself
+      // Fork the effect as a daemon - errors in the forked effect are handled by the indexing service itself
       yield* indexingService.indexWorkspace().pipe(
-        Effect.fork,
+        Effect.tapError((error) =>
+          Effect.logDebug(
+            `[ConfigRouter] Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        ),
+        Effect.forkDaemon,
         Effect.catchAll(() => Effect.void), // Ignore fork errors - indexing runs in background
       );
 
@@ -255,7 +260,12 @@ export const configRouter = {
         if (input.enabled) {
           const indexingService = yield* CodebaseIndexingService;
           yield* indexingService.indexWorkspace().pipe(
-            Effect.fork,
+            Effect.tapError((error) =>
+              Effect.logDebug(
+                `[ConfigRouter] Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            ),
+            Effect.forkDaemon,
             Effect.catchAll(() => Effect.void),
           );
         }
@@ -293,7 +303,12 @@ export const configRouter = {
         if (input.enableIndexing) {
           const indexingService = yield* CodebaseIndexingService;
           yield* indexingService.indexWorkspace().pipe(
-            Effect.fork,
+            Effect.tapError((error) =>
+              Effect.logDebug(
+                `[ConfigRouter] Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            ),
+            Effect.forkDaemon,
             Effect.catchAll(() => Effect.void),
           );
         }
