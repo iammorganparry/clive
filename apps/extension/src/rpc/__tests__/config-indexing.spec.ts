@@ -71,11 +71,9 @@ describe("Config Router - Indexing Endpoints", () => {
         }),
       } as unknown as RpcContext["cypressDetector"],
       gitService: {
-        getBranchChanges: vi.fn().mockResolvedValue(null),
-      } as unknown as RpcContext["gitService"],
-      reactFileFilter: {} as unknown as RpcContext["reactFileFilter"],
+        getBranchChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
+      },
       diffProvider: {} as unknown as RpcContext["diffProvider"],
-      configService: {} as unknown as RpcContext["configService"],
       // Layer context (fallback) and layer override for testing
       layerContext: createMockLayerContext(),
       configLayer: testContext.layer,

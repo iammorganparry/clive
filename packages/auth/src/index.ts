@@ -17,6 +17,7 @@ dotenv.config({
 
 const githubClientId = process.env.GITHUB_CLIENT_ID;
 const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
+const betterAuthSecret = process.env.BETTER_AUTH_SECRET;
 
 if (!githubClientId || !githubClientSecret) {
   throw new Error(
@@ -24,7 +25,14 @@ if (!githubClientId || !githubClientSecret) {
   );
 }
 
+if (!betterAuthSecret) {
+  console.warn(
+    "[Auth] BETTER_AUTH_SECRET not set - JWT token validation may fail",
+  );
+}
+
 export const auth = betterAuth({
+  secret: betterAuthSecret,
   logger: {
     level: "warn", // Only show warnings and actual errors
   },

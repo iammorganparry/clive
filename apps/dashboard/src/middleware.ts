@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
-const publicRoutes = ["/sign-in", "/sign-up", "/api/auth"];
+const publicRoutes = ["/sign-in", "/sign-up", "/api/auth", "/api/trpc"];
 
 export function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some((route) =>

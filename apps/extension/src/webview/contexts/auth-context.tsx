@@ -2,29 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useMemo } from "react";
 import { useRpc } from "../rpc/provider.js";
+import type { UserInfo } from "../../services/config-service.js";
 
-/**
- * Better Auth JWT payload structure
- * Based on the JWT plugin output from better-auth
- */
-interface BetterAuthJwtPayload {
-  sub: string; // userId
-  email?: string;
-  name?: string;
-  image?: string;
-  activeOrganizationId?: string;
-  iat?: number;
-  exp?: number;
-  [key: string]: unknown;
-}
-
-export interface UserData {
-  userId: string;
-  email?: string;
-  name?: string;
-  imageUrl?: string;
-  organizationId?: string;
-}
+export type UserData = UserInfo;
 
 interface AuthContextType {
   token: string | null;
@@ -43,48 +23,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-/**
- * Decodes a JWT token and extracts user data from the payload
- */
-function decodeJWT(token: string): UserData | null {
-  try {
-    // JWT format: header.payload.signature
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      console.error("Invalid JWT format");
-      return null;
-    }
-
-    // Decode the payload (second part)
-    const payload = parts[1];
-    // Replace base64url characters
-    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    // Add padding if needed
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-
-    // Decode base64
-    const decoded = atob(padded);
-    const parsed = JSON.parse(decoded) as BetterAuthJwtPayload;
-
-    // Better Auth JWT uses 'sub' for userId
-    if (!parsed.sub) {
-      console.error("Invalid JWT: missing sub claim");
-      return null;
-    }
-
-    return {
-      userId: parsed.sub,
-      email: parsed.email,
-      name: parsed.name,
-      imageUrl: parsed.image,
-      organizationId: parsed.activeOrganizationId,
-    };
-  } catch (error) {
-    console.error("Failed to decode JWT token:", error);
-    return null;
-  }
-}
-
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const queryClient = useQueryClient();
   const rpc = useRpc();
@@ -100,11 +38,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const token = sessionData?.token ?? null;
   const isLoading = isCheckingSession;
 
-  // Decode user data from token
   const user = useMemo(() => {
-    if (!token) return null;
-    return decodeJWT(token);
-  }, [token]);
+    const userInfo = sessionData?.userInfo;
+    if (!userInfo?.userId) return null;
+    return userInfo;
+  }, [sessionData?.userInfo]);
 
   // Store token mutation - persists to secret storage
   const storeTokenMutation = rpc.auth.storeToken.useMutation({

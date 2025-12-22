@@ -1,3 +1,4 @@
+"use client";
 import { LoginForm } from "@clive/ui";
 
 export default function LoginPage() {

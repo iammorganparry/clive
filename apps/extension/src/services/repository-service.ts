@@ -140,11 +140,24 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             );
           }
 
-          const data = yield* Effect.tryPromise({
-            try: () => response.json() as Promise<{ result?: { data?: T } }>,
+          const responseText = yield* Effect.tryPromise({
+            try: () => response.text(),
             catch: (error) =>
               new ApiError({
-                message: "Failed to parse API response",
+                message: "Failed to read API response body",
+                cause: error,
+              }),
+          });
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Response body (first 500 chars): ${responseText.substring(0, 500)}`,
+          );
+
+          const data = yield* Effect.try({
+            try: () => JSON.parse(responseText) as { result?: { data?: T } },
+            catch: (error) =>
+              new ApiError({
+                message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
                 cause: error,
               }),
           });
@@ -208,11 +221,24 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             );
           }
 
-          const data = yield* Effect.tryPromise({
-            try: () => response.json() as Promise<{ result?: { data?: T } }>,
+          const responseText = yield* Effect.tryPromise({
+            try: () => response.text(),
             catch: (error) =>
               new ApiError({
-                message: "Failed to parse API response",
+                message: "Failed to read API response body",
+                cause: error,
+              }),
+          });
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Response body (first 500 chars): ${responseText.substring(0, 500)}`,
+          );
+
+          const data = yield* Effect.try({
+            try: () => JSON.parse(responseText) as { result?: { data?: T } },
+            catch: (error) =>
+              new ApiError({
+                message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
                 cause: error,
               }),
           });

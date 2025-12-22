@@ -19,7 +19,6 @@ import "./src/env.js";
 /** @type {import("next").NextConfig} */
 const config = {
     transpilePackages: [
-        "@clive/api",
         "@clive/db",
         "@clive/ui",
         "@clive/validators",

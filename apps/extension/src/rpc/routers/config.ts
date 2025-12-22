@@ -187,11 +187,11 @@ export const configRouter = {
       Effect.catchTag("RepositoryError", (error) =>
         createIndexingStatusErrorResponse("Repository", error),
       ),
-      Effect.catchTag("InvalidTokenError", (error) =>
-        createIndexingStatusErrorResponse("Invalid token", error),
-      ),
-      Effect.catchTag("AuthTokenMissingError", (error) =>
+      Effect.catchTag("UserInfoMissingError", (error) =>
         createIndexingStatusErrorResponse("Authentication required", error),
+      ),
+      Effect.catchTag("SecretStorageError", (error) =>
+        createIndexingStatusErrorResponse("Storage error", error),
       ),
       Effect.catchTag("NoWorkspaceFolderError", (error) =>
         createIndexingStatusErrorResponse("No workspace folder", error),
