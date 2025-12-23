@@ -1010,6 +1010,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             outputChannel?: vscode.OutputChannel;
             progressCallback?: (status: string, message: string) => void;
             waitForApproval?: (toolCallId: string) => Promise<unknown>;
+            signal?: AbortSignal;
           },
         ) =>
           Effect.gen(function* () {
@@ -1018,6 +1019,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const outputChannel = options?.outputChannel;
             const progressCallback = options?.progressCallback;
             const waitForApproval = options?.waitForApproval;
+            const signal = options?.signal;
 
             if (files.length === 0) {
               return yield* Effect.fail(
@@ -1055,17 +1057,26 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const proposeTest = createProposeTestTool(
               waitForApproval
                 ? async (toolCallId: string, input: ProposeTestInput) => {
+                    // Use pre-generated proposalId from stream processing (plan file already created)
+                    // If not found (shouldn't happen), generate one as fallback
+                    const proposalId =
+                      toolCallToProposalId.get(toolCallId) ||
+                      `${input.sourceFile}-${input.targetTestPath}-${Date.now()}`;
+
                     // Yield proposal to client via progress callback
+                    // Include id and proposedContent (empty for now) to satisfy schema
                     progressCallback?.(
                       "proposal",
                       JSON.stringify({
                         type: "proposal",
                         toolCallId,
                         test: {
+                          id: proposalId,
                           sourceFile: input.sourceFile,
                           targetTestPath: input.targetTestPath,
                           description: input.description,
                           isUpdate: input.isUpdate,
+                          proposedContent: "", // Content generated later
                           navigationPath: input.navigationPath,
                           pageContext: input.pageContext,
                           prerequisites: input.prerequisites,
@@ -1163,6 +1174,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   tools: planningTools,
                   maxRetries: 0,
                   stopWhen: stepCountIs(20),
+                  abortSignal: signal,
                   messages: [
                     {
                       role: "system" as const,
@@ -1192,10 +1204,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 }),
             });
 
-            // Track streaming content and plan files
-            let streamingText = "";
+            // Track plan files
             const planFileMap = new Map<string, vscode.Uri>();
             const toolCallIdMap = new Map<string, string>(); // proposalId -> toolCallId
+            const toolCallToProposalId = new Map<string, string>(); // toolCallId -> proposalId (for early plan file creation)
             const subscriptionId = `sub-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
             // Phase 1: Process planning stream (only proposeTest available)
@@ -1211,37 +1223,168 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               ),
               Stream.runForEach((event) =>
                 Effect.gen(function* () {
+                  // Check for abort signal
+                  if (signal?.aborted) {
+                    yield* Effect.logDebug(
+                      `[TestingAgent:${correlationId}] Abort signal detected, stopping stream`,
+                    );
+                    return yield* Effect.fail(
+                      new TestingAgentError({
+                        message: "Operation cancelled by user",
+                      }),
+                    );
+                  }
+
                   if (event.type === "tool-call") {
                     yield* Effect.logDebug(
                       `[TestingAgent:${correlationId}] [Phase 1] Tool call: ${event.toolName}`,
                     );
 
-                    // Track proposeTest tool calls to get toolCallId
-                    // The toolCallId will be used when we create the plan file
-                  }
+                    // Send progress checkpoint for tool calls
+                    if (event.toolName === "semanticSearch") {
+                      progressCallback?.(
+                        "searching",
+                        "Searching codebase for context...",
+                      );
+                    } else if (event.toolName === "bashExecute") {
+                      const args = event.toolArgs as
+                        | { command?: string }
+                        | undefined;
+                      const command = args?.command || "";
+                      // Detect what type of bash command is being run
+                      if (
+                        command.includes("cat ") ||
+                        command.includes("head ") ||
+                        command.includes("tail ")
+                      ) {
+                        progressCallback?.(
+                          "reading",
+                          "Reading file contents...",
+                        );
+                      } else if (
+                        command.includes("find ") ||
+                        command.includes("ls ")
+                      ) {
+                        progressCallback?.(
+                          "scanning",
+                          "Scanning directory structure...",
+                        );
+                      } else {
+                        progressCallback?.("executing", "Running command...");
+                      }
+                    } else if (event.toolName === "proposeTest") {
+                      progressCallback?.(
+                        "proposing",
+                        "Generating test proposal...",
+                      );
 
-                  if (event.type === "text-delta" && event.content) {
-                    // Accumulate streaming text
-                    streamingText += event.content;
+                      // Create plan file immediately when proposeTest is called
+                      // This allows users to review the plan before approving
+                      if (event.toolCallId && event.toolArgs) {
+                        const args = event.toolArgs as ProposeTestInput;
+                        const proposalId = `${args.sourceFile}-${args.targetTestPath}-${Date.now()}`;
+                        toolCallToProposalId.set(event.toolCallId, proposalId);
 
-                    // Stream content to all open plan files
-                    for (const [, planUri] of planFileMap.entries()) {
-                      yield* planFileService
-                        .appendContent(planUri, event.content)
-                        .pipe(
+                        // Create plan file asynchronously (don't block stream)
+                        yield* Effect.gen(function* () {
+                          const planUri = yield* planFileService
+                            .createPlanFile(args.sourceFile, {
+                              proposalId,
+                              subscriptionId,
+                              targetTestPath: args.targetTestPath,
+                              status: "pending",
+                            })
+                            .pipe(
+                              Effect.catchAll((error) =>
+                                Effect.gen(function* () {
+                                  yield* Effect.logDebug(
+                                    `[TestingAgent:${correlationId}] Failed to create plan file: ${error.message}`,
+                                  );
+                                  return yield* Effect.fail(error);
+                                }),
+                              ),
+                            );
+
+                          // Update plan file frontmatter with toolCallId
+                          const fileData = yield* Effect.tryPromise({
+                            try: () => vscode.workspace.fs.readFile(planUri),
+                            catch: (error) =>
+                              new TestingAgentError({
+                                message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                                cause: error,
+                              }),
+                          });
+                          let content = Buffer.from(fileData).toString("utf-8");
+                          // Add toolCallId to frontmatter
+                          content = content.replace(
+                            /^---\n/,
+                            `---\ntoolCallId: "${event.toolCallId}"\n`,
+                          );
+                          yield* Effect.tryPromise({
+                            try: async () => {
+                              await vscode.workspace.fs.writeFile(
+                                planUri,
+                                Buffer.from(content, "utf-8"),
+                              );
+                            },
+                            catch: (error) =>
+                              new TestingAgentError({
+                                message: `Failed to update plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                                cause: error,
+                              }),
+                          });
+
+                          // Plan file created - AI will write plan content naturally in its response
+                          // The plan content will be written after the stream completes
+
+                          // Open plan file in editor
+                          yield* planFileService.openPlanFile(planUri).pipe(
+                            Effect.catchAll((error) =>
+                              Effect.gen(function* () {
+                                yield* Effect.logDebug(
+                                  `[TestingAgent:${correlationId}] Failed to open plan file: ${error.message}`,
+                                );
+                                return Effect.void;
+                              }),
+                            ),
+                          );
+
+                          planFileMap.set(proposalId, planUri);
+
+                          // Send plan file created event
+                          progressCallback?.(
+                            "plan_file_created",
+                            JSON.stringify({
+                              type: "plan_file_created",
+                              planFilePath: vscode.workspace.asRelativePath(
+                                planUri,
+                                false,
+                              ),
+                              proposalId,
+                              subscriptionId,
+                            }),
+                          );
+
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Created plan file early: ${vscode.workspace.asRelativePath(planUri, false)}`,
+                          );
+                        }).pipe(
                           Effect.catchAll((error) =>
                             Effect.gen(function* () {
                               yield* Effect.logDebug(
-                                `[TestingAgent:${correlationId}] Failed to append content: ${error.message}`,
+                                `[TestingAgent:${correlationId}] Error creating plan file early: ${error.message}`,
                               );
-                              // Don't fail - continue streaming
+                              // Don't fail the stream - continue processing
                               return Effect.void;
                             }),
                           ),
                         );
+                      }
                     }
+                  }
 
-                    // Send content streamed event
+                  if (event.type === "text-delta" && event.content) {
+                    // Send content streamed event (for UI progress tracking)
                     progressCallback?.(
                       "content_streamed",
                       JSON.stringify({
@@ -1249,8 +1392,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                         content: event.content,
                       }),
                     );
-
-                    progressCallback?.("analyzing", event.content);
                   }
 
                   if (event.type === "tool-result") {
@@ -1291,8 +1432,15 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
                   if (toolResult?.output) {
                     const output = toolResult.output as ProposeTestOutput;
+                    // Use early proposalId if available (from stream processing), otherwise use output.id
+                    const toolCallId = typedCall.toolCallId;
+                    const earlyProposalId = toolCallId
+                      ? toolCallToProposalId.get(toolCallId)
+                      : undefined;
+                    const proposalId = earlyProposalId || output.id;
+
                     const proposal: ProposedTest = {
-                      id: output.id,
+                      id: proposalId,
                       sourceFile: args.sourceFile,
                       targetTestPath: args.targetTestPath,
                       description: args.description,
@@ -1307,110 +1455,96 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                     };
                     proposals.push(proposal);
 
-                    // Create plan file for this proposal
+                    // Plan file should already be created during stream processing
+                    // Just track the mapping and verify it exists
                     if (output.success) {
                       // Get toolCallId from the tool call
                       const toolCallId = typedCall.toolCallId;
-                      toolCallIdMap.set(output.id, toolCallId);
+                      toolCallIdMap.set(proposalId, toolCallId);
 
-                      const planUri = yield* planFileService
-                        .createPlanFile(args.sourceFile, {
-                          proposalId: output.id,
-                          subscriptionId,
-                          targetTestPath: args.targetTestPath,
-                          status: "pending",
-                        })
-                        .pipe(
-                          Effect.catchAll((error) =>
-                            Effect.gen(function* () {
-                              yield* Effect.logDebug(
-                                `[TestingAgent:${correlationId}] Failed to create plan file: ${error.message}`,
-                              );
-                              return yield* Effect.fail(error);
-                            }),
-                          ),
+                      // Check if plan file was created early (during stream processing)
+                      const earlyProposalId =
+                        toolCallToProposalId.get(toolCallId);
+                      const planUri = earlyProposalId
+                        ? planFileMap.get(earlyProposalId)
+                        : undefined;
+
+                      if (planUri) {
+                        // Plan file already exists - update mapping to use proposalId
+                        planFileMap.set(proposalId, planUri);
+                        yield* Effect.logDebug(
+                          `[TestingAgent:${correlationId}] Plan file already exists for proposal: ${proposalId}`,
                         );
-
-                      // Update plan file frontmatter with toolCallId
-                      // We'll need to read, modify, and write the file
-                      const fileData = yield* Effect.tryPromise({
-                        try: () => vscode.workspace.fs.readFile(planUri),
-                        catch: (error) =>
-                          new TestingAgentError({
-                            message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
-                            cause: error,
-                          }),
-                      });
-                      let content = Buffer.from(fileData).toString("utf-8");
-                      // Add toolCallId to frontmatter
-                      content = content.replace(
-                        /^---\n/,
-                        `---\ntoolCallId: "${toolCallId}"\n`,
-                      );
-                      yield* Effect.tryPromise({
-                        try: async () => {
-                          await vscode.workspace.fs.writeFile(
-                            planUri,
-                            Buffer.from(content, "utf-8"),
-                          );
-                        },
-                        catch: (error) =>
-                          new TestingAgentError({
-                            message: `Failed to update plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
-                            cause: error,
-                          }),
-                      });
-
-                      // Append streaming text to plan file
-                      if (streamingText) {
-                        yield* planFileService
-                          .appendContent(planUri, streamingText)
+                      } else {
+                        // Fallback: create plan file if it wasn't created early (shouldn't happen normally)
+                        yield* Effect.logDebug(
+                          `[TestingAgent:${correlationId}] Plan file not found early, creating as fallback for: ${proposalId}`,
+                        );
+                        const fallbackPlanUri = yield* planFileService
+                          .createPlanFile(args.sourceFile, {
+                            proposalId: proposalId,
+                            subscriptionId,
+                            targetTestPath: args.targetTestPath,
+                            status: "pending",
+                          })
                           .pipe(
                             Effect.catchAll((error) =>
                               Effect.gen(function* () {
                                 yield* Effect.logDebug(
-                                  `[TestingAgent:${correlationId}] Failed to append streaming text: ${error.message}`,
+                                  `[TestingAgent:${correlationId}] Failed to create plan file: ${error.message}`,
                                 );
-                                return Effect.void;
+                                return yield* Effect.fail(error);
                               }),
                             ),
                           );
-                      }
 
-                      // Open plan file in editor
-                      yield* planFileService.openPlanFile(planUri).pipe(
-                        Effect.catchAll((error) =>
-                          Effect.gen(function* () {
-                            yield* Effect.logDebug(
-                              `[TestingAgent:${correlationId}] Failed to open plan file: ${error.message}`,
+                        // Update plan file frontmatter with toolCallId
+                        const fileData = yield* Effect.tryPromise({
+                          try: () =>
+                            vscode.workspace.fs.readFile(fallbackPlanUri),
+                          catch: (error) =>
+                            new TestingAgentError({
+                              message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                              cause: error,
+                            }),
+                        });
+                        let content = Buffer.from(fileData).toString("utf-8");
+                        // Add toolCallId to frontmatter
+                        content = content.replace(
+                          /^---\n/,
+                          `---\ntoolCallId: "${toolCallId}"\n`,
+                        );
+                        yield* Effect.tryPromise({
+                          try: async () => {
+                            await vscode.workspace.fs.writeFile(
+                              fallbackPlanUri,
+                              Buffer.from(content, "utf-8"),
                             );
-                            return Effect.void;
-                          }),
-                        ),
-                      );
+                          },
+                          catch: (error) =>
+                            new TestingAgentError({
+                              message: `Failed to update plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                              cause: error,
+                            }),
+                        });
 
-                      planFileMap.set(output.id, planUri);
-
-                      // Send plan file created event
-                      progressCallback?.(
-                        "plan_file_created",
-                        JSON.stringify({
-                          type: "plan_file_created",
-                          planFilePath: vscode.workspace.asRelativePath(
-                            planUri,
-                            false,
-                          ),
-                          proposalId: output.id,
-                          subscriptionId,
-                        }),
-                      );
+                        planFileMap.set(proposalId, fallbackPlanUri);
+                      }
                     }
 
                     // Track approved proposals for Phase 2 execution
-                    if (output.success && approvalRegistry.has(output.id)) {
+                    // The approval registry may have output.id (from tool's processProposeTestApproval)
+                    // If we have an early proposalId and output.id is different, sync them
+                    if (earlyProposalId && proposalId !== output.id) {
+                      // If output.id is approved, also mark early proposalId as approved
+                      if (approvalRegistry.has(output.id)) {
+                        approvalRegistry.add(proposalId);
+                      }
+                    }
+                    if (output.success && approvalRegistry.has(proposalId)) {
                       approvedProposals.push({
                         proposal,
-                        proposalId: output.id,
+                        proposalId: proposalId,
                       });
                     }
                   }
@@ -1418,8 +1552,42 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               }
             }
 
+            // Write AI's natural plan text to each plan file
+            const aiPlanText = yield* Effect.promise(async () => {
+              return (await planningResult.text) || "";
+            });
+
+            if (aiPlanText) {
+              for (const [, planUri] of planFileMap.entries()) {
+                yield* planFileService
+                  .appendContent(planUri, `\n${aiPlanText}`)
+                  .pipe(
+                    Effect.catchAll((error) =>
+                      Effect.gen(function* () {
+                        yield* Effect.logDebug(
+                          `[TestingAgent:${correlationId}] Failed to write AI plan text: ${error.message}`,
+                        );
+                        return Effect.void;
+                      }),
+                    ),
+                  );
+              }
+            }
+
             // Phase 2: Execute approved proposals with writeTestFile tool available
             const executions: Array<{ testId: string; filePath?: string }> = [];
+
+            // Check for cancellation before Phase 2
+            if (signal?.aborted) {
+              yield* Effect.logDebug(
+                `[TestingAgent:${correlationId}] Cancelled before Phase 2`,
+              );
+              return yield* Effect.fail(
+                new TestingAgentError({
+                  message: "Operation cancelled by user",
+                }),
+              );
+            }
 
             if (approvedProposals.length > 0) {
               yield* Effect.logDebug(
@@ -1437,6 +1605,14 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
               // Execute each approved proposal
               for (const { proposal, proposalId } of approvedProposals) {
+                // Check for cancellation before each proposal
+                if (signal?.aborted) {
+                  yield* Effect.logDebug(
+                    `[TestingAgent:${correlationId}] Cancelled during execution loop`,
+                  );
+                  break; // Exit loop gracefully, return partial results
+                }
+
                 progressCallback?.(
                   "executing",
                   `Generating test file for ${proposal.targetTestPath}...`,
@@ -1461,6 +1637,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       tools: executionTools,
                       maxRetries: 0,
                       stopWhen: stepCountIs(20),
+                      abortSignal: signal,
                       messages: [
                         {
                           role: "system" as const,
@@ -1512,17 +1689,51 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   ),
                   Stream.runForEach((event) =>
                     Effect.gen(function* () {
+                      // Check for abort signal
+                      if (signal?.aborted) {
+                        yield* Effect.logDebug(
+                          `[TestingAgent:${correlationId}] Abort signal detected, stopping execution stream`,
+                        );
+                        return yield* Effect.fail(
+                          new TestingAgentError({
+                            message: "Operation cancelled by user",
+                          }),
+                        );
+                      }
+
                       if (event.type === "tool-call") {
                         yield* Effect.logDebug(
                           `[TestingAgent:${correlationId}] [Phase 2] Tool call: ${event.toolName}`,
                         );
                         if (event.toolName === "writeTestFile") {
                           progressCallback?.("writing", "Writing test file...");
+                        } else if (event.toolName === "bashExecute") {
+                          const args = event.toolArgs as
+                            | { command?: string }
+                            | undefined;
+                          const command = args?.command || "";
+                          // Detect what type of bash command is being run
+                          if (
+                            command.includes("cat ") ||
+                            command.includes("head ") ||
+                            command.includes("tail ")
+                          ) {
+                            progressCallback?.(
+                              "reading",
+                              "Reading file contents...",
+                            );
+                          } else {
+                            progressCallback?.(
+                              "executing",
+                              "Running command...",
+                            );
+                          }
                         }
                       }
 
                       if (event.type === "text-delta" && event.content) {
-                        progressCallback?.("executing", event.content);
+                        // Don't send raw AI text as progress - only send structured checkpoints
+                        // The content is already handled by the streamText result
                       }
 
                       if (event.type === "tool-result") {

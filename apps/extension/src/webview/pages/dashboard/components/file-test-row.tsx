@@ -1,6 +1,5 @@
 import type React from "react";
 import { useCallback } from "react";
-import { useRpc } from "../../../rpc/provider.js";
 import { useFileTestActor } from "../hooks/use-file-test-actor.js";
 import type { EligibleFile } from "./branch-changes.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -24,7 +23,6 @@ import {
   truncateMiddle,
   truncateLogMessage,
 } from "../../../utils/path-utils.js";
-import InlineTestCard from "./inline-test-card.js";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 
@@ -91,7 +89,6 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   onViewTest,
   onPreviewDiff,
 }) => {
-  const rpc = useRpc();
   const { state, send } = useFileTestActor(file.path, vscode);
 
   const handleCreateTest = useCallback(() => {
@@ -101,63 +98,6 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   const handleCancel = useCallback(() => {
     send({ type: "CANCEL" });
   }, [send]);
-
-  const handleAccept = useCallback(
-    (testId: string) => {
-      send({ type: "APPROVE", testId });
-    },
-    [send],
-  );
-
-  const handleReject = useCallback(
-    (testId: string) => {
-      send({ type: "REJECT", testId });
-    },
-    [send],
-  );
-
-  // Execute test mutation
-  const executeTestMutation = rpc.agents.executeTest.useMutation({
-    onSuccess: (data) => {
-      if (data.executionStatus === "completed" && data.testFilePath) {
-        send({
-          type: "EXECUTION_COMPLETE",
-          testId: data.id,
-          filePath: data.testFilePath,
-        });
-      } else {
-        send({
-          type: "EXECUTION_ERROR",
-          testId: data.id,
-          error: data.error || "Execution failed",
-        });
-      }
-    },
-    onError: (error: Error) => {
-      // We'll handle this per-test in the loop
-      send({
-        type: "EXECUTION_ERROR",
-        testId: "",
-        error: error.message,
-      });
-    },
-  });
-
-  const handleGenerateTests = useCallback(() => {
-    // Execute accepted tests
-    const acceptedTests = state.context.proposals.filter(
-      (test: ProposedTest) =>
-        state.context.testStatuses.get(test.id) === "accepted",
-    );
-
-    for (const test of acceptedTests) {
-      executeTestMutation.mutate({ test });
-    }
-  }, [
-    state.context.proposals,
-    state.context.testStatuses,
-    executeTestMutation,
-  ]);
 
   const isPlanning = state.matches({ planningPhase: "planning" });
   const isStreaming = state.matches({ planningPhase: "streaming" });
@@ -169,21 +109,6 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   const isError = state.matches("error");
 
   const hasProposals = state.context.proposals.length > 0;
-  const acceptedCount = state.context.proposals.filter(
-    (test: ProposedTest) =>
-      state.context.testStatuses.get(test.id) === "accepted",
-  ).length;
-  const hasAcceptedTests = acceptedCount > 0;
-
-  const handleViewPlan = useCallback(() => {
-    if (state.context.planFilePath) {
-      vscode.postMessage({
-        type: "command",
-        command: "vscode.open",
-        args: [state.context.planFilePath],
-      });
-    }
-  }, [state.context.planFilePath, vscode]);
 
   // Show accordion if planning, streaming, generating, completed, or has proposals
   const showAccordion =
@@ -246,18 +171,6 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
             {truncateMiddle(file.relativePath)}
           </span>
           <div className="flex items-center gap-1">
-            {state.context.planFilePath && !isCompleted && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 flex-shrink-0"
-                onClick={handleViewPlan}
-                title="View plan file"
-              >
-                <FileText className="h-3 w-3 mr-1" />
-                Plan
-              </Button>
-            )}
             {isPlanning || isStreaming || isGenerating ? (
               <Button
                 size="sm"
@@ -319,63 +232,12 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
           </div>
         )}
 
-        {/* Plan File Link */}
-        {state.context.planFilePath && (
-          <TaskItem className="text-xs mb-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2"
-              onClick={handleViewPlan}
-            >
-              <FileText className="h-3 w-3 mr-1" />
-              View Plan: {state.context.planFilePath}
-            </Button>
-          </TaskItem>
-        )}
-
         {/* Error */}
         {isError && state.context.error && (
           <TaskItem className="text-destructive text-xs flex items-center gap-2">
             <AlertCircle className="h-3 w-3 flex-shrink-0" />
             <span>{state.context.error}</span>
           </TaskItem>
-        )}
-
-        {/* Test Proposals */}
-        {hasProposals && (
-          <div className="space-y-2 mt-2">
-            <div className="text-xs font-medium text-muted-foreground">
-              Test Plan ({state.context.proposals.length} proposals)
-            </div>
-            {state.context.proposals.map((test: ProposedTest) => {
-              const status = state.context.testStatuses.get(test.id);
-              const error = state.context.testErrors.get(test.id);
-              const testFilePath = state.context.testFilePaths.get(test.id);
-              return (
-                <InlineTestCard
-                  key={test.id}
-                  test={test}
-                  status={status ?? "pending"}
-                  error={error ?? undefined}
-                  testFilePath={testFilePath ?? undefined}
-                  onAccept={handleAccept}
-                  onReject={handleReject}
-                  onPreviewDiff={onPreviewDiff}
-                />
-              );
-            })}
-            {isAwaitingApproval && hasAcceptedTests && (
-              <Button
-                size="sm"
-                variant="default"
-                className="w-full mt-2"
-                onClick={handleGenerateTests}
-              >
-                Build Accepted Tests ({acceptedCount})
-              </Button>
-            )}
-          </div>
         )}
       </TaskContent>
     </Task>

@@ -320,6 +320,9 @@ export const fileTestMachine = setup({
     },
     generating: {
       on: {
+        PROGRESS: {
+          actions: "addLog",
+        },
         EXECUTION_COMPLETE: {
           actions: "markExecutionComplete",
         },
