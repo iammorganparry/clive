@@ -32,6 +32,8 @@ export interface ProcedureBuilderWithInput<TContext, TInput> {
       ctx: TContext;
       signal: AbortSignal;
       onProgress?: (data: unknown) => void;
+      waitForApproval?: (toolCallId: string) => Promise<unknown>;
+      subscriptionId?: string;
     }) => AsyncGenerator<unknown, TOutput, unknown>,
   ) => Procedure<TInput, TOutput, TContext, "subscription">;
 }
@@ -72,7 +74,12 @@ export function createProcedureBuilder<TContext>(): ProcedureBuilder<TContext> {
               type: "mutation" as const,
               handler,
             },
-          } as unknown as Procedure<InferredInput, TOutput, TContext, "mutation">;
+          } as unknown as Procedure<
+            InferredInput,
+            TOutput,
+            TContext,
+            "mutation"
+          >;
         },
 
         subscription: <TOutput>(
@@ -81,6 +88,8 @@ export function createProcedureBuilder<TContext>(): ProcedureBuilder<TContext> {
             ctx: TContext;
             signal: AbortSignal;
             onProgress?: (data: unknown) => void;
+            waitForApproval?: (toolCallId: string) => Promise<unknown>;
+            subscriptionId?: string;
           }) => AsyncGenerator<unknown, TOutput, unknown>,
         ) => {
           return {
@@ -102,4 +111,3 @@ export function createProcedureBuilder<TContext>(): ProcedureBuilder<TContext> {
     },
   };
 }
-

@@ -6,9 +6,7 @@ export const AIModels = {
   // Anthropic models
   anthropic: {
     /** High-capability reasoning model for planning and complex tasks */
-    planning: "claude-opus-4-5",
-    /** Fast model for execution and simple tasks */
-    execution: "claude-haiku-4-5",
+    testing: "claude-haiku-4-5",
   },
 
   // OpenAI models

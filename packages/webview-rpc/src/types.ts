@@ -177,3 +177,13 @@ export interface RpcSubscriptionUpdate {
     code?: string;
   };
 }
+
+/**
+ * Message sent from client to server to interact with an active subscription
+ */
+export interface RpcSubscriptionMessage {
+  subscriptionId: string;
+  type: "approval" | "cancel" | "data";
+  toolCallId?: string;
+  data?: unknown;
+}

@@ -22,9 +22,10 @@ import { CodebaseIndexingServiceLive } from "./codebase-indexing-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
 import { ReactFileFilterLive } from "./react-file-filter.js";
 import { CypressTestAgentLive } from "./ai-agent/agent.js";
-import { PlanningAgentLive } from "./ai-agent/planning-agent.js";
+import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { FileWatcherServiceLive } from "./file-watcher-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
+import { PlanFileService } from "./plan-file-service.js";
 
 /**
  * Context required to create the core layer
@@ -99,15 +100,10 @@ export function createFeatureLayer(
   // CypressTestAgent depends on VSCodeService, ConfigService
   const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
 
-  // PlanningAgent depends on VSCodeService, ConfigService
-  const planningLayer = PlanningAgentLive.pipe(Layer.provide(domainLayer));
+  // TestingAgent depends on VSCodeService, ConfigService, CodebaseIndexingService
+  const testingLayer = TestingAgentLive.pipe(Layer.provide(domainLayer));
 
-  return Layer.mergeAll(
-    domainLayer,
-    indexingLayer,
-    cypressLayer,
-    planningLayer,
-  );
+  return Layer.mergeAll(domainLayer, indexingLayer, cypressLayer, testingLayer);
 }
 
 /**
@@ -159,11 +155,26 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   const baseLayer = createBaseLayer(coreLayer);
   const domainLayer = createDomainLayer(baseLayer);
 
+  // CodebaseIndexingService depends on VSCodeService, ConfigService, RepositoryService
+  const indexingLayer = CodebaseIndexingServiceLive.pipe(
+    Layer.provide(domainLayer),
+  );
+
+  // PlanFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const planFileLayer = PlanFileService.Default.pipe(Layer.provide(baseLayer));
+
+  // Domain layer with indexing service
+  const domainWithIndexing = Layer.mergeAll(domainLayer, indexingLayer);
+
+  // Domain layer with indexing and plan file service
+  const domainWithServices = Layer.mergeAll(domainWithIndexing, planFileLayer);
+
   // Add agent layers
   const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
-  const planningLayer = PlanningAgentLive.pipe(Layer.provide(domainLayer));
+  // TestingAgent depends on CodebaseIndexingService and PlanFileService, so provide domainWithServices
+  const testingLayer = TestingAgentLive.pipe(Layer.provide(domainWithServices));
 
-  return Layer.mergeAll(domainLayer, cypressLayer, planningLayer);
+  return Layer.mergeAll(domainWithServices, cypressLayer, testingLayer);
 }
 
 /**

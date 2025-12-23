@@ -4,6 +4,7 @@ import {
   type RpcMessage,
   type RpcResponse,
   type RpcSubscriptionUpdate,
+  type RpcSubscriptionMessage,
   type RouterRecord,
   type Procedure,
 } from "@clive/webview-rpc";
@@ -11,6 +12,45 @@ import { appRouter } from "./router.js";
 import type { RpcContext } from "./context.js";
 
 const runtime = Runtime.defaultRuntime;
+
+/**
+ * Track active subscriptions and their message handlers
+ */
+interface ActiveSubscription {
+  generator: AsyncGenerator<unknown, unknown, unknown>;
+  abortController: AbortController;
+  messageQueue: Map<string, (value: unknown) => void>; // toolCallId -> resolver
+}
+
+const activeSubscriptions = new Map<string, ActiveSubscription>();
+
+/**
+ * Handle a subscription message (approval, cancellation, etc.)
+ */
+export function handleSubscriptionMessage(
+  message: RpcSubscriptionMessage,
+  ctx: RpcContext,
+): boolean {
+  const subscription = activeSubscriptions.get(message.subscriptionId);
+  if (!subscription) {
+    return false;
+  }
+
+  if (message.type === "approval" && message.toolCallId) {
+    const resolver = subscription.messageQueue.get(message.toolCallId);
+    if (resolver) {
+      subscription.messageQueue.delete(message.toolCallId);
+      resolver(message.data);
+      return true;
+    }
+  } else if (message.type === "cancel") {
+    subscription.abortController.abort();
+    activeSubscriptions.delete(message.subscriptionId);
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Handle an RPC message from the webview
@@ -91,9 +131,11 @@ export async function handleRpcMessage(
         ctx: RpcContext;
         signal: AbortSignal;
         onProgress?: (data: unknown) => void;
+        waitForApproval?: (toolCallId: string) => Promise<unknown>;
       }) => AsyncGenerator<unknown, unknown, unknown>;
 
       const abortController = new AbortController();
+      const messageQueue = new Map<string, (value: unknown) => void>();
 
       // Progress callback sends updates to webview
       const onProgress = (data: unknown) => {
@@ -105,13 +147,31 @@ export async function handleRpcMessage(
         ctx.webviewView.webview.postMessage(update);
       };
 
+      // Wait for approval callback - used by generators to pause for user input
+      const waitForApproval = (toolCallId: string): Promise<unknown> => {
+        return new Promise((resolve) => {
+          messageQueue.set(toolCallId, resolve);
+        });
+      };
+
+      // Track this subscription
+      const subscription: ActiveSubscription = {
+        generator: null as unknown as AsyncGenerator<unknown, unknown, unknown>,
+        abortController,
+        messageQueue,
+      };
+      activeSubscriptions.set(id, subscription);
+
       try {
         const generator = handler({
           input: validatedInput,
           ctx,
           signal: abortController.signal,
           onProgress,
+          waitForApproval,
         });
+
+        subscription.generator = generator;
 
         // Iterate through the generator manually to capture return value
         let iterResult = await generator.next();
@@ -139,6 +199,9 @@ export async function handleRpcMessage(
         };
         ctx.webviewView.webview.postMessage(completeUpdate);
 
+        // Clean up
+        activeSubscriptions.delete(id);
+
         return null; // No direct response for subscriptions
       } catch (error) {
         const errorUpdate: RpcSubscriptionUpdate = {
@@ -149,6 +212,7 @@ export async function handleRpcMessage(
           },
         };
         ctx.webviewView.webview.postMessage(errorUpdate);
+        activeSubscriptions.delete(id);
         return null;
       }
     }

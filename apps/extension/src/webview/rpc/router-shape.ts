@@ -1,15 +1,13 @@
 /**
- * Router shape definition for webview RPC client
+ * Static router shape definition for webview RPC client
  *
- * This file dynamically generates the router shape from the actual appRouter
- * to ensure it stays in sync with the router implementation.
+ * This file defines the router structure statically to avoid importing
+ * the actual router (which pulls in vscode and other Node.js dependencies).
  *
- * The routerShape export is kept for backwards compatibility,
- * but inferredRouterShape is now the source of truth.
+ * IMPORTANT: Keep this in sync with the actual router in src/rpc/router.ts
  */
 
 import type { RouterRecord, Procedure } from "@clive/webview-rpc";
-import { appRouter } from "../../rpc/router.js";
 
 // Helper to create procedure shapes based on type
 function createProcedureShape<T extends "query" | "mutation" | "subscription">(
@@ -26,49 +24,49 @@ function createProcedureShape<T extends "query" | "mutation" | "subscription">(
 }
 
 /**
- * Check if a value is a Procedure (has _def.type)
+ * Static router shape matching AppRouter structure
+ * This is used by the webview RPC client to create type-safe hooks
  */
-const isProcedure = (
-  value: unknown,
-): value is Procedure<
-  unknown,
-  unknown,
-  unknown,
-  "query" | "mutation" | "subscription"
-> => {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "_def" in value &&
-    typeof (value as { _def?: { type?: string } })._def === "object" &&
-    (value as { _def?: { type?: string } })._def !== null &&
-    typeof (value as { _def: { type: string } })._def.type === "string"
-  );
+export const routerShape: RouterRecord = {
+  status: {
+    cypress: createProcedureShape("query"),
+    branchChanges: createProcedureShape("query"),
+  },
+  agents: {
+    planTests: createProcedureShape("mutation"),
+    generateTest: createProcedureShape("subscription"),
+    executeTest: createProcedureShape("mutation"),
+    cancelTest: createProcedureShape("mutation"),
+    previewDiff: createProcedureShape("mutation"),
+  },
+  auth: {
+    startDeviceAuth: createProcedureShape("mutation"),
+    cancelDeviceAuth: createProcedureShape("mutation"),
+    openLogin: createProcedureShape("mutation"),
+    openSignup: createProcedureShape("mutation"),
+    checkSession: createProcedureShape("query"),
+    logout: createProcedureShape("mutation"),
+    storeToken: createProcedureShape("mutation"),
+  },
+  config: {
+    getApiKeys: createProcedureShape("query"),
+    saveApiKey: createProcedureShape("mutation"),
+    deleteApiKey: createProcedureShape("mutation"),
+    getIndexingStatus: createProcedureShape("query"),
+    triggerReindex: createProcedureShape("mutation"),
+    cancelIndexing: createProcedureShape("mutation"),
+    getIndexingPreference: createProcedureShape("query"),
+    setIndexingEnabled: createProcedureShape("mutation"),
+    completeOnboarding: createProcedureShape("mutation"),
+  },
+  conversations: {
+    start: createProcedureShape("mutation"),
+    sendMessage: createProcedureShape("subscription"),
+    getHistory: createProcedureShape("query"),
+  },
+  system: {
+    ready: createProcedureShape("query"),
+    log: createProcedureShape("mutation"),
+    getTheme: createProcedureShape("query"),
+  },
 };
-
-/**
- * Dynamically create a router shape from a RouterRecord
- * Recursively processes nested routers and extracts procedure types
- */
-export const createRouterShape = (router: RouterRecord): RouterRecord => {
-  return Object.fromEntries(
-    Object.entries(router).map(([key, value]) => {
-      // If it's a procedure, extract the type and create a procedure shape
-      if (isProcedure(value)) {
-        const procedureType = value._def.type as
-          | "query"
-          | "mutation"
-          | "subscription";
-        return [key, createProcedureShape(procedureType)];
-      }
-      // Otherwise, it's a nested router - recursively process it
-      return [key, createRouterShape(value as RouterRecord)];
-    }),
-  ) as RouterRecord;
-};
-
-/**
- * Dynamically inferred router shape based on the actual appRouter
- * This ensures the router shape stays in sync with the router implementation
- */
-export const routerShape = createRouterShape(appRouter);

@@ -19,6 +19,7 @@ export default defineConfig({
     "src/input-otp.tsx",
     "src/toast.tsx",
     "src/components/blocks/index.ts",
+    "src/components/ai-elements/plan.tsx",
   ],
   format: ["esm"],
   dts: true,

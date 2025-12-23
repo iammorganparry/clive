@@ -11,6 +11,9 @@ export * from "./transport.js";
 export * from "./client.js";
 export * from "./hooks.js";
 
+// Re-export RpcSubscriptionMessage for use in handlers
+export type { RpcSubscriptionMessage } from "./types.js";
+
 // Re-export types and functions for convenience
 export type { RpcHookFactories } from "./client.js";
 export { createRpcClient } from "./client.js";

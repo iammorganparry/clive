@@ -129,6 +129,25 @@ export const IndexingStatusCard: React.FC = () => {
     },
   });
 
+  const cancelMutation = rpc.config.cancelIndexing.useMutation({
+    onSuccess: () => {
+      // Refetch status after cancelling
+      setTimeout(() => {
+        queryClient.invalidateQueries({
+          queryKey: ["rpc", "config", "getIndexingStatus"],
+        });
+      }, 500);
+    },
+    onError: () => {
+      // Refetch status even if cancel failed (status might have changed)
+      setTimeout(() => {
+        queryClient.invalidateQueries({
+          queryKey: ["rpc", "config", "getIndexingStatus"],
+        });
+      }, 500);
+    },
+  });
+
   if (prefLoading) {
     return (
       <Card>
@@ -200,6 +219,46 @@ export const IndexingStatusCard: React.FC = () => {
                   </span>
                 )}
               </div>
+
+              {/* Progress indicator when indexing */}
+              {status === "in_progress" &&
+                data &&
+                "progress" in data &&
+                data.progress && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        Indexing {data.progress.filesIndexed} of{" "}
+                        {data.progress.totalFiles} files
+                      </span>
+                      <span>
+                        {data.progress.totalFiles > 0
+                          ? Math.round(
+                              (data.progress.filesIndexed /
+                                data.progress.totalFiles) *
+                                100,
+                            )
+                          : 0}
+                        %
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300"
+                        style={{
+                          width: `${
+                            data.progress.totalFiles > 0
+                              ? (
+                                  data.progress.filesIndexed /
+                                    data.progress.totalFiles
+                                ) * 100
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
             </div>
 
             {data?.repositoryName && (
@@ -241,20 +300,27 @@ export const IndexingStatusCard: React.FC = () => {
                 </div>
               )}
 
-            <Button
-              onClick={() => reindexMutation.mutate()}
-              disabled={
-                status === "in_progress" ||
-                reindexMutation.isPending ||
-                isLoading
-              }
-              variant="outline"
-              className="w-full"
-            >
-              {status === "in_progress" || reindexMutation.isPending
-                ? "Indexing..."
-                : "Re-index Codebase"}
-            </Button>
+            {status === "in_progress" ? (
+              <Button
+                onClick={() => cancelMutation.mutate()}
+                disabled={cancelMutation.isPending}
+                variant="destructive"
+                className="w-full"
+              >
+                {cancelMutation.isPending ? "Cancelling..." : "Cancel Indexing"}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => reindexMutation.mutate()}
+                disabled={reindexMutation.isPending || isLoading}
+                variant="outline"
+                className="w-full"
+              >
+                {reindexMutation.isPending
+                  ? "Starting..."
+                  : "Re-index Codebase"}
+              </Button>
+            )}
           </>
         )}
       </CardContent>

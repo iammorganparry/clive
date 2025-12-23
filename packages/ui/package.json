@@ -72,6 +72,10 @@
       "types": "./dist/components/blocks/index.d.ts",
       "default": "./dist/components/blocks/index.js"
     },
+    "./components/ai-elements/plan": {
+      "types": "./dist/components/ai-elements/plan.d.ts",
+      "default": "./dist/components/ai-elements/plan.js"
+    },
     "./styles.css": {
       "default": "./dist/styles.css"
     }
@@ -100,6 +104,7 @@
     "class-variance-authority": "^0.7.1",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
+    "motion": "^12.23.26",
     "radix-ui": "^1.4.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0"

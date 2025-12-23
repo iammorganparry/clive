@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
 import { CypressTestAgent } from "../../services/ai-agent/agent.js";
-import { PlanningAgent } from "../../services/ai-agent/planning-agent.js";
+import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
 import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
@@ -34,7 +34,8 @@ const getAgentLayer = (ctx: RpcContext) =>
  */
 export const agentsRouter = {
   /**
-   * Plan tests for multiple files
+   * Plan and execute tests with human-in-the-loop approval
+   * Subscription that yields proposals and waits for approval before writing files
    */
   planTests: procedure
     .input(
@@ -42,179 +43,145 @@ export const agentsRouter = {
         files: z.array(z.string()),
       }),
     )
-    .mutation(({ input, ctx }) =>
-      Effect.gen(function* () {
-        const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-        const startTime = Date.now();
+    .subscription(async function* ({
+      input,
+      ctx,
+      signal,
+      onProgress,
+      waitForApproval,
+      subscriptionId,
+    }: {
+      input: { files: string[] };
+      ctx: RpcContext;
+      signal: AbortSignal;
+      onProgress?: (data: unknown) => void;
+      waitForApproval?: (toolCallId: string) => Promise<unknown>;
+      subscriptionId?: string;
+    }) {
+      const serviceLayer = getAgentLayer(ctx);
 
-        yield* Effect.logDebug(
-          `[RpcRouter:${requestId}] ========== Starting test generation planning ==========`,
-        );
-        yield* Effect.logDebug(
-          `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
-        );
+      const result = await Runtime.runPromise(runtime)(
+        Effect.gen(function* () {
+          const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+          const startTime = Date.now();
 
-        const testAgent = yield* CypressTestAgent;
-        const isConfigured = yield* testAgent.isConfigured();
-
-        if (!isConfigured) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
+            `[RpcRouter:${requestId}] ========== Starting test generation with HITL ==========`,
           );
-          yield* Effect.promise(() =>
-            vscode.window.showErrorMessage(
-              "AI Gateway token not available. Please log in to authenticate.",
-            ),
-          );
-          return {
-            tests: [] as ProposedTest[],
-            error: "API key not configured",
-          };
-        }
-
-        if (input.files.length === 0) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ERROR: No files provided`,
+            `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
           );
-          return { tests: [] as ProposedTest[], error: "No files provided" };
-        }
 
-        // Fire-and-forget informational notification
-        vscode.window.showInformationMessage(
-          `Planning Cypress tests for ${input.files.length} file(s)...`,
-        );
+          const testAgent = yield* CypressTestAgent;
+          const isConfigured = yield* testAgent.isConfigured();
 
-        const planningAgent = yield* PlanningAgent;
-        const conversationService = yield* ConversationServiceEffect;
-        const configService = yield* ConfigServiceEffect;
-        const maxConcurrentFiles = yield* configService.getMaxConcurrentFiles();
-
-        // Check if any files have conversation history
-        // If so, process individually to preserve per-file conversations
-        // Otherwise, batch process for efficiency
-        const hasConversationHistory = yield* Effect.gen(function* () {
-          for (const filePath of input.files) {
-            const conversation = yield* conversationService
-              .getOrCreateConversation(filePath)
-              .pipe(Effect.catchAll(() => Effect.succeed(null)));
-            if (conversation) {
-              const messages = yield* conversationService
-                .getMessages(conversation.id)
-                .pipe(Effect.catchAll(() => Effect.succeed([])));
-              if (messages.length > 0) {
-                return true;
-              }
-            }
-          }
-          return false;
-        }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-
-        let results: Array<{
-          tests: ProposedTest[];
-          conversationId?: string;
-          sourceFile: string;
-        }>;
-
-        if (hasConversationHistory) {
-          // Process files individually to preserve per-file conversation history
-          results = yield* Effect.all(
-            input.files.map((filePath: string) =>
-              Effect.gen(function* () {
-                // Get or create conversation for this file
-                const conversation = yield* conversationService
-                  .getOrCreateConversation(filePath)
-                  .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-                // Get conversation history if exists
-                let conversationHistory: Array<{
-                  role: "user" | "assistant" | "system";
-                  content: string;
-                }> = [];
-                if (conversation) {
-                  const messages = yield* conversationService
-                    .getMessages(conversation.id)
-                    .pipe(Effect.catchAll(() => Effect.succeed([])));
-                  conversationHistory = messages.map((msg) => ({
-                    role: msg.role as "user" | "assistant" | "system",
-                    content: msg.content,
-                  }));
-                }
-
-                // Plan test for this file with conversation history
-                const result = yield* planningAgent.planTest(filePath, {
-                  conversationHistory,
-                  outputChannel: ctx.outputChannel,
-                  progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
-                });
-
-                // Save assistant response to conversation if we have one
-                if (conversation && result.response) {
-                  yield* conversationService
-                    .addMessage(conversation.id, "assistant", result.response)
-                    .pipe(Effect.catchAll(() => Effect.void));
-                }
-
-                return {
-                  tests: result.tests,
-                  conversationId: conversation?.id,
-                  sourceFile: filePath,
-                };
-              }),
-            ),
-            { concurrency: maxConcurrentFiles },
-          );
-        } else {
-          // No conversation history - batch process for efficiency
-          const result = yield* planningAgent.planTest(input.files, {
-            outputChannel: ctx.outputChannel,
-            progressCallback: () => {}, // Progress callback - handled by subscription for generateTest
-          });
-
-          // Convert to expected format
-          results = input.files.map((filePath) => ({
-            tests: result.tests.filter((test) => test.sourceFile === filePath),
-            sourceFile: filePath,
-          }));
-        }
-
-        // Aggregate all results
-        const allTests = results.flatMap(
-          (r: {
-            tests: ProposedTest[];
-            conversationId?: string;
-            sourceFile: string;
-          }) => r.tests,
-        );
-
-        yield* Effect.logDebug(
-          `[RpcRouter:${requestId}] Aggregated ${allTests.length} test(s) from ${results.length} file(s)`,
-        );
-
-        const totalDuration = Date.now() - startTime;
-        yield* Effect.logDebug(
-          `[RpcRouter:${requestId}] ========== Test generation planning completed in ${totalDuration}ms ==========`,
-        );
-
-        return { tests: allTests };
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.gen(function* () {
-            const errorMessage =
-              error instanceof Error ? error.message : "Unknown error";
+          if (!isConfigured) {
             yield* Effect.logDebug(
-              `[RpcRouter] Planning failed: ${errorMessage}`,
+              `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
             );
             yield* Effect.promise(() =>
               vscode.window.showErrorMessage(
-                `Failed to plan tests: ${errorMessage}`,
+                "AI Gateway token not available. Please log in to authenticate.",
               ),
             );
-            return { tests: [] as ProposedTest[], error: errorMessage };
-          }),
+            return {
+              proposals: [] as ProposedTest[],
+              executions: [],
+              error: "API key not configured",
+            };
+          }
+
+          if (input.files.length === 0) {
+            yield* Effect.logDebug(
+              `[RpcRouter:${requestId}] ERROR: No files provided`,
+            );
+            return {
+              proposals: [] as ProposedTest[],
+              executions: [],
+              error: "No files provided",
+            };
+          }
+
+          vscode.window.showInformationMessage(
+            `Planning Cypress tests for ${input.files.length} file(s)...`,
+          );
+
+          const testingAgent = yield* TestingAgent;
+
+          // Progress callback that yields to client
+          const progressCallback = (status: string, message: string) => {
+            if (onProgress) {
+              // Check if this is a special event type (JSON)
+              if (
+                status === "proposal" ||
+                status === "plan_file_created" ||
+                status === "content_streamed"
+              ) {
+                try {
+                  const eventData = JSON.parse(message);
+                  onProgress({
+                    ...eventData,
+                    subscriptionId: subscriptionId || "",
+                  });
+                } catch {
+                  // Not JSON, send as regular progress
+                  onProgress({ type: "progress", status, message });
+                }
+              } else {
+                onProgress({ type: "progress", status, message });
+              }
+            }
+          };
+
+          // Use planAndExecuteTests with HITL
+          const result = yield* testingAgent.planAndExecuteTests(input.files, {
+            outputChannel: ctx.outputChannel,
+            progressCallback,
+            waitForApproval: waitForApproval
+              ? async (toolCallId: string) => {
+                  return await waitForApproval(toolCallId);
+                }
+              : undefined,
+          });
+
+          const totalDuration = Date.now() - startTime;
+          yield* Effect.logDebug(
+            `[RpcRouter:${requestId}] ========== Completed in ${totalDuration}ms ==========`,
+          );
+
+          return result;
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+              yield* Effect.logDebug(
+                `[RpcRouter] Planning failed: ${errorMessage}`,
+              );
+              yield* Effect.promise(() =>
+                vscode.window.showErrorMessage(
+                  `Failed to plan tests: ${errorMessage}`,
+                ),
+              );
+              return {
+                proposals: [] as ProposedTest[],
+                executions: [],
+                error: errorMessage,
+              };
+            }),
+          ),
+          Effect.provide(serviceLayer),
         ),
-        provideAgentLayer(ctx),
-      ),
-    ),
+      );
+
+      // Yield proposals as they come in (handled by progressCallback)
+      // Final result is returned below
+
+      return {
+        proposals: result.proposals || [],
+        executions: result.executions || [],
+      };
+    }),
 
   /**
    * Generate test for a single file (subscription with progress updates)

@@ -1,4 +1,4 @@
-import { Data, Effect, Ref } from "effect";
+import { Data, Effect } from "effect";
 import vscode from "vscode";
 import { embedMany } from "ai";
 import { createHash } from "crypto";
@@ -13,6 +13,7 @@ import {
   getWorkspaceRoot,
   getRelativePath,
 } from "../lib/vscode-effects.js";
+import { estimateTokensFast } from "../utils/token-utils.js";
 
 /**
  * File metadata stored in the index
@@ -103,8 +104,57 @@ export const INDEXING_EXCLUDE_PATTERNS = [
 /**
  * Maximum number of files to index (for testing - set to a small number)
  * Set to null or a large number to index all files
+ * TODO: Make this dynamic based on plan level
  */
-export const MAX_FILES_TO_INDEX = 5;
+export const MAX_FILES_TO_INDEX = 1000;
+
+/**
+ * Maximum tokens per embedding batch (leave headroom below 8192 limit)
+ */
+const MAX_EMBEDDING_BATCH_TOKENS = 7000;
+
+/**
+ * Maximum tokens per chunk when splitting large files
+ */
+const MAX_CHUNK_TOKENS = 6000;
+
+/**
+ * Maximum number of files to upsert in a single batch (for database efficiency)
+ */
+const MAX_UPSERT_BATCH_SIZE = 100;
+
+/**
+ * File chunk structure for splitting large files
+ */
+interface FileChunk {
+  originalPath: string; // Original file path
+  chunkPath: string; // Path with part suffix (e.g., "src/file.ts (part 1/3)")
+  content: string; // Chunk content
+  partNumber: number; // 1-indexed part number
+  totalParts: number; // Total number of parts
+  fileType: string; // File type extension
+  lastModified: number; // Last modified timestamp
+}
+
+/**
+ * Module-level shared state for indexing (singleton across service invocations)
+ * This ensures the forked daemon and RPC queries share the same state
+ */
+let indexingState: {
+  status: IndexingStatus;
+  error?: string;
+  progress?: {
+    filesIndexed: number;
+    totalFiles: number;
+  };
+} = { status: "idle" };
+
+let cancellationRequested = false;
+
+/**
+ * AbortController for cancelling active embedding API requests
+ */
+let currentAbortController: AbortController | null = null;
 
 /**
  * Service for indexing codebase files with embeddings and semantic search
@@ -119,14 +169,62 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
       const repositoryService = yield* RepositoryService;
 
       /**
-       * In-memory indexing state tracker using Effect Ref
+       * Check for cancellation and interrupt if cancelled
        */
-      const indexingStateRef = yield* Ref.make<{
-        status: IndexingStatus;
-        error?: string;
-      }>({
-        status: "idle",
-      });
+      const checkCancellation = () =>
+        Effect.gen(function* () {
+          const isCancelled = yield* Effect.sync(() => cancellationRequested);
+          if (isCancelled) {
+            return yield* Effect.interrupt;
+          }
+        });
+
+      /**
+       * Update indexing progress state
+       */
+      const updateProgress = (filesIndexed: number, totalFiles: number) =>
+        Effect.sync(() => {
+          indexingState = {
+            status: "in_progress",
+            progress: { filesIndexed, totalFiles },
+          };
+        });
+
+      /**
+       * Upsert files with in-memory fallback
+       */
+      const upsertWithFallback = (
+        repositoryId: string | undefined,
+        files: IndexedFile[],
+      ) =>
+        Effect.gen(function* () {
+          if (repositoryId) {
+            // Split into batches for database efficiency
+            for (let i = 0; i < files.length; i += MAX_UPSERT_BATCH_SIZE) {
+              const batch = files.slice(i, i + MAX_UPSERT_BATCH_SIZE);
+              yield* Effect.all(
+                batch.map((indexedFile) =>
+                  storeFile(repositoryId, indexedFile).pipe(
+                    Effect.catchAll(() =>
+                      Effect.sync(() => {
+                        inMemoryIndex.set(
+                          indexedFile.relativePath,
+                          indexedFile,
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+                { concurrency: 10 },
+              );
+            }
+          } else {
+            // Store in-memory if no repository context
+            for (const indexedFile of files) {
+              inMemoryIndex.set(indexedFile.relativePath, indexedFile);
+            }
+          }
+        });
 
       /**
        * Compute embeddings for multiple texts using AI SDK (batch processing)
@@ -138,9 +236,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             return [];
           }
 
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Computing embeddings for ${texts.length} texts`,
-          );
+          yield* checkCancellation();
 
           // Always use gateway token for embeddings (OpenAI) - user's stored key is for Anthropic
           const gatewayToken = yield* configService.getAiGatewayToken();
@@ -149,11 +245,17 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             isGateway: true,
           });
 
+          // Create new abort controller for this batch
+          yield* Effect.sync(() => {
+            currentAbortController = new AbortController();
+          });
+
           const embeddings = yield* Effect.tryPromise({
             try: async () => {
               const { embeddings: results } = await embedMany({
                 model: provider.embedding(AIModels.openai.embedding),
                 values: texts,
+                abortSignal: currentAbortController?.signal,
               });
 
               if (!results || results.length === 0) {
@@ -168,17 +270,29 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
 
               return results;
             },
-            catch: (error) =>
-              new EmbeddingError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
+            catch: (error) => {
+              // Clear abort controller on error (including abort)
+              currentAbortController = null;
+              const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+              return new EmbeddingError({
+                message: errorMessage,
                 cause: error,
-              }),
+              });
+            },
+          }).pipe(
+            Effect.tapError((error) =>
+              Effect.logDebug(
+                `[CodebaseIndexing] Embedding computation failed: ${error instanceof EmbeddingError ? error.message : String(error)}`,
+              ),
+            ),
+          );
+
+          // Clear abort controller after successful completion
+          yield* Effect.sync(() => {
+            currentAbortController = null;
           });
 
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Computed ${embeddings.length} embeddings`,
-          );
           return embeddings;
         });
 
@@ -242,10 +356,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         repositoryId?: string,
       ) =>
         Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Semantic search: "${query}" (limit: ${limit})`,
-          );
-
           // Compute embedding for query
           const queryEmbedding = yield* computeEmbedding(query);
 
@@ -253,22 +363,10 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           if (repositoryId) {
             const dbResults = yield* repositoryService
               .searchFiles(repositoryId, queryEmbedding, limit)
-              .pipe(
-                Effect.catchAll((error) =>
-                  Effect.gen(function* () {
-                    yield* Effect.logDebug(
-                      `[CodebaseIndexing] Database search failed (will use in-memory): ${error.message}`,
-                    );
-                    return [];
-                  }),
-                ),
-              );
+              .pipe(Effect.catchAll(() => Effect.succeed([])));
 
             // If we got results from database, convert and return them
             if (dbResults.length > 0) {
-              yield* Effect.logDebug(
-                `[CodebaseIndexing] Found ${dbResults.length} results from database`,
-              );
               return dbResults.map((result) => ({
                 filePath: result.relativePath, // Will need full path in real implementation
                 relativePath: result.relativePath,
@@ -280,7 +378,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           }
 
           // Fallback: search in-memory index
-          yield* Effect.logDebug("[CodebaseIndexing] Using in-memory search");
           return yield* searchInMemory(queryEmbedding, limit);
         });
 
@@ -289,10 +386,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const indexFile = (filePath: string, repositoryId?: string) =>
         Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Indexing file: ${filePath}`,
-          );
-
           const workspaceRoot = yield* getWorkspaceRoot();
           const fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
 
@@ -321,36 +414,135 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             lastModified: stats.mtime,
           };
 
-          // Try to store in database if repositoryId is provided
-          if (repositoryId) {
-            yield* storeFile(repositoryId, indexedFile).pipe(
-              Effect.catchAll(() =>
-                Effect.gen(function* () {
-                  // Store in-memory as fallback
-                  inMemoryIndex.set(indexedFile.relativePath, indexedFile);
-                  yield* Effect.logDebug(
-                    `[CodebaseIndexing] Stored in-memory: ${relativePath}`,
-                  );
-                }),
-              ),
-            );
-          } else {
-            // Store in-memory if no repository context
-            inMemoryIndex.set(indexedFile.relativePath, indexedFile);
-            yield* Effect.logDebug(
-              `[CodebaseIndexing] Stored in-memory: ${relativePath}`,
-            );
-          }
-
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Indexed file: ${relativePath}`,
-          );
+          // Upsert with fallback
+          yield* upsertWithFallback(repositoryId, [indexedFile]);
 
           return indexedFile;
         });
 
       /**
-       * Index multiple files in batch (efficient batch embedding)
+       * Split a large file into chunks that fit within token limits
+       * Returns array of chunks (or single chunk if file is small enough)
+       */
+      const splitIntoChunks = (
+        relativePath: string,
+        content: string,
+        fileType: string,
+        lastModified: number,
+      ): FileChunk[] => {
+        const totalTokens = estimateTokensFast(content);
+
+        // If file fits in one chunk, return single chunk
+        if (totalTokens <= MAX_CHUNK_TOKENS) {
+          return [
+            {
+              originalPath: relativePath,
+              chunkPath: relativePath,
+              content,
+              partNumber: 1,
+              totalParts: 1,
+              fileType,
+              lastModified,
+            },
+          ];
+        }
+
+        // Split into chunks by lines
+        const lines = content.split("\n");
+        const estimatedTotalParts = Math.ceil(totalTokens / MAX_CHUNK_TOKENS);
+        const chunks: FileChunk[] = [];
+        let currentChunkLines: string[] = [];
+        let currentChunkTokens = 0;
+        let partNumber = 1;
+
+        for (const line of lines) {
+          const lineTokens = estimateTokensFast(line + "\n");
+
+          // If adding this line would exceed the limit, finalize current chunk
+          if (
+            currentChunkTokens + lineTokens > MAX_CHUNK_TOKENS &&
+            currentChunkLines.length > 0
+          ) {
+            chunks.push({
+              originalPath: relativePath,
+              chunkPath: `${relativePath} (part ${partNumber}/${estimatedTotalParts})`,
+              content: currentChunkLines.join("\n"),
+              partNumber,
+              totalParts: estimatedTotalParts,
+              fileType,
+              lastModified,
+            });
+            currentChunkLines = [];
+            currentChunkTokens = 0;
+            partNumber++;
+          }
+
+          currentChunkLines.push(line);
+          currentChunkTokens += lineTokens;
+        }
+
+        // Add final chunk if there are remaining lines
+        if (currentChunkLines.length > 0) {
+          const actualTotalParts = chunks.length + 1;
+          chunks.push({
+            originalPath: relativePath,
+            chunkPath: `${relativePath} (part ${partNumber}/${actualTotalParts})`,
+            content: currentChunkLines.join("\n"),
+            partNumber,
+            totalParts: actualTotalParts,
+            fileType,
+            lastModified,
+          });
+        }
+
+        return chunks;
+      };
+
+      /**
+       * Batch files by token count to fit within embedding limits
+       */
+      const batchFilesByTokens = <T extends { content: string }>(
+        files: T[],
+        maxTokens: number,
+      ): T[][] => {
+        const batches: T[][] = [];
+        let currentBatch: T[] = [];
+        let currentBatchTokens = 0;
+
+        for (const file of files) {
+          const fileTokens = estimateTokensFast(file.content);
+
+          // If a single file exceeds the limit, put it in its own batch
+          if (fileTokens > maxTokens) {
+            if (currentBatch.length > 0) {
+              batches.push(currentBatch);
+              currentBatch = [];
+              currentBatchTokens = 0;
+            }
+            batches.push([file]);
+            continue;
+          }
+
+          // Check if adding this file would exceed the limit
+          if (currentBatchTokens + fileTokens > maxTokens) {
+            batches.push(currentBatch);
+            currentBatch = [file];
+            currentBatchTokens = fileTokens;
+          } else {
+            currentBatch.push(file);
+            currentBatchTokens += fileTokens;
+          }
+        }
+
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch);
+        }
+
+        return batches;
+      };
+
+      /**
+       * Index multiple files in batch (efficient batch embedding with token limits)
        */
       const indexFiles = (filePaths: string[], repositoryId?: string) =>
         Effect.gen(function* () {
@@ -394,53 +586,67 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             { concurrency: 10 },
           );
 
-          // Batch embed all texts at once
-          const texts = fileData.map((f) => f.content);
-          const embeddings = yield* computeEmbeddings(texts);
-
-          // Create indexed files with embeddings
-          const indexedFiles: IndexedFile[] = fileData.map((file, idx) => ({
-            filePath: file.fileUri.fsPath,
-            relativePath: file.relativePath,
-            content: file.content,
-            embedding: embeddings[idx],
-            fileType: file.fileType,
-            lastModified: file.lastModified,
-          }));
-
-          // Store all files (in parallel)
-          if (repositoryId) {
-            yield* Effect.all(
-              indexedFiles.map((indexedFile) =>
-                storeFile(repositoryId, indexedFile).pipe(
-                  Effect.catchAll(() =>
-                    Effect.gen(function* () {
-                      // Store in-memory as fallback
-                      inMemoryIndex.set(indexedFile.relativePath, indexedFile);
-                      yield* Effect.logDebug(
-                        `[CodebaseIndexing] Stored in-memory: ${indexedFile.relativePath}`,
-                      );
-                    }),
-                  ),
-                ),
-              ),
-              { concurrency: 10 },
+          // Split large files into chunks
+          const fileChunks: FileChunk[] = [];
+          for (const file of fileData) {
+            const chunks = splitIntoChunks(
+              file.relativePath,
+              file.content,
+              file.fileType,
+              file.lastModified,
             );
-          } else {
-            // Store in-memory if no repository context
-            for (const indexedFile of indexedFiles) {
-              inMemoryIndex.set(indexedFile.relativePath, indexedFile);
-              yield* Effect.logDebug(
-                `[CodebaseIndexing] Stored in-memory: ${indexedFile.relativePath}`,
-              );
-            }
+            fileChunks.push(...chunks);
           }
 
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Batch indexed ${indexedFiles.length} files`,
+          // Batch chunks by token count to fit within embedding limits
+          const embeddingBatches = batchFilesByTokens(
+            fileChunks,
+            MAX_EMBEDDING_BATCH_TOKENS,
           );
 
-          return indexedFiles;
+          yield* Effect.logDebug(
+            `[CodebaseIndexing] Processing ${embeddingBatches.length} embedding batches`,
+          );
+
+          // Generate embeddings and upsert each batch immediately
+          const allIndexedFiles: IndexedFile[] = [];
+          for (let i = 0; i < embeddingBatches.length; i++) {
+            yield* checkCancellation();
+
+            const batch = embeddingBatches[i];
+            yield* Effect.logDebug(
+              `[CodebaseIndexing] Processing batch ${i + 1}/${embeddingBatches.length} (${batch.length} chunks)`,
+            );
+
+            const texts = batch.map((f) => f.content);
+            const batchEmbeddings = yield* computeEmbeddings(texts);
+
+            // Create indexed files for this batch immediately
+            const batchIndexedFiles: IndexedFile[] = batch.map(
+              (chunk, chunkIdx) => {
+                // Find original file path for full file path
+                const originalFile = fileData.find(
+                  (f) => f.relativePath === chunk.originalPath,
+                );
+                return {
+                  filePath: originalFile?.fileUri.fsPath || chunk.chunkPath,
+                  relativePath: chunk.chunkPath,
+                  content: chunk.content,
+                  embedding: batchEmbeddings[chunkIdx],
+                  fileType: chunk.fileType,
+                  lastModified: chunk.lastModified,
+                };
+              },
+            );
+
+            // Upsert this batch immediately
+            yield* upsertWithFallback(repositoryId, batchIndexedFiles);
+
+            // Accumulate for return value
+            allIndexedFiles.push(...batchIndexedFiles);
+          }
+
+          return allIndexedFiles;
         });
 
       /**
@@ -448,8 +654,14 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const indexWorkspace = () =>
         Effect.gen(function* () {
-          // Update status to in_progress
-          yield* Ref.set(indexingStateRef, { status: "in_progress" });
+          // Reset cancellation flag and update status to in_progress
+          yield* Effect.sync(() => {
+            cancellationRequested = false;
+            indexingState = {
+              status: "in_progress",
+              progress: { filesIndexed: 0, totalFiles: 0 },
+            };
+          });
           yield* Effect.logDebug(
             "[CodebaseIndexing] Starting workspace indexing",
           );
@@ -508,6 +720,9 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             `[CodebaseIndexing] Found ${uniqueFiles.length} files, limiting to ${filesToIndex.length} for indexing`,
           );
 
+          // Update progress with total files count
+          yield* updateProgress(0, filesToIndex.length);
+
           // Single batch query - get all existing file hashes for O(1) lookups
           const existingHashes = yield* repositoryService
             .getFileHashes(repositoryId)
@@ -521,10 +736,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
                 }),
               ),
             );
-
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Retrieved ${existingHashes.size} existing file hashes`,
-          );
 
           // Read all files and identify which need indexing
           const readConcurrency = 20;
@@ -555,13 +766,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           let skipped = unchangedFiles.length;
           let indexed = 0;
 
-          // Log skipped files
-          for (const file of unchangedFiles) {
-            yield* Effect.logDebug(
-              `[CodebaseIndexing] Skipping unchanged: ${file.relativePath}`,
-            );
-          }
-
           // Batch embed all files that need indexing (in chunks if too many)
           if (filesToEmbed.length > 0) {
             const maxEmbeddingBatchSize = 100; // Reasonable limit to avoid timeouts
@@ -572,6 +776,8 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
               i < filesToEmbed.length;
               i += maxEmbeddingBatchSize
             ) {
+              yield* checkCancellation();
+
               const chunk = filesToEmbed.slice(i, i + maxEmbeddingBatchSize);
               const chunkPaths = chunk.map((f) => f.relativePath);
 
@@ -596,26 +802,68 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
               indexed += indexedFiles.length;
               skipped += chunk.length - indexedFiles.length;
 
+              // Calculate progress: files processed from filesToEmbed + unchanged files already counted
+              const filesProcessedFromEmbed = Math.min(
+                i + chunk.length,
+                filesToEmbed.length,
+              );
+              const totalFilesProcessed =
+                filesProcessedFromEmbed + unchangedFiles.length;
+
+              // Update progress
+              yield* updateProgress(totalFilesProcessed, filesToIndex.length);
+
               yield* Effect.logDebug(
                 `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${filesToIndex.length} files`,
               );
             }
+          } else {
+            // If no files to embed, all files were skipped (unchanged)
+            yield* updateProgress(filesToIndex.length, filesToIndex.length);
           }
 
           yield* Effect.logDebug(
             `[CodebaseIndexing] Workspace indexing complete: ${indexed} files indexed, ${skipped} unchanged files skipped`,
           );
 
+          // Check if cancelled before marking complete
+          const isCancelled = yield* Effect.sync(() => cancellationRequested);
+          if (isCancelled) {
+            yield* Effect.sync(() => {
+              indexingState = { status: "idle" };
+            });
+            return yield* Effect.interrupt;
+          }
+
           // Update status to complete
-          yield* Ref.set(indexingStateRef, { status: "complete" });
+          yield* Effect.sync(() => {
+            indexingState = {
+              status: "complete",
+              progress: undefined,
+            };
+          });
         }).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
+              // Check if error was due to cancellation
+              const isCancelled = yield* Effect.sync(
+                () => cancellationRequested,
+              );
+              if (isCancelled) {
+                yield* Effect.sync(() => {
+                  indexingState = { status: "idle" };
+                });
+                return yield* Effect.interrupt;
+              }
+
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
-              yield* Ref.set(indexingStateRef, {
-                status: "error",
-                error: errorMessage,
+              yield* Effect.sync(() => {
+                indexingState = {
+                  status: "error",
+                  error: errorMessage,
+                  progress: undefined,
+                };
               });
               yield* Effect.logDebug(
                 `[CodebaseIndexing] Indexing failed: ${errorMessage}`,
@@ -633,10 +881,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         limit: number,
       ): Effect.Effect<SearchResult[]> =>
         Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[CodebaseIndexing] Searching in-memory index (${inMemoryIndex.size} files)`,
-          );
-
           const results: SearchResult[] = [];
 
           for (const [relativePath, indexedFile] of inMemoryIndex.entries()) {
@@ -665,9 +909,23 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const getStatus = () =>
         Effect.gen(function* () {
-          const state = yield* Ref.get(indexingStateRef);
+          const state = yield* Effect.sync(() => indexingState);
           return state.status;
         });
+
+      /**
+       * Get current indexing state (including progress)
+       */
+      const getState = () =>
+        Effect.gen(function* () {
+          const state = yield* Effect.sync(() => indexingState);
+          return state;
+        });
+
+      /**
+       * Cancel active indexing operation
+       */
+      const cancelIndexing = () => cancelIndexingDirect();
 
       return {
         indexFile,
@@ -675,6 +933,8 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         indexWorkspace,
         semanticSearch,
         getStatus,
+        getState,
+        cancelIndexing,
       };
     }),
     // No dependencies - allows test injection via Layer.provide()
@@ -691,6 +951,24 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
  * Use CodebaseIndexingService.Default directly - dependencies provided at composition site.
  */
 export const CodebaseIndexingServiceLive = CodebaseIndexingService.Default;
+
+/**
+ * Cancel active indexing operation (standalone function for RPC)
+ * Does not require service instantiation - directly manipulates module-level state
+ */
+export const cancelIndexingDirect = () =>
+  Effect.gen(function* () {
+    yield* Effect.sync(() => {
+      cancellationRequested = true;
+      indexingState = { status: "idle" };
+      // Abort any active embedding request
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+    });
+    yield* Effect.logDebug("[CodebaseIndexing] Indexing cancelled");
+  });
 
 /**
  * Helper function to compute cosine similarity between two vectors

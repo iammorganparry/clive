@@ -1,177 +1,74 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { Effect, Runtime, Layer } from "effect";
-import type { TokenBudgetService } from "../token-budget.js";
-import {
-  CodebaseIndexingServiceLive,
-  CodebaseIndexingService,
-} from "../../codebase-indexing-service.js";
-import { VSCodeService, SecretStorageService } from "../../vs-code.js";
-import { ConfigServiceLive, ConfigService } from "../../config-service.js";
-import { ApiKeyServiceLive, ApiKeyService } from "../../api-key-service.js";
-import {
-  RepositoryServiceLive,
-  RepositoryService,
-} from "../../repository-service.js";
-import { countTokensInText } from "../../../utils/token-utils.js";
+import type { CodebaseIndexingService } from "../../codebase-indexing-service.js";
+import { ConfigService } from "../../config-service.js";
+import { SecretStorageService } from "../../vs-code.js";
 
-export interface SemanticSearchInput {
-  query: string;
-  limit?: number;
-  fileType?: string;
-}
-
-export interface SemanticSearchOutput {
-  results: Array<{
-    filePath: string;
-    relativePath: string;
-    content: string;
-    similarity: number;
-    fileType: string;
-  }>;
-  query: string;
-  totalResults: number;
+/**
+ * Search result from semantic search
+ */
+export interface SemanticSearchResult {
+  filePath: string;
+  relativePath: string;
+  content: string;
+  similarity: number;
+  fileType: string;
 }
 
 /**
- * Factory function to create semanticSearchTool with token budget awareness
- * Uses CodebaseIndexingService for semantic search across indexed files
+ * Create a semantic search tool that searches the indexed codebase
+ * Uses CodebaseIndexingService to find related code patterns and files
+ * Falls back to in-memory search if repository ID is not available
  */
-export const createSemanticSearchTool = (budget: TokenBudgetService) =>
-  tool({
+export const createSemanticSearchTool = (
+  indexingService: CodebaseIndexingService,
+) => {
+  const runtime = Runtime.defaultRuntime;
+
+  return tool({
     description:
-      "Search the codebase semantically to find files, components, routes, or tests related to a query. This uses embeddings to find semantically similar code, not just text matches. Use this to: find which page/route contains a component, find existing tests for related functionality, find related components or utilities, understand how a feature fits into the application.",
+      "Search the indexed codebase for related code patterns, components, and files using semantic similarity. Use this to find related components, existing test patterns, route definitions, and understand code dependencies. This searches both the database-indexed files and in-memory indexed files.",
     inputSchema: z.object({
       query: z
         .string()
         .describe(
-          "The semantic search query. Examples: 'login page component', 'dashboard route configuration', 'user authentication tests', 'API call to fetch user data'",
+          "Natural language query describing what you're looking for (e.g., 'login form component', 'existing Cypress tests for authentication', 'route definitions for dashboard')",
         ),
       limit: z
         .number()
         .optional()
         .default(10)
         .describe("Maximum number of results to return (default: 10)"),
-      fileType: z
-        .string()
-        .optional()
-        .describe(
-          "Optional file type filter (e.g., 'tsx', 'ts', 'cy.ts'). If not provided, searches all file types.",
-        ),
     }),
     execute: async ({
       query,
       limit = 10,
-      fileType,
-    }: SemanticSearchInput): Promise<SemanticSearchOutput> => {
-      return Runtime.runPromise(Runtime.defaultRuntime)(
-        Effect.gen(function* () {
-          const indexingService = yield* CodebaseIndexingService;
-
-          // Perform semantic search
-          const results = yield* indexingService.semanticSearch(query, limit);
-
-          // Filter by file type if specified
-          const filteredResults = fileType
-            ? results.filter((r) => r.fileType === fileType)
-            : results;
-
-          // Format results for token counting
-          const resultsText = JSON.stringify(
-            { results: filteredResults, query },
-            null,
-            2,
-          );
-
-          // Apply budget-aware truncation (MEDIUM priority - search results)
-          const { content: truncated, wasTruncated } =
-            yield* budget.truncateToFit(resultsText, "medium");
-
-          // Consume tokens for the truncated content
-          const tokens = countTokensInText(truncated);
-          yield* budget.consume(tokens);
-
-          // Parse back to output format if truncated
-          let finalOutput: SemanticSearchOutput;
-          if (wasTruncated) {
-            try {
-              const parsed = JSON.parse(truncated) as SemanticSearchOutput;
-              finalOutput = {
-                ...parsed,
-                results: parsed.results.slice(0, limit),
-              };
-            } catch {
-              // If parsing fails, return empty results
-              finalOutput = {
-                results: [],
-                query,
-                totalResults: 0,
-              };
-            }
-          } else {
-            finalOutput = {
-              results: filteredResults.slice(0, limit),
-              query,
-              totalResults: filteredResults.length,
-            };
-          }
-
-          return finalOutput;
-        }).pipe(
-          Effect.provide(
-            (() => {
-              // Build layer with proper dependency ordering
-              const coreLayer = Layer.mergeAll(
-                VSCodeService.Default,
-                SecretStorageService.Default,
-              );
-
-              // ApiKeyService depends on SecretStorageService
-              const apiKeyLayer = ApiKeyServiceLive.pipe(
-                Layer.provide(coreLayer),
-              );
-
-              // ConfigService depends on SecretStorageService and ApiKeyService
-              const configLayer = ConfigServiceLive.pipe(
-                Layer.provide(coreLayer),
-                Layer.provide(apiKeyLayer),
-              );
-
-              // Base layer with all core + base services
-              const baseLayer = Layer.mergeAll(
-                coreLayer,
-                apiKeyLayer,
-                configLayer,
-              );
-
-              // RepositoryService depends on ConfigService
-              const repoLayer = RepositoryServiceLive.pipe(
-                Layer.provide(baseLayer),
-              );
-
-              const domainLayer = Layer.mergeAll(baseLayer, repoLayer);
-
-              // CodebaseIndexingService depends on domain services
-              const indexingLayer = CodebaseIndexingServiceLive.pipe(
-                Layer.provide(domainLayer),
-              );
-
-              return Layer.mergeAll(domainLayer, indexingLayer);
-            })(),
-          ),
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              yield* Effect.logDebug(
-                `[SemanticSearchTool] Error: ${error instanceof Error ? error.message : String(error)}`,
-              );
-              return {
-                results: [],
-                query,
-                totalResults: 0,
-              } as SemanticSearchOutput;
-            }),
-          ),
-        ),
+    }: {
+      query: string;
+      limit?: number;
+    }): Promise<{
+      results: SemanticSearchResult[];
+      query: string;
+      count: number;
+    }> => {
+      // Perform semantic search (repositoryId is optional - will use in-memory fallback if not provided)
+      // Provide required dependencies for the Effect
+      const layer = Layer.merge(
+        ConfigService.Default,
+        SecretStorageService.Default,
       );
+      const results = await Runtime.runPromise(runtime)(
+        indexingService
+          .semanticSearch(query, limit)
+          .pipe(Effect.provide(layer)),
+      );
+
+      return {
+        results,
+        query,
+        count: results.length,
+      };
     },
   });
+};
