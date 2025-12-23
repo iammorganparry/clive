@@ -15,3 +15,13 @@ export {
   createWriteTestFileTool,
 } from "./write-test-file.js";
 export { proposeTestTool, createProposeTestTool } from "./propose-test.js";
+
+// Knowledge base tools
+export {
+  createSearchKnowledgeBaseTool,
+  searchKnowledgeBaseTool,
+} from "./search-knowledge-base.js";
+export {
+  createUpsertKnowledgeTool,
+  upsertKnowledgeTool,
+} from "./upsert-knowledge.js";

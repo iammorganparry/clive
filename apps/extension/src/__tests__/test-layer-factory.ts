@@ -33,6 +33,8 @@ import { RepositoryService } from "../services/repository-service.js";
 import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
 import { ConversationService } from "../services/conversation-service.js";
 import { ReactFileFilter } from "../services/react-file-filter.js";
+import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
+import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 
 // =============================================================================
 // Types
@@ -302,6 +304,69 @@ export function createMockReactFileFilterLayer(
   } as unknown as ReactFileFilter);
 }
 
+export interface KnowledgeBaseAgentOverrides {
+  analyze?: Mock;
+}
+
+/**
+ * Create a mock KnowledgeBaseAgent layer
+ */
+export function createMockKnowledgeBaseAgentLayer(
+  overrides: KnowledgeBaseAgentOverrides = {},
+): Layer.Layer<KnowledgeBaseAgent> {
+  const defaults = {
+    analyze: vi.fn().mockReturnValue(
+      Effect.succeed({
+        success: true,
+        entryCount: 0,
+      }),
+    ),
+  };
+
+  return Layer.succeed(KnowledgeBaseAgent, {
+    _tag: "KnowledgeBaseAgent",
+    ...defaults,
+    ...overrides,
+  } as unknown as KnowledgeBaseAgent);
+}
+
+export interface KnowledgeBaseServiceOverrides {
+  analyzeRepository?: Mock;
+  getStatus?: Mock;
+  searchKnowledge?: Mock;
+}
+
+/**
+ * Create a mock KnowledgeBaseService layer
+ */
+export function createMockKnowledgeBaseServiceLayer(
+  overrides: KnowledgeBaseServiceOverrides = {},
+): Layer.Layer<KnowledgeBaseService> {
+  const defaults = {
+    analyzeRepository: vi.fn().mockReturnValue(
+      Effect.succeed({
+        success: true,
+        entryCount: 0,
+      }),
+    ),
+    getStatus: vi.fn().mockReturnValue(
+      Effect.succeed({
+        hasKnowledge: false,
+        lastUpdatedAt: null,
+        categories: [],
+        entryCount: 0,
+      }),
+    ),
+    searchKnowledge: vi.fn().mockReturnValue(Effect.succeed([])),
+  };
+
+  return Layer.succeed(KnowledgeBaseService, {
+    _tag: "KnowledgeBaseService",
+    ...defaults,
+    ...overrides,
+  } as unknown as KnowledgeBaseService);
+}
+
 // =============================================================================
 // Composed Test Layers (mirror production layer-factory.ts)
 // =============================================================================
@@ -367,7 +432,7 @@ export function createBaseTestLayer(
 
 /**
  * Create Config test layer (for config router tests)
- * Includes: Base + RepositoryService, IndexingService, ConversationService, ReactFileFilter
+ * Includes: Base + RepositoryService, IndexingService, ConversationService, ReactFileFilter, KnowledgeBaseAgent, KnowledgeBaseService
  * This matches the type signature of createConfigServiceLayer from layer-factory.ts
  */
 export function createConfigTestLayer(
@@ -376,6 +441,8 @@ export function createConfigTestLayer(
     indexingOverrides?: IndexingServiceOverrides;
     conversationOverrides?: ConversationServiceOverrides;
     reactFileFilterOverrides?: ReactFileFilterOverrides;
+    knowledgeBaseAgentOverrides?: KnowledgeBaseAgentOverrides;
+    knowledgeBaseServiceOverrides?: KnowledgeBaseServiceOverrides;
   },
 ) {
   const base = createBaseTestLayer(options);
@@ -386,6 +453,8 @@ export function createConfigTestLayer(
     createMockIndexingServiceLayer(options?.indexingOverrides),
     createMockConversationServiceLayer(options?.conversationOverrides),
     createMockReactFileFilterLayer(options?.reactFileFilterOverrides),
+    createMockKnowledgeBaseAgentLayer(options?.knowledgeBaseAgentOverrides),
+    createMockKnowledgeBaseServiceLayer(options?.knowledgeBaseServiceOverrides),
   );
 
   return { ...base, layer };

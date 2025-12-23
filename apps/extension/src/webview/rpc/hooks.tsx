@@ -97,8 +97,9 @@ export function initializeRpcMessageHandler(
 
 /**
  * Create a request function for RPC calls
+ * Exported for use in non-hook contexts (e.g., XState actors)
  */
-function createRequest(
+export function createRequest(
   vscode: VSCodeAPI,
   path: string[] | readonly string[],
   type: "query" | "mutation",

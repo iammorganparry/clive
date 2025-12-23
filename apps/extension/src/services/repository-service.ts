@@ -529,6 +529,18 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
           return status;
         });
 
+      /**
+       * Call tRPC query (exposed for other services)
+       */
+      const callTrpcQueryPublic = <T>(procedure: string, input: unknown) =>
+        callTrpcQuery<T>(procedure, input);
+
+      /**
+       * Call tRPC mutation (exposed for other services)
+       */
+      const callTrpcMutationPublic = <T>(procedure: string, input: unknown) =>
+        callTrpcMutation<T>(procedure, input);
+
       return {
         getUserId,
         getOrganizationId,
@@ -540,6 +552,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         getFileHashes,
         searchFiles,
         getIndexingStatus,
+        callTrpcQuery: callTrpcQueryPublic,
+        callTrpcMutation: callTrpcMutationPublic,
       };
     }),
     // No dependencies - allows test injection via Layer.provide()

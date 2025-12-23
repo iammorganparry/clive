@@ -73,3 +73,45 @@ export const GlobalStateKeys = {
   /** Whether the user has completed onboarding */
   onboardingComplete: "clive.onboardingComplete",
 } as const;
+
+/**
+ * Knowledge base categories
+ */
+export const KnowledgeBaseCategories = {
+  framework: "framework",
+  patterns: "patterns",
+  mocks: "mocks",
+  fixtures: "fixtures",
+  selectors: "selectors",
+  routes: "routes",
+  assertions: "assertions",
+  hooks: "hooks",
+  utilities: "utilities",
+  coverage: "coverage",
+  gaps: "gaps",
+  improvements: "improvements",
+} as const;
+
+export type KnowledgeBaseCategory =
+  (typeof KnowledgeBaseCategories)[keyof typeof KnowledgeBaseCategories];
+
+/**
+ * Zod schema for knowledge base categories
+ * Used for validation across extension and API layers
+ */
+import { z } from "zod";
+
+export const KnowledgeBaseCategorySchema = z.enum([
+  KnowledgeBaseCategories.framework,
+  KnowledgeBaseCategories.patterns,
+  KnowledgeBaseCategories.mocks,
+  KnowledgeBaseCategories.fixtures,
+  KnowledgeBaseCategories.selectors,
+  KnowledgeBaseCategories.routes,
+  KnowledgeBaseCategories.assertions,
+  KnowledgeBaseCategories.hooks,
+  KnowledgeBaseCategories.utilities,
+  KnowledgeBaseCategories.coverage,
+  KnowledgeBaseCategories.gaps,
+  KnowledgeBaseCategories.improvements,
+]);

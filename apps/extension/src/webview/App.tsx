@@ -6,11 +6,11 @@ import { logger } from "./services/logger.js";
 import { useAuth } from "./contexts/auth-context.js";
 import { useRouter, Routes } from "./router/index.js";
 import { Header } from "./components/layout/header.js";
+import { InitializingScreen } from "./components/initializing-screen.js";
 import { LoginPage } from "./pages/login/index.js";
 import { DashboardPage } from "./pages/dashboard/index.js";
 import { SettingsPage } from "./pages/settings/index.js";
 import { OnboardingPage } from "./pages/onboarding/index.js";
-import { InitializingScreen } from "./components/initializing-screen.js";
 
 interface AppProps {
   vscode: VSCodeAPI;

@@ -2,6 +2,7 @@ import type React from "react";
 import type { VSCodeAPI } from "../../services/vscode.js";
 import { ApiKeyForm } from "./components/api-key-form.js";
 import { IndexingStatusCard } from "./components/indexing-status-card.js";
+import { KnowledgeBaseCard } from "./components/knowledge-base-card.js";
 
 interface SettingsPageProps {
   vscode: VSCodeAPI;
@@ -31,6 +32,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <IndexingStatusCard />
+
+      <KnowledgeBaseCard />
 
       <ApiKeyForm
         vscode={vscode}

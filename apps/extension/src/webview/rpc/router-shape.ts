@@ -64,6 +64,11 @@ export const routerShape: RouterRecord = {
     sendMessage: createProcedureShape("subscription"),
     getHistory: createProcedureShape("query"),
   },
+  knowledgeBase: {
+    getStatus: createProcedureShape("query"),
+    regenerate: createProcedureShape("mutation"),
+    getCategories: createProcedureShape("query"),
+  },
   system: {
     ready: createProcedureShape("query"),
     log: createProcedureShape("mutation"),
