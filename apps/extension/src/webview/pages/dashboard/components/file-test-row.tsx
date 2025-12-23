@@ -105,7 +105,7 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   const isAwaitingApproval = state.matches({
     planningPhase: "awaitingApproval",
   });
-  const isGenerating = state.matches("generating");
+  const isGenerating = state.matches({ planningPhase: "generating" });
   const isCompleted = state.matches("completed");
   const isError = state.matches("error");
 

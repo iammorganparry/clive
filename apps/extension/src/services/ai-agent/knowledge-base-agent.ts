@@ -1,17 +1,15 @@
 import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Match, Stream } from "effect";
 import { ConfigService } from "../config-service.js";
-import { RepositoryService } from "../repository-service.js";
-import { SecretStorageService } from "../vs-code.js";
 import { AIModels } from "../ai-models.js";
 import { createXaiProvider } from "../ai-provider-factory.js";
 import { KnowledgeBasePromptFactory } from "./prompts.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
-import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import {
   createBashExecuteTool,
-  createUpsertKnowledgeTool,
+  createWriteKnowledgeFileTool,
 } from "./tools/index.js";
+import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { makeTokenBudget } from "./token-budget.js";
 import type { KnowledgeBaseProgressEvent } from "../knowledge-base-types.js";
 
@@ -28,15 +26,14 @@ class ConfigurationError extends Data.TaggedError("ConfigurationError")<{
 
 /**
  * Agent for analyzing repository and building knowledge base
- * Uses bashExecute for file discovery and upsertKnowledge for storing findings
+ * Uses bashExecute for file discovery and writeKnowledgeFile for storing findings
  */
 export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
   "KnowledgeBaseAgent",
   {
     effect: Effect.gen(function* () {
       const configService = yield* ConfigService;
-      const repositoryService = yield* RepositoryService;
-      const secretStorageService = yield* SecretStorageService;
+      const knowledgeFileService = yield* KnowledgeFileService;
 
       /**
        * Analyze repository and build knowledge base
@@ -140,37 +137,12 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
             type: "progress",
             message: "Preparing repository analysis...",
           });
-          const userId = yield* configService.getUserId();
-          const organizationId = yield* configService.getOrganizationId();
-          const workspaceRoot = yield* getWorkspaceRoot();
-          const gatewayToken = yield* configService.getAiGatewayToken();
-
-          // Create repository for this workspace
-          const repository = yield* repositoryService.upsertRepository(
-            userId,
-            workspaceRoot.fsPath.split("/").pop() || "workspace",
-            workspaceRoot.fsPath,
-            organizationId,
-          );
-          const repositoryId = repository.id;
-
-          yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Pre-fetched context: userId=${userId}, orgId=${organizationId}, repoId=${repositoryId}`,
-          );
 
           // Create tools
           const tools = {
             bashExecute: createBashExecuteTool(budget),
-            upsertKnowledge: createUpsertKnowledgeTool(
-              repositoryService,
-              {
-                userId,
-                organizationId,
-                workspaceRoot,
-                repositoryId,
-                gatewayToken,
-                secretStorageService,
-              },
+            writeKnowledgeFile: createWriteKnowledgeFileTool(
+              knowledgeFileService,
               (category, success) => {
                 if (success) {
                   checkPhaseChange(category);
@@ -254,16 +226,11 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
             `[KnowledgeBaseAgent:${correlationId}] Resume mode: skipping ${skipCategories.length} categories, analyzing ${analysisPhases.length} phases`,
           );
 
-          let totalEntryCount = 0;
-
-          for (const phase of analysisPhases) {
-            progressCallback?.({
-              type: "phase_started",
-              phaseId: phase.id,
-              phaseName: phase.name,
-            });
-
-            for (const category of phase.categories) {
+          // Extract category analysis into a reusable function
+          const analyzeCategory = (
+            category: string,
+          ): Effect.Effect<number, KnowledgeBaseAgentError> =>
+            Effect.gen(function* () {
               progressCallback?.({
                 type: "progress",
                 message: `Analyzing ${category}...`,
@@ -293,7 +260,7 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                       {
                         role: "system",
                         content:
-                          "You are a focused Testing Knowledge Base Analyzer. Analyze the specified category efficiently and call upsertKnowledge exactly once.",
+                          "You are a focused Testing Knowledge Base Analyzer. Analyze the specified category efficiently and call writeKnowledgeFile to store your findings as markdown files.",
                       },
                       {
                         role: "user",
@@ -356,11 +323,11 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                             );
                           }
 
-                          // Special logging for upsertKnowledge
-                          if (event.toolName === "upsertKnowledge") {
+                          // Special logging for writeKnowledgeFile
+                          if (event.toolName === "writeKnowledgeFile") {
                             categoryEntryCount++;
                             yield* Effect.logDebug(
-                              `[KnowledgeBaseAgent:${correlationId}] [${category}] Storing knowledge entry #${categoryEntryCount}`,
+                              `[KnowledgeBaseAgent:${correlationId}] [${category}] Writing knowledge file #${categoryEntryCount}`,
                             );
                           }
                         });
@@ -428,16 +395,91 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                 entryCount: categoryEntryCount,
               });
 
-              totalEntryCount += categoryEntryCount;
-            }
+              return categoryEntryCount;
+            });
 
-            // Emit phase completion
+          // Flatten all categories from all phases into a single array with phase info
+          const categoriesToAnalyze: Array<{
+            category: string;
+            phaseId: number;
+            phaseName: string;
+          }> = [];
+          for (const phase of analysisPhases) {
+            for (const category of phase.categories) {
+              categoriesToAnalyze.push({
+                category,
+                phaseId: phase.id,
+                phaseName: phase.name,
+              });
+            }
+          }
+
+          // Emit phase started events for all phases upfront
+          for (const phase of analysisPhases) {
+            progressCallback?.({
+              type: "phase_started",
+              phaseId: phase.id,
+              phaseName: phase.name,
+            });
+          }
+
+          // Run all category analyses in parallel with bounded concurrency of 3
+          const categoryEffects = categoriesToAnalyze.map(({ category }) =>
+            analyzeCategory(category),
+          );
+
+          const categoryResults = yield* Effect.all(categoryEffects, {
+            concurrency: 3,
+          });
+
+          // Create a map from category to entry count
+          const categoryEntryCountMap = new Map<string, number>();
+          for (let i = 0; i < categoriesToAnalyze.length; i++) {
+            categoryEntryCountMap.set(
+              categoriesToAnalyze[i].category,
+              categoryResults[i],
+            );
+          }
+
+          // Calculate total entry count
+          const totalEntryCount = categoryResults.reduce(
+            (sum, count) => sum + count,
+            0,
+          );
+
+          // Emit phase completion events
+          for (const phase of analysisPhases) {
+            const phaseCategories = categoriesToAnalyze.filter(
+              (c) => c.phaseId === phase.id,
+            );
+            const phaseEntryCount = phaseCategories.reduce(
+              (sum, pc) => sum + (categoryEntryCountMap.get(pc.category) ?? 0),
+              0,
+            );
+
             progressCallback?.({
               type: "phase_complete",
               phaseId: phase.id,
-              totalEntries: totalEntryCount,
+              totalEntries: phaseEntryCount,
             });
           }
+
+          // Generate index file at the end
+          progressCallback?.({
+            type: "progress",
+            message: "Generating knowledge base index...",
+          });
+          yield* knowledgeFileService.generateIndex().pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[KnowledgeBaseAgent:${correlationId}] Failed to generate index: ${error instanceof Error ? error.message : "Unknown error"}`,
+                );
+                // Don't fail the whole operation if index generation fails
+                return Effect.void;
+              }),
+            ),
+          );
 
           const totalDuration = Date.now() - startTime;
           yield* Effect.logDebug(

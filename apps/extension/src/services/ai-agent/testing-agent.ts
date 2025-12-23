@@ -6,8 +6,6 @@ import vscode from "vscode";
 import { ConfigService } from "../config-service.js";
 import { SecretStorageService, VSCodeService } from "../vs-code.js";
 import { CodebaseIndexingService } from "../codebase-indexing-service.js";
-import { KnowledgeBaseService } from "../knowledge-base-service.js";
-import { RepositoryService } from "../repository-service.js";
 import { AIModels } from "../ai-models.js";
 import {
   createAnthropicProvider,
@@ -27,7 +25,6 @@ import {
   proposeTestTool,
   createWriteTestFileTool,
   writeTestFileTool,
-  createSearchKnowledgeBaseTool,
 } from "./tools/index.js";
 import { APPROVAL } from "./hitl-utils.js";
 import { makeTokenBudget } from "./token-budget.js";
@@ -64,8 +61,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const configService = yield* ConfigService;
       const vscodeService = yield* VSCodeService;
       const indexingService = yield* CodebaseIndexingService;
-      const knowledgeBaseService = yield* KnowledgeBaseService;
-      const repositoryService = yield* RepositoryService;
       const planFileService = yield* PlanFileService;
 
       /**
@@ -267,13 +262,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
           // Create tool set for content generation (budget-aware)
           // NOTE: NO writeTestFile - this is planning phase, we only generate content preview
+          // Agent uses bashExecute to search .clive/knowledge/ for testing patterns
           const tools = {
             bashExecute: createBashExecuteTool(contentBudget),
             semanticSearch: createSemanticSearchTool(indexingService),
-            searchKnowledgeBase: createSearchKnowledgeBaseTool(
-              knowledgeBaseService,
-              repositoryService,
-            ),
           };
 
           const prompt = PromptFactory.writeTestFile({
@@ -652,17 +644,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
           );
 
-          // Create tools: bash + semantic search + knowledge base + proposeTest
+          // Create tools: bash + semantic search + proposeTest
+          // Agent uses bashExecute to search .clive/knowledge/ for testing patterns
           const tools = {
-            // Bash tool for file system operations
+            // Bash tool for file system operations AND knowledge base access
             bashExecute: createBashExecuteTool(budget),
             // Semantic search for finding related code patterns and existing tests
             semanticSearch: createSemanticSearchTool(indexingService),
-            // Knowledge base search for testing patterns and conventions
-            searchKnowledgeBase: createSearchKnowledgeBaseTool(
-              knowledgeBaseService,
-              repositoryService,
-            ),
             // Output tool for proposing tests
             proposeTest: proposeTestTool,
           };
@@ -1122,13 +1110,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // Phase 1: Planning tools - ONLY proposeTest (no writeTestFile)
             // This forces the AI to propose first before any file writing
+            // Agent uses bashExecute to search .clive/knowledge/ for testing patterns
             const planningTools = {
               bashExecute: createBashExecuteTool(budget),
               semanticSearch: createSemanticSearchTool(indexingService),
-              searchKnowledgeBase: createSearchKnowledgeBaseTool(
-                knowledgeBaseService,
-                repositoryService,
-              ),
               proposeTest,
               // NO writeTestFile here - it will be added in Phase 2 after approval
             };
