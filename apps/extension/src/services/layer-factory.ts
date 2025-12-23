@@ -29,6 +29,7 @@ import { CypressTestAgentLive } from "./ai-agent/agent.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
+import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
 import { FileWatcherServiceLive } from "./file-watcher-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
 import { PlanFileService } from "./plan-file-service.js";
@@ -149,19 +150,27 @@ export function createConfigServiceLayer(ctx: LayerContext) {
     Layer.provide(domainLayer),
   );
 
-  // KnowledgeBaseAgent depends on ConfigService and RepositoryService (in domainLayer)
-  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
-    Layer.provide(domainLayer),
+  // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
+    Layer.provide(baseLayer),
   );
 
-  // KnowledgeBaseService depends on ConfigService, RepositoryService, and KnowledgeBaseAgent
+  // KnowledgeBaseAgent depends on ConfigService, RepositoryService, and KnowledgeFileService
+  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
+    Layer.provide(Layer.mergeAll(domainLayer, knowledgeFileLayer)),
+  );
+
+  // KnowledgeBaseService depends on KnowledgeBaseAgent and KnowledgeFileService
   const knowledgeBaseServiceLayer = KnowledgeBaseServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer)),
+    Layer.provide(
+      Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer, knowledgeFileLayer),
+    ),
   );
 
   return Layer.mergeAll(
     domainLayer,
     indexingLayer,
+    knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
   );
@@ -190,19 +199,27 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   // Domain layer with indexing and plan file service
   const domainWithServices = Layer.mergeAll(domainWithIndexing, planFileLayer);
 
-  // KnowledgeBaseAgent depends on ConfigService and RepositoryService (in domainLayer)
-  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
-    Layer.provide(domainLayer),
+  // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
+    Layer.provide(baseLayer),
   );
 
-  // KnowledgeBaseService depends on ConfigService, RepositoryService, and KnowledgeBaseAgent
+  // KnowledgeBaseAgent depends on ConfigService, RepositoryService, and KnowledgeFileService
+  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
+    Layer.provide(Layer.mergeAll(domainLayer, knowledgeFileLayer)),
+  );
+
+  // KnowledgeBaseService depends on KnowledgeBaseAgent and KnowledgeFileService
   const knowledgeBaseServiceLayer = KnowledgeBaseServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer)),
+    Layer.provide(
+      Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer, knowledgeFileLayer),
+    ),
   );
 
   // Domain layer with all services including knowledge base
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
+    knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
   );

@@ -50,14 +50,17 @@ const getRepositoryId = () =>
 export const knowledgeBaseRouter = {
   /**
    * Get knowledge base status for current workspace
+   * Status is now based on filesystem (.clive/knowledge/)
    */
   getStatus: procedure.input(z.void()).query(({ ctx }) =>
     Effect.gen(function* () {
-      yield* Effect.logDebug("[KnowledgeBaseRouter] Getting status");
+      yield* Effect.logDebug(
+        "[KnowledgeBaseRouter] Getting status from filesystem",
+      );
       const knowledgeBaseService = yield* KnowledgeBaseService;
-      const repositoryId = yield* getRepositoryId();
 
-      const status = yield* knowledgeBaseService.getStatus(repositoryId);
+      // No longer needs repositoryId - status is based on local filesystem
+      const status = yield* knowledgeBaseService.getStatus();
       return status;
     }).pipe(
       Effect.catchAll((error) =>
@@ -182,11 +185,13 @@ export const knowledgeBaseRouter = {
    */
   getCategories: procedure.input(z.void()).query(({ ctx }) =>
     Effect.gen(function* () {
-      yield* Effect.logDebug("[KnowledgeBaseRouter] Getting categories");
+      yield* Effect.logDebug(
+        "[KnowledgeBaseRouter] Getting categories from filesystem",
+      );
       const knowledgeBaseService = yield* KnowledgeBaseService;
-      const repositoryId = yield* getRepositoryId();
 
-      const status = yield* knowledgeBaseService.getStatus(repositoryId);
+      // No longer needs repositoryId - status is based on local filesystem
+      const status = yield* knowledgeBaseService.getStatus();
       return {
         categories: status.categories,
         entryCount: status.entryCount,

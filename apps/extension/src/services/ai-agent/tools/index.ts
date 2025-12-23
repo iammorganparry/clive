@@ -16,9 +16,4 @@ export {
 } from "./write-test-file.js";
 export { proposeTestTool, createProposeTestTool } from "./propose-test.js";
 
-// Knowledge base tools
-export {
-  createSearchKnowledgeBaseTool,
-  searchKnowledgeBaseTool,
-} from "./search-knowledge-base.js";
-export { createUpsertKnowledgeTool } from "./upsert-knowledge.js";
+export { createWriteKnowledgeFileTool } from "./write-knowledge-file.js";

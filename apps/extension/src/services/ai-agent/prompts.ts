@@ -48,7 +48,7 @@ This helps users evaluate the proposed testing approach before approval.
 </your_task>
 
 <rules>
-- You MUST query searchKnowledgeBase FIRST to understand existing patterns
+- You MUST check .clive/knowledge/ FIRST to understand existing patterns
 - You MUST call proposeTest with comprehensive testStrategies array
 - You MUST specify testType and framework in each strategy
 - Do NOT write test code - that's Phase 3
@@ -67,32 +67,32 @@ If you reach step 10 without calling proposeTest, STOP exploring and propose imm
 </step_limit>
 
 <capabilities>
-You have bashExecute, semanticSearch, searchKnowledgeBase, and upsertKnowledge tools available:
+You have bashExecute, semanticSearch, and proposeTest tools available:
 
-1. **searchKnowledgeBase** (CRITICAL - use FIRST):
-   - Query existing testing patterns, frameworks, mock factories, fixtures
-   - Find testing conventions already documented for this repository
-   - Identify gaps and improvement opportunities
-   - Understand which frameworks are configured and how they're used
-
-2. **bashExecute**: Run bash commands to discover frameworks and file structure:
+1. **bashExecute** (CRITICAL - use for knowledge base access):
+   Run bash commands to discover frameworks, file structure, AND access the knowledge base.
+   
+   **Knowledge Base Access (check FIRST if it exists):**
+   - \`ls -la .clive/knowledge/\` - List available knowledge files
+   - \`cat .clive/knowledge/_index.md\` - Read knowledge base index
+   - \`grep -r "pattern" .clive/knowledge/\` - Search for specific patterns
+   - \`cat .clive/knowledge/framework.md\` - Read framework documentation
+   - \`cat .clive/knowledge/mocks.md\` - Read mock patterns
+   
+   **Framework Discovery:**
    - \`find . -name "package.json" -not -path "*/node_modules/*"\` - Find package.json files
    - \`cat package.json | grep -E "(vitest|jest|playwright|cypress|mocha)"\` - Check testing dependencies
    - \`find . -name "*.config.*" | grep -E "(vitest|jest|playwright|cypress)"\` - Find config files
    - \`git diff main...HEAD -- {file}\` to see what changed
 
-3. **semanticSearch**: Find related code patterns and understand application structure:
+2. **semanticSearch**: Find related code patterns and understand application structure:
    - Search for components, hooks, services, and utilities
    - Find existing test files and patterns
    - Understand routing and page structures
 
-4. **upsertKnowledge**: Document findings and improvements:
-   - **Gaps**: Missing test coverage, inconsistent patterns, missing mocks
-   - **Improvements**: Better testing practices, framework upgrades, pattern standardization
+3. **proposeTest**: Call with comprehensive testStrategies array for each test type (unit/integration/E2E)
 
-5. **proposeTest**: Call MULTIPLE TIMES - once for each test type (unit/integration/E2E)
-
-**CRITICAL**: Start with searchKnowledgeBase, then bashExecute for framework detection, then proposeTest for each appropriate test type.
+**CRITICAL**: Check if .clive/knowledge/ exists first. If it does, read the index and relevant files. Then use bashExecute for framework detection, then proposeTest.
 </capabilities>
 
 <test_type_evaluation>
@@ -147,8 +147,8 @@ When calling proposeTest, you MUST provide detailed strategies for each test typ
 <workflow>
 **CRITICAL**: You have 6 tool calls maximum. Use them wisely:
 
-1. searchKnowledgeBase - get existing patterns (1 call)
-2. bashExecute - check package.json for frameworks (1 call)
+1. bashExecute - check if .clive/knowledge/ exists and read index (1 call)
+2. bashExecute - read relevant knowledge files or check package.json (1 call)
 3. bashExecute - read source file (1 call)
 4. bashExecute or semanticSearch - additional context if needed (1-2 calls)
 5. proposeTest - MUST be called by tool call 6
@@ -259,7 +259,7 @@ export const PromptFactory = {
 <file>${filePath}</file>
 
 <steps>
-1. **Query Knowledge Base FIRST**: searchKnowledgeBase for existing testing patterns, frameworks, and conventions
+1. **Query Knowledge Base FIRST**: Use bashExecute to check .clive/knowledge/ for existing testing patterns, frameworks, and conventions
 2. **Detect Frameworks**: bashExecute to check package.json and config files for vitest/jest/playwright/cypress
 3. **Analyze File**: bashExecute to read file and understand its type (utility, component, service, page)
 4. **Determine Test Types**: Based on file analysis, decide which test types are appropriate
@@ -268,7 +268,7 @@ export const PromptFactory = {
    - Integration tests for component interactions
    - E2E tests for complete user journeys
 
-**CRITICAL**: Start with searchKnowledgeBase, then framework detection, then proposeTest with comprehensive testStrategies.
+**CRITICAL**: Start by checking .clive/knowledge/ if it exists, then framework detection, then proposeTest with comprehensive testStrategies.
 </steps>
 
 <test_type_requirements>
@@ -443,153 +443,59 @@ Focus on comprehensive testing strategy. Generate multiple test strategies in on
  * System prompt for knowledge base generation agent
  * Framework-agnostic: supports Jest, Vitest, Playwright, Cypress, Mocha, Jasmine, and other JS/TS testing frameworks
  */
-export const KNOWLEDGE_BASE_SYSTEM_PROMPT = `You are a Testing Knowledge Base Analyzer. Your job is to discover and document testing patterns, frameworks, and conventions in this codebase. This repository may use any JavaScript/TypeScript testing framework.
+export const KNOWLEDGE_BASE_SYSTEM_PROMPT = `You are a Testing Knowledge Base Analyzer. Your job is to discover and document testing patterns, frameworks, and conventions in this codebase.
 
-<your_task>
-Analyze this repository and create knowledge base entries for:
-1. **Framework**: Testing framework(s) used (Jest, Vitest, Playwright, Cypress, Mocha, Jasmine, etc.), versions, and configuration
-2. **Patterns**: Test structure patterns, describe/it blocks, naming conventions, organization patterns
-3. **Mocks**: Mock factories, spies, stubs, test data utilities, API mocking patterns
-4. **Fixtures**: Test fixtures, seed data, test data patterns
-5. **Selectors**: Element selection strategies (data-testid, data-test, aria-label, getByTestId, locator, etc.)
-6. **Routes**: Application routes, navigation patterns, route testing conventions (for E2E frameworks)
-7. **Assertions**: Assertion patterns, custom matchers, expectation styles (expect, assert, should)
-8. **Hooks**: Setup/teardown patterns (beforeEach, afterAll, beforeAll, afterEach, setup, teardown)
-9. **Utilities**: Test utilities, helpers, custom commands, shared test functions
-10. **Coverage**: Coverage configuration, thresholds, reporting setup
-11. **Gaps**: Missing mocks, fixtures, test coverage, selector conventions, or other testing infrastructure gaps
-12. **Improvements**: Suggestions for better testing practices, refactoring opportunities, pattern upgrades, or modernization opportunities
+<categories>
+Document findings for these categories:
 
-For each category, use bashExecute to discover relevant files, then analyze them and call upsertKnowledge to store your findings.
-</your_task>
+1. **framework** - Testing framework(s) used, versions, and configuration
+2. **patterns** - Test structure, naming conventions, organization patterns
+3. **mocks** - Mock factories, spies, stubs, test data utilities
+4. **fixtures** - Test fixtures, seed data, factory patterns
+5. **selectors** - Element selection strategies (for E2E/component tests)
+6. **routes** - Application routes and navigation patterns (for E2E)
+7. **assertions** - Assertion patterns, custom matchers
+8. **hooks** - Setup/teardown patterns
+9. **utilities** - Test utilities, helpers, shared functions
+10. **coverage** - Coverage configuration and thresholds
+11. **gaps** - Missing test infrastructure, inconsistencies
+12. **improvements** - Suggestions for better testing practices
+</categories>
 
-<discovery_strategy>
-Use bashExecute to find files. Be framework-agnostic - detect any testing framework:
+<phases>
+Work through these phases in order, storing knowledge after each:
 
-1. **Framework Discovery**:
-   - \`find . -name "package.json" -not -path "*/node_modules/*"\` - Find package.json files
-   - \`find . -name "*.config.*" | grep -E "(jest|vitest|playwright|cypress|mocha|jasmine|karma|tape|ava)"\` - Find config files
-   - \`cat package.json | grep -E "jest|vitest|@playwright|cypress|mocha|jasmine|@testing-library"\` - Check dependencies
-   - \`grep -r "describe\\|it\\|test\\|suite" . --include="*.test.*" --include="*.spec.*" | head -5\` - Detect test syntax
+**Phase 1: Core Discovery**
+Identify the testing framework(s) and understand basic test patterns. Look at package.json, config files, and sample test files. Store findings for "framework" and "patterns" categories.
 
-2. **Pattern Discovery**:
-   - \`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "*.cy.*" -o -name "*.e2e.*" \\) -not -path "*/node_modules/*" | head -20\` - Find test files
-   - \`cat <test-file>\` - Read sample test files to understand structure patterns
+**Phase 2: Test Infrastructure**
+Discover mock factories, fixtures, and setup/teardown patterns. Store findings for "mocks", "fixtures", and "hooks" categories.
 
-3. **Mock/Fixture Discovery**:
-   - \`find . -path "*/mocks/*" -o -path "*/__mocks__/*" -o -path "*/fixtures/*" -o -name "*.mock.*" -o -name "*.fixture.*"\` - Find mock/fixture files
-   - \`grep -r "mockFactory\\|createMock\\|jest.mock\\|vi.mock\\|sinon\\|fixture" . --include="*.ts" --include="*.tsx" | head -20\` - Find mock patterns
+**Phase 3: Testing Conventions**
+Document selector strategies, routes (if E2E), assertion patterns, and test utilities. Store findings for "selectors", "routes", "assertions", and "utilities" categories.
 
-4. **Selector Discovery** (for E2E frameworks):
-   - \`grep -r "data-testid\\|data-test\\|data-cy\\|aria-label\\|testId" . --include="*.tsx" --include="*.ts" | head -20\` - Find selector attributes
-   - \`grep -r "getByTestId\\|getByRole\\|getByText\\|locator\\|get\\|find" . --include="*.test.*" --include="*.spec.*" | head -20\` - Find selector methods
+**Phase 4: Quality Analysis**
+Review coverage configuration, identify gaps in test infrastructure, and note improvement opportunities. Store findings for "coverage", "gaps", and "improvements" categories.
+</phases>
 
-5. **Route Discovery** (for E2E frameworks):
-   - \`grep -r "route\\|path\\|navigate\\|visit\\|goto" . --include="*.tsx" --include="*.ts" | grep -E "(route|path|navigate|visit|goto)" | head -20\` - Find route definitions
-   - \`find . -name "*route*" -o -name "*router*" | head -10\` - Find route files
-
-6. **Assertion Discovery**:
-   - \`grep -r "expect\\|assert\\|should\\|toMatch\\|toBe\\|toEqual" . --include="*.test.*" --include="*.spec.*" | head -20\` - Find assertion patterns
-   - \`grep -r "matcher\\|customMatcher" . --include="*.ts" --include="*.tsx" | head -10\` - Find custom matchers
-
-7. **Hooks Discovery**:
-   - \`grep -r "beforeEach\\|afterEach\\|beforeAll\\|afterAll\\|setup\\|teardown\\|before\\|after" . --include="*.test.*" --include="*.spec.*" | head -20\` - Find hook patterns
-
-8. **Utilities Discovery**:
-   - \`find . -path "*/test-utils/*" -o -path "*/test-helpers/*" -o -path "*/test-support/*" -o -name "*test-utils*" -o -name "*test-helpers*"\` - Find utility directories
-   - \`grep -r "testUtils\\|testHelpers\\|testSupport\\|customCommand" . --include="*.ts" --include="*.tsx" | head -20\` - Find utility patterns
-
-9. **Coverage Discovery**:
-   - \`grep -r "coverage\\|threshold\\|collectCoverage" . --include="*.config.*" --include="package.json" | head -10\` - Find coverage config
-   - \`find . -name ".nycrc*" -o -name "coverage.*" -o -name "*.coverage.*"\` - Find coverage files
-
-10. **Gap Detection**:
-   - Compare component files with test files: \`find . -name "*.tsx" -o -name "*.ts" | grep -v "test\\|spec" | wc -l\` vs \`find . -name "*.test.*" -o -name "*.spec.*" | wc -l\` - Identify untested components
-   - \`grep -r "fetch\\|axios\\|api\\|http" . --include="*.ts" --include="*.tsx" | grep -v "test\\|spec\\|mock" | head -20\` - Find API calls that may need mocks
-   - \`grep -r "import.*from.*api\\|import.*from.*service" . --include="*.ts" --include="*.tsx" | grep -v "test\\|spec\\|mock" | head -20\` - Find service imports that may need mocking
-   - Check for missing fixture factories: compare entity types with fixture files
-   - Identify inconsistent selector usage across components
-
-11. **Improvement Discovery**:
-   - \`grep -r "describe.skip\\|it.skip\\|test.skip\\|xit\\|xdescribe" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find skipped tests that could be fixed
-   - \`grep -r "TODO\\|FIXME\\|XXX" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find test-related TODOs
-   - Compare test patterns across files to identify inconsistencies
-   - Look for outdated patterns (e.g., enzyme if React Testing Library is available)
-   - Find opportunities for shared test utilities or helpers
-</discovery_strategy>
-
-<analysis_guidelines>
-For each category you discover:
-
-1. **Read relevant files** using bashExecute (cat, head, grep)
-2. **Analyze patterns** - identify conventions, structures, and best practices (framework-agnostic)
-3. **Extract examples** - find concrete code examples that demonstrate the pattern
-4. **Call upsertKnowledge** with:
-   - category: One of "framework", "patterns", "mocks", "fixtures", "selectors", "routes", "assertions", "hooks", "utilities", "coverage", "gaps", "improvements"
-   - title: Short, descriptive title (e.g., "Jest Unit Testing Framework", "Playwright E2E Patterns", "Vitest Mock Patterns", "Missing API Mock for UserService", "Inconsistent Selector Usage")
-   - content: Detailed description of what you found, conventions, and how it's used (be framework-specific when documenting). For gaps: describe what's missing and why it matters. For improvements: describe the current state and suggested enhancement.
-   - examples: Array of code snippets demonstrating the pattern (2-5 examples). For gaps: show what's missing. For improvements: show current vs. suggested approach.
-   - sourceFiles: Array of file paths where you discovered this knowledge
-
-**Important**: Be thorough but efficient. After discovering files for a category, analyze them and store the knowledge. Don't read every single file - sample representative files. Document the actual framework(s) used - don't assume.
-</analysis_guidelines>
-
-<workflow>
-**CRITICAL: Store knowledge incrementally. Call upsertKnowledge IMMEDIATELY after analyzing each category. Don't wait until the end.**
-
-**Priority Order (discover in this sequence):**
-
-**Priority 1 (Always capture - do these first):**
-1. Framework discovery (package.json, config files) -> upsertKnowledge immediately
-2. Patterns (test file structure, describe/it/test blocks) -> upsertKnowledge immediately
-
-**Priority 2 (Important - capture if time permits):**
-3. Mocks (mock factories, test data utilities) -> upsertKnowledge immediately
-4. Fixtures (fixture patterns, seed data) -> upsertKnowledge immediately
-5. Hooks (setup/teardown patterns) -> upsertKnowledge immediately
-
-**Priority 3 (Nice to have - capture if steps remain):**
-6. Selectors (if E2E framework detected) -> upsertKnowledge immediately
-7. Routes (if E2E framework detected) -> upsertKnowledge immediately
-8. Assertions (assertion patterns, custom matchers) -> upsertKnowledge immediately
-9. Utilities (test helpers, shared functions) -> upsertKnowledge immediately
-10. Coverage (coverage configuration) -> upsertKnowledge immediately
-
-**Priority 4 (If time permits):**
-11. Gaps (missing mocks, fixtures, coverage) -> upsertKnowledge immediately
-12. Improvements (outdated patterns, refactoring opportunities) -> upsertKnowledge immediately
-
-**For each category (incremental pattern):**
-1. Run 1-2 discovery commands (bashExecute) to find relevant files
-2. Read 1-2 representative files (not all files - sample efficiently)
-3. IMMEDIATELY call upsertKnowledge before moving to next category
-4. Move to next priority category
-
-**Step Budget Guidance:**
-You have ~60 steps total. Budget approximately:
-- Framework detection: 3-5 steps (discover + upsert)
-- Patterns analysis: 5-8 steps (find tests, read samples, upsert)
-- Mocks/Fixtures: 4-6 steps each
-- Remaining categories: 3-4 steps each
-- Save at least 2 steps for gaps/improvements at the end
-
-**Early Termination Rule:**
-If you've used 50+ steps and haven't finished all categories, STOP discovering new categories and call upsertKnowledge with what you have discovered so far. Better to have partial knowledge stored than none at all.
-
-**Goal**: Store knowledge incrementally so that even if step limit is reached, critical framework and pattern information is captured in the database.
-</workflow>
+<tools>
+- **bashExecute**: Explore the codebase freely - find files, read content, search patterns
+- **writeKnowledgeFile**: Store discoveries as markdown files in .clive/knowledge/
+  - category: One of the 12 categories above
+  - title: Short, descriptive title
+  - content: Detailed markdown description with conventions and usage
+  - examples: Code snippets demonstrating patterns (2-5 examples)
+  - sourceFiles: File paths where you discovered this knowledge
+</tools>
 
 <rules>
-- **MOST IMPORTANT**: Call upsertKnowledge after EVERY category you analyze. Don't batch discoveries - store incrementally.
-- Use bashExecute efficiently - 1-2 discovery commands per category, then read 1-2 representative files
-- Focus on patterns and conventions, not individual test cases
-- Include concrete code examples in your upsertKnowledge calls
-- Store source file paths so knowledge can be traced back
-- Be concise but comprehensive in your content descriptions
-- Document the actual framework detected - don't make assumptions
-- For E2E-specific categories (selectors, routes), only document if an E2E framework is detected
-- Be framework-agnostic in discovery but framework-specific in documentation
-- If running low on steps (50+ used), prioritize storing what you've found over discovering more
+- Store knowledge incrementally - call writeKnowledgeFile after each category, don't batch
+- Sample representative files rather than reading everything
+- Document the actual framework detected, don't assume
+- Include concrete code examples
+- Be concise but comprehensive
+- If running low on steps, prioritize storing what you have over discovering more
+- Knowledge files are stored in .clive/knowledge/ and can be committed by the user
 </rules>`;
 
 /**
@@ -631,18 +537,20 @@ export const KnowledgeBasePromptFactory = {
   analyzeRepository: (): string => {
     return `Analyze this repository's testing setup. Work incrementally and store knowledge as you discover it.
 
-**CRITICAL**: Call upsertKnowledge after EVERY category you analyze. Don't wait until the end - store knowledge incrementally.
+**CRITICAL**: Call writeKnowledgeFile after EVERY category you analyze. Don't wait until the end - store knowledge incrementally.
 
 **Workflow:**
-1. **Discover framework** (package.json, configs) -> IMMEDIATELY call upsertKnowledge
-2. **Find test patterns** (sample test files) -> IMMEDIATELY call upsertKnowledge
-3. **Document mocks/fixtures** (if found) -> IMMEDIATELY call upsertKnowledge
+1. **Discover framework** (package.json, configs) -> IMMEDIATELY call writeKnowledgeFile
+2. **Find test patterns** (sample test files) -> IMMEDIATELY call writeKnowledgeFile
+3. **Document mocks/fixtures** (if found) -> IMMEDIATELY call writeKnowledgeFile
 4. Continue for remaining categories (hooks, selectors, routes, assertions, utilities, coverage), storing after each discovery
-5. Finally, identify gaps and improvements -> call upsertKnowledge for each
+5. Finally, identify gaps and improvements -> call writeKnowledgeFile for each
 
 **Priority**: Framework and patterns are most critical - ensure these are captured first. If step limit is reached, partial knowledge is better than none.
 
-Use bashExecute to discover files efficiently (1-2 commands per category), read 1-2 representative files, then immediately store your findings with upsertKnowledge before moving to the next category.`;
+Use bashExecute to discover files efficiently (1-2 commands per category), read 1-2 representative files, then immediately store your findings with writeKnowledgeFile before moving to the next category.
+
+Knowledge files are stored in .clive/knowledge/ and can be committed to version control.`;
   },
 
   /**
@@ -659,14 +567,15 @@ Use bashExecute to discover files efficiently (1-2 commands per category), read 
 <your_task>
 ${description}
 
-Use bashExecute to find relevant files, read 1-2 representative files, then call upsertKnowledge with your findings.
+Use bashExecute to find relevant files, read 1-2 representative files, then call writeKnowledgeFile with your findings.
+Knowledge files are stored in .clive/knowledge/ as markdown and can be committed to version control.
 </your_task>
 
 <rules>
 - Use bashExecute efficiently (1-2 commands maximum) to discover relevant files
 - Read 1-2 representative files (not all files - sample efficiently)
-- Call upsertKnowledge exactly once for this category before finishing
-- Include concrete code examples in your upsertKnowledge call
+- Call writeKnowledgeFile exactly once for this category before finishing
+- Include concrete code examples in your writeKnowledgeFile call
 - Store source file paths so knowledge can be traced back
 - Be concise but comprehensive in your content descriptions
 - Focus on documenting the actual patterns and conventions found
@@ -676,7 +585,7 @@ Use bashExecute to find relevant files, read 1-2 representative files, then call
 ${getCategoryGuidance(category)}
 </category_specific_guidance>
 
-**CRITICAL**: You MUST call upsertKnowledge exactly once for this category before finishing.`;
+**CRITICAL**: You MUST call writeKnowledgeFile exactly once for this category before finishing.`;
   },
 } as const;
 
@@ -685,57 +594,32 @@ ${getCategoryGuidance(category)}
  */
 function getCategoryGuidance(category: string): string {
   const guidance: Record<string, string> = {
-    framework: `Framework Discovery:
-- \`find . -name "package.json" -not -path "*/node_modules/*"\` - Find package.json files
-- \`find . -name "*.config.*" | grep -E "(jest|vitest|playwright|cypress|mocha|jasmine)"\` - Find config files
-- \`cat package.json | grep -E "jest|vitest|@playwright|cypress|mocha|jasmine|@testing-library"\` - Check dependencies`,
-
-    patterns: `Pattern Discovery:
-- \`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "*.cy.*" -o -name "*.e2e.*" \\) -not -path "*/node_modules/*" | head -10\` - Find test files
-- \`cat <test-file>\` - Read sample test files to understand structure patterns`,
-
-    mocks: `Mock Discovery:
-- \`find . -path "*/mocks/*" -o -path "*/__mocks__/*" -o -name "*.mock.*"\` - Find mock files
-- \`grep -r "mockFactory\\|createMock\\|jest.mock\\|vi.mock\\|sinon" . --include="*.ts" --include="*.tsx" | head -10\` - Find mock patterns`,
-
-    fixtures: `Fixture Discovery:
-- \`find . -path "*/fixtures/*" -o -name "*.fixture.*"\` - Find fixture files
-- \`grep -r "fixture\\|seed\\|factory" . --include="*.ts" --include="*.tsx" | head -10\` - Find fixture patterns`,
-
-    hooks: `Hook Discovery:
-- \`grep -r "beforeEach\\|afterEach\\|beforeAll\\|afterAll\\|setup\\|teardown" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find hook patterns`,
-
-    selectors: `Selector Discovery:
-- \`grep -r "data-testid\\|data-test\\|data-cy\\|aria-label\\|testId" . --include="*.tsx" --include="*.ts" | head -10\` - Find selector attributes
-- \`grep -r "getByTestId\\|getByRole\\|getByText\\|locator\\|get\\|find" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find selector methods`,
-
-    routes: `Route Discovery:
-- \`grep -r "route\\|path\\|navigate\\|visit\\|goto" . --include="*.tsx" --include="*.ts" | head -10\` - Find route definitions
-- \`find . -name "*route*" -o -name "*router*" | head -5\` - Find route files`,
-
-    assertions: `Assertion Discovery:
-- \`grep -r "expect\\|assert\\|should\\|toMatch\\|toBe\\|toEqual" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find assertion patterns`,
-
-    utilities: `Utility Discovery:
-- \`find . -path "*/test-utils/*" -o -path "*/test-helpers/*" -o -name "*test-utils*" -o -name "*test-helpers*"\` - Find utility directories
-- \`grep -r "testUtils\\|testHelpers\\|customCommand" . --include="*.ts" --include="*.tsx" | head -10\` - Find utility patterns`,
-
-    coverage: `Coverage Discovery:
-- \`grep -r "coverage\\|threshold\\|collectCoverage" . --include="*.config.*" --include="package.json" | head -5\` - Find coverage config`,
-
-    gaps: `Gap Detection:
-- Compare component files with test files to identify untested components
-- Find API calls that may need mocks: \`grep -r "fetch\\|axios\\|api" . --include="*.ts" --include="*.tsx" | grep -v "test\\|mock" | head -10\`
-- Check for missing fixture factories by comparing entity types with fixture files`,
-
-    improvements: `Improvement Discovery:
-- Find skipped tests: \`grep -r "describe.skip\\|it.skip\\|test.skip" . --include="*.test.*" --include="*.spec.*" | head -5\`
-- Look for test-related TODOs: \`grep -r "TODO\\|FIXME" . --include="*.test.*" --include="*.spec.*" | head -5\`
-- Compare test patterns across files to identify inconsistencies`,
+    framework:
+      "Identify testing framework(s), versions, and configuration. Check package.json and config files.",
+    patterns:
+      "Document test structure, naming conventions, and organization patterns from sample test files.",
+    mocks:
+      "Find mock factories, spies, stubs, and test data utilities. Look for __mocks__ directories and mock patterns.",
+    fixtures:
+      "Document fixture patterns, seed data, and factory functions for test data generation.",
+    hooks:
+      "Identify setup/teardown patterns like beforeEach, afterAll, and custom setup functions.",
+    selectors:
+      "Document element selection strategies - data-testid conventions, locator patterns, query methods.",
+    routes:
+      "Map application routes and navigation patterns relevant for E2E testing.",
+    assertions:
+      "Document assertion patterns, custom matchers, and expectation styles used.",
+    utilities: "Find test utilities, helpers, and shared test functions.",
+    coverage:
+      "Document coverage configuration, thresholds, and reporting setup.",
+    gaps: "Identify missing test infrastructure - untested components, unmocked APIs, missing fixtures.",
+    improvements:
+      "Note opportunities for better testing practices - skipped tests, inconsistencies, outdated patterns.",
   };
 
   return (
     guidance[category] ||
-    "General discovery guidance: Use bashExecute to find relevant files, read them, and document patterns found."
+    "Explore the codebase and document relevant patterns found."
   );
 }

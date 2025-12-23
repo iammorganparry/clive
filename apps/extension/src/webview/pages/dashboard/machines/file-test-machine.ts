@@ -304,7 +304,7 @@ export const fileTestMachine = setup({
               ],
             },
             REJECT: {
-              target: "idle",
+              target: "#fileTest.idle",
               actions: [
                 "rejectTest",
                 ({ context, event }) => {
@@ -326,53 +326,50 @@ export const fileTestMachine = setup({
             },
           },
         },
+        generating: {
+          on: {
+            PROGRESS: {
+              actions: "addLog",
+            },
+            EXECUTION_COMPLETE: {
+              actions: "markExecutionComplete",
+            },
+            EXECUTION_ERROR: {
+              actions: "markExecutionError",
+            },
+            SUBSCRIPTION_COMPLETE: [
+              {
+                guard: ({ context }) => {
+                  // Check if all accepted tests are completed
+                  const acceptedTests = Array.from(
+                    context.testStatuses.entries(),
+                  ).filter(([, status]) => status === "accepted");
+                  const completedTests = Array.from(
+                    context.testStatuses.entries(),
+                  ).filter(([, status]) => status === "completed");
+                  return acceptedTests.length === completedTests.length;
+                },
+                target: "#fileTest.completed",
+              },
+              {
+                target: "generating",
+              },
+            ],
+            CANCEL: {
+              target: "#fileTest.idle",
+              actions: "reset",
+            },
+          },
+        },
       },
       on: {
         PROGRESS: {
           actions: "addLog",
-        },
-        SUBSCRIPTION_COMPLETE: {
-          target: "generating",
         },
         SUBSCRIPTION_ERROR: {
           target: "error",
           actions: "setError",
         },
-        CANCEL: {
-          target: "idle",
-          actions: "reset",
-        },
-      },
-    },
-    generating: {
-      on: {
-        PROGRESS: {
-          actions: "addLog",
-        },
-        EXECUTION_COMPLETE: {
-          actions: "markExecutionComplete",
-        },
-        EXECUTION_ERROR: {
-          actions: "markExecutionError",
-        },
-        SUBSCRIPTION_COMPLETE: [
-          {
-            guard: ({ context }) => {
-              // Check if all accepted tests are completed
-              const acceptedTests = Array.from(
-                context.testStatuses.entries(),
-              ).filter(([, status]) => status === "accepted");
-              const completedTests = Array.from(
-                context.testStatuses.entries(),
-              ).filter(([, status]) => status === "completed");
-              return acceptedTests.length === completedTests.length;
-            },
-            target: "completed",
-          },
-          {
-            target: "generating",
-          },
-        ],
         CANCEL: {
           target: "idle",
           actions: "reset",
