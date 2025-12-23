@@ -22,9 +22,12 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
       const vscodeService = yield* VSCodeService;
 
       /**
-       * Get the .clive/plans directory URI
+       * Ensure the .clive/plans directory exists, creating .clive and .clive/plans if needed
        */
-      const getPlansDirectory = (): Effect.Effect<vscode.Uri, PlanFileError> =>
+      const ensurePlansDirectory = (): Effect.Effect<
+        vscode.Uri,
+        PlanFileError
+      > =>
         Effect.gen(function* () {
           const workspaceFolders = vscodeService.workspace.workspaceFolders;
           if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -36,26 +39,31 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
           }
 
           const workspaceRoot = workspaceFolders[0].uri;
-          const plansDir = vscode.Uri.joinPath(
-            workspaceRoot,
-            ".clive",
-            "plans",
-          );
-          return plansDir;
-        });
+          const cliveDir = vscode.Uri.joinPath(workspaceRoot, ".clive");
+          const plansDir = vscode.Uri.joinPath(cliveDir, "plans");
 
-      /**
-       * Ensure the .clive/plans directory exists
-       */
-      const ensurePlansDirectory = (): Effect.Effect<
-        vscode.Uri,
-        PlanFileError
-      > =>
-        Effect.gen(function* () {
-          const plansDir = yield* getPlansDirectory();
+          // Check if .clive directory exists, create if not
+          const cliveExists = yield* Effect.tryPromise({
+            try: async () => {
+              await vscodeService.workspace.fs.stat(cliveDir);
+              return true;
+            },
+            catch: () => false,
+          }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-          // Check if directory exists, create if not
-          const dirExists = yield* Effect.tryPromise({
+          if (!cliveExists) {
+            yield* Effect.tryPromise({
+              try: () => vscodeService.workspace.fs.createDirectory(cliveDir),
+              catch: (error) =>
+                new PlanFileError({
+                  message: `Failed to create .clive directory: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  cause: error,
+                }),
+            });
+          }
+
+          // Check if plans directory exists, create if not
+          const plansExists = yield* Effect.tryPromise({
             try: async () => {
               await vscodeService.workspace.fs.stat(plansDir);
               return true;
@@ -63,28 +71,7 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
             catch: () => false,
           }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-          if (!dirExists) {
-            // Ensure .clive directory exists first
-            const cliveDir = vscode.Uri.joinPath(plansDir, "..");
-            const cliveExists = yield* Effect.tryPromise({
-              try: async () => {
-                await vscodeService.workspace.fs.stat(cliveDir);
-                return true;
-              },
-              catch: () => false,
-            }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-
-            if (!cliveExists) {
-              yield* Effect.tryPromise({
-                try: () => vscodeService.workspace.fs.createDirectory(cliveDir),
-                catch: (error) =>
-                  new PlanFileError({
-                    message: `Failed to create .clive directory: ${error instanceof Error ? error.message : "Unknown error"}`,
-                    cause: error,
-                  }),
-              });
-            }
-
+          if (!plansExists) {
             yield* Effect.tryPromise({
               try: () => vscodeService.workspace.fs.createDirectory(plansDir),
               catch: (error) =>
@@ -197,20 +184,18 @@ createdAt: "${new Date().toISOString()}"
           }),
 
         /**
-         * Open a plan file in the VS Code editor
+         * Open a plan file in the VS Code editor as Markdown preview
          */
         openPlanFile: (
           planUri: vscode.Uri,
-        ): Effect.Effect<vscode.TextEditor, PlanFileError> =>
+        ): Effect.Effect<void, PlanFileError> =>
           Effect.tryPromise({
             try: async () => {
-              const document =
-                await vscodeService.workspace.openTextDocument(planUri);
-              const editor = await vscode.window.showTextDocument(document, {
-                viewColumn: vscode.ViewColumn.Beside,
-                preserveFocus: false,
-              });
-              return editor;
+              // Open as Markdown preview (rendered, not source)
+              await vscode.commands.executeCommand(
+                "markdown.showPreview",
+                planUri,
+              );
             },
             catch: (error) =>
               new PlanFileError({

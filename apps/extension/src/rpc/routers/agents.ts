@@ -142,6 +142,7 @@ export const agentsRouter = {
                   return await waitForApproval(toolCallId);
                 }
               : undefined,
+            signal,
           });
 
           const totalDuration = Date.now() - startTime;
@@ -155,18 +156,27 @@ export const agentsRouter = {
             Effect.gen(function* () {
               const errorMessage =
                 error instanceof Error ? error.message : "Unknown error";
+              const isCancellation = errorMessage.includes("cancelled");
+
               yield* Effect.logDebug(
-                `[RpcRouter] Planning failed: ${errorMessage}`,
+                isCancellation
+                  ? `[RpcRouter] Planning cancelled by user`
+                  : `[RpcRouter] Planning failed: ${errorMessage}`,
               );
-              yield* Effect.promise(() =>
-                vscode.window.showErrorMessage(
-                  `Failed to plan tests: ${errorMessage}`,
-                ),
-              );
+
+              // Don't show error message for user-initiated cancellations
+              if (!isCancellation) {
+                yield* Effect.promise(() =>
+                  vscode.window.showErrorMessage(
+                    `Failed to plan tests: ${errorMessage}`,
+                  ),
+                );
+              }
+
               return {
                 proposals: [] as ProposedTest[],
                 executions: [],
-                error: errorMessage,
+                error: isCancellation ? "Cancelled by user" : errorMessage,
               };
             }),
           ),

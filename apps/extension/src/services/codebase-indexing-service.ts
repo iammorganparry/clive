@@ -720,9 +720,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             `[CodebaseIndexing] Found ${uniqueFiles.length} files, limiting to ${filesToIndex.length} for indexing`,
           );
 
-          // Update progress with total files count
-          yield* updateProgress(0, filesToIndex.length);
-
           // Single batch query - get all existing file hashes for O(1) lookups
           const existingHashes = yield* repositoryService
             .getFileHashes(repositoryId)
@@ -763,6 +760,9 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           const filesToEmbed = fileData.filter((f) => f.needsIndexing);
           const unchangedFiles = fileData.filter((f) => !f.needsIndexing);
 
+          // Update progress with actual files to index (not the cap)
+          yield* updateProgress(0, filesToEmbed.length);
+
           let skipped = unchangedFiles.length;
           let indexed = 0;
 
@@ -802,24 +802,20 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
               indexed += indexedFiles.length;
               skipped += chunk.length - indexedFiles.length;
 
-              // Calculate progress: files processed from filesToEmbed + unchanged files already counted
-              const filesProcessedFromEmbed = Math.min(
+              // Update progress: how many of filesToEmbed we've processed
+              const filesProcessed = Math.min(
                 i + chunk.length,
                 filesToEmbed.length,
               );
-              const totalFilesProcessed =
-                filesProcessedFromEmbed + unchangedFiles.length;
-
-              // Update progress
-              yield* updateProgress(totalFilesProcessed, filesToIndex.length);
+              yield* updateProgress(filesProcessed, filesToEmbed.length);
 
               yield* Effect.logDebug(
-                `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${filesToIndex.length} files`,
+                `[CodebaseIndexing] Progress: ${indexed} indexed, ${skipped} skipped of ${filesToEmbed.length} files to index`,
               );
             }
           } else {
-            // If no files to embed, all files were skipped (unchanged)
-            yield* updateProgress(filesToIndex.length, filesToIndex.length);
+            // No files need indexing - all unchanged
+            yield* updateProgress(0, 0);
           }
 
           yield* Effect.logDebug(

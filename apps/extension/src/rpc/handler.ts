@@ -63,7 +63,26 @@ export async function handleRpcMessage(
 
   // Handle unsubscribe
   if (input && typeof input === "object" && "_unsubscribe" in input) {
-    // Subscription cancelled by client - we could track active subscriptions here
+    // Subscription cancelled by client - abort the active subscription
+    const subscription = activeSubscriptions.get(id);
+    if (subscription) {
+      console.log(
+        `[RpcHandler] Cancellation requested for subscription: ${id}`,
+      );
+      ctx.outputChannel?.appendLine(
+        `[RpcHandler] Cancellation requested for subscription: ${id}`,
+      );
+      subscription.abortController.abort();
+      activeSubscriptions.delete(id);
+      console.log(`[RpcHandler] Subscription aborted and cleaned up: ${id}`);
+      ctx.outputChannel?.appendLine(
+        `[RpcHandler] Subscription aborted and cleaned up: ${id}`,
+      );
+    } else {
+      console.log(
+        `[RpcHandler] Cancellation requested but subscription not found: ${id}`,
+      );
+    }
     return null;
   }
 
