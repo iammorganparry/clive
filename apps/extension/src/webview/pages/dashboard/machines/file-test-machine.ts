@@ -79,9 +79,33 @@ export const fileTestMachine = setup({
   actions: {
     addLog: assign(({ context, event }) => {
       if (event.type !== "PROGRESS") return {};
+      const newMessage = event.message;
+      const logs = [...context.logs];
+
+      // Extract base message by removing " (N)..." suffix and just "..."
+      const getBaseMessage = (msg: string) => {
+        return msg.replace(/\s*\(\d+\)\s*\.\.\.?$/, "").replace(/\.\.\.?$/, "");
+      };
+
+      // Check if last log is the same type (consolidate duplicates)
+      if (logs.length > 0) {
+        const lastLog = logs[logs.length - 1];
+        const lastBase = getBaseMessage(lastLog);
+        const newBase = getBaseMessage(newMessage);
+
+        if (lastBase === newBase && lastBase.length > 0) {
+          // Extract count from last log or default to 1
+          const countMatch = lastLog.match(/\((\d+)\)/);
+          const currentCount = countMatch ? parseInt(countMatch[1], 10) : 1;
+          // Replace last log with updated count
+          logs[logs.length - 1] = `${lastBase} (${currentCount + 1})...`;
+          return { logs, statusMessage: newMessage || context.statusMessage };
+        }
+      }
+
       return {
-        logs: [...context.logs, event.message],
-        statusMessage: event.message || context.statusMessage,
+        logs: [...logs, newMessage],
+        statusMessage: newMessage || context.statusMessage,
       };
     }),
     addProposal: assign(({ context, event }) => {
@@ -259,6 +283,7 @@ export const fileTestMachine = setup({
               actions: "addProposal",
             },
             APPROVE: {
+              target: "generating",
               actions: [
                 "approveTest",
                 ({ context, event }) => {
@@ -279,6 +304,7 @@ export const fileTestMachine = setup({
               ],
             },
             REJECT: {
+              target: "idle",
               actions: [
                 "rejectTest",
                 ({ context, event }) => {

@@ -46,33 +46,15 @@ export function processProposeTestApproval(
   }
 
   // Generate a unique ID for this proposal
-  const id = `${input.sourceFile}-${input.targetTestPath}-${Date.now()}`;
-
-  const e2eInfo = [];
-  if (input.navigationPath) {
-    e2eInfo.push(`navigation: ${input.navigationPath}`);
-  }
-  if (input.pageContext) {
-    e2eInfo.push(`page: ${input.pageContext}`);
-  }
-  if (input.prerequisites && input.prerequisites.length > 0) {
-    e2eInfo.push(`prerequisites: ${input.prerequisites.join(", ")}`);
-  }
-  if (input.relatedTests && input.relatedTests.length > 0) {
-    e2eInfo.push(`related tests: ${input.relatedTests.length} found`);
-  }
-  if (input.userFlow) {
-    e2eInfo.push(`user flow: ${input.userFlow}`);
-  }
-  if (input.testCases && input.testCases.length > 0) {
-    e2eInfo.push(`${input.testCases.length} test case(s)`);
-  }
-
-  const e2eDetails = e2eInfo.length > 0 ? ` (E2E: ${e2eInfo.join("; ")})` : "";
+  const id = `${input.sourceFile}-${Date.now()}`;
+  const strategyCount = input.testStrategies.length;
+  const testTypes = [
+    ...new Set(input.testStrategies.map((s) => s.testType)),
+  ].join(", ");
 
   return {
     success: true,
     id,
-    message: `Proposed ${input.isUpdate ? "update" : "creation"} of test file: ${input.targetTestPath} for ${input.sourceFile}${e2eDetails}`,
+    message: `Proposed ${strategyCount} test strategies (${testTypes}) for ${input.sourceFile}`,
   };
 }

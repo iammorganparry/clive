@@ -341,6 +341,8 @@ export const agentsRouter = {
           targetTestPath: z.string(),
           description: z.string(),
           isUpdate: z.boolean(),
+          testType: z.enum(["unit", "integration", "e2e"]).default("e2e"),
+          framework: z.string().default("cypress"),
         }),
       }),
     )
@@ -355,6 +357,8 @@ export const agentsRouter = {
             targetTestPath: input.test.targetTestPath,
             description: input.test.description,
             isUpdate: input.test.isUpdate,
+            testType: input.test.testType ?? "e2e",
+            framework: input.test.framework ?? "cypress",
           },
           ctx.outputChannel,
           ctx.isDev,

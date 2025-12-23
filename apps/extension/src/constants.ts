@@ -7,6 +7,7 @@ export const Commands = {
   approvePlan: "clive.approvePlan",
   rejectPlan: "clive.rejectPlan",
   sendApproval: "clive.sendApproval",
+  refreshCodeLens: "clive.refreshCodeLens",
 } as const;
 
 /**

@@ -2,6 +2,17 @@
  * Shared types for the AI agent tools and responses
  */
 
+// Test type enum
+export type TestType = "unit" | "integration" | "e2e";
+
+// Framework detection
+export interface DetectedFramework {
+  name: string; // "vitest", "jest", "playwright", "cypress", etc.
+  version?: string;
+  configPath?: string;
+  testType: TestType;
+}
+
 export interface ReadFileInput {
   filePath: string;
 }
@@ -112,20 +123,28 @@ export interface GenerateTestOutput {
 
 export interface TestCase {
   name: string; // e.g., "should login with valid credentials"
+  testType: TestType; // NEW: Which type of test
+  framework?: string; // NEW: Which framework to use
   userActions: string[]; // Step-by-step actions
   assertions: string[]; // Expected outcomes to verify
   category: "happy_path" | "error" | "edge_case" | "accessibility";
+  // Unit/integration specific
+  mockDependencies?: string[]; // Dependencies to mock
+  testSetup?: string[]; // Setup steps
 }
 
 export interface ProposedTest {
   id: string;
   sourceFile: string;
-  targetTestPath: string;
+  targetTestPath: string; // Not used in multi-strategy approach
   description: string;
   isUpdate: boolean;
+  testType: TestType; // Default for backward compatibility
+  framework: string; // Default for backward compatibility
+  testStrategies?: TestStrategy[]; // NEW: Multiple test strategies
   proposedContent: string; // The actual test code that will be written
   existingContent?: string; // Current file content (for updates)
-  // E2E-specific fields
+  // E2E-specific fields (for backward compatibility)
   navigationPath?: string; // URL/route to navigate to
   pageContext?: string; // Page component containing this feature
   prerequisites?: string[]; // Auth, data setup requirements
@@ -146,18 +165,27 @@ export type TestExecutionStatus =
   | "completed"
   | "error";
 
-export interface ProposeTestInput {
-  sourceFile: string;
+export interface TestStrategy {
+  testType: TestType;
+  framework: string;
   targetTestPath: string;
   description: string;
   isUpdate: boolean;
   // E2E-specific fields
-  navigationPath?: string; // URL/route to navigate to
-  pageContext?: string; // Page component containing this feature
-  prerequisites?: string[]; // Auth, data setup requirements
+  navigationPath?: string;
+  pageContext?: string;
+  prerequisites?: string[];
+  userFlow?: string;
+  // Unit/Integration specific
+  mockDependencies?: string[];
+  testSetup?: string[];
+  testCases: TestCase[];
+}
+
+export interface ProposeTestInput {
+  sourceFile: string;
+  testStrategies: TestStrategy[]; // NEW: Multiple test strategies in one proposal
   relatedTests?: string[]; // Existing tests that may be impacted
-  userFlow?: string; // Description of the E2E user journey
-  testCases?: TestCase[]; // Structured test scenarios with actions and assertions
 }
 
 export interface ProposeTestOutput {
@@ -171,6 +199,8 @@ export interface ExecuteTestInput {
   targetTestPath: string;
   description: string;
   isUpdate: boolean;
+  testType: TestType; // NEW: Which type of test to execute
+  framework: string; // NEW: Which framework to use
 }
 
 export interface ExecuteTestOutput {
