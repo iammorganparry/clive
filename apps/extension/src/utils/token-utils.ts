@@ -26,6 +26,14 @@ export function countTokensInText(text: string): number {
 }
 
 /**
+ * Fast token estimation using character count (~4 chars per token)
+ * Use this for batching decisions where exact count isn't critical
+ */
+export function estimateTokensFast(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
  * Estimate tokens for a file path (used for planning before reading)
  * This is a rough estimate based on typical file sizes
  *

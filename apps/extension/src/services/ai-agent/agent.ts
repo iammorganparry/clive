@@ -1,30 +1,28 @@
 import { Effect, Layer } from "effect";
 import type vscode from "vscode";
 import { ConfigService } from "../config-service.js";
+import { CodebaseIndexingService } from "../codebase-indexing-service.js";
 import { createLoggerLayer } from "../logger-service.js";
 import { VSCodeService } from "../vs-code.js";
-import { ExecutionAgent } from "./execution-agent.js";
-import { PlanningAgent } from "./planning-agent.js";
+import { TestingAgent } from "./testing-agent.js";
 import type {
   ExecuteTestInput,
   GenerateTestInput,
   GenerateTestOutput,
 } from "./types.js";
 
-// Create layers for both agents
-const planningAgentLayer = Layer.merge(
-  PlanningAgent.Default,
-  Layer.merge(ConfigService.Default, VSCodeService.Default),
-);
-
-const executionAgentLayer = Layer.merge(
-  ExecutionAgent.Default,
-  Layer.merge(ConfigService.Default, VSCodeService.Default),
+// Create layer for TestingAgent
+const testingAgentLayer = Layer.merge(
+  TestingAgent.Default,
+  Layer.merge(
+    ConfigService.Default,
+    Layer.merge(VSCodeService.Default, CodebaseIndexingService.Default),
+  ),
 );
 
 /**
- * Facade for Cypress test generation agents
- * Delegates to specialized PlanningAgent and ExecutionAgent
+ * Facade for Cypress test generation agent
+ * Delegates to TestingAgent which handles both planning and execution phases
  */
 export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
   "CypressTestAgent",
@@ -36,14 +34,14 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
          */
         isConfigured: () =>
           Effect.gen(function* () {
-            const planningAgent = yield* PlanningAgent;
-            return yield* planningAgent.isConfigured();
-          }).pipe(Effect.provide(planningAgentLayer)),
+            const testingAgent = yield* TestingAgent;
+            return yield* testingAgent.isConfigured();
+          }).pipe(Effect.provide(testingAgentLayer)),
 
         /**
          * Plan Cypress tests for multiple React components
-         * Uses PlanningAgent with Claude Opus 4.5 for intelligent analysis
-         * Processes files in parallel with a concurrency limit (handled internally by PlanningAgent)
+         * Uses TestingAgent with Claude Opus 4.5 for intelligent analysis
+         * Processes files in parallel with a concurrency limit (handled internally by TestingAgent)
          */
         planTests: (
           files: string[],
@@ -51,9 +49,9 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
           isDev?: boolean,
         ) =>
           Effect.gen(function* () {
-            const planningAgent = yield* PlanningAgent;
-            // PlanningAgent now handles batching internally
-            const result = yield* planningAgent.planTest(files, {
+            const testingAgent = yield* TestingAgent;
+            // TestingAgent now handles batching internally
+            const result = yield* testingAgent.planTest(files, {
               outputChannel,
             });
             return {
@@ -63,16 +61,16 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
             Effect.provide(
               outputChannel && isDev !== undefined
                 ? Layer.merge(
-                    planningAgentLayer,
+                    testingAgentLayer,
                     createLoggerLayer(outputChannel, isDev),
                   )
-                : planningAgentLayer,
+                : testingAgentLayer,
             ),
           ),
 
         /**
          * Execute a test proposal by writing the Cypress test file
-         * Uses ExecutionAgent with Claude Haiku for fast execution
+         * Uses TestingAgent with Claude Haiku for fast execution
          */
         executeTest: (
           input: ExecuteTestInput,
@@ -82,8 +80,8 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
           progressCallback?: (message: string) => void,
         ) =>
           Effect.gen(function* () {
-            const executionAgent = yield* ExecutionAgent;
-            return yield* executionAgent.executeTest(
+            const testingAgent = yield* TestingAgent;
+            return yield* testingAgent.executeTest(
               input,
               outputChannel,
               abortSignal,
@@ -93,10 +91,10 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
             Effect.provide(
               outputChannel && isDev !== undefined
                 ? Layer.merge(
-                    executionAgentLayer,
+                    testingAgentLayer,
                     createLoggerLayer(outputChannel, isDev),
                   )
-                : executionAgentLayer,
+                : testingAgentLayer,
             ),
           ),
 

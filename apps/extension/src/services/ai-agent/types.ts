@@ -83,6 +83,7 @@ export interface GetFileDiffOutput {
 }
 
 export interface WriteTestFileInput {
+  proposalId: string;
   testContent: string;
   targetPath: string;
   overwrite?: boolean;
@@ -109,6 +110,13 @@ export interface GenerateTestOutput {
   error?: string;
 }
 
+export interface TestCase {
+  name: string; // e.g., "should login with valid credentials"
+  userActions: string[]; // Step-by-step actions
+  assertions: string[]; // Expected outcomes to verify
+  category: "happy_path" | "error" | "edge_case" | "accessibility";
+}
+
 export interface ProposedTest {
   id: string;
   sourceFile: string;
@@ -123,6 +131,7 @@ export interface ProposedTest {
   prerequisites?: string[]; // Auth, data setup requirements
   relatedTests?: string[]; // Existing tests that may be impacted
   userFlow?: string; // Description of the E2E user journey
+  testCases?: TestCase[]; // Structured test scenarios with actions and assertions
 }
 
 export interface TestGenerationPlan {
@@ -148,6 +157,7 @@ export interface ProposeTestInput {
   prerequisites?: string[]; // Auth, data setup requirements
   relatedTests?: string[]; // Existing tests that may be impacted
   userFlow?: string; // Description of the E2E user journey
+  testCases?: TestCase[]; // Structured test scenarios with actions and assertions
 }
 
 export interface ProposeTestOutput {
@@ -168,4 +178,16 @@ export interface ExecuteTestOutput {
   testFilePath?: string;
   testContent?: string;
   error?: string;
+}
+
+export interface BashExecuteInput {
+  command: string;
+}
+
+export interface BashExecuteOutput {
+  stdout: string;
+  stderr?: string;
+  exitCode: number;
+  wasTruncated: boolean;
+  command: string;
 }

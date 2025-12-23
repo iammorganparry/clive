@@ -18,8 +18,8 @@ vi.mock("ai", () => {
     // Generate one embedding per input text
     // Use similar base values with small variations to ensure positive similarity
     const baseEmbedding = generateEmbedding();
-    const embeddings = values.map(() =>
-      baseEmbedding.map((val) => val + (Math.random() - 0.5) * 0.2), // Small variation
+    const embeddings = values.map(
+      () => baseEmbedding.map((val) => val + (Math.random() - 0.5) * 0.2), // Small variation
     );
     return { embeddings };
   });

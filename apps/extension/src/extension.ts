@@ -11,7 +11,12 @@ import { createLoggerLayer } from "./services/logger-service.js";
 import { CodebaseIndexingService } from "./services/codebase-indexing-service.js";
 import { FileWatcherDisposable } from "./services/file-watcher-service.js";
 import { createIndexingLayer } from "./services/layer-factory.js";
-import { GlobalStateKeys } from "./constants.js";
+import { GlobalStateKeys, Commands } from "./constants.js";
+import {
+  PlanCodeLensProvider,
+  handleApprovePlan,
+  handleRejectPlan,
+} from "./services/plan-codelens-provider.js";
 
 const commandCenter = new CommandCenter();
 
@@ -71,6 +76,73 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   // Register the diff content provider
   const diffProvider = DiffContentProvider.register(context);
 
+  // Register plan CodeLens provider
+  const planCodeLensProvider = new PlanCodeLensProvider();
+  const codeLensDisposable = vscode.languages.registerCodeLensProvider(
+    { pattern: "**/.clive/plans/*.md" },
+    planCodeLensProvider,
+  );
+  context.subscriptions.push(codeLensDisposable);
+
+  // Refresh CodeLens when documents change
+  const onDidChangeTextDocument = vscode.workspace.onDidChangeTextDocument(
+    () => {
+      planCodeLensProvider.refresh();
+    },
+  );
+  context.subscriptions.push(onDidChangeTextDocument);
+
+  // Register approval/rejection commands
+  const approvePlanDisposable = vscode.commands.registerCommand(
+    Commands.approvePlan,
+    async (
+      planUri: vscode.Uri,
+      proposalId: string,
+      subscriptionId: string,
+      toolCallId: string,
+    ) => {
+      await handleApprovePlan(planUri, proposalId, subscriptionId, toolCallId);
+      planCodeLensProvider.refresh();
+    },
+  );
+  context.subscriptions.push(approvePlanDisposable);
+
+  const rejectPlanDisposable = vscode.commands.registerCommand(
+    Commands.rejectPlan,
+    async (
+      planUri: vscode.Uri,
+      proposalId: string,
+      subscriptionId: string,
+      toolCallId: string,
+    ) => {
+      await handleRejectPlan(planUri, proposalId, subscriptionId, toolCallId);
+      planCodeLensProvider.refresh();
+    },
+  );
+  context.subscriptions.push(rejectPlanDisposable);
+
+  // Register sendApproval command (used by CodeLens to send approval to RPC)
+  const sendApprovalDisposable = vscode.commands.registerCommand(
+    Commands.sendApproval,
+    async (data: {
+      subscriptionId: string;
+      toolCallId: string;
+      data: string;
+    }) => {
+      // Send approval message via webview (will be handled by RPC handler)
+      const webview = provider.getWebview();
+      if (webview) {
+        webview.webview.postMessage({
+          subscriptionId: data.subscriptionId,
+          type: "approval",
+          toolCallId: data.toolCallId,
+          data: data.data,
+        });
+      }
+    },
+  );
+  context.subscriptions.push(sendApprovalDisposable);
+
   // Register the webview view provider
   const provider = new CliveViewProvider(context.extensionUri, diffProvider);
   provider.setContext(context);
@@ -113,68 +185,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     );
   }
 
-  Effect.gen(function* () {
-    // Check if indexing is enabled (opt-in)
-    if (!isIndexingEnabled) {
-      yield* Effect.logDebug(
-        "[Extension] Skipping indexing - not enabled (opt-in required)",
-      );
-      return;
-    }
-
-    // Check authentication before indexing
-    const configService = yield* ConfigService;
-    const authToken = yield* configService.getAuthToken();
-
-    if (!authToken) {
-      yield* Effect.logDebug(
-        "[Extension] Skipping indexing - user not authenticated",
-      );
-      return;
-    }
-
-    yield* Effect.logDebug(
-      "[Extension] Starting codebase indexing in background...",
-    );
-    const indexingService = yield* CodebaseIndexingService;
-
-    // Index workspace asynchronously (don't block activation)
-    yield* indexingService.indexWorkspace().pipe(
-      Effect.catchAll((error) =>
-        Effect.gen(function* () {
-          yield* Effect.logDebug(
-            `[Extension] Codebase indexing error (non-fatal): ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }),
-      ),
-    );
-
-    // Start file watcher after initial indexing completes
-    yield* Effect.logDebug(
-      "[Extension] Starting file watcher for incremental indexing...",
-    );
-  })
-    .pipe(
-      Effect.provide(fullIndexingLayer),
-      Runtime.runPromise(Runtime.defaultRuntime),
-    )
-    .then(() => {
-      // Start file watcher after initial indexing (outside Effect context)
-      // Only if indexing is enabled
-      if (isIndexingEnabled) {
-        fileWatcherDisposable.start().catch((error) => {
-          outputChannel.appendLine(
-            `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
-      }
-    })
-    .catch(() => {
-      // Ignore indexing errors - extension should still work without indexing
+  // Indexing is now only triggered manually via Settings page
+  // File watcher will start when user enables indexing
+  if (isIndexingEnabled) {
+    // Start file watcher for incremental indexing when user enables it
+    fileWatcherDisposable.start().catch((error) => {
       outputChannel.appendLine(
-        "Codebase indexing failed (extension will continue without it)",
+        `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
+  }
 
   // Return exports for testing
   return { context };

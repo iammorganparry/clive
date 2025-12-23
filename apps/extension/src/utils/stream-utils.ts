@@ -10,6 +10,7 @@ export interface AgentStreamEvent {
   toolName?: string;
   toolArgs?: unknown;
   toolResult?: unknown;
+  toolCallId?: string;
   stepIndex?: number;
 }
 
@@ -19,7 +20,7 @@ export interface AgentStreamEvent {
  * Uses proper AI SDK types for type safety
  */
 export function streamFromAI<TOOLS extends ToolSet>(
-  result: StreamTextResult<TOOLS, unknown>,
+  result: StreamTextResult<TOOLS, any>,
 ): Stream.Stream<AgentStreamEvent, Error, never> {
   return Stream.fromAsyncIterable(
     result.fullStream,
@@ -43,15 +44,18 @@ export function streamFromAI<TOOLS extends ToolSet>(
         Match.when("tool-call", () => {
           // TypeScript narrows: chunk is ({ type: 'tool-call' } & TypedToolCall<TOOLS>)
           // Both StaticToolCall and DynamicToolCall have toolName: string and input: unknown
+          // Tool calls also have toolCallId
           const toolCall = chunk as {
             type: "tool-call";
             toolName: string;
             input: unknown;
+            toolCallId?: string;
           };
           return {
             type: "tool-call" as const,
             toolName: toolCall.toolName,
             toolArgs: toolCall.input,
+            toolCallId: toolCall.toolCallId,
           } satisfies AgentStreamEvent;
         }),
         Match.when("tool-result", () => {

@@ -105,9 +105,9 @@
     "vitest-mock-extended": "^3.1.0"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.53",
-    "@ai-sdk/openai": "^2.0.88",
-    "@ai-sdk/openai-compatible": "1.0.29",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/openai-compatible": "^2.0.0",
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@clerk/clerk-react": "5.57.0",
     "@clive/db": "*",
@@ -121,7 +121,7 @@
     "@tanstack/react-query": "^5.90.12",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "@xstate/react": "^6.0.0",
-    "ai": "^5.0.108",
+    "ai": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.19",

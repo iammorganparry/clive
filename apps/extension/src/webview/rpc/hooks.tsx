@@ -19,7 +19,7 @@ const pendingRequests = new Map<
 >();
 
 // Subscription handlers
-const subscriptionHandlers = new Map<
+export const subscriptionHandlers = new Map<
   string,
   {
     onData: (data: unknown) => void;
@@ -30,7 +30,7 @@ const subscriptionHandlers = new Map<
 
 let messageIdCounter = 0;
 
-function generateId(): string {
+export function generateId(): string {
   return `rpc-${Date.now()}-${++messageIdCounter}`;
 }
 

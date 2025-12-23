@@ -60,8 +60,8 @@ describe("RpcProvider", () => {
     expect(typeof client.status.cypress.useQuery).toBe("function");
 
     expect(client.agents.planTests).toBeDefined();
-    expect(client.agents.planTests.useMutation).toBeDefined();
-    expect(typeof client.agents.planTests.useMutation).toBe("function");
+    expect(client.agents.planTests.useSubscription).toBeDefined();
+    expect(typeof client.agents.planTests.useSubscription).toBe("function");
 
     expect(client.agents.generateTest).toBeDefined();
     expect(client.agents.generateTest.useSubscription).toBeDefined();
@@ -180,15 +180,15 @@ describe("Client proxy", () => {
     expect(queryHook).toBeDefined();
     expect(typeof queryHook.data).toBeDefined(); // Hook returns object with data
 
-    // Mutation procedure should have useMutation
-    const mutationHook = client.agents.planTests.useMutation();
-    expect(mutationHook).toBeDefined();
-    expect(typeof mutationHook.mutate).toBe("function");
+    // Subscription procedure should have useSubscription
+    const planTestsHook = client.agents.planTests.useSubscription();
+    expect(planTestsHook).toBeDefined();
+    expect(typeof planTestsHook.subscribe).toBe("function");
 
     // Subscription procedure should have useSubscription
-    const subscriptionHook = client.agents.generateTest.useSubscription();
-    expect(subscriptionHook).toBeDefined();
-    expect(typeof subscriptionHook.subscribe).toBe("function");
+    const generateTestHook = client.agents.generateTest.useSubscription();
+    expect(generateTestHook).toBeDefined();
+    expect(typeof generateTestHook.subscribe).toBe("function");
   });
 
   it("should handle deeply nested routers", () => {

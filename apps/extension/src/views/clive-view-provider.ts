@@ -6,7 +6,12 @@ import { Views } from "../constants.js";
 import { Effect, Layer, Runtime, pipe } from "effect";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
 import { VSCodeService } from "../services/vs-code.js";
-import { handleRpcMessage, isRpcMessage } from "../rpc/handler.js";
+import {
+  handleRpcMessage,
+  handleSubscriptionMessage,
+  isRpcMessage,
+} from "../rpc/handler.js";
+import type { RpcSubscriptionMessage } from "@clive/webview-rpc";
 import type { RpcContext } from "../rpc/context.js";
 import {
   resolveFileUri,
@@ -67,6 +72,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
     this._isDev = isDev;
   }
 
+  public getWebview(): vscode.WebviewView | undefined {
+    return this._webviewView;
+  }
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,
@@ -94,6 +103,23 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
     // Set up message handling
     webviewView.webview.onDidReceiveMessage(
       async (message) => {
+        // Handle subscription messages (approvals, cancellations, etc.)
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "subscriptionId" in message &&
+          "type" in message
+        ) {
+          const rpcContext = this.createRpcContext(webviewView);
+          if (rpcContext) {
+            handleSubscriptionMessage(
+              message as RpcSubscriptionMessage,
+              rpcContext,
+            );
+          }
+          return;
+        }
+
         // Handle RPC messages
         if (isRpcMessage(message)) {
           const rpcContext = this.createRpcContext(webviewView);

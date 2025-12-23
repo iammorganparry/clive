@@ -13,4 +13,9 @@ export interface IndexingStatusInfo {
   errorMessage?: string;
   /** Number of files pending incremental indexing (waiting for debounce) */
   pendingFileCount?: number;
+  /** Current progress during indexing */
+  progress?: {
+    filesIndexed: number;
+    totalFiles: number;
+  };
 }

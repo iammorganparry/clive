@@ -2,12 +2,15 @@ import type React from "react";
 import { useState, useCallback, useMemo } from "react";
 import { Button } from "../../../../components/ui/button.js";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../../../../components/ui/card.js";
+  Plan,
+  PlanHeader,
+  PlanTitle,
+  PlanDescription,
+  PlanTrigger,
+  PlanContent,
+  PlanFooter,
+  PlanAction,
+} from "@clive/ui/components/ai-elements/plan";
 import { Check, X, Play, XCircle } from "lucide-react";
 import TestCard from "./test-card.js";
 import type {
@@ -20,6 +23,7 @@ interface TestGenerationPlanProps {
   testStatuses: Map<string, TestExecutionStatus>;
   testErrors: Map<string, string>;
   testFilePaths: Map<string, string>;
+  isStreaming?: boolean;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
   onCancel?: (id: string) => void;
@@ -33,6 +37,7 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
   testStatuses,
   testErrors,
   testFilePaths,
+  isStreaming = false,
   onAccept,
   onReject,
   onCancel,
@@ -127,25 +132,28 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
 
   if (tests.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Test Generation Plan</CardTitle>
-          <CardDescription>No tests proposed</CardDescription>
-        </CardHeader>
-      </Card>
+      <Plan isStreaming={isStreaming} defaultOpen={true}>
+        <PlanHeader>
+          <PlanTitle>Test Generation Plan</PlanTitle>
+          <PlanDescription>No tests proposed</PlanDescription>
+          <PlanTrigger />
+        </PlanHeader>
+      </Plan>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Test Generation Plan</CardTitle>
-        <CardDescription>
-          Review and accept the proposed Cypress tests. Accepted tests will be
-          generated when you click "Generate Accepted Tests".
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Plan isStreaming={isStreaming} defaultOpen={true}>
+      <PlanHeader>
+        <PlanTitle>Test Generation Plan</PlanTitle>
+        <PlanDescription>
+          {isStreaming
+            ? "Analyzing components and planning tests..."
+            : `Review and accept the proposed Cypress tests. Accepted tests will be generated when you click "Build Accepted Tests".`}
+        </PlanDescription>
+        <PlanTrigger />
+      </PlanHeader>
+      <PlanContent className="space-y-4">
         {/* Action buttons */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button
@@ -187,7 +195,7 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
               className="h-8"
             >
               <Play className="h-3.5 w-3.5 mr-1.5" />
-              Generate Accepted Tests ({acceptedCount})
+              Build Accepted Tests ({acceptedCount})
             </Button>
           )}
         </div>
@@ -209,8 +217,20 @@ const TestGenerationPlan: React.FC<TestGenerationPlanProps> = ({
             />
           ))}
         </div>
-      </CardContent>
-    </Card>
+      </PlanContent>
+      <PlanFooter>
+        <PlanAction>
+          <Button
+            onClick={handleGenerate}
+            disabled={!hasAcceptedTests || isGenerating}
+            className="w-full"
+          >
+            <Play className="h-4 w-4 mr-2" />
+            Build Accepted Tests ({acceptedCount})
+          </Button>
+        </PlanAction>
+      </PlanFooter>
+    </Plan>
   );
 };
 

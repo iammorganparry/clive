@@ -4,6 +4,9 @@
 export const Commands = {
   showView: "clive.showView",
   helloWorld: "clive.helloWorld",
+  approvePlan: "clive.approvePlan",
+  rejectPlan: "clive.rejectPlan",
+  sendApproval: "clive.sendApproval",
 } as const;
 
 /**

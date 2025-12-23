@@ -158,7 +158,10 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
       if ("error" in data && data.error) {
         setError(createErrorInfo(data.error));
       } else {
-        queryClient.setQueryData(["api-keys-status"], data.statuses);
+        // Invalidate the query to refetch fresh data from the server
+        queryClient.invalidateQueries({
+          queryKey: ["rpc", "config", "getApiKeys"],
+        });
         setApiKey("");
         setError(null);
       }
@@ -175,7 +178,10 @@ export const ApiKeyForm: React.FC<ApiKeyFormProps> = ({
       if ("error" in data && data.error) {
         setError(createErrorInfo(data.error));
       } else {
-        queryClient.setQueryData(["api-keys-status"], data.statuses);
+        // Invalidate the query to refetch fresh data from the server
+        queryClient.invalidateQueries({
+          queryKey: ["rpc", "config", "getApiKeys"],
+        });
         setApiKey("");
         setError(null);
         setShowDeleteConfirm(false);

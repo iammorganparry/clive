@@ -4,6 +4,7 @@ import { createRouter } from "@clive/webview-rpc";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
 import { ApiKeyService } from "../../services/api-key-service.js";
 import { CodebaseIndexingService } from "../../services/codebase-indexing-service.js";
+import { cancelIndexingDirect } from "../../services/codebase-indexing-service.js";
 import { RepositoryService } from "../../services/repository-service.js";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import { GlobalStateKeys } from "../../constants.js";
@@ -170,18 +171,20 @@ export const configRouter = {
         organizationId,
       );
 
-      // Get current indexing state
-      const currentStatus = yield* indexingService.getStatus();
+      // Get current indexing state (including progress)
+      const currentState = yield* indexingService.getState();
 
       // Merge statuses - if indexing is in progress, use that; otherwise use repo status
       const status =
-        currentStatus === "in_progress" || currentStatus === "error"
-          ? currentStatus
+        currentState.status === "in_progress" || currentState.status === "error"
+          ? currentState.status
           : repoStatus.status;
 
       return {
         ...repoStatus,
         status,
+        progress: currentState.progress,
+        errorMessage: currentState.error ?? repoStatus.errorMessage,
       };
     }).pipe(
       Effect.catchTag("RepositoryError", (error) =>
@@ -222,6 +225,34 @@ export const configRouter = {
 
       return { success: true };
     }).pipe(provideConfigLayer(ctx)),
+  ),
+
+  /**
+   * Cancel active indexing operation
+   */
+  cancelIndexing: procedure.input(z.void()).mutation(() =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] cancelIndexing RPC called");
+      yield* Effect.logDebug("[ConfigRouter] Calling cancelIndexingDirect...");
+      yield* cancelIndexingDirect();
+      yield* Effect.logDebug("[ConfigRouter] cancelIndexingDirect completed");
+      yield* Effect.logDebug("[ConfigRouter] Returning success");
+      return { success: true };
+    }).pipe(
+      Effect.catchAll((error: unknown) =>
+        Effect.gen(function* () {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          yield* Effect.logDebug(
+            `[ConfigRouter] Cancel failed: ${errorMessage}`,
+          );
+          return {
+            success: false,
+            error: errorMessage,
+          };
+        }),
+      ),
+    ),
   ),
 
   /**

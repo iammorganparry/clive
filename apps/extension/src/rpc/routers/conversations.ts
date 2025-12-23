@@ -1,7 +1,7 @@
 import { Effect, Runtime } from "effect";
 import { z } from "zod";
 import { createRouter } from "@clive/webview-rpc";
-import { PlanningAgent } from "../../services/ai-agent/planning-agent.js";
+import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
 import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
 import { ErrorCode, getErrorMessage } from "../../lib/error-messages.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
@@ -152,7 +152,7 @@ export const conversationsRouter = {
             `[ConversationsRouter] Sending chat message to conversation: ${input.conversationId}`,
           );
           const conversationService = yield* ConversationServiceEffect;
-          const planningAgent = yield* PlanningAgent;
+          const testingAgent = yield* TestingAgent;
 
           // Add user message to conversation
           yield* conversationService
@@ -205,7 +205,7 @@ export const conversationsRouter = {
           }));
 
           // Call planning agent with history using new API
-          const result = yield* planningAgent
+          const result = yield* testingAgent
             .planTest(input.sourceFile, {
               conversationHistory,
               outputChannel: ctx.outputChannel,
