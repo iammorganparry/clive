@@ -6,6 +6,8 @@ import vscode from "vscode";
 import { ConfigService } from "../config-service.js";
 import { SecretStorageService, VSCodeService } from "../vs-code.js";
 import { CodebaseIndexingService } from "../codebase-indexing-service.js";
+import { KnowledgeBaseService } from "../knowledge-base-service.js";
+import { RepositoryService } from "../repository-service.js";
 import { AIModels } from "../ai-models.js";
 import { createAnthropicProvider } from "../ai-provider-factory.js";
 import {
@@ -22,6 +24,8 @@ import {
   proposeTestTool,
   createWriteTestFileTool,
   writeTestFileTool,
+  createSearchKnowledgeBaseTool,
+  createUpsertKnowledgeTool,
 } from "./tools/index.js";
 import { APPROVAL } from "./hitl-utils.js";
 import { makeTokenBudget } from "./token-budget.js";
@@ -57,6 +61,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const configService = yield* ConfigService;
       const vscodeService = yield* VSCodeService;
       const indexingService = yield* CodebaseIndexingService;
+      const knowledgeBaseService = yield* KnowledgeBaseService;
+      const repositoryService = yield* RepositoryService;
       const planFileService = yield* PlanFileService;
 
       /**
@@ -581,12 +587,19 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
           );
 
-          // Create tools: bash + semantic search + proposeTest
+          // Create tools: bash + semantic search + knowledge base + proposeTest + upsertKnowledge
           const tools = {
             // Bash tool for file system operations
             bashExecute: createBashExecuteTool(budget),
             // Semantic search for finding related code patterns and existing tests
             semanticSearch: createSemanticSearchTool(indexingService),
+            // Knowledge base search for testing patterns and conventions
+            searchKnowledgeBase: createSearchKnowledgeBaseTool(
+              knowledgeBaseService,
+              repositoryService,
+            ),
+            // Knowledge base upsert for recording gaps and improvements
+            upsertKnowledge: createUpsertKnowledgeTool(repositoryService),
             // Output tool for proposing tests
             proposeTest: proposeTestTool,
           };
@@ -1106,6 +1119,11 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const planningTools = {
               bashExecute: createBashExecuteTool(budget),
               semanticSearch: createSemanticSearchTool(indexingService),
+              searchKnowledgeBase: createSearchKnowledgeBaseTool(
+                knowledgeBaseService,
+                repositoryService,
+              ),
+              upsertKnowledge: createUpsertKnowledgeTool(repositoryService),
               proposeTest,
               // NO writeTestFile here - it will be added in Phase 2 after approval
             };

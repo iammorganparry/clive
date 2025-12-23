@@ -168,6 +168,21 @@ export const messageRoleEnum = pgEnum("message_role", [
   "system",
 ]);
 
+export const knowledgeBaseCategoryEnum = pgEnum("knowledge_base_category", [
+  "framework",
+  "patterns",
+  "mocks",
+  "fixtures",
+  "selectors",
+  "routes",
+  "assertions",
+  "hooks",
+  "utilities",
+  "coverage",
+  "gaps",
+  "improvements",
+]);
+
 export const conversation = pgTable("conversation", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -236,6 +251,40 @@ export const files = pgTable(
     uniqueIndex("files_repo_path_unique_idx").on(
       table.repositoryId,
       table.relativePath,
+    ),
+  ],
+);
+
+// Testing knowledge base table
+export const knowledgeBase = pgTable(
+  "knowledge_base",
+  {
+    id: text("id").primaryKey(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    category: knowledgeBaseCategoryEnum("category").notNull(),
+    title: text("title").notNull(), // Short title for the knowledge entry
+    content: text("content").notNull(), // AI-generated summary/description
+    examples: text("examples"), // JSON array of code examples
+    sourceFiles: text("source_files"), // JSON array of files this knowledge was derived from
+    embedding: vector("embedding", { dimensions: 1536 }).notNull(), // text-embedding-3-small for semantic search
+    contentHash: text("content_hash").notNull(), // For change detection during regeneration
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => sql`now()`),
+  },
+  (table) => [
+    // HNSW index for fast vector similarity search
+    index("knowledge_base_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+    // Index for category-based filtering
+    index("knowledge_base_repo_category_idx").on(
+      table.repositoryId,
+      table.category,
     ),
   ],
 );

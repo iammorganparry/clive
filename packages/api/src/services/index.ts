@@ -30,3 +30,12 @@ export {
   type RepositoryError,
   type RepositoryNotFoundError,
 } from "./repository-repository.js";
+
+export {
+  KnowledgeBaseRepository,
+  KnowledgeBaseRepositoryDefault,
+  type KnowledgeBaseEntry,
+  type KnowledgeBaseSearchResult,
+  type KnowledgeBaseStatus,
+  type KnowledgeBaseError,
+} from "./knowledge-base-repository.js";

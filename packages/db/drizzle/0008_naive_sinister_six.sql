@@ -1,0 +1,2 @@
+CREATE TYPE "public"."knowledge_base_category" AS ENUM('framework', 'patterns', 'mocks', 'fixtures', 'selectors', 'routes', 'assertions', 'hooks', 'utilities', 'coverage', 'gaps', 'improvements');--> statement-breakpoint
+ALTER TABLE "knowledge_base" ALTER COLUMN "category" SET DATA TYPE "public"."knowledge_base_category" USING "category"::"public"."knowledge_base_category";
