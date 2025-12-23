@@ -122,6 +122,8 @@ export class CypressTestAgent extends Effect.Service<CypressTestAgent>()(
               targetTestPath: "", // Will be determined by the agent
               description: `Generate Cypress E2E test for ${input.sourceFilePath}`,
               isUpdate: input.options?.updateExisting ?? false,
+              testType: "e2e",
+              framework: "cypress",
             };
 
             progressCallback?.("Generating test content...");

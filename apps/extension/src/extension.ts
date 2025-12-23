@@ -120,6 +120,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
   context.subscriptions.push(rejectPlanDisposable);
 
+  // Register refreshCodeLens command (used to refresh CodeLens after plan file updates)
+  const refreshCodeLensDisposable = vscode.commands.registerCommand(
+    Commands.refreshCodeLens,
+    () => {
+      planCodeLensProvider.refresh();
+    },
+  );
+  context.subscriptions.push(refreshCodeLensDisposable);
+
   // Register sendApproval command (used by CodeLens to send approval to RPC)
   const sendApprovalDisposable = vscode.commands.registerCommand(
     Commands.sendApproval,

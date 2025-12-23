@@ -1,5 +1,4 @@
-import type React from "react";
-import { useCallback } from "react";
+import React, { useCallback } from "react";
 import { useFileTestActor } from "../hooks/use-file-test-actor.js";
 import type { EligibleFile } from "./branch-changes.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -18,6 +17,8 @@ import {
   Play,
   Search,
   Circle,
+  Check,
+  X,
 } from "lucide-react";
 import {
   truncateMiddle,
@@ -181,6 +182,33 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
                 <XCircle className="h-3 w-3 mr-1" />
                 Cancel
               </Button>
+            ) : isAwaitingApproval && hasProposals ? (
+              state.context.proposals.map((proposal) => (
+                <React.Fragment key={proposal.id}>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-6 px-2 flex-shrink-0"
+                    onClick={() =>
+                      send({ type: "APPROVE", testId: proposal.id })
+                    }
+                  >
+                    <Check className="h-3 w-3 mr-1" />
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 flex-shrink-0"
+                    onClick={() =>
+                      send({ type: "REJECT", testId: proposal.id })
+                    }
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Reject
+                  </Button>
+                </React.Fragment>
+              ))
             ) : isCompleted && state.context.testFilePaths.size > 0 ? (
               getMapEntries(state.context.testFilePaths).map(
                 ([testId, testPath]) => (

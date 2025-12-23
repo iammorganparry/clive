@@ -9,11 +9,14 @@ import { CodebaseIndexingService } from "../codebase-indexing-service.js";
 import { KnowledgeBaseService } from "../knowledge-base-service.js";
 import { RepositoryService } from "../repository-service.js";
 import { AIModels } from "../ai-models.js";
-import { createAnthropicProvider } from "../ai-provider-factory.js";
 import {
-  CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
-  CYPRESS_EXECUTION_SYSTEM_PROMPT,
-  CYPRESS_PLANNING_SYSTEM_PROMPT,
+  createAnthropicProvider,
+  createXaiProvider,
+} from "../ai-provider-factory.js";
+import {
+  TEST_CONTENT_GENERATION_SYSTEM_PROMPT,
+  TEST_EXECUTION_SYSTEM_PROMPT,
+  TEST_PLANNING_SYSTEM_PROMPT,
   PromptFactory,
 } from "./prompts.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
@@ -29,6 +32,7 @@ import {
 import { APPROVAL } from "./hitl-utils.js";
 import { makeTokenBudget } from "./token-budget.js";
 import { PlanFileService } from "../plan-file-service.js";
+import { Commands } from "../../constants.js";
 import type {
   ExecuteTestInput,
   ExecuteTestOutput,
@@ -89,10 +93,87 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
           }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
         });
 
-      /**
-       * Extract test content from AI text response
-       * During planning phase, we capture content from the AI's text output, not from file writes
-       */
+      const readPlanFile = (uri: vscode.Uri) =>
+        Effect.tryPromise({
+          try: () => vscode.workspace.fs.readFile(uri),
+          catch: (error) =>
+            new TestingAgentError({
+              message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+              cause: error,
+            }),
+        });
+
+      const writePlanFile = (uri: vscode.Uri, content: string) =>
+        Effect.tryPromise({
+          try: async () =>
+            vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf-8")),
+          catch: (error) =>
+            new TestingAgentError({
+              message: `Failed to write plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+              cause: error,
+            }),
+        });
+
+      const updatePlanFileStatus = (
+        uri: vscode.Uri,
+        status: "approved" | "rejected" | "pending",
+      ) =>
+        Effect.gen(function* () {
+          const fileData = yield* readPlanFile(uri);
+          const content = Buffer.from(fileData)
+            .toString("utf-8")
+            .replace(/^status: "[^"]*"/m, `status: "${status}"`);
+          yield* writePlanFile(uri, content);
+        });
+
+      const addToolCallIdToFrontmatter = (
+        uri: vscode.Uri,
+        toolCallId: string,
+      ) =>
+        Effect.gen(function* () {
+          const fileData = yield* readPlanFile(uri);
+          const content = Buffer.from(fileData)
+            .toString("utf-8")
+            .replace(/^---\n/, `---\ntoolCallId: "${toolCallId}"\n`);
+          yield* writePlanFile(uri, content);
+        });
+
+      const handleProposalApproval = (
+        proposalId: string,
+        planUri: vscode.Uri,
+        proposal: ProposedTest,
+        isApproved: boolean,
+        approvedProposals: Array<{
+          proposal: ProposedTest;
+          proposalId: string;
+        }>,
+        approvalRegistry: Set<string>,
+        correlationId: string,
+      ) =>
+        Effect.gen(function* () {
+          const status = isApproved ? "approved" : "rejected";
+
+          if (isApproved) {
+            approvedProposals.push({ proposal, proposalId });
+            approvalRegistry.add(proposalId);
+          }
+
+          yield* Effect.logDebug(
+            `[TestingAgent:${correlationId}] Proposal ${status}: ${proposalId}`,
+          );
+
+          yield* updatePlanFileStatus(planUri, status).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[TestingAgent:${correlationId}] Failed to update plan file status: ${error.message}`,
+                );
+                return Effect.void;
+              }),
+            ),
+          );
+        });
+
       const extractTestContent = <T extends { text: Promise<string> | string }>(
         result: T,
         test: ProposedTest,
@@ -188,16 +269,20 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
           // NOTE: NO writeTestFile - this is planning phase, we only generate content preview
           const tools = {
             bashExecute: createBashExecuteTool(contentBudget),
-            // Semantic search for finding related code patterns
             semanticSearch: createSemanticSearchTool(indexingService),
+            searchKnowledgeBase: createSearchKnowledgeBaseTool(
+              knowledgeBaseService,
+              repositoryService,
+            ),
           };
 
-          // Build prompt for content generation with E2E metadata
           const prompt = PromptFactory.writeTestFile({
             sourceFile: test.sourceFile,
             targetTestPath: test.targetTestPath,
             description: test.description,
             isUpdate: test.isUpdate,
+            testType: test.testType,
+            framework: test.framework,
             navigationPath: test.navigationPath,
             prerequisites: test.prerequisites,
             userFlow: test.userFlow,
@@ -234,43 +319,31 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             );
           }
 
-          const anthropic = createAnthropicProvider(tokenResult);
+          const xai = createXaiProvider(tokenResult);
 
           // Generate text using AI SDK
           yield* Effect.logDebug(
-            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.anthropic.testing}) for content generation...`,
+            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.xai.codeFast}) for content generation...`,
           );
           const aiStartTime = Date.now();
           const streamResult = yield* Effect.try({
             try: () =>
               streamText({
-                model: anthropic(AIModels.anthropic.testing),
+                model: xai(AIModels.xai.codeFast),
                 tools,
                 maxRetries: 0,
                 stopWhen: stepCountIs(20),
-                // System prompt with cache control for cost optimization
+                // System prompt
                 messages: [
                   {
                     role: "system",
-                    content: CYPRESS_CONTENT_GENERATION_SYSTEM_PROMPT,
-                    providerOptions: {
-                      anthropic: { cacheControl: { type: "ephemeral" } },
-                    },
+                    content: TEST_CONTENT_GENERATION_SYSTEM_PROMPT,
                   },
                   {
                     role: "user",
                     content: prompt,
                   },
                 ],
-                // Enable extended thinking for test content generation (lower budget than planning)
-                providerOptions: {
-                  anthropic: {
-                    thinking: { type: "enabled", budgetTokens: 5000 },
-                  } satisfies AnthropicProviderOptions,
-                },
-                headers: {
-                  "anthropic-beta": "interleaved-thinking-2025-05-14",
-                },
               }),
             catch: (error) =>
               new TestingAgentError({
@@ -476,39 +549,32 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
                 if (toolCall) {
                   const typedCall = toolCall as ToolCall<string, unknown>;
-                  const args = typedCall.input as {
-                    sourceFile: string;
-                    targetTestPath: string;
-                    description: string;
-                    isUpdate: boolean;
-                    navigationPath?: string;
-                    pageContext?: string;
-                    prerequisites?: string[];
-                    relatedTests?: string[];
-                    userFlow?: string;
-                    testCases?: ProposedTest["testCases"];
-                  };
+                  const args = typedCall.input as ProposeTestInput;
 
-                  const testProposal = {
+                  const testProposal: ProposedTest = {
                     id: toolOutput.id,
                     sourceFile: args.sourceFile,
-                    targetTestPath: args.targetTestPath,
-                    description: args.description,
-                    isUpdate: args.isUpdate,
-                    proposedContent: "", // Will be populated during content generation
-                    existingContent: undefined, // Will be populated during content generation if update
-                    // E2E fields
-                    navigationPath: args.navigationPath,
-                    pageContext: args.pageContext,
-                    prerequisites: args.prerequisites,
-                    relatedTests: args.relatedTests,
-                    userFlow: args.userFlow,
-                    testCases: args.testCases,
+                    targetTestPath: "",
+                    description: `Comprehensive testing strategy for ${args.sourceFile} with ${args.testStrategies.length} test types`,
+                    isUpdate: false,
+                    testType: "unit",
+                    framework: "vitest",
+                    testStrategies: args.testStrategies,
+                    proposedContent: "",
+                    existingContent: undefined,
+                    testCases: args.testStrategies.flatMap((strategy) =>
+                      strategy.testCases.map((tc) => ({
+                        ...tc,
+                        testType: strategy.testType,
+                        framework: strategy.framework,
+                      })),
+                    ),
                   };
+
                   proposedTests.push(testProposal);
 
                   yield* Effect.logDebug(
-                    `[PlanningAgent] Extracted test proposal: ${toolOutput.id} for ${args.sourceFile} -> ${args.targetTestPath}`,
+                    `[PlanningAgent] Extracted test proposal: ${toolOutput.id} for ${args.sourceFile} with ${args.testStrategies.length} strategies`,
                   );
                 }
               }
@@ -662,13 +728,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             );
           }
 
-          // Create Anthropic provider (direct or gateway)
-          const anthropic = createAnthropicProvider(tokenResult);
+          // Create xAI provider (direct or gateway) for planning phase
+          const xai = createXaiProvider(tokenResult);
 
           // Generate text using AI SDK
           sendProgress("analyzing", `Analyzing ${filePath} with AI model...`);
           yield* Effect.logDebug(
-            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.anthropic.testing}) for file: ${filePath}`,
+            `[PlanningAgent:${correlationId}] Calling AI model (${AIModels.xai.codeFast}) for file: ${filePath}`,
           );
           yield* Effect.logDebug(
             `[PlanningAgent:${correlationId}] Mode: ${conversationHistory.length > 0 ? "conversation continuation" : "initial planning"}`,
@@ -693,32 +759,18 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             try: () => {
               // Use messages for conversation continuation
               return streamText({
-                model: anthropic(AIModels.anthropic.testing),
+                model: xai(AIModels.xai.codeFast),
                 tools,
                 maxRetries: 0,
                 stopWhen: stepCountIs(20),
-                // System prompt with cache control, followed by conversation messages
+                // System prompt, followed by conversation messages
                 messages: [
                   {
                     role: "system" as const,
-                    content: CYPRESS_PLANNING_SYSTEM_PROMPT,
-                    providerOptions: {
-                      anthropic: {
-                        cacheControl: { type: "ephemeral" },
-                      },
-                    },
+                    content: TEST_PLANNING_SYSTEM_PROMPT,
                   },
                   ...messages,
                 ],
-                // Enable extended thinking for complex test planning
-                providerOptions: {
-                  anthropic: {
-                    thinking: { type: "enabled", budgetTokens: 10000 },
-                  } satisfies AnthropicProviderOptions,
-                },
-                headers: {
-                  "anthropic-beta": "interleaved-thinking-2025-05-14",
-                },
               });
             },
             catch: (error) =>
@@ -1063,51 +1115,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Create shared approval registry to track approved proposal IDs
             const approvalRegistry = new Set<string>();
 
-            // Create proposeTest tool with approval callback and registry
             const proposeTest = createProposeTestTool(
-              waitForApproval
-                ? async (toolCallId: string, input: ProposeTestInput) => {
-                    // Use pre-generated proposalId from stream processing (plan file already created)
-                    // If not found (shouldn't happen), generate one as fallback
-                    const proposalId =
-                      toolCallToProposalId.get(toolCallId) ||
-                      `${input.sourceFile}-${input.targetTestPath}-${Date.now()}`;
-
-                    // Yield proposal to client via progress callback
-                    // Include id and proposedContent (empty for now) to satisfy schema
-                    progressCallback?.(
-                      "proposal",
-                      JSON.stringify({
-                        type: "proposal",
-                        toolCallId,
-                        test: {
-                          id: proposalId,
-                          sourceFile: input.sourceFile,
-                          targetTestPath: input.targetTestPath,
-                          description: input.description,
-                          isUpdate: input.isUpdate,
-                          proposedContent: "", // Content generated later
-                          navigationPath: input.navigationPath,
-                          pageContext: input.pageContext,
-                          prerequisites: input.prerequisites,
-                          relatedTests: input.relatedTests,
-                          userFlow: input.userFlow,
-                          testCases: input.testCases,
-                        },
-                      }),
-                    );
-
-                    // Wait for approval
-                    const approval = await waitForApproval(toolCallId);
-                    return (
-                      approval === APPROVAL.YES ||
-                      (typeof approval === "object" &&
-                        approval !== null &&
-                        "approved" in approval &&
-                        approval.approved === true)
-                    );
-                  }
-                : undefined,
+              undefined,
               approvalRegistry,
             );
 
@@ -1173,6 +1182,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               );
             }
 
+            // Create xAI provider for Phase 1 (planning)
+            const xai = createXaiProvider(tokenResult);
+            // Create Anthropic provider for Phase 2 (execution) - will be used later
             const anthropic = createAnthropicProvider(tokenResult);
 
             progressCallback?.(
@@ -1184,7 +1196,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const planningStreamResult = yield* Effect.try({
               try: () =>
                 streamText({
-                  model: anthropic(AIModels.anthropic.testing),
+                  model: xai(AIModels.xai.codeFast),
                   tools: planningTools,
                   maxRetries: 0,
                   stopWhen: stepCountIs(20),
@@ -1192,23 +1204,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   messages: [
                     {
                       role: "system" as const,
-                      content: CYPRESS_PLANNING_SYSTEM_PROMPT,
-                      providerOptions: {
-                        anthropic: {
-                          cacheControl: { type: "ephemeral" },
-                        },
-                      },
+                      content: TEST_PLANNING_SYSTEM_PROMPT,
                     },
                     ...messages,
                   ],
-                  providerOptions: {
-                    anthropic: {
-                      thinking: { type: "enabled", budgetTokens: 10000 },
-                    } satisfies AnthropicProviderOptions,
-                  },
-                  headers: {
-                    "anthropic-beta": "interleaved-thinking-2025-05-14",
-                  },
                 }),
               catch: (error) =>
                 new TestingAgentError({
@@ -1296,7 +1295,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       // This allows users to review the plan before approving
                       if (event.toolCallId && event.toolArgs) {
                         const args = event.toolArgs as ProposeTestInput;
-                        const proposalId = `${args.sourceFile}-${args.targetTestPath}-${Date.now()}`;
+                        const proposalId = `${args.sourceFile}-${Date.now()}`;
                         toolCallToProposalId.set(event.toolCallId, proposalId);
 
                         // Create plan file asynchronously (don't block stream)
@@ -1305,7 +1304,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             .createPlanFile(args.sourceFile, {
                               proposalId,
                               subscriptionId,
-                              targetTestPath: args.targetTestPath,
+                              targetTestPath:
+                                args.testStrategies[0]?.targetTestPath || "",
                               status: "pending",
                             })
                             .pipe(
@@ -1320,33 +1320,24 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             );
 
                           // Update plan file frontmatter with toolCallId
-                          const fileData = yield* Effect.tryPromise({
-                            try: () => vscode.workspace.fs.readFile(planUri),
-                            catch: (error) =>
-                              new TestingAgentError({
-                                message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
-                                cause: error,
-                              }),
-                          });
-                          let content = Buffer.from(fileData).toString("utf-8");
-                          // Add toolCallId to frontmatter
-                          content = content.replace(
-                            /^---\n/,
-                            `---\ntoolCallId: "${event.toolCallId}"\n`,
-                          );
-                          yield* Effect.tryPromise({
-                            try: async () => {
-                              await vscode.workspace.fs.writeFile(
-                                planUri,
-                                Buffer.from(content, "utf-8"),
-                              );
-                            },
-                            catch: (error) =>
-                              new TestingAgentError({
-                                message: `Failed to update plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
-                                cause: error,
-                              }),
-                          });
+                          if (event.toolCallId) {
+                            yield* addToolCallIdToFrontmatter(
+                              planUri,
+                              event.toolCallId,
+                            );
+                            // Refresh CodeLens to show approve/reject buttons
+                            yield* Effect.tryPromise({
+                              try: () =>
+                                vscode.commands.executeCommand(
+                                  Commands.refreshCodeLens,
+                                ),
+                              catch: (error) =>
+                                new TestingAgentError({
+                                  message: `Failed to refresh CodeLens: ${error instanceof Error ? error.message : "Unknown error"}`,
+                                  cause: error,
+                                }),
+                            });
+                          }
 
                           // Plan file created - AI will write plan content naturally in its response
                           // The plan content will be written after the stream completes
@@ -1398,6 +1389,22 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   }
 
                   if (event.type === "text-delta" && event.content) {
+                    // Stream text to plan files in real-time as content is generated
+                    for (const [, planUri] of planFileMap.entries()) {
+                      yield* planFileService
+                        .appendContent(planUri, event.content)
+                        .pipe(
+                          Effect.catchAll((error) =>
+                            Effect.gen(function* () {
+                              yield* Effect.logDebug(
+                                `[TestingAgent:${correlationId}] Failed to stream text to plan file: ${error.message}`,
+                              );
+                              return Effect.void;
+                            }),
+                          ),
+                        );
+                    }
+
                     // Send content streamed event (for UI progress tracking)
                     progressCallback?.(
                       "content_streamed",
@@ -1453,24 +1460,36 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       : undefined;
                     const proposalId = earlyProposalId || output.id;
 
+                    const primaryStrategy = args.testStrategies[0];
                     const proposal: ProposedTest = {
                       id: proposalId,
                       sourceFile: args.sourceFile,
-                      targetTestPath: args.targetTestPath,
-                      description: args.description,
-                      isUpdate: args.isUpdate,
-                      proposedContent: "", // Will be generated
-                      navigationPath: args.navigationPath,
-                      pageContext: args.pageContext,
-                      prerequisites: args.prerequisites,
+                      targetTestPath: primaryStrategy?.targetTestPath ?? "",
+                      description: primaryStrategy?.description ?? "",
+                      isUpdate: primaryStrategy?.isUpdate ?? false,
+                      testType: primaryStrategy?.testType ?? "unit",
+                      framework: primaryStrategy?.framework ?? "",
+                      testStrategies: args.testStrategies,
+                      proposedContent: "",
+                      navigationPath: primaryStrategy?.navigationPath,
+                      pageContext: primaryStrategy?.pageContext,
+                      prerequisites: primaryStrategy?.prerequisites,
                       relatedTests: args.relatedTests,
-                      userFlow: args.userFlow,
-                      testCases: args.testCases,
+                      userFlow: primaryStrategy?.userFlow,
+                      testCases: primaryStrategy?.testCases,
                     };
                     proposals.push(proposal);
 
-                    // Plan file should already be created during stream processing
-                    // Just track the mapping and verify it exists
+                    // Emit proposal event to webview
+                    progressCallback?.(
+                      "proposal",
+                      JSON.stringify({
+                        type: "proposal",
+                        test: proposal,
+                        toolCallId: typedCall.toolCallId,
+                      }),
+                    );
+
                     if (output.success) {
                       // Get toolCallId from the tool call
                       const toolCallId = typedCall.toolCallId;
@@ -1498,7 +1517,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                           .createPlanFile(args.sourceFile, {
                             proposalId: proposalId,
                             subscriptionId,
-                            targetTestPath: args.targetTestPath,
+                            targetTestPath:
+                              args.testStrategies[0]?.targetTestPath || "",
                             status: "pending",
                           })
                           .pipe(
@@ -1513,31 +1533,19 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                           );
 
                         // Update plan file frontmatter with toolCallId
-                        const fileData = yield* Effect.tryPromise({
-                          try: () =>
-                            vscode.workspace.fs.readFile(fallbackPlanUri),
-                          catch: (error) =>
-                            new TestingAgentError({
-                              message: `Failed to read plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
-                              cause: error,
-                            }),
-                        });
-                        let content = Buffer.from(fileData).toString("utf-8");
-                        // Add toolCallId to frontmatter
-                        content = content.replace(
-                          /^---\n/,
-                          `---\ntoolCallId: "${toolCallId}"\n`,
+                        yield* addToolCallIdToFrontmatter(
+                          fallbackPlanUri,
+                          toolCallId,
                         );
+                        // Refresh CodeLens to show approve/reject buttons
                         yield* Effect.tryPromise({
-                          try: async () => {
-                            await vscode.workspace.fs.writeFile(
-                              fallbackPlanUri,
-                              Buffer.from(content, "utf-8"),
-                            );
-                          },
+                          try: () =>
+                            vscode.commands.executeCommand(
+                              Commands.refreshCodeLens,
+                            ),
                           catch: (error) =>
                             new TestingAgentError({
-                              message: `Failed to update plan file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                              message: `Failed to refresh CodeLens: ${error instanceof Error ? error.message : "Unknown error"}`,
                               cause: error,
                             }),
                         });
@@ -1566,25 +1574,68 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               }
             }
 
-            // Write AI's natural plan text to each plan file
-            const aiPlanText = yield* Effect.promise(async () => {
-              return (await planningResult.text) || "";
-            });
+            approvedProposals.length = 0;
 
-            if (aiPlanText) {
-              for (const [, planUri] of planFileMap.entries()) {
-                yield* planFileService
-                  .appendContent(planUri, `\n${aiPlanText}`)
-                  .pipe(
-                    Effect.catchAll((error) =>
-                      Effect.gen(function* () {
-                        yield* Effect.logDebug(
-                          `[TestingAgent:${correlationId}] Failed to write AI plan text: ${error.message}`,
-                        );
-                        return Effect.void;
-                      }),
-                    ),
-                  );
+            if (waitForApproval) {
+              for (const [proposalId, planUri] of planFileMap.entries()) {
+                const toolCallId = toolCallIdMap.get(proposalId);
+                if (toolCallId) {
+                  // Find the corresponding proposal
+                  const proposal = proposals.find((p) => p.id === proposalId);
+                  if (proposal) {
+                    yield* Effect.logDebug(
+                      `[TestingAgent:${correlationId}] Requesting approval for proposal: ${proposalId}`,
+                    );
+
+                    const approvalResult = yield* Effect.tryPromise({
+                      try: async () => await waitForApproval(toolCallId),
+                      catch: (error) =>
+                        new TestingAgentError({
+                          message: `Approval request failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                          cause: error,
+                        }),
+                    }).pipe(
+                      Effect.catchAll((error) =>
+                        Effect.gen(function* () {
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Error during approval for ${proposalId}: ${error.message}`,
+                          );
+                          return null; // Continue with other proposals
+                        }),
+                      ),
+                    );
+
+                    if (approvalResult !== null) {
+                      const isApproved =
+                        approvalResult === APPROVAL.YES ||
+                        (typeof approvalResult === "object" &&
+                          approvalResult !== null &&
+                          "approved" in approvalResult &&
+                          approvalResult.approved === true);
+
+                      yield* handleProposalApproval(
+                        proposalId,
+                        planUri,
+                        proposal,
+                        isApproved,
+                        approvedProposals,
+                        approvalRegistry,
+                        correlationId,
+                      );
+                    } else {
+                      // Handle rejection
+                      yield* handleProposalApproval(
+                        proposalId,
+                        planUri,
+                        proposal,
+                        false, // not approved
+                        approvedProposals,
+                        approvalRegistry,
+                        correlationId,
+                      );
+                    }
+                  }
+                }
               }
             }
 
@@ -1617,9 +1668,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 writeTestFile,
               };
 
-              // Execute each approved proposal
               for (const { proposal, proposalId } of approvedProposals) {
-                // Check for cancellation before each proposal
                 if (signal?.aborted) {
                   yield* Effect.logDebug(
                     `[TestingAgent:${correlationId}] Cancelled during execution loop`,
@@ -1629,15 +1678,17 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
                 progressCallback?.(
                   "executing",
-                  `Generating test file for ${proposal.targetTestPath}...`,
+                  `Generating test files for ${proposal.sourceFile}...`,
                 );
 
-                // Build execution prompt with approved proposal context
                 const executionPrompt = PromptFactory.writeTestFile({
                   sourceFile: proposal.sourceFile,
-                  targetTestPath: proposal.targetTestPath,
+                  targetTestPath:
+                    proposal.targetTestPath || `${proposal.sourceFile}.test.ts`,
                   description: proposal.description,
                   isUpdate: proposal.isUpdate,
+                  testType: proposal.testType || "unit",
+                  framework: proposal.framework || "vitest",
                   navigationPath: proposal.navigationPath,
                   prerequisites: proposal.prerequisites,
                   userFlow: proposal.userFlow,
@@ -1655,7 +1706,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       messages: [
                         {
                           role: "system" as const,
-                          content: CYPRESS_EXECUTION_SYSTEM_PROMPT,
+                          content: TEST_EXECUTION_SYSTEM_PROMPT,
                           providerOptions: {
                             anthropic: {
                               cacheControl: { type: "ephemeral" },
@@ -2026,6 +2077,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               targetTestPath: input.targetTestPath,
               description: input.description,
               isUpdate: input.isUpdate,
+              testType: input.testType,
+              framework: input.framework,
             });
 
             yield* Effect.logDebug(
@@ -2054,7 +2107,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   tools,
                   maxRetries: 0,
                   stopWhen: stepCountIs(8),
-                  system: CYPRESS_EXECUTION_SYSTEM_PROMPT,
+                  system: TEST_EXECUTION_SYSTEM_PROMPT,
                   prompt,
                   abortSignal,
                 }),

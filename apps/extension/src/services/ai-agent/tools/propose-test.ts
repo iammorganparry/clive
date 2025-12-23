@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ProposeTestInput, ProposeTestOutput } from "../types.js";
+import type { ProposeTestInput } from "../types.js";
 import { processProposeTestApproval } from "../hitl-utils.js";
 
 /**
@@ -16,90 +16,104 @@ export const createProposeTestTool = (
 ) =>
   tool({
     description:
-      "Propose a Cypress test file to be created or updated. This requires user approval before proceeding.",
+      "Propose a comprehensive testing strategy for a file. This can include unit, integration, and E2E test strategies. Requires user approval before proceeding.",
     inputSchema: z.object({
       sourceFile: z
         .string()
+        .describe("The source file path to create tests for"),
+      testStrategies: z
+        .array(
+          z.object({
+            testType: z
+              .enum(["unit", "integration", "e2e"])
+              .describe("The type of test: 'unit', 'integration', or 'e2e'"),
+            framework: z
+              .string()
+              .describe(
+                "The testing framework to use (e.g., 'vitest', 'jest', 'playwright', 'cypress')",
+              ),
+            targetTestPath: z
+              .string()
+              .default("")
+              .describe(
+                "The proposed target path for this test file (relative to workspace root)",
+              ),
+            description: z
+              .string()
+              .default("")
+              .describe("Description of what this test strategy covers"),
+            isUpdate: z
+              .boolean()
+              .default(false)
+              .describe("Whether this will update an existing test file"),
+            // E2E-specific fields
+            navigationPath: z
+              .string()
+              .optional()
+              .describe("REQUIRED for E2E: The URL/route to navigate to"),
+            pageContext: z
+              .string()
+              .optional()
+              .describe(
+                "REQUIRED for E2E: The page component containing this feature",
+              ),
+            prerequisites: z
+              .array(z.string())
+              .optional()
+              .default([])
+              .describe("Setup requirements for this test strategy"),
+            userFlow: z
+              .string()
+              .optional()
+              .describe("REQUIRED for E2E: Complete user journey description"),
+            // Unit/Integration specific
+            mockDependencies: z
+              .array(z.string())
+              .optional()
+              .default([])
+              .describe("Dependencies to mock for unit/integration tests"),
+            testSetup: z
+              .array(z.string())
+              .optional()
+              .default([])
+              .describe("Setup steps for unit/integration tests"),
+            testCases: z
+              .array(
+                z.object({
+                  name: z.string().describe("Test case name"),
+                  testType: z
+                    .enum(["unit", "integration", "e2e"])
+                    .describe("Test type"),
+                  framework: z
+                    .string()
+                    .optional()
+                    .describe("Testing framework"),
+                  userActions: z
+                    .array(z.string())
+                    .default([])
+                    .describe("Step-by-step actions"),
+                  assertions: z
+                    .array(z.string())
+                    .default([])
+                    .describe("Expected outcomes"),
+                  category: z
+                    .enum(["happy_path", "error", "edge_case", "accessibility"])
+                    .describe("Test category"),
+                }),
+              )
+              .default([])
+              .describe("Test cases for this strategy"),
+          }),
+        )
         .describe(
-          "The source React component file path that this test will cover",
-        ),
-      targetTestPath: z
-        .string()
-        .describe(
-          "The proposed target path for the Cypress test file (relative to workspace root)",
-        ),
-      description: z
-        .string()
-        .describe(
-          "A brief description of what this test will cover (e.g., 'Tests login form interactions and validation')",
-        ),
-      isUpdate: z
-        .boolean()
-        .describe(
-          "Whether this will update an existing test file (true) or create a new one (false)",
-        ),
-      // E2E-specific fields
-      navigationPath: z
-        .string()
-        .optional()
-        .describe(
-          "The URL/route to navigate to in the test (e.g., '/login', '/dashboard'). This is critical for E2E tests - always identify the navigation path.",
-        ),
-      pageContext: z
-        .string()
-        .optional()
-        .describe(
-          "The page component that contains this feature (e.g., 'LoginPage', 'DashboardPage'). Helps understand the application context.",
-        ),
-      prerequisites: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Prerequisites needed before the test can run (e.g., ['user must be logged in', 'test data must exist']). Critical for E2E test setup.",
+          "Multiple test strategies for this file (unit, integration, E2E)",
         ),
       relatedTests: z
         .array(z.string())
         .optional()
-        .describe(
-          "Paths to existing test files that may be impacted by this change. Found via semantic search or file discovery.",
-        ),
-      userFlow: z
-        .string()
-        .optional()
-        .describe(
-          "Description of the complete E2E user journey being tested (e.g., 'User logs in, navigates to dashboard, views their profile'). Think about the full user experience, not just the component.",
-        ),
-      testCases: z
-        .array(
-          z.object({
-            name: z
-              .string()
-              .describe(
-                "Descriptive test case name (e.g., 'should login with valid credentials', 'should display validation error for empty email')",
-              ),
-            userActions: z
-              .array(z.string())
-              .describe(
-                "Step-by-step user actions for this test case (e.g., ['Navigate to /login', 'Enter email in email field', 'Enter password in password field', 'Click submit button'])",
-              ),
-            assertions: z
-              .array(z.string())
-              .describe(
-                "Expected outcomes to verify (e.g., ['User is redirected to /dashboard', 'Welcome message is displayed', 'User session is created'])",
-              ),
-            category: z
-              .enum(["happy_path", "error", "edge_case", "accessibility"])
-              .describe(
-                "Category of this test case: 'happy_path' for normal flows, 'error' for error handling, 'edge_case' for boundary conditions, 'accessibility' for a11y tests",
-              ),
-          }),
-        )
-        .optional()
-        .describe(
-          "Structured test scenarios that will be generated. Each test case should include specific user actions, expected assertions, and category. This provides a comprehensive implementation plan showing exactly what will be tested.",
-        ),
+        .describe("Paths to existing test files that may be impacted"),
     }),
-    execute: async (input: ProposeTestInput): Promise<ProposeTestOutput> => {
+    execute: async (input) => {
       // If no approval callback, auto-approve (for backward compatibility)
       if (!waitForApproval) {
         return processProposeTestApproval(input, true);
