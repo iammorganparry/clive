@@ -21,7 +21,4 @@ export {
   createSearchKnowledgeBaseTool,
   searchKnowledgeBaseTool,
 } from "./search-knowledge-base.js";
-export {
-  createUpsertKnowledgeTool,
-  upsertKnowledgeTool,
-} from "./upsert-knowledge.js";
+export { createUpsertKnowledgeTool } from "./upsert-knowledge.js";

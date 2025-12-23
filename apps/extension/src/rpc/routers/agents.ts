@@ -4,8 +4,6 @@ import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
 import { CypressTestAgent } from "../../services/ai-agent/agent.js";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
-import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
-import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 import type { ProposedTest } from "../../services/ai-agent/types.js";

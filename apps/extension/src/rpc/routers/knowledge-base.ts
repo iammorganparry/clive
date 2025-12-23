@@ -7,6 +7,7 @@ import { ConfigService } from "../../services/config-service.js";
 import { createConfigServiceLayer } from "../../services/layer-factory.js";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import type { RpcContext } from "../context.js";
+import type { KnowledgeBaseProgressEvent } from "../../services/knowledge-base-types.js";
 
 const { procedure } = createRouter<RpcContext>();
 
@@ -115,6 +116,66 @@ export const knowledgeBaseRouter = {
       provideConfigLayer(ctx),
     ),
   ),
+
+  /**
+   * Regenerate knowledge base with progress streaming
+   */
+  regenerateWithProgress: procedure
+    .input(z.object({ resume: z.boolean().optional() }))
+    .subscription(async function* ({
+      input,
+      ctx,
+      signal: _signal,
+      onProgress,
+    }: {
+      input: { resume?: boolean };
+      ctx: RpcContext;
+      signal: AbortSignal;
+      onProgress?: (data: unknown) => void;
+    }) {
+      const serviceLayer = provideConfigLayer(ctx);
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* Effect.logDebug(
+            "[KnowledgeBaseRouter] Regenerating knowledge base with progress",
+          );
+          const knowledgeBaseService = yield* KnowledgeBaseService;
+          const repositoryId = yield* getRepositoryId();
+
+          // Progress callback that yields to client
+          const progressCallback = (event: KnowledgeBaseProgressEvent) => {
+            if (onProgress) {
+              onProgress(event);
+            }
+          };
+
+          // Run analysis with progress callback
+          const result = yield* knowledgeBaseService.analyzeRepository(
+            repositoryId,
+            progressCallback,
+            { resume: input.resume },
+          );
+
+          return result;
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
+              yield* Effect.logDebug(
+                `[KnowledgeBaseRouter] Failed to regenerate: ${errorMessage}`,
+              );
+              throw new Error(errorMessage);
+            }),
+          ),
+          serviceLayer,
+        ),
+      );
+
+      // Return the final result
+      return result;
+    }),
 
   /**
    * Get knowledge entries by category

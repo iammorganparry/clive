@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect";
 import vscode from "vscode";
 import { embedMany } from "ai";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { VSCodeService } from "./vs-code.js";
 import { ConfigService } from "./config-service.js";
 import { RepositoryService, type FileData } from "./repository-service.js";
@@ -456,7 +456,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
         let partNumber = 1;
 
         for (const line of lines) {
-          const lineTokens = estimateTokensFast(line + "\n");
+          const lineTokens = estimateTokensFast(`${line}\n`);
 
           // If adding this line would exceed the limit, finalize current chunk
           if (

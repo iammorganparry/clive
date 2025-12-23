@@ -120,7 +120,7 @@ function validatePathsInWorkspace(
   return Effect.gen(function* () {
     // Extract potential file paths from the command
     // This is a simple heuristic - look for paths that start with / or contain ..
-    const pathPattern = /([\/][^\s|;]+|\.\.[\/])/g;
+    const pathPattern = /([/][^\s|;]+|\.\.[/])/g;
     const matches = command.match(pathPattern);
 
     if (matches) {

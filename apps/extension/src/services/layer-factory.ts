@@ -13,7 +13,11 @@
 
 import { Layer } from "effect";
 import type * as vscode from "vscode";
-import { VSCodeService, createSecretStorageLayer } from "./vs-code.js";
+import {
+  VSCodeService,
+  createSecretStorageLayer,
+  SecretStorageService,
+} from "./vs-code.js";
 import { createLoggerLayer } from "./logger-service.js";
 import { ConfigServiceLive } from "./config-service.js";
 import { ApiKeyServiceLive } from "./api-key-service.js";
@@ -247,6 +251,16 @@ export function createFullServiceLayer(ctx: LayerContext) {
   const baseLayer = createBaseLayer(coreLayer);
   const domainLayer = createDomainLayer(baseLayer);
   return createFeatureLayer(domainLayer);
+}
+
+/**
+ * Create a SecretStorageService layer from an existing service instance
+ * Useful for tools that need to provide the layer when running Effects
+ */
+export function createSecretStorageLayerFromService(
+  secretStorageService: SecretStorageService,
+) {
+  return Layer.succeed(SecretStorageService, secretStorageService);
 }
 
 /**

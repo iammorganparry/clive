@@ -1,5 +1,13 @@
 import { setup, assign, fromPromise } from "xstate";
-import type { KnowledgeBaseStatus } from "../../../../services/knowledge-base-types.js";
+import type {
+  KnowledgeBaseStatus,
+  KnowledgeBasePhase,
+} from "../../../../services/knowledge-base-types.js";
+import type { VSCodeAPI } from "../../../services/vscode.js";
+import {
+  createRegenerateKnowledgeBaseActor,
+  createResumeKnowledgeBaseActor,
+} from "../actors/regenerate-knowledge-base-actor.js";
 
 /**
  * Error types for knowledge base operations
@@ -17,9 +25,14 @@ export type ErrorType =
 export interface KnowledgeBaseContext {
   fetchStatus: () => Promise<KnowledgeBaseStatus>;
   regenerate: () => Promise<{ success: boolean; error?: string }>;
+  vscode: VSCodeAPI;
+  onPhaseComplete?: () => void;
   status: KnowledgeBaseStatus | null;
   errorType: ErrorType | null;
   errorMessage: string | null;
+  error: string | null;
+  phases: KnowledgeBasePhase[];
+  logs: string[];
 }
 
 /**
@@ -30,9 +43,18 @@ export type KnowledgeBaseEvent =
   | { type: "STATUS_LOADED"; status: KnowledgeBaseStatus }
   | { type: "STATUS_ERROR"; errorType: ErrorType; message: string }
   | { type: "REGENERATE" }
+  | { type: "REGENERATE_WITH_PROGRESS" }
+  | { type: "RESUME" }
+  | { type: "RESUME_WITH_PROGRESS" }
+  | { type: "PROGRESS"; message: string }
+  | { type: "PHASE_STARTED"; phaseId: number; phaseName: string }
+  | { type: "CATEGORY_COMPLETE"; category: string; entryCount: number }
+  | { type: "PHASE_COMPLETE"; phaseId: number; totalEntries: number }
   | { type: "GENERATION_STARTED" }
   | { type: "GENERATION_COMPLETE"; status: KnowledgeBaseStatus }
   | { type: "GENERATION_ERROR"; errorType: ErrorType; message: string }
+  | { type: "SUBSCRIPTION_COMPLETE" }
+  | { type: "SUBSCRIPTION_ERROR"; error: string }
   | { type: "RETRY" }
   | { type: "DISMISS" }
   | { type: "CANCEL" };
@@ -43,6 +65,8 @@ export type KnowledgeBaseEvent =
 export interface KnowledgeBaseInput {
   fetchStatus: () => Promise<KnowledgeBaseStatus>;
   regenerate: () => Promise<{ success: boolean; error?: string }>;
+  vscode: VSCodeAPI;
+  onPhaseComplete?: () => void;
 }
 
 /**
@@ -134,6 +158,8 @@ export const knowledgeBaseMachine = setup({
   actors: {
     fetchStatus: createFetchStatusActor,
     regenerate: createRegenerateActor,
+    regenerateKnowledgeBase: createRegenerateKnowledgeBaseActor,
+    resumeKnowledgeBase: createResumeKnowledgeBaseActor,
   },
   actions: {
     setStatus: assign(({ event }) => {
@@ -163,6 +189,74 @@ export const knowledgeBaseMachine = setup({
       errorType: () => null,
       errorMessage: () => null,
     }),
+    setError: assign(({ event }) => {
+      if (event.type !== "SUBSCRIPTION_ERROR") return {};
+      return { error: event.error };
+    }),
+    addLog: assign(({ context, event }) => {
+      if (event.type !== "PROGRESS") return {};
+      return {
+        logs: [...context.logs, event.message],
+      };
+    }),
+    setPhaseStarted: assign(({ context, event }) => {
+      if (event.type !== "PHASE_STARTED") return {};
+      const phases = context.phases.map((phase) =>
+        phase.id === event.phaseId
+          ? { ...phase, status: "in_progress" as const }
+          : phase,
+      );
+      return {
+        phases,
+        logs: [...context.logs, `Started phase: ${event.phaseName}`],
+      };
+    }),
+    setCategoryComplete: assign(({ context, event }) => {
+      if (event.type !== "CATEGORY_COMPLETE") return {};
+      const phases = context.phases
+        .map((phase) => {
+          if (phase.categories.includes(event.category)) {
+            const categoryEntries = {
+              ...phase.categoryEntries,
+              [event.category]: event.entryCount,
+            };
+            return { ...phase, categoryEntries };
+          }
+          return phase;
+        })
+        // filter out duplicate phases
+        .filter((phase) => phase.categories.includes(event.category));
+      return {
+        phases,
+        logs: [
+          ...context.logs,
+          `${event.category} analysis complete - ${event.entryCount} entries`,
+        ],
+      };
+    }),
+    setPhaseComplete: assign(({ context, event }) => {
+      if (event.type !== "PHASE_COMPLETE") return {};
+      const phases = context.phases.map((phase) =>
+        phase.id === event.phaseId
+          ? { ...phase, status: "completed" as const }
+          : phase,
+      );
+      return {
+        phases,
+        logs: [
+          ...context.logs,
+          `Phase ${event.phaseId} complete - ${event.totalEntries} total entries`,
+        ],
+      };
+    }),
+    resetPhases: assign(({ context }) => ({
+      phases: context.phases.map((phase) => ({
+        ...phase,
+        status: "pending" as const,
+        categoryEntries: {},
+      })),
+      logs: [],
+    })),
   },
   guards: {
     hasKnowledge: ({ context }) => {
@@ -175,9 +269,52 @@ export const knowledgeBaseMachine = setup({
   context: ({ input }) => ({
     fetchStatus: input.fetchStatus,
     regenerate: input.regenerate,
+    vscode: input.vscode,
     status: null,
     errorType: null,
     errorMessage: null,
+    error: null,
+    phases: [
+      {
+        id: 1,
+        name: "Framework Discovery",
+        description: "Discover testing frameworks and patterns",
+        categories: ["framework", "patterns"],
+        status: "pending",
+        categoryEntries: {},
+      },
+      {
+        id: 2,
+        name: "Core Infrastructure",
+        description: "Analyze mocks, fixtures, and hooks",
+        categories: ["mocks", "fixtures", "hooks"],
+        status: "pending",
+        categoryEntries: {},
+      },
+      {
+        id: 3,
+        name: "Test Details",
+        description: "Analyze selectors, routes, assertions, and utilities",
+        categories: [
+          "selectors",
+          "routes",
+          "assertions",
+          "utilities",
+          "coverage",
+        ],
+        status: "pending",
+        categoryEntries: {},
+      },
+      {
+        id: 4,
+        name: "Analysis",
+        description: "Identify gaps and improvements",
+        categories: ["gaps", "improvements"],
+        status: "pending",
+        categoryEntries: {},
+      },
+    ],
+    logs: [],
   }),
   states: {
     loading: {
@@ -224,8 +361,98 @@ export const knowledgeBaseMachine = setup({
           target: "generating",
           actions: "clearError",
         },
+        REGENERATE_WITH_PROGRESS: {
+          target: "generatingWithProgress",
+          actions: ["clearError", "resetPhases"],
+        },
+        RESUME: {
+          target: "generating",
+          actions: "clearError",
+        },
+        RESUME_WITH_PROGRESS: {
+          target: "resumingWithProgress",
+          actions: ["clearError", "resetPhases"],
+        },
         LOAD: {
           target: "loading",
+        },
+      },
+    },
+    generatingWithProgress: {
+      entry: "clearError",
+      invoke: {
+        id: "regenerateKnowledgeBase",
+        src: "regenerateKnowledgeBase",
+        input: ({ context }) => ({
+          vscode: context.vscode,
+          onPhaseComplete: context.onPhaseComplete,
+        }),
+      },
+      on: {
+        PROGRESS: {
+          actions: "addLog",
+        },
+        PHASE_STARTED: {
+          actions: "setPhaseStarted",
+        },
+        CATEGORY_COMPLETE: {
+          actions: "setCategoryComplete",
+        },
+        PHASE_COMPLETE: {
+          actions: "setPhaseComplete",
+        },
+        SUBSCRIPTION_COMPLETE: {
+          target: "polling",
+          actions: assign({
+            errorType: () => null,
+            errorMessage: () => null,
+          }),
+        },
+        SUBSCRIPTION_ERROR: {
+          target: "error",
+          actions: "setError",
+        },
+        CANCEL: {
+          target: "idle",
+        },
+      },
+    },
+    resumingWithProgress: {
+      entry: "clearError",
+      invoke: {
+        id: "resumeKnowledgeBase",
+        src: "resumeKnowledgeBase",
+        input: ({ context }) => ({
+          vscode: context.vscode,
+          onPhaseComplete: context.onPhaseComplete,
+        }),
+      },
+      on: {
+        PROGRESS: {
+          actions: "addLog",
+        },
+        PHASE_STARTED: {
+          actions: "setPhaseStarted",
+        },
+        CATEGORY_COMPLETE: {
+          actions: "setCategoryComplete",
+        },
+        PHASE_COMPLETE: {
+          actions: "setPhaseComplete",
+        },
+        SUBSCRIPTION_COMPLETE: {
+          target: "polling",
+          actions: assign({
+            errorType: () => null,
+            errorMessage: () => null,
+          }),
+        },
+        SUBSCRIPTION_ERROR: {
+          target: "error",
+          actions: "setError",
+        },
+        CANCEL: {
+          target: "idle",
         },
       },
     },
@@ -318,6 +545,18 @@ export const knowledgeBaseMachine = setup({
         REGENERATE: {
           target: "generating",
           actions: "clearError",
+        },
+        REGENERATE_WITH_PROGRESS: {
+          target: "generatingWithProgress",
+          actions: ["clearError", "resetPhases"],
+        },
+        RESUME: {
+          target: "generating",
+          actions: "clearError",
+        },
+        RESUME_WITH_PROGRESS: {
+          target: "resumingWithProgress",
+          actions: ["clearError", "resetPhases"],
         },
         LOAD: {
           target: "loading",

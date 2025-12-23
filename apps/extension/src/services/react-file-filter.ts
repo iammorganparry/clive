@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { Uri } from "vscode";
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect } from "effect";
 import { VSCodeService } from "./vs-code.js";
 import type { ChangedFile } from "./git-service.js";
 

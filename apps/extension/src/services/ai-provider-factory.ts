@@ -1,6 +1,7 @@
 import { createAnthropic, type AnthropicProvider } from "@ai-sdk/anthropic";
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createXai } from "@ai-sdk/xai";
 import type { AiTokenResult } from "./config-service.js";
 
 /**
@@ -94,4 +95,37 @@ export const createAnthropicProvider = (tokenResult: AiTokenResult) => {
 
   // Direct Anthropic: use native SDK
   return createAnthropic({ apiKey: tokenResult.token });
+};
+
+/**
+ * Creates an xAI language model provider based on token type.
+ *
+ * For gateway tokens: Uses OpenAI-compatible API with prefixed model names
+ * For direct tokens: Uses native xAI SDK
+ *
+ * @example
+ * ```ts
+ * const xai = createXaiProvider(tokenResult);
+ * const model = xai('grok-code-fast-1');
+ * await generateText({ model, prompt: '...' });
+ * ```
+ */
+export const createXaiProvider = (tokenResult: AiTokenResult) => {
+  if (tokenResult.isGateway) {
+    // Gateway pattern: gateway('xai/grok-code-fast-1')
+    const gateway = createOpenAICompatible({
+      name: "gateway",
+      apiKey: tokenResult.token,
+      baseURL: AI_GATEWAY_BASE_URL,
+    });
+
+    // Return a callable that prefixes model names for gateway routing
+    return (modelName: string) => {
+      const prefixedModel = `xai/${modelName}`;
+      return gateway(prefixedModel);
+    };
+  }
+
+  // Direct xAI: use native SDK
+  return createXai({ apiKey: tokenResult.token });
 };

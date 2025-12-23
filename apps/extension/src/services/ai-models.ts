@@ -9,15 +9,27 @@ export const AIModels = {
     testing: "claude-haiku-4-5",
   },
 
+  // xAI models
+  xai: {
+    /** Fast code generation model from xAI */
+    codeFast: "grok-code-fast-1",
+  },
+
   // OpenAI models
   openai: {
     /** Embedding model for semantic search (1536 dimensions) */
     embedding: "text-embedding-3-small",
+  },
+
+  knowledgeBase: {
+    /** Model for knowledge base analysis */
+    analysis: "grok-code-fast-1",
   },
 } as const;
 
 // Type helpers for type-safe model references
 export type AnthropicModel =
   (typeof AIModels.anthropic)[keyof typeof AIModels.anthropic];
+export type XAIModel = (typeof AIModels.xai)[keyof typeof AIModels.xai];
 export type OpenAIEmbeddingModel =
   (typeof AIModels.openai)[keyof typeof AIModels.openai];

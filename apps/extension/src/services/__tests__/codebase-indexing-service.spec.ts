@@ -470,7 +470,7 @@ describe("CodebaseIndexingService", () => {
     it("should skip files with unchanged content hash", async () => {
       // Mock existing file hashes - hash matches current content "export const test = 1;"
       // MD5 of "export const test = 1;" is computed by the service
-      const { createHash } = await import("crypto");
+      const { createHash } = await import("node:crypto");
       const contentHash = createHash("md5")
         .update("export const test = 1;")
         .digest("hex");

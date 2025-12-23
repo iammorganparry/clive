@@ -1,4 +1,4 @@
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect } from "effect";
 import { SecretStorageService } from "./vs-code.js";
 import { SecretKeys } from "../constants.js";
 
