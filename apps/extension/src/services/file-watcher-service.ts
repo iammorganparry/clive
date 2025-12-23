@@ -1,4 +1,12 @@
-import { Effect, Ref, Runtime, Layer, Schedule, Fiber, pipe } from "effect";
+import {
+  Effect,
+  Ref,
+  Runtime,
+  type Layer,
+  Schedule,
+  Fiber,
+  pipe,
+} from "effect";
 import * as vscode from "vscode";
 import { IndexingConfig } from "../constants.js";
 import {
@@ -8,8 +16,8 @@ import {
 } from "./codebase-indexing-service.js";
 import { ConfigService } from "./config-service.js";
 import { RepositoryService } from "./repository-service.js";
-import { VSCodeService, type SecretStorageService } from "./vs-code.js";
-import { ApiKeyService } from "./api-key-service.js";
+import type { VSCodeService, SecretStorageService } from "./vs-code.js";
+import type { ApiKeyService } from "./api-key-service.js";
 import { getRelativePath, getWorkspaceRoot } from "../lib/vscode-effects.js";
 
 /**

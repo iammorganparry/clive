@@ -1,4 +1,4 @@
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect } from "effect";
 import { ConfigService } from "./config-service.js";
 import { parseTrpcError } from "../lib/error-messages.js";
 

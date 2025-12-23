@@ -87,7 +87,7 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   file,
   vscode,
   onViewTest,
-  onPreviewDiff,
+  onPreviewDiff: _onPreviewDiff,
 }) => {
   const { state, send } = useFileTestActor(file.path, vscode);
 
@@ -182,22 +182,20 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
                 Cancel
               </Button>
             ) : isCompleted && state.context.testFilePaths.size > 0 ? (
-              <>
-                {getMapEntries(state.context.testFilePaths).map(
-                  ([testId, testPath]) => (
-                    <Button
-                      key={testId}
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 flex-shrink-0"
-                      onClick={() => onViewTest?.(testPath)}
-                    >
-                      <Eye className="h-3 w-3 mr-1" />
-                      View
-                    </Button>
-                  ),
-                )}
-              </>
+              getMapEntries(state.context.testFilePaths).map(
+                ([testId, testPath]) => (
+                  <Button
+                    key={testId}
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 flex-shrink-0"
+                    onClick={() => onViewTest?.(testPath)}
+                  >
+                    <Eye className="h-3 w-3 mr-1" />
+                    View
+                  </Button>
+                ),
+              )
             ) : (
               <Button
                 size="sm"

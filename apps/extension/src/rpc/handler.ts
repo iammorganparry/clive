@@ -29,7 +29,7 @@ const activeSubscriptions = new Map<string, ActiveSubscription>();
  */
 export function handleSubscriptionMessage(
   message: RpcSubscriptionMessage,
-  ctx: RpcContext,
+  _ctx: RpcContext,
 ): boolean {
   const subscription = activeSubscriptions.get(message.subscriptionId);
   if (!subscription) {

@@ -108,6 +108,7 @@
     "@ai-sdk/anthropic": "^3.0.0",
     "@ai-sdk/openai": "^3.0.0",
     "@ai-sdk/openai-compatible": "^2.0.0",
+    "@ai-sdk/xai": "^3.0.1",
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@clerk/clerk-react": "5.57.0",
     "@clive/db": "*",

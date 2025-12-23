@@ -1,27 +1,37 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { embedMany } from "ai";
 import { Effect, Runtime } from "effect";
-import { ConfigService } from "../../config-service.js";
+import { createSecretStorageLayerFromService } from "../../layer-factory.js";
 import type { RepositoryService } from "../../repository-service.js";
+import type { SecretStorageService } from "../../vs-code.js";
 import {
   KnowledgeBaseCategorySchema,
   type KnowledgeBaseCategory,
 } from "../../../constants.js";
 import { createEmbeddingProvider } from "../../ai-provider-factory.js";
 import { AIModels } from "../../ai-models.js";
-import {
-  getRepositoryIdForWorkspace,
-  KnowledgeBaseConfigLayer,
-} from "../../../lib/knowledge-base-utils.js";
-import { KnowledgeBaseError } from "../../knowledge-base-errors.js";
+
+/**
+ * Context values pre-fetched from the agent
+ */
+interface UpsertKnowledgeContext {
+  userId: string;
+  organizationId: string | null;
+  workspaceRoot: { fsPath: string };
+  repositoryId: string;
+  gatewayToken: string;
+  secretStorageService: SecretStorageService;
+}
 
 /**
  * Create an upsertKnowledge tool that stores knowledge entries with embeddings
  */
 export const createUpsertKnowledgeTool = (
   repositoryService: RepositoryService,
+  context: UpsertKnowledgeContext,
+  onComplete?: (category: string, success: boolean) => void,
 ) => {
   const runtime = Runtime.defaultRuntime;
 
@@ -69,84 +79,72 @@ export const createUpsertKnowledgeTool = (
       entryId?: string;
       error?: string;
     }> => {
-      // Get repository ID
-      const repositoryId = await Runtime.runPromise(runtime)(
-        getRepositoryIdForWorkspace(repositoryService),
+      console.log(
+        `[UpsertKnowledge] Starting for category: ${category}, title: ${title.substring(0, 50)}...`,
       );
 
-      const result = await Runtime.runPromise(runtime)(
-        Effect.gen(function* () {
-          const configService = yield* ConfigService;
-
-          // Generate embedding from title + content
-          const gatewayToken = yield* configService.getAiGatewayToken();
-          const provider = createEmbeddingProvider({
-            token: gatewayToken,
-            isGateway: true,
-          });
-
-          const embeddingText = `${title}\n\n${content}`;
-          const embedding = yield* Effect.tryPromise({
-            try: async () => {
-              const { embeddings } = await embedMany({
-                model: provider.embedding(AIModels.openai.embedding),
-                values: [embeddingText],
-              });
-
-              if (!embeddings || embeddings.length === 0) {
-                throw new Error("No embeddings returned");
-              }
-
-              return embeddings[0];
-            },
-            catch: (error) =>
-              new KnowledgeBaseError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          // Compute content hash
-          const contentToHash = `${category}:${title}:${content}`;
-          const contentHash = createHash("md5")
-            .update(contentToHash)
-            .digest("hex");
-
-          // Store via API
-          yield* repositoryService.callTrpcMutation<{ success: boolean }>(
-            "knowledgeBase.upsert",
-            {
-              repositoryId,
-              category,
-              title,
-              content,
-              examples: examples.length > 0 ? examples : null,
-              sourceFiles: sourceFiles.length > 0 ? sourceFiles : null,
-              embedding,
-              contentHash,
-            },
-          );
-
-          return { success: true };
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.succeed({
-              success: false,
-              error: error instanceof Error ? error.message : "Unknown error",
-            }),
-          ),
-          Effect.provide(KnowledgeBaseConfigLayer),
-        ),
+      // Use pre-fetched repository ID
+      console.log(
+        `[UpsertKnowledge] Using pre-fetched repository ID: ${context.repositoryId}`,
       );
 
-      return result;
+      console.log(
+        `[UpsertKnowledge] Using pre-fetched gateway token, generating embedding...`,
+      );
+
+      const provider = createEmbeddingProvider({
+        token: context.gatewayToken,
+        isGateway: true,
+      });
+
+      const embeddingText = `${title}\n\n${content}`;
+      console.log(`[UpsertKnowledge] Calling embedMany API...`);
+      const { embeddings } = await embedMany({
+        model: provider.embedding(AIModels.openai.embedding),
+        values: [embeddingText],
+      });
+
+      if (!embeddings || embeddings.length === 0) {
+        throw new Error("No embeddings returned");
+      }
+
+      console.log(
+        `[UpsertKnowledge] Embedding generated, length: ${embeddings[0].length}`,
+      );
+      const embedding = embeddings[0];
+
+      // Compute content hash
+      const contentToHash = `${category}:${title}:${content}`;
+      const contentHash = createHash("md5").update(contentToHash).digest("hex");
+
+      // Store via API using abstracted call
+      console.log(
+        `[UpsertKnowledge] Calling API to store entry for ${category}...`,
+      );
+
+      // Provide the SecretStorageService layer needed by ConfigService.getAuthToken()
+      const secretStorageLayer = createSecretStorageLayerFromService(
+        context.secretStorageService,
+      );
+
+      await Runtime.runPromise(runtime)(
+        repositoryService
+          .callTrpcMutation<{ success: boolean }>("knowledgeBase.upsert", {
+            repositoryId: context.repositoryId,
+            category,
+            title,
+            content,
+            examples: examples.length > 0 ? examples : null,
+            sourceFiles: sourceFiles.length > 0 ? sourceFiles : null,
+            embedding,
+            contentHash,
+          })
+          .pipe(Effect.provide(secretStorageLayer)),
+      );
+
+      console.log(`[UpsertKnowledge] API call successful for ${category}`);
+      onComplete?.(category, true);
+      return { success: true };
     },
   });
 };
-
-/**
- * Default upsertKnowledge tool (requires service instance)
- */
-export const upsertKnowledgeTool = (repositoryService: RepositoryService) =>
-  createUpsertKnowledgeTool(repositoryService);

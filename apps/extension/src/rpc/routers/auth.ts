@@ -1,6 +1,5 @@
 import { Effect, Runtime } from "effect";
 import { z } from "zod";
-import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
 import { createAuthServiceLayer } from "../../services/layer-factory.js";

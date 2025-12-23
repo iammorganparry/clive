@@ -41,7 +41,7 @@ export function truncateMiddle(path: string, maxLength: number = 50): string {
  */
 export function truncateLogMessage(log: string): string {
   // Match file paths (absolute or relative)
-  const pathRegex = /([\/\w\-\.]+\.(ts|tsx|js|jsx|cy\.ts|spec\.ts))/g;
+  const pathRegex = /([/\w-]+\.(ts|tsx|js|jsx|cy\.ts|spec\.ts))/g;
   return log.replace(pathRegex, (match) => {
     // If the path is long, truncate it
     if (match.length > 60) {

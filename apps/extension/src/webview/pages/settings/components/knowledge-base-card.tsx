@@ -12,7 +12,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { AlertCircle, Brain, Loader2, X } from "lucide-react";
+import { Task, TaskTrigger, TaskContent, TaskItem } from "@clive/ui/task";
+import {
+  AlertCircle,
+  Brain,
+  Loader2,
+  X,
+  XCircle,
+  FileSearch,
+  FileOutput,
+  Settings,
+  Play,
+  Search,
+  CheckCircle,
+  Circle,
+} from "lucide-react";
 import { useRpc } from "../../../rpc/provider.js";
 import { createRequest } from "../../../rpc/hooks.js";
 import { getVSCodeAPI } from "../../../services/vscode.js";
@@ -21,6 +35,7 @@ import {
   type ErrorType,
 } from "../machines/knowledge-base-machine.js";
 import type { KnowledgeBaseStatus } from "../../../../services/knowledge-base-types.js";
+import { truncateLogMessage } from "../../../utils/path-utils.js";
 
 dayjs.extend(relativeTime);
 
@@ -42,6 +57,51 @@ const CATEGORY_LABELS: Record<string, string> = {
   coverage: "Coverage",
   gaps: "Gaps",
   improvements: "Improvements",
+};
+
+// Log Icon Component - maps log messages to appropriate icons
+interface LogIconProps {
+  log: string;
+  isCompleted?: boolean;
+}
+
+const LogIcon: React.FC<LogIconProps> = ({ log, isCompleted }) => {
+  const lowerLog = log.toLowerCase();
+
+  // Check if this is a "generating" message
+  const isGeneratingMessage = lowerLog.includes("generating");
+
+  // If generating and file is completed, show checkmark instead of spinner
+  if (isGeneratingMessage && isCompleted) {
+    return <CheckCircle className="h-3 w-3 text-green-500" />;
+  }
+
+  if (lowerLog.includes("reading") || lowerLog.includes("read file")) {
+    return <FileSearch className="h-3 w-3" />;
+  }
+  if (
+    lowerLog.includes("writing") ||
+    lowerLog.includes("written") ||
+    lowerLog.includes("write test")
+  ) {
+    return <FileOutput className="h-3 w-3" />;
+  }
+  if (lowerLog.includes("config") || lowerLog.includes("configuration")) {
+    return <Settings className="h-3 w-3" />;
+  }
+  if (lowerLog.includes("starting")) {
+    return <Play className="h-3 w-3" />;
+  }
+  if (lowerLog.includes("completed") || lowerLog.includes("success")) {
+    return <CheckCircle className="h-3 w-3 text-green-500" />;
+  }
+  if (lowerLog.includes("analyzing")) {
+    return <Search className="h-3 w-3" />;
+  }
+  if (isGeneratingMessage) {
+    return <Loader2 className="h-3 w-3 animate-spin" />;
+  }
+  return <Circle className="h-3 w-3" />;
 };
 
 /**
@@ -115,10 +175,21 @@ export const KnowledgeBaseCard: React.FC = () => {
     return await regenerateMutation.mutateAsync();
   }, [regenerateMutation]);
 
+  const handlePhaseComplete = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ["rpc", "knowledgeBase", "getStatus"],
+    });
+  }, [queryClient]);
+
   // Use XState machine for state management
   // Machine automatically starts in "loading" state and fetches status
   const [state, send] = useMachine(knowledgeBaseMachine, {
-    input: { fetchStatus, regenerate },
+    input: {
+      fetchStatus,
+      regenerate,
+      vscode,
+      onPhaseComplete: handlePhaseComplete,
+    },
   });
 
   const status = state.context.status;
@@ -134,14 +205,24 @@ export const KnowledgeBaseCard: React.FC = () => {
   const isGenerating =
     state.matches("generating") ||
     state.matches("polling") ||
-    state.matches("checkingGenerationStatus");
+    state.matches("checkingGenerationStatus") ||
+    state.matches("generatingWithProgress") ||
+    state.matches("resumingWithProgress");
+
+  // Show resume if we have partial knowledge (some categories completed but not all)
+  const isPartialKnowledge =
+    hasKnowledge && categories.length > 0 && categories.length < 12;
   const isLoading = state.matches("loading");
   const isError = state.matches("error");
 
   const errorDisplay = getErrorDisplay(errorType, errorMessage);
 
   const handleRegenerate = () => {
-    send({ type: "REGENERATE" });
+    send({ type: "REGENERATE_WITH_PROGRESS" });
+  };
+
+  const handleResume = () => {
+    send({ type: "RESUME_WITH_PROGRESS" });
   };
 
   const handleRetry = () => {
@@ -280,7 +361,48 @@ export const KnowledgeBaseCard: React.FC = () => {
         )}
 
         {/* Action buttons */}
-        {isGenerating ? (
+        {state.matches("generatingWithProgress") ? (
+          <Task defaultOpen>
+            <TaskTrigger title="Generating Knowledge Base">
+              <div className="flex items-center gap-2 w-full">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm flex-1">
+                  Generating Knowledge Base...
+                </span>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleCancel}
+                  className="h-6 px-2 flex-shrink-0"
+                >
+                  <XCircle className="h-3 w-3 mr-1" />
+                  Cancel
+                </Button>
+              </div>
+            </TaskTrigger>
+            <TaskContent>
+              {/* Logs - Only show progress checkpoints */}
+              {state.context.logs.length > 0 && (
+                <div className="space-y-1">
+                  {state.context.logs.map((log: string, i: number) => (
+                    <TaskItem
+                      key={`${log.slice(0, 20)}-${i}`}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      <span className="flex-shrink-0">
+                        <LogIcon log={log} />
+                      </span>
+                      <span className="flex-1 truncate" title={log}>
+                        {truncateLogMessage(log)}
+                      </span>
+                    </TaskItem>
+                  ))}
+                </div>
+              )}
+            </TaskContent>
+          </Task>
+        ) : isGenerating ? (
           <div className="space-y-2">
             <Button
               onClick={handleCancel}
@@ -294,6 +416,24 @@ export const KnowledgeBaseCard: React.FC = () => {
               <Loader2 className="w-4 h-4 animate-spin" />
               Analyzing repository and building knowledge base...
             </div>
+          </div>
+        ) : isPartialKnowledge ? (
+          <div className="space-y-2">
+            <Button
+              onClick={handleResume}
+              disabled={isLoading}
+              className="w-full"
+            >
+              Resume ({categories.length}/12 complete)
+            </Button>
+            <Button
+              onClick={handleRegenerate}
+              disabled={isLoading}
+              variant="outline"
+              className="w-full"
+            >
+              Regenerate from Scratch
+            </Button>
           </div>
         ) : (
           <Button

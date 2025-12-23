@@ -8,7 +8,6 @@ import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
 import { createSecretStorageLayer } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
-import { CodebaseIndexingService } from "./services/codebase-indexing-service.js";
 import { FileWatcherDisposable } from "./services/file-watcher-service.js";
 import { createIndexingLayer } from "./services/layer-factory.js";
 import { GlobalStateKeys, Commands } from "./constants.js";

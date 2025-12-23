@@ -455,9 +455,38 @@ If you've used 50+ steps and haven't finished all categories, STOP discovering n
 /**
  * Prompt factory for knowledge base generation
  */
+/**
+ * Category descriptions for knowledge base analysis
+ */
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  framework:
+    "Testing framework(s) used (Jest, Vitest, Playwright, Cypress, Mocha, Jasmine), versions, and configuration. Find package.json, config files, and identify the primary testing framework.",
+  patterns:
+    "Test structure patterns, describe/it blocks, naming conventions, and test organization patterns. Read sample test files to understand the structure and conventions used.",
+  mocks:
+    "Mock factories, spies, stubs, test data utilities, and API mocking patterns. Find mock files, __mocks__ directories, and mock utility functions.",
+  fixtures:
+    "Test fixtures, seed data, test data patterns, and fixture factories. Look for fixture files, seed data, and test data generation patterns.",
+  hooks:
+    "Setup/teardown patterns (beforeEach, afterAll, beforeAll, afterEach, setup, teardown). Find hook usage patterns in test files.",
+  selectors:
+    "Element selection strategies (data-testid, data-test, aria-label, getByTestId, locator, get, find). Find selector attributes in components and selector methods in tests.",
+  routes:
+    "Application routes, navigation patterns, and route testing conventions. Find route definitions and navigation patterns in the codebase.",
+  assertions:
+    "Assertion patterns, custom matchers, expectation styles (expect, assert, should). Find assertion patterns and custom matcher usage.",
+  utilities:
+    "Test utilities, helpers, custom commands, and shared test functions. Find test utility files and helper functions.",
+  coverage:
+    "Coverage configuration, thresholds, and reporting setup. Find coverage config files and coverage settings.",
+  gaps: "Missing mocks, fixtures, test coverage, selector conventions, or other testing infrastructure gaps. Identify what testing infrastructure is missing.",
+  improvements:
+    "Suggestions for better testing practices, refactoring opportunities, or pattern upgrades. Find areas where testing can be improved.",
+};
+
 export const KnowledgeBasePromptFactory = {
   /**
-   * Generate a prompt for analyzing a repository's testing knowledge
+   * Generate a prompt for analyzing a repository's testing knowledge (legacy)
    */
   analyzeRepository: (): string => {
     return `Analyze this repository's testing setup. Work incrementally and store knowledge as you discover it.
@@ -475,4 +504,98 @@ export const KnowledgeBasePromptFactory = {
 
 Use bashExecute to discover files efficiently (1-2 commands per category), read 1-2 representative files, then immediately store your findings with upsertKnowledge before moving to the next category.`;
   },
+
+  /**
+   * Generate a category-specific prompt for focused knowledge base analysis
+   */
+  analyzeCategory: (category: string): string => {
+    const description = CATEGORY_DESCRIPTIONS[category];
+    if (!description) {
+      throw new Error(`Unknown category: ${category}`);
+    }
+
+    return `You are a Testing Knowledge Base Analyzer. Your job is to discover and document "${category}" knowledge in this codebase.
+
+<your_task>
+${description}
+
+Use bashExecute to find relevant files, read 1-2 representative files, then call upsertKnowledge with your findings.
+</your_task>
+
+<rules>
+- Use bashExecute efficiently (1-2 commands maximum) to discover relevant files
+- Read 1-2 representative files (not all files - sample efficiently)
+- Call upsertKnowledge exactly once for this category before finishing
+- Include concrete code examples in your upsertKnowledge call
+- Store source file paths so knowledge can be traced back
+- Be concise but comprehensive in your content descriptions
+- Focus on documenting the actual patterns and conventions found
+</rules>
+
+<category_specific_guidance>
+${getCategoryGuidance(category)}
+</category_specific_guidance>
+
+**CRITICAL**: You MUST call upsertKnowledge exactly once for this category before finishing.`;
+  },
 } as const;
+
+/**
+ * Get category-specific guidance for discovery
+ */
+function getCategoryGuidance(category: string): string {
+  const guidance: Record<string, string> = {
+    framework: `Framework Discovery:
+- \`find . -name "package.json" -not -path "*/node_modules/*"\` - Find package.json files
+- \`find . -name "*.config.*" | grep -E "(jest|vitest|playwright|cypress|mocha|jasmine)"\` - Find config files
+- \`cat package.json | grep -E "jest|vitest|@playwright|cypress|mocha|jasmine|@testing-library"\` - Check dependencies`,
+
+    patterns: `Pattern Discovery:
+- \`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "*.cy.*" -o -name "*.e2e.*" \\) -not -path "*/node_modules/*" | head -10\` - Find test files
+- \`cat <test-file>\` - Read sample test files to understand structure patterns`,
+
+    mocks: `Mock Discovery:
+- \`find . -path "*/mocks/*" -o -path "*/__mocks__/*" -o -name "*.mock.*"\` - Find mock files
+- \`grep -r "mockFactory\\|createMock\\|jest.mock\\|vi.mock\\|sinon" . --include="*.ts" --include="*.tsx" | head -10\` - Find mock patterns`,
+
+    fixtures: `Fixture Discovery:
+- \`find . -path "*/fixtures/*" -o -name "*.fixture.*"\` - Find fixture files
+- \`grep -r "fixture\\|seed\\|factory" . --include="*.ts" --include="*.tsx" | head -10\` - Find fixture patterns`,
+
+    hooks: `Hook Discovery:
+- \`grep -r "beforeEach\\|afterEach\\|beforeAll\\|afterAll\\|setup\\|teardown" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find hook patterns`,
+
+    selectors: `Selector Discovery:
+- \`grep -r "data-testid\\|data-test\\|data-cy\\|aria-label\\|testId" . --include="*.tsx" --include="*.ts" | head -10\` - Find selector attributes
+- \`grep -r "getByTestId\\|getByRole\\|getByText\\|locator\\|get\\|find" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find selector methods`,
+
+    routes: `Route Discovery:
+- \`grep -r "route\\|path\\|navigate\\|visit\\|goto" . --include="*.tsx" --include="*.ts" | head -10\` - Find route definitions
+- \`find . -name "*route*" -o -name "*router*" | head -5\` - Find route files`,
+
+    assertions: `Assertion Discovery:
+- \`grep -r "expect\\|assert\\|should\\|toMatch\\|toBe\\|toEqual" . --include="*.test.*" --include="*.spec.*" | head -10\` - Find assertion patterns`,
+
+    utilities: `Utility Discovery:
+- \`find . -path "*/test-utils/*" -o -path "*/test-helpers/*" -o -name "*test-utils*" -o -name "*test-helpers*"\` - Find utility directories
+- \`grep -r "testUtils\\|testHelpers\\|customCommand" . --include="*.ts" --include="*.tsx" | head -10\` - Find utility patterns`,
+
+    coverage: `Coverage Discovery:
+- \`grep -r "coverage\\|threshold\\|collectCoverage" . --include="*.config.*" --include="package.json" | head -5\` - Find coverage config`,
+
+    gaps: `Gap Detection:
+- Compare component files with test files to identify untested components
+- Find API calls that may need mocks: \`grep -r "fetch\\|axios\\|api" . --include="*.ts" --include="*.tsx" | grep -v "test\\|mock" | head -10\`
+- Check for missing fixture factories by comparing entity types with fixture files`,
+
+    improvements: `Improvement Discovery:
+- Find skipped tests: \`grep -r "describe.skip\\|it.skip\\|test.skip" . --include="*.test.*" --include="*.spec.*" | head -5\`
+- Look for test-related TODOs: \`grep -r "TODO\\|FIXME" . --include="*.test.*" --include="*.spec.*" | head -5\`
+- Compare test patterns across files to identify inconsistencies`,
+  };
+
+  return (
+    guidance[category] ||
+    "General discovery guidance: Use bashExecute to find relevant files, read them, and document patterns found."
+  );
+}

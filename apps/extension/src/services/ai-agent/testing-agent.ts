@@ -25,7 +25,6 @@ import {
   createWriteTestFileTool,
   writeTestFileTool,
   createSearchKnowledgeBaseTool,
-  createUpsertKnowledgeTool,
 } from "./tools/index.js";
 import { APPROVAL } from "./hitl-utils.js";
 import { makeTokenBudget } from "./token-budget.js";
@@ -587,7 +586,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             `[PlanningAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
           );
 
-          // Create tools: bash + semantic search + knowledge base + proposeTest + upsertKnowledge
+          // Create tools: bash + semantic search + knowledge base + proposeTest
           const tools = {
             // Bash tool for file system operations
             bashExecute: createBashExecuteTool(budget),
@@ -598,8 +597,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               knowledgeBaseService,
               repositoryService,
             ),
-            // Knowledge base upsert for recording gaps and improvements
-            upsertKnowledge: createUpsertKnowledgeTool(repositoryService),
             // Output tool for proposing tests
             proposeTest: proposeTestTool,
           };
@@ -1029,7 +1026,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
           Effect.gen(function* () {
             const files = Array.isArray(filePaths) ? filePaths : [filePaths];
             const conversationHistory = options?.conversationHistory ?? [];
-            const outputChannel = options?.outputChannel;
+            const _outputChannel = options?.outputChannel;
             const progressCallback = options?.progressCallback;
             const waitForApproval = options?.waitForApproval;
             const signal = options?.signal;
@@ -1123,7 +1120,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 knowledgeBaseService,
                 repositoryService,
               ),
-              upsertKnowledge: createUpsertKnowledgeTool(repositoryService),
               proposeTest,
               // NO writeTestFile here - it will be added in Phase 2 after approval
             };

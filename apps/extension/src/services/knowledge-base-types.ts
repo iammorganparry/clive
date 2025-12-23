@@ -42,3 +42,24 @@ export interface KnowledgeBaseStatus {
   categories: string[];
   entryCount: number;
 }
+
+/**
+ * Knowledge base phase definition
+ */
+export interface KnowledgeBasePhase {
+  id: number;
+  name: string;
+  description: string;
+  categories: string[];
+  status: "pending" | "in_progress" | "completed";
+  categoryEntries: Record<string, number>; // category -> entry count
+}
+
+/**
+ * Knowledge base progress event types
+ */
+export type KnowledgeBaseProgressEvent =
+  | { type: "progress"; message: string }
+  | { type: "phase_started"; phaseId: number; phaseName: string }
+  | { type: "category_complete"; category: string; entryCount: number }
+  | { type: "phase_complete"; phaseId: number; totalEntries: number };

@@ -1,20 +1,19 @@
 import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Match, Stream } from "effect";
-import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import { ConfigService } from "../config-service.js";
 import { RepositoryService } from "../repository-service.js";
+import { SecretStorageService } from "../vs-code.js";
 import { AIModels } from "../ai-models.js";
-import { createAnthropicProvider } from "../ai-provider-factory.js";
-import {
-  KNOWLEDGE_BASE_SYSTEM_PROMPT,
-  KnowledgeBasePromptFactory,
-} from "./prompts.js";
+import { createXaiProvider } from "../ai-provider-factory.js";
+import { KnowledgeBasePromptFactory } from "./prompts.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
+import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import {
   createBashExecuteTool,
   createUpsertKnowledgeTool,
 } from "./tools/index.js";
 import { makeTokenBudget } from "./token-budget.js";
+import type { KnowledgeBaseProgressEvent } from "../knowledge-base-types.js";
 
 class KnowledgeBaseAgentError extends Data.TaggedError(
   "KnowledgeBaseAgentError",
@@ -37,11 +36,15 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
     effect: Effect.gen(function* () {
       const configService = yield* ConfigService;
       const repositoryService = yield* RepositoryService;
+      const secretStorageService = yield* SecretStorageService;
 
       /**
        * Analyze repository and build knowledge base
        */
-      const analyze = () =>
+      const analyze = (
+        progressCallback?: (event: KnowledgeBaseProgressEvent) => void,
+        options?: { skipCategories?: string[] },
+      ) =>
         Effect.gen(function* () {
           const correlationId = `kb-${Date.now()}-${Math.random().toString(36).substring(7)}`;
           const startTime = Date.now();
@@ -49,6 +52,61 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
           yield* Effect.logDebug(
             `[KnowledgeBaseAgent:${correlationId}] Starting knowledge base analysis`,
           );
+
+          // Phase definitions based on priority order
+          const phaseDefinitions = [
+            {
+              id: 1,
+              name: "Framework Discovery",
+              categories: ["framework", "patterns"],
+            },
+            {
+              id: 2,
+              name: "Core Infrastructure",
+              categories: ["mocks", "fixtures", "hooks"],
+            },
+            {
+              id: 3,
+              name: "Test Details",
+              categories: [
+                "selectors",
+                "routes",
+                "assertions",
+                "utilities",
+                "coverage",
+              ],
+            },
+            { id: 4, name: "Analysis", categories: ["gaps", "improvements"] },
+          ];
+
+          let currentPhase: number | null = null;
+          const categoryEntryCounts: Record<string, number> = {};
+
+          // Helper to get phase for a category
+          const getPhaseForCategory = (category: string): number => {
+            for (const phase of phaseDefinitions) {
+              if (phase.categories.includes(category)) {
+                return phase.id;
+              }
+            }
+            return 4; // Default to analysis phase
+          };
+
+          // Helper to check if phase changed
+          const checkPhaseChange = (category: string) => {
+            const newPhaseId = getPhaseForCategory(category);
+            if (currentPhase !== newPhaseId) {
+              currentPhase = newPhaseId;
+              const phase = phaseDefinitions.find((p) => p.id === newPhaseId);
+              if (phase) {
+                progressCallback?.({
+                  type: "phase_started",
+                  phaseId: newPhaseId,
+                  phaseName: phase.name,
+                });
+              }
+            }
+          };
 
           // Check configuration
           const configStartTime = Date.now();
@@ -77,10 +135,55 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
             `[KnowledgeBaseAgent:${correlationId}] Created token budget in ${budgetDuration}ms: ${initialRemaining}/${initialMaxBudget} tokens available`,
           );
 
+          // Pre-fetch context values needed by tools
+          progressCallback?.({
+            type: "progress",
+            message: "Preparing repository analysis...",
+          });
+          const userId = yield* configService.getUserId();
+          const organizationId = yield* configService.getOrganizationId();
+          const workspaceRoot = yield* getWorkspaceRoot();
+          const gatewayToken = yield* configService.getAiGatewayToken();
+
+          // Create repository for this workspace
+          const repository = yield* repositoryService.upsertRepository(
+            userId,
+            workspaceRoot.fsPath.split("/").pop() || "workspace",
+            workspaceRoot.fsPath,
+            organizationId,
+          );
+          const repositoryId = repository.id;
+
+          yield* Effect.logDebug(
+            `[KnowledgeBaseAgent:${correlationId}] Pre-fetched context: userId=${userId}, orgId=${organizationId}, repoId=${repositoryId}`,
+          );
+
           // Create tools
           const tools = {
             bashExecute: createBashExecuteTool(budget),
-            upsertKnowledge: createUpsertKnowledgeTool(repositoryService),
+            upsertKnowledge: createUpsertKnowledgeTool(
+              repositoryService,
+              {
+                userId,
+                organizationId,
+                workspaceRoot,
+                repositoryId,
+                gatewayToken,
+                secretStorageService,
+              },
+              (category, success) => {
+                if (success) {
+                  checkPhaseChange(category);
+                  categoryEntryCounts[category] =
+                    (categoryEntryCounts[category] || 0) + 1;
+                  progressCallback?.({
+                    type: "category_complete",
+                    category,
+                    entryCount: categoryEntryCounts[category],
+                  });
+                }
+              },
+            ),
           };
 
           // Get AI token
@@ -108,265 +211,242 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
             );
           }
 
-          const anthropic = createAnthropicProvider(tokenResult);
+          const xai = createXaiProvider(tokenResult);
 
-          // Generate prompt
-          const prompt = KnowledgeBasePromptFactory.analyzeRepository();
+          // Process categories sequentially by phases
+          const allAnalysisPhases = [
+            {
+              id: 1,
+              name: "Framework Discovery",
+              categories: ["framework", "patterns"],
+            },
+            {
+              id: 2,
+              name: "Core Infrastructure",
+              categories: ["mocks", "fixtures", "hooks"],
+            },
+            {
+              id: 3,
+              name: "Test Details",
+              categories: [
+                "selectors",
+                "routes",
+                "assertions",
+                "utilities",
+                "coverage",
+              ],
+            },
+            { id: 4, name: "Analysis", categories: ["gaps", "improvements"] },
+          ];
 
-          yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Prompt length: ${prompt.length} chars`,
-          );
-          yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Calling AI model (${AIModels.anthropic.testing}) for knowledge base analysis...`,
-          );
-
-          // Run agent loop
-          const aiStartTime = Date.now();
-          const streamResult = yield* Effect.try({
-            try: () =>
-              streamText({
-                model: anthropic(AIModels.anthropic.testing),
-                tools,
-                maxRetries: 0,
-                stopWhen: stepCountIs(60), // Allow more steps for comprehensive analysis
-                messages: [
-                  {
-                    role: "system",
-                    content: KNOWLEDGE_BASE_SYSTEM_PROMPT,
-                    providerOptions: {
-                      anthropic: { cacheControl: { type: "ephemeral" } },
-                    },
-                  },
-                  {
-                    role: "user",
-                    content: prompt,
-                  },
-                ],
-                providerOptions: {
-                  anthropic: {
-                    thinking: { type: "enabled", budgetTokens: 10000 },
-                  } satisfies AnthropicProviderOptions,
-                },
-                headers: {
-                  "anthropic-beta": "interleaved-thinking-2025-05-14",
-                },
-              }),
-            catch: (error) =>
-              new KnowledgeBaseAgentError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          // Process stream for logging
-          const eventStream = streamFromAI(streamResult);
-          let upsertCount = 0;
-          yield* eventStream.pipe(
-            Stream.mapError(
-              (error) =>
-                new KnowledgeBaseAgentError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
-                  cause: error,
-                }),
-            ),
-            Stream.runForEach((event) =>
-              Effect.gen(function* () {
-                const effect = Match.value(event.type).pipe(
-                  Match.when("text-delta", () => {
-                    return Effect.gen(function* () {
-                      if (event.content) {
-                        yield* Effect.logDebug(
-                          `[KnowledgeBaseAgent:${correlationId}] AI text: ${event.content}`,
-                        );
-                      }
-                    });
-                  }),
-                  Match.when("tool-call", () => {
-                    return Effect.gen(function* () {
-                      yield* Effect.logDebug(
-                        `[KnowledgeBaseAgent:${correlationId}] Tool call: ${event.toolName}`,
-                      );
-                      if (event.toolArgs) {
-                        const argsStr = JSON.stringify(event.toolArgs, null, 2);
-                        const truncated =
-                          argsStr.length > 500
-                            ? `${argsStr.substring(0, 500)}... (truncated)`
-                            : argsStr;
-                        yield* Effect.logDebug(
-                          `[KnowledgeBaseAgent:${correlationId}]   Args: ${truncated}`,
-                        );
-                      }
-                      // Special logging for upsertKnowledge
-                      if (event.toolName === "upsertKnowledge") {
-                        upsertCount++;
-                        yield* Effect.logDebug(
-                          `[KnowledgeBaseAgent:${correlationId}] Storing knowledge entry #${upsertCount}`,
-                        );
-                      }
-                    });
-                  }),
-                  Match.when("tool-result", () => {
-                    return Effect.gen(function* () {
-                      yield* Effect.logDebug(
-                        `[KnowledgeBaseAgent:${correlationId}] Tool result: ${event.toolName}`,
-                      );
-                      if (event.toolResult) {
-                        const resultStr =
-                          typeof event.toolResult === "string"
-                            ? event.toolResult
-                            : JSON.stringify(event.toolResult, null, 2);
-                        const truncated =
-                          resultStr.length > 500
-                            ? `${resultStr.substring(0, 500)}... (truncated)`
-                            : resultStr;
-                        yield* Effect.logDebug(
-                          `[KnowledgeBaseAgent:${correlationId}]   Result: ${truncated}`,
-                        );
-                      }
-                      if (event.toolName === "upsertKnowledge") {
-                        const result = event.toolResult as {
-                          success: boolean;
-                          error?: string;
-                        };
-                        if (result.success) {
-                          yield* Effect.logDebug(
-                            `[KnowledgeBaseAgent:${correlationId}] Successfully stored knowledge entry`,
-                          );
-                        } else {
-                          yield* Effect.logDebug(
-                            `[KnowledgeBaseAgent:${correlationId}] Failed to store knowledge entry: ${result.error}`,
-                          );
-                        }
-                      }
-                    });
-                  }),
-                  Match.when("step-finish", () => {
-                    return Effect.logDebug(
-                      `[KnowledgeBaseAgent:${correlationId}] Step ${event.stepIndex || "unknown"} finished`,
-                    );
-                  }),
-                  Match.when("finish", () => {
-                    return Effect.logDebug(
-                      `[KnowledgeBaseAgent:${correlationId}] Analysis stream finished`,
-                    );
-                  }),
-                  Match.orElse(() => Effect.void),
-                );
-                return yield* effect;
-              }),
-            ),
-          );
-
-          // Get final result for extraction
-          const result = yield* Effect.promise(async () => await streamResult);
-          const aiDuration = Date.now() - aiStartTime;
-
-          // Await steps and text before using them
-          const awaitedSteps = yield* Effect.promise(async () => {
-            return await result.steps;
-          });
-          const awaitedText = yield* Effect.promise(async () => {
-            return await result.text;
-          });
+          // Filter out phases and categories that are already completed
+          const skipCategories = options?.skipCategories ?? [];
+          const analysisPhases = allAnalysisPhases
+            .map((phase) => ({
+              ...phase,
+              categories: phase.categories.filter(
+                (category) => !skipCategories.includes(category),
+              ),
+            }))
+            .filter((phase) => phase.categories.length > 0); // Remove phases with no remaining categories
 
           yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] AI model completed in ${aiDuration}ms. Steps: ${awaitedSteps.length}`,
+            `[KnowledgeBaseAgent:${correlationId}] Resume mode: skipping ${skipCategories.length} categories, analyzing ${analysisPhases.length} phases`,
           );
 
-          // Log step breakdown
-          yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Step breakdown:`,
-          );
-          for (let idx = 0; idx < awaitedSteps.length; idx++) {
-            const step = awaitedSteps[idx];
-            const toolCalls = step.toolCalls || [];
-            const toolResults = step.toolResults || [];
-            yield* Effect.logDebug(
-              `[KnowledgeBaseAgent:${correlationId}]   Step ${idx + 1}: ${toolCalls.length} tool call(s), ${toolResults.length} result(s)`,
-            );
-            // Log tool call details
-            for (let callIdx = 0; callIdx < toolCalls.length; callIdx++) {
-              const call = toolCalls[callIdx] as {
-                toolName?: string;
-                args?: unknown;
-              };
+          let totalEntryCount = 0;
+
+          for (const phase of analysisPhases) {
+            progressCallback?.({
+              type: "phase_started",
+              phaseId: phase.id,
+              phaseName: phase.name,
+            });
+
+            for (const category of phase.categories) {
+              progressCallback?.({
+                type: "progress",
+                message: `Analyzing ${category}...`,
+              });
+
+              // Generate category-specific prompt
+              const prompt =
+                KnowledgeBasePromptFactory.analyzeCategory(category);
+
               yield* Effect.logDebug(
-                `[KnowledgeBaseAgent:${correlationId}]     Tool call ${callIdx + 1}: ${call.toolName || "unknown"}`,
+                `[KnowledgeBaseAgent:${correlationId}] Analyzing category: ${category}`,
               );
-              if (call.args) {
-                const argsStr = JSON.stringify(call.args, null, 2);
-                const truncated =
-                  argsStr.length > 500
-                    ? `${argsStr.substring(0, 500)}... (truncated)`
-                    : argsStr;
-                yield* Effect.logDebug(
-                  `[KnowledgeBaseAgent:${correlationId}]       Args: ${truncated}`,
-                );
-              }
-            }
-            // Log tool result details
-            for (
-              let resultIdx = 0;
-              resultIdx < toolResults.length;
-              resultIdx++
-            ) {
-              const toolResult = toolResults[resultIdx] as {
-                toolName?: string;
-                result?: unknown;
-                output?: unknown;
-              };
               yield* Effect.logDebug(
-                `[KnowledgeBaseAgent:${correlationId}]     Tool result ${resultIdx + 1}: ${toolResult.toolName || "unknown"}`,
+                `[KnowledgeBaseAgent:${correlationId}] Prompt length: ${prompt.length} chars`,
               );
-              if (toolResult.result || toolResult.output) {
-                const resultStr =
-                  typeof (toolResult.result || toolResult.output) === "string"
-                    ? ((toolResult.result || toolResult.output) as string)
-                    : JSON.stringify(
-                        toolResult.result || toolResult.output,
-                        null,
-                        2,
-                      );
-                const truncated =
-                  resultStr.length > 500
-                    ? `${resultStr.substring(0, 500)}... (truncated)`
-                    : resultStr;
-                yield* Effect.logDebug(
-                  `[KnowledgeBaseAgent:${correlationId}]       Result: ${truncated}`,
-                );
-              }
+
+              // Run AI analysis for this category
+              const aiStartTime = Date.now();
+              const streamResult = yield* Effect.try({
+                try: () =>
+                  streamText({
+                    model: xai(AIModels.knowledgeBase.analysis),
+                    tools,
+                    maxRetries: 0,
+                    stopWhen: stepCountIs(20), // Limited steps per category
+                    messages: [
+                      {
+                        role: "system",
+                        content:
+                          "You are a focused Testing Knowledge Base Analyzer. Analyze the specified category efficiently and call upsertKnowledge exactly once.",
+                      },
+                      {
+                        role: "user",
+                        content: prompt,
+                      },
+                    ],
+                  }),
+                catch: (error) =>
+                  new KnowledgeBaseAgentError({
+                    message:
+                      error instanceof Error ? error.message : "Unknown error",
+                    cause: error,
+                  }),
+              });
+
+              // Process stream for this category
+              const eventStream = streamFromAI(streamResult);
+              let categoryEntryCount = 0;
+
+              yield* eventStream.pipe(
+                Stream.mapError(
+                  (error) =>
+                    new KnowledgeBaseAgentError({
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : "Unknown error",
+                      cause: error,
+                    }),
+                ),
+                Stream.runForEach((event) =>
+                  Effect.gen(function* () {
+                    const effect = Match.value(event.type).pipe(
+                      Match.when("text-delta", () => {
+                        return Effect.gen(function* () {
+                          if (event.content) {
+                            yield* Effect.logDebug(
+                              `[KnowledgeBaseAgent:${correlationId}] [${category}] AI text: ${event.content}`,
+                            );
+                          }
+                        });
+                      }),
+                      Match.when("tool-call", () => {
+                        return Effect.gen(function* () {
+                          yield* Effect.logDebug(
+                            `[KnowledgeBaseAgent:${correlationId}] [${category}] Tool call: ${event.toolName}`,
+                          );
+                          if (event.toolArgs) {
+                            const argsStr = JSON.stringify(
+                              event.toolArgs,
+                              null,
+                              2,
+                            );
+                            const truncated =
+                              argsStr.length > 500
+                                ? `${argsStr.substring(0, 500)}... (truncated)`
+                                : argsStr;
+                            yield* Effect.logDebug(
+                              `[KnowledgeBaseAgent:${correlationId}] [${category}] Args: ${truncated}`,
+                            );
+                          }
+
+                          // Special logging for upsertKnowledge
+                          if (event.toolName === "upsertKnowledge") {
+                            categoryEntryCount++;
+                            yield* Effect.logDebug(
+                              `[KnowledgeBaseAgent:${correlationId}] [${category}] Storing knowledge entry #${categoryEntryCount}`,
+                            );
+                          }
+                        });
+                      }),
+                      Match.when("tool-result", () => {
+                        return Effect.gen(function* () {
+                          yield* Effect.logDebug(
+                            `[KnowledgeBaseAgent:${correlationId}] [${category}] Tool result: ${event.toolName}`,
+                          );
+                          if (event.toolResult) {
+                            const resultStr =
+                              typeof event.toolResult === "string"
+                                ? event.toolResult
+                                : JSON.stringify(event.toolResult, null, 2);
+                            const truncated =
+                              resultStr.length > 500
+                                ? `${resultStr.substring(0, 500)}... (truncated)`
+                                : resultStr;
+                            yield* Effect.logDebug(
+                              `[KnowledgeBaseAgent:${correlationId}] [${category}] Result: ${truncated}`,
+                            );
+                          }
+                        });
+                      }),
+                      Match.when("step-finish", () => {
+                        return Effect.logDebug(
+                          `[KnowledgeBaseAgent:${correlationId}] [${category}] Step finished`,
+                        );
+                      }),
+                      Match.when("finish", () => {
+                        return Effect.logDebug(
+                          `[KnowledgeBaseAgent:${correlationId}] [${category}] Analysis finished`,
+                        );
+                      }),
+                      Match.orElse(() => Effect.void),
+                    );
+                    return yield* effect;
+                  }),
+                ),
+              );
+
+              // Get final result for extraction (await after stream processing)
+              const result = yield* Effect.promise(async () => {
+                return await streamResult;
+              });
+
+              // CRITICAL: Await steps to ensure all tool executions complete
+              const awaitedSteps = yield* Effect.promise(async () => {
+                return await result.steps;
+              });
+              const aiDuration = Date.now() - aiStartTime;
+
+              yield* Effect.logDebug(
+                `[KnowledgeBaseAgent:${correlationId}] [${category}] Steps: ${awaitedSteps.length}`,
+              );
+
+              yield* Effect.logDebug(
+                `[KnowledgeBaseAgent:${correlationId}] [${category}] Completed in ${aiDuration}ms`,
+              );
+
+              // Emit category completion
+              progressCallback?.({
+                type: "category_complete",
+                category,
+                entryCount: categoryEntryCount,
+              });
+
+              totalEntryCount += categoryEntryCount;
             }
-          }
 
-          // Log AI response text (truncated)
-          if (awaitedText) {
-            const truncatedText =
-              awaitedText.length > 1000
-                ? `${awaitedText.substring(0, 1000)}... (truncated)`
-                : awaitedText;
-            yield* Effect.logDebug(
-              `[KnowledgeBaseAgent:${correlationId}] AI response text: ${truncatedText}`,
-            );
+            // Emit phase completion
+            progressCallback?.({
+              type: "phase_complete",
+              phaseId: phase.id,
+              totalEntries: totalEntryCount,
+            });
           }
-
-          // Log final budget consumption
-          const consumed = yield* budget.getConsumed();
-          const remaining = yield* budget.remaining();
-          const maxBudget = yield* budget.getMaxBudget();
-          yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Token budget: ${consumed}/${maxBudget} consumed, ${remaining} remaining`,
-          );
 
           const totalDuration = Date.now() - startTime;
           yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Analysis completed in ${totalDuration}ms. Stored ${upsertCount} knowledge entries.`,
+            `[KnowledgeBaseAgent:${correlationId}] All phases completed in ${totalDuration}ms. Total entries: ${totalEntryCount}`,
           );
 
           return {
             success: true,
-            entryCount: upsertCount,
+            entryCount: totalEntryCount,
           };
         }).pipe(
           Effect.catchTag("ConfigurationError", (error) =>

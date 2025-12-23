@@ -9,6 +9,7 @@ import type { KnowledgeBaseCategory } from "../constants.js";
 import type {
   KnowledgeBaseStatus,
   KnowledgeBaseSearchResult,
+  KnowledgeBaseProgressEvent,
 } from "./knowledge-base-types.js";
 import { KnowledgeBaseError } from "./knowledge-base-errors.js";
 
@@ -28,21 +29,37 @@ export class KnowledgeBaseService extends Effect.Service<KnowledgeBaseService>()
        * Analyze repository and build knowledge base
        * Delegates to KnowledgeBaseAgent which uses bashExecute + AI analysis
        */
-      const analyzeRepository = (repositoryId: string) =>
+      const analyzeRepository = (
+        repositoryId: string,
+        progressCallback?: (event: KnowledgeBaseProgressEvent) => void,
+        options?: { resume?: boolean },
+      ) =>
         Effect.gen(function* () {
           yield* Effect.logDebug(
-            `[KnowledgeBaseService] Starting analysis for repository: ${repositoryId}`,
+            `[KnowledgeBaseService] Starting analysis for repository: ${repositoryId}, resume: ${options?.resume}`,
           );
 
-          // Delete existing knowledge for this repository
-          yield* repositoryService
-            .callTrpcMutation<{ success: boolean }>("knowledgeBase.deleteAll", {
-              repositoryId,
-            })
-            .pipe(Effect.catchAll(() => Effect.void));
+          let skipCategories: string[] = [];
+
+          if (options?.resume) {
+            // Get current status to determine which categories are already complete
+            const currentStatus = yield* getStatus(repositoryId);
+            skipCategories = currentStatus.categories;
+
+            yield* Effect.logDebug(
+              `[KnowledgeBaseService] Resume mode: skipping ${skipCategories.length} completed categories: ${skipCategories.join(', ')}`,
+            );
+          } else {
+            // Delete existing knowledge for this repository
+            yield* repositoryService
+              .callTrpcMutation<{ success: boolean }>("knowledgeBase.deleteAll", {
+                repositoryId,
+              })
+              .pipe(Effect.catchAll(() => Effect.void));
+          }
 
           // Delegate to agent for discovery and analysis
-          const result = yield* knowledgeBaseAgent.analyze();
+          const result = yield* knowledgeBaseAgent.analyze(progressCallback, { skipCategories });
 
           yield* Effect.logDebug(
             `[KnowledgeBaseService] Analysis complete: ${result.entryCount} entries stored`,
