@@ -34,6 +34,7 @@ import { RepositoryService } from "../services/repository-service.js";
 import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
 import { ConversationService } from "../services/conversation-service.js";
 import { ReactFileFilter } from "../services/react-file-filter.js";
+import { GitServiceLive } from "../services/git-service.js";
 import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
 import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 import { KnowledgeFileService } from "../services/knowledge-file-service.js";
@@ -517,11 +518,15 @@ function createDomainTestLayer(
     options?.reactFileFilterOverrides,
   ).pipe(Layer.provide(baseLayer.layer));
 
+  // GitService depends on VSCodeService (in baseLayer via coreLayer)
+  const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer.layer));
+
   return Layer.mergeAll(
     baseLayer.layer,
     repoLayer,
     convLayer,
     reactFilterLayer,
+    gitLayer,
   );
 }
 
@@ -594,18 +599,18 @@ export function createRealIndexingTestLayer(
 ) {
   const base = createBaseTestLayer(options);
 
-  const layer = Layer.mergeAll(
-    base.layer,
-    createMockRepositoryServiceLayer(options?.repositoryOverrides),
-  );
+  // Create domain layer with GitService (includes base layer)
+  const domainLayer = createDomainTestLayer(base, {
+    repositoryOverrides: options?.repositoryOverrides,
+  });
 
   // Provide all dependencies to the REAL CodebaseIndexingService.Default
   const indexingLayer = CodebaseIndexingService.Default.pipe(
-    Layer.provide(layer),
+    Layer.provide(domainLayer),
   );
 
   // Merge the indexing layer with dependencies so all services are available
-  const fullLayer = Layer.mergeAll(layer, indexingLayer);
+  const fullLayer = Layer.mergeAll(domainLayer, indexingLayer);
 
   return { ...base, layer: fullLayer };
 }

@@ -4,8 +4,8 @@ import type { ProposeTestInput } from "../types.js";
 import { processProposeTestApproval } from "../hitl-utils.js";
 
 /**
- * Factory function to create proposeTestTool with approval callback
- * The execute function waits for user approval before returning
+ * Factory function to create proposeTestTool with optional approval callback
+ * When no approval callback is provided, proposals are auto-approved
  */
 export const createProposeTestTool = (
   waitForApproval?: (
@@ -16,7 +16,7 @@ export const createProposeTestTool = (
 ) =>
   tool({
     description:
-      "Propose a comprehensive testing strategy for a file. This can include unit, integration, and E2E test strategies. Requires user approval before proceeding.",
+      "Propose a comprehensive testing strategy for a file. This can include unit, integration, and E2E test strategies.",
     inputSchema: z.object({
       sourceFile: z
         .string()
@@ -116,7 +116,12 @@ export const createProposeTestTool = (
     execute: async (input) => {
       // If no approval callback, auto-approve (for backward compatibility)
       if (!waitForApproval) {
-        return processProposeTestApproval(input, true);
+        const result = processProposeTestApproval(input, true);
+        // Register approved ID in registry if auto-approved
+        if (approvalRegistry && result.success) {
+          approvalRegistry.add(result.id);
+        }
+        return result;
       }
 
       // Generate tool call ID
@@ -138,7 +143,7 @@ export const createProposeTestTool = (
   });
 
 /**
- * Default proposeTestTool without approval (for backward compatibility)
- * Use createProposeTestTool with waitForApproval for HITL
+ * Default proposeTestTool without approval callback (auto-approves)
+ * Use createProposeTestTool with waitForApproval for manual approval flow
  */
 export const proposeTestTool = createProposeTestTool();

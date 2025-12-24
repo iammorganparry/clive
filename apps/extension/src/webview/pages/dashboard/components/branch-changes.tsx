@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -11,6 +11,7 @@ import { GitBranch, ChevronDown, ChevronRight } from "lucide-react";
 import FileTestRow from "./file-test-row.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
+import { useRpc } from "../../../rpc/provider.js";
 
 export interface EligibleFile {
   path: string;
@@ -86,20 +87,32 @@ const BranchContent: React.FC<BranchContentProps> = ({
   files,
   onViewTest,
   onPreviewDiff,
-}) => (
-  <CardContent className="space-y-2">
-    <div className="space-y-2">
-      {files.map((file) => (
-        <FileTestRow
-          key={file.path}
-          file={file}
-          onViewTest={onViewTest}
-          onPreviewDiff={onPreviewDiff}
-        />
-      ))}
-    </div>
-  </CardContent>
-);
+}) => {
+  const rpc = useRpc();
+  const filePaths = useMemo(() => files.map((f) => f.path), [files]);
+
+  const { data: conversationMap } =
+    rpc.conversations.hasConversationsBatch.useQuery({
+      input: { sourceFiles: filePaths },
+      enabled: filePaths.length > 0,
+    });
+
+  return (
+    <CardContent className="space-y-2">
+      <div className="space-y-2">
+        {files.map((file) => (
+          <FileTestRow
+            key={file.path}
+            file={file}
+            chatContext={conversationMap?.[file.path]}
+            onViewTest={onViewTest}
+            onPreviewDiff={onPreviewDiff}
+          />
+        ))}
+      </div>
+    </CardContent>
+  );
+};
 
 // Card State Components
 interface BranchChangesCardProps {

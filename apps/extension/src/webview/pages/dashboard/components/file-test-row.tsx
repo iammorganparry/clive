@@ -1,7 +1,6 @@
 import React, { useCallback } from "react";
 import { useRouter } from "../../../router/router-context.js";
 import { Routes } from "../../../router/routes.js";
-import { useRpc } from "../../../rpc/provider.js";
 import { useFileTestActor } from "../hooks/use-file-test-actor.js";
 import type { EligibleFile } from "./branch-changes.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -82,23 +81,23 @@ const LogIcon: React.FC<LogIconProps> = ({ log, isCompleted }) => {
 
 interface FileTestRowProps {
   file: EligibleFile;
+  chatContext?: {
+    exists: boolean;
+    messageCount: number;
+    status: string | null;
+  };
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const FileTestRow: React.FC<FileTestRowProps> = ({
   file,
+  chatContext,
   onViewTest,
   onPreviewDiff: _onPreviewDiff,
 }) => {
   const { navigate } = useRouter();
-  const rpc = useRpc();
   const { state, send } = useFileTestActor(file.path);
-
-  // Query for chat context
-  const { data: chatContext } = rpc.conversations.hasConversation.useQuery({
-    input: { sourceFile: file.path },
-  });
 
   const handleCreateTest = useCallback(
     (e: React.MouseEvent) => {

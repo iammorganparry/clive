@@ -1,5 +1,13 @@
 import { repositories, files } from "@clive/db/schema";
-import { eq, sql, cosineDistance, desc, count } from "drizzle-orm";
+import {
+  eq,
+  sql,
+  cosineDistance,
+  desc,
+  count,
+  and,
+  inArray,
+} from "drizzle-orm";
 import { Data, Effect } from "effect";
 import { DrizzleDB, DrizzleDBLive } from "./drizzle-db.js";
 
@@ -306,6 +314,33 @@ export class RepositoryRepository extends Effect.Service<RepositoryRepository>()
         });
 
       /**
+       * Delete multiple files by relative paths (bulk operation)
+       */
+      const deleteFiles = (repositoryId: string, relativePaths: string[]) =>
+        Effect.gen(function* () {
+          if (relativePaths.length === 0) return;
+
+          yield* Effect.tryPromise({
+            try: async () => {
+              await db
+                .delete(files)
+                .where(
+                  and(
+                    eq(files.repositoryId, repositoryId),
+                    inArray(files.relativePath, relativePaths),
+                  ),
+                );
+            },
+            catch: (error) =>
+              new RepositoryError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+        });
+
+      /**
        * Get file by path
        */
       const getFileByPath = (repositoryId: string, relativePath: string) =>
@@ -414,6 +449,7 @@ export class RepositoryRepository extends Effect.Service<RepositoryRepository>()
         getStatus,
         upsertFile,
         deleteFile,
+        deleteFiles,
         getFileByPath,
         getFileHashes,
         searchFiles,

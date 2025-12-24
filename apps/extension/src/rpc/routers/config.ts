@@ -287,20 +287,6 @@ export const configRouter = {
           globalState.update(GlobalStateKeys.indexingEnabled, input.enabled),
         );
 
-        // If enabling, trigger indexing in background
-        if (input.enabled) {
-          const indexingService = yield* CodebaseIndexingService;
-          yield* indexingService.indexWorkspace().pipe(
-            Effect.tapError((error) =>
-              Effect.logDebug(
-                `[ConfigRouter] Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            ),
-            Effect.forkDaemon,
-            Effect.catchAll(() => Effect.void),
-          );
-        }
-
         return { success: true, enabled: input.enabled };
       }).pipe(provideConfigLayer(ctx)),
     ),

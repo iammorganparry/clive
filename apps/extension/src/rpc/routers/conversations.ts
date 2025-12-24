@@ -165,31 +165,33 @@ export const conversationsRouter = {
             content: msg.content,
           }));
 
-          // Create approval callback that waits for frontend approval
-          const waitForApproval = (toolCallId: string): Promise<unknown> => {
-            return new Promise((resolve, reject) => {
-              const approvalKey = `${input.conversationId}-${toolCallId}`;
-              conversationApprovals.set(approvalKey, { resolve, reject });
-
-              // Set timeout to prevent hanging
-              setTimeout(() => {
-                conversationApprovals.delete(approvalKey);
-                reject(
-                  new Error("Approval timeout - no response within 5 minutes"),
-                );
-              }, 300000); // 5 minutes
-            });
-          };
-
-          // Call unified agent with approval callback for conversational iteration
+          // Call unified agent - proposals auto-approve, no blocking needed
           const result = yield* testingAgent
             .planAndExecuteTests(input.sourceFile, {
               conversationHistory,
               outputChannel: ctx.outputChannel,
-              waitForApproval,
               progressCallback: (status, message) => {
                 // Forward progress to frontend
                 if (onProgress) {
+                  // Parse JSON events that need special handling
+                  if (
+                    status === "tool-call" ||
+                    status === "tool-result" ||
+                    status === "content_streamed" ||
+                    status === "proposal" ||
+                    status === "reasoning"
+                  ) {
+                    try {
+                      const eventData = JSON.parse(message);
+                      // Forward parsed event directly - it already has the correct structure
+                      onProgress(eventData);
+                      return;
+                    } catch {
+                      // Not valid JSON, continue to default handling
+                    }
+                  }
+
+                  // For generic progress events, wrap with type prefix
                   onProgress({ type: "progress", status, message });
                 }
               },
@@ -345,6 +347,48 @@ export const conversationsRouter = {
           messageCount: messages.length,
           status: conversation.status,
         };
+      }).pipe(provideAgentLayer(ctx)),
+    ),
+
+  /**
+   * Batch check if conversations exist for multiple source files
+   */
+  hasConversationsBatch: procedure
+    .input(z.object({ sourceFiles: z.array(z.string()) }))
+    .query(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Batch checking conversations for ${input.sourceFiles.length} files`,
+        );
+        const conversationService = yield* ConversationServiceEffect;
+        const results: Record<
+          string,
+          { exists: boolean; messageCount: number; status: string | null }
+        > = {};
+
+        for (const sourceFile of input.sourceFiles) {
+          const conversation =
+            yield* conversationService.getConversationByFile(sourceFile);
+
+          if (!conversation) {
+            results[sourceFile] = {
+              exists: false,
+              messageCount: 0,
+              status: null,
+            };
+          } else {
+            const messages = yield* conversationService.getMessages(
+              conversation.id,
+            );
+            results[sourceFile] = {
+              exists: true,
+              messageCount: messages.length,
+              status: conversation.status,
+            };
+          }
+        }
+
+        return results;
       }).pipe(provideAgentLayer(ctx)),
     ),
 

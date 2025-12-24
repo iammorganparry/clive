@@ -32,8 +32,8 @@ const getAgentLayer = (ctx: RpcContext) =>
  */
 export const agentsRouter = {
   /**
-   * Plan and execute tests with human-in-the-loop approval
-   * Subscription that yields proposals and waits for approval before writing files
+   * Plan and execute tests
+   * Subscription that yields proposals (auto-approved) and can write test files
    */
   planTests: procedure
     .input(
@@ -46,14 +46,12 @@ export const agentsRouter = {
       ctx,
       signal,
       onProgress,
-      waitForApproval,
       subscriptionId,
     }: {
       input: { files: string[] };
       ctx: RpcContext;
       signal: AbortSignal;
       onProgress?: (data: unknown) => void;
-      waitForApproval?: (toolCallId: string) => Promise<unknown>;
       subscriptionId?: string;
     }) {
       const serviceLayer = getAgentLayer(ctx);
@@ -113,7 +111,9 @@ export const agentsRouter = {
               if (
                 status === "proposal" ||
                 status === "plan_file_created" ||
-                status === "content_streamed"
+                status === "content_streamed" ||
+                status === "tool-call" ||
+                status === "tool-result"
               ) {
                 try {
                   const eventData = JSON.parse(message);
@@ -131,15 +131,10 @@ export const agentsRouter = {
             }
           };
 
-          // Use planAndExecuteTests with HITL
+          // Use planAndExecuteTests - proposals auto-approve
           const result = yield* testingAgent.planAndExecuteTests(input.files, {
             outputChannel: ctx.outputChannel,
             progressCallback,
-            waitForApproval: waitForApproval
-              ? async (toolCallId: string) => {
-                  return await waitForApproval(toolCallId);
-                }
-              : undefined,
             signal,
           });
 

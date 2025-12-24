@@ -211,6 +211,30 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         return diff;
       });
 
+    /**
+     * Helper to get all tracked files (respects .gitignore)
+     */
+    const getTrackedFilesHelper = (workspaceRoot: string) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Getting tracked files for workspace: ${workspaceRoot}`,
+        );
+        const stdout = yield* executeGitCommand(
+          "git ls-files",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        const files = stdout
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line) => line.trim());
+
+        yield* Effect.logDebug(
+          `[GitService] Found ${files.length} tracked file(s)`,
+        );
+        return files;
+      });
+
     return {
       /**
        * Get the current branch name
@@ -288,6 +312,13 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 
           return diff;
         }),
+
+      /**
+       * Get all tracked files (respects .gitignore)
+       * Returns empty array if not a git repo or on error
+       */
+      getTrackedFiles: (workspaceRoot: string) =>
+        getTrackedFilesHelper(workspaceRoot),
     };
   }),
   // No dependencies - allows test injection via Layer.provide()

@@ -26,6 +26,7 @@ import { RepositoryServiceLive } from "./repository-service.js";
 import { CodebaseIndexingServiceLive } from "./codebase-indexing-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
 import { ReactFileFilterLive } from "./react-file-filter.js";
+import { GitServiceLive } from "./git-service.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
@@ -94,7 +95,16 @@ export function createDomainLayer(
   // ReactFileFilter depends on VSCodeService (in baseLayer via coreLayer)
   const reactFilterLayer = ReactFileFilterLive.pipe(Layer.provide(baseLayer));
 
-  return Layer.mergeAll(baseLayer, repoLayer, convLayer, reactFilterLayer);
+  // GitService depends on VSCodeService (in baseLayer via coreLayer)
+  const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer));
+
+  return Layer.mergeAll(
+    baseLayer,
+    repoLayer,
+    convLayer,
+    reactFilterLayer,
+    gitLayer,
+  );
 }
 
 /**

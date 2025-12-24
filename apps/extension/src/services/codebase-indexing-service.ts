@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { VSCodeService } from "./vs-code.js";
 import { ConfigService } from "./config-service.js";
 import { RepositoryService, type FileData } from "./repository-service.js";
+import { GitService } from "./git-service.js";
 import { AIModels } from "./ai-models.js";
 import type { IndexingStatus } from "./indexing-status.js";
 import { createEmbeddingProvider } from "./ai-provider-factory.js";
@@ -167,6 +168,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
       const vscodeService = yield* VSCodeService;
       const configService = yield* ConfigService;
       const repositoryService = yield* RepositoryService;
+      const gitService = yield* GitService;
 
       /**
        * Check for cancellation and interrupt if cancelled
@@ -689,27 +691,103 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           );
 
           // Find source files relevant for test generation
-          const files: vscode.Uri[] = [];
-          const excludePattern = INDEXING_EXCLUDE_PATTERNS.join(",");
+          // Try git ls-files first (respects .gitignore), fall back to findFiles
+          let files: vscode.Uri[] = [];
 
-          for (const pattern of INDEXING_INCLUDE_PATTERNS) {
-            const foundFiles = yield* Effect.tryPromise({
-              try: () =>
-                vscodeService.workspace.findFiles(
-                  pattern,
-                  excludePattern,
-                  1000, // Limit to 1000 files
-                ),
-              catch: () => new Error("Failed to find files"),
-            });
+          // Helper to check if file matches allowed extensions
+          const matchesAllowedExtension = (filePath: string): boolean => {
+            const ext = filePath.split(".").pop()?.toLowerCase();
+            return (
+              ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx"
+            );
+          };
 
-            files.push(...foundFiles);
+          // Helper to check if file should be excluded (test files, configs, etc.)
+          const shouldExclude = (filePath: string): boolean => {
+            const lowerPath = filePath.toLowerCase();
+            // Test files
+            if (
+              lowerPath.includes(".test.") ||
+              lowerPath.includes(".spec.") ||
+              lowerPath.includes(".cy.") ||
+              lowerPath.includes("/__tests__/") ||
+              lowerPath.includes("/__mocks__/") ||
+              lowerPath.includes("/test/") ||
+              lowerPath.includes("/tests/")
+            ) {
+              return true;
+            }
+            // Config files
+            if (
+              lowerPath.includes(".config.") ||
+              lowerPath.endsWith("tsconfig.json") ||
+              lowerPath.endsWith("package.json") ||
+              lowerPath.endsWith("biome.json") ||
+              lowerPath.includes("/scripts/") ||
+              lowerPath.includes("/tooling/")
+            ) {
+              return true;
+            }
+            // Type definitions
+            if (lowerPath.endsWith(".d.ts")) {
+              return true;
+            }
+            return false;
+          };
+
+          // Try git ls-files first (respects .gitignore automatically)
+          const trackedFiles = yield* gitService
+            .getTrackedFiles(workspaceRootPath)
+            .pipe(Effect.catchAll(() => Effect.succeed([])));
+
+          if (trackedFiles.length > 0) {
+            yield* Effect.logDebug(
+              `[CodebaseIndexing] Using git ls-files: found ${trackedFiles.length} tracked files`,
+            );
+
+            // Filter tracked files by extension and exclude patterns
+            const filteredPaths = trackedFiles.filter(
+              (filePath) =>
+                matchesAllowedExtension(filePath) && !shouldExclude(filePath),
+            );
+
+            // Convert to URIs
+            files = filteredPaths.map((filePath) =>
+              vscode.Uri.joinPath(workspaceRoot, filePath),
+            );
+
+            yield* Effect.logDebug(
+              `[CodebaseIndexing] Filtered to ${files.length} source files from tracked files`,
+            );
+          } else {
+            // Fallback: use findFiles with fixed brace expansion pattern
+            yield* Effect.logDebug(
+              "[CodebaseIndexing] Not a git repo or git ls-files failed, using findFiles fallback",
+            );
+
+            const excludePattern = `{${INDEXING_EXCLUDE_PATTERNS.join(",")}}`;
+
+            for (const pattern of INDEXING_INCLUDE_PATTERNS) {
+              const foundFiles = yield* Effect.tryPromise({
+                try: () =>
+                  vscodeService.workspace.findFiles(
+                    pattern,
+                    excludePattern,
+                    1000, // Limit to 1000 files
+                  ),
+                catch: () => new Error("Failed to find files"),
+              });
+
+              files.push(...foundFiles);
+            }
+
+            // Remove duplicates
+            files = Array.from(new Set(files.map((f) => f.fsPath))).map(
+              (path) => vscode.Uri.file(path),
+            );
           }
 
-          // Remove duplicates
-          const uniqueFiles = Array.from(
-            new Set(files.map((f) => f.fsPath)),
-          ).map((path) => vscode.Uri.file(path));
+          const uniqueFiles = files;
 
           // Limit files for testing
           const filesToIndex = MAX_FILES_TO_INDEX
@@ -756,6 +834,29 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             { concurrency: readConcurrency },
           );
 
+          // Detect and delete stale files (exist in DB but not in workspace)
+          const currentFilePaths = new Set(fileData.map((f) => f.relativePath));
+          const existingPaths = Array.from(existingHashes.keys());
+          const stalePaths = existingPaths.filter(
+            (path) => !currentFilePaths.has(path),
+          );
+
+          if (stalePaths.length > 0) {
+            yield* Effect.logDebug(
+              `[CodebaseIndexing] Deleting ${stalePaths.length} stale files from database`,
+            );
+
+            yield* repositoryService
+              .deleteFiles(repositoryId, stalePaths)
+              .pipe(
+                Effect.catchAll((error) =>
+                  Effect.logDebug(
+                    `[CodebaseIndexing] Failed to delete stale files: ${error.message}`,
+                  ),
+                ),
+              );
+          }
+
           // Separate files that need indexing from unchanged ones
           const filesToEmbed = fileData.filter((f) => f.needsIndexing);
           const unchangedFiles = fileData.filter((f) => !f.needsIndexing);
@@ -768,7 +869,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
 
           // Batch embed all files that need indexing (in chunks if too many)
           if (filesToEmbed.length > 0) {
-            const maxEmbeddingBatchSize = 100; // Reasonable limit to avoid timeouts
+            const maxEmbeddingBatchSize = 10; // Smaller batches for responsive UI updates
 
             // Process in chunks if needed
             for (

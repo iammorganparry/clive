@@ -176,6 +176,36 @@ export const repositoryRouter = {
     }),
 
   /**
+   * Delete multiple files from the index (bulk)
+   */
+  deleteFiles: protectedProcedure
+    .input(
+      z.object({
+        repositoryId: z.string(),
+        relativePaths: z.array(z.string()),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      return Effect.gen(function* () {
+        const repo = yield* RepositoryRepository;
+        yield* repo.deleteFiles(input.repositoryId, input.relativePaths);
+        return { success: true, deletedCount: input.relativePaths.length };
+      }).pipe(
+        Effect.catchTag("RepositoryError", (error) =>
+          Effect.fail(
+            new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: error.message,
+              cause: error.cause,
+            }),
+          ),
+        ),
+        Effect.provide(RepositoryRepository.Default),
+        Runtime.runPromise(runtime),
+      );
+    }),
+
+  /**
    * Get file by path
    */
   getFileByPath: protectedProcedure

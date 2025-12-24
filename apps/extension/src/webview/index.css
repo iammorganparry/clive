@@ -83,6 +83,10 @@
   --sidebar-accent-foreground: var(--vscode-foreground, oklch(0.205 0 0));
   --sidebar-border: var(--vscode-panel-border, oklch(0.922 0 0));
   --sidebar-ring: var(--vscode-panel-border, oklch(0.708 0 0));
+  /* Code block colors from VS Code editor */
+  --code-background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background, var(--secondary)));
+  --code-foreground: var(--vscode-editor-foreground, var(--foreground));
+  --code-border: var(--vscode-panel-border, var(--border));
 }
 
 .dark {
@@ -132,5 +136,32 @@
   }
   #root {
     @apply h-full w-full;
+  }
+  /* Code block styling to match VS Code editor */
+  pre,
+  code {
+    font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    font-size: var(--vscode-editor-font-size, 13px);
+  }
+  pre {
+    background: var(--code-background);
+    color: var(--code-foreground);
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  code:not(pre code) {
+    background: var(--code-background);
+    color: var(--code-foreground);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+  }
+  /* Override Shiki's inline styles to use VS Code theme */
+  pre[style*="background"] {
+    background: var(--code-background, var(--background));
+  }
+  pre[style*="color"] {
+    color: var(--code-foreground, var(--foreground));
   }
 }
