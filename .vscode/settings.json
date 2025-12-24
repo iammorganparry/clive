@@ -12,6 +12,9 @@
     "**/.turbo": true,
     "**/pnpm-lock.yaml": true
   },
+  "editor.codeActionsOnSave": {
+    "quickfix.biome": "explicit"
+  },
   "typescript.tsdk": "node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "eslint.workingDirectories": [

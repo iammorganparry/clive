@@ -62,10 +62,6 @@ describe("RpcProvider", () => {
     expect(client.agents.planTests).toBeDefined();
     expect(client.agents.planTests.useSubscription).toBeDefined();
     expect(typeof client.agents.planTests.useSubscription).toBe("function");
-
-    expect(client.agents.generateTest).toBeDefined();
-    expect(client.agents.generateTest.useSubscription).toBeDefined();
-    expect(typeof client.agents.generateTest.useSubscription).toBe("function");
   });
 
   it("should provide client through context", () => {
@@ -115,7 +111,6 @@ describe("useRpc", () => {
     expect(client.status.branchChanges).toBeDefined();
     expect(client.agents).toBeDefined();
     expect(client.agents.planTests).toBeDefined();
-    expect(client.agents.generateTest).toBeDefined();
   });
 
   it("should throw outside provider", () => {
@@ -159,7 +154,6 @@ describe("Client proxy", () => {
     expect(client.status.cypress).toBeDefined();
     expect(client.status.branchChanges).toBeDefined();
     expect(client.agents.planTests).toBeDefined();
-    expect(client.agents.generateTest).toBeDefined();
   });
 
   it("should return hook factories for procedures", () => {
@@ -184,11 +178,6 @@ describe("Client proxy", () => {
     const planTestsHook = client.agents.planTests.useSubscription();
     expect(planTestsHook).toBeDefined();
     expect(typeof planTestsHook.subscribe).toBe("function");
-
-    // Subscription procedure should have useSubscription
-    const generateTestHook = client.agents.generateTest.useSubscription();
-    expect(generateTestHook).toBeDefined();
-    expect(typeof generateTestHook.subscribe).toBe("function");
   });
 
   it("should handle deeply nested routers", () => {

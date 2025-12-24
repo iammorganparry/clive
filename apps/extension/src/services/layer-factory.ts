@@ -26,7 +26,6 @@ import { RepositoryServiceLive } from "./repository-service.js";
 import { CodebaseIndexingServiceLive } from "./codebase-indexing-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
 import { ReactFileFilterLive } from "./react-file-filter.js";
-import { CypressTestAgentLive } from "./ai-agent/agent.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
@@ -110,13 +109,10 @@ export function createFeatureLayer(
     Layer.provide(domainLayer),
   );
 
-  // CypressTestAgent depends on VSCodeService, ConfigService
-  const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
-
   // TestingAgent depends on VSCodeService, ConfigService, CodebaseIndexingService
   const testingLayer = TestingAgentLive.pipe(Layer.provide(domainLayer));
 
-  return Layer.mergeAll(domainLayer, indexingLayer, cypressLayer, testingLayer);
+  return Layer.mergeAll(domainLayer, indexingLayer, testingLayer);
 }
 
 /**
@@ -231,13 +227,12 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   );
 
   // Add agent layers
-  const cypressLayer = CypressTestAgentLive.pipe(Layer.provide(domainLayer));
   // TestingAgent depends on CodebaseIndexingService, PlanFileService, and KnowledgeBaseService
   const testingLayer = TestingAgentLive.pipe(
     Layer.provide(domainWithAllServices),
   );
 
-  return Layer.mergeAll(domainWithAllServices, cypressLayer, testingLayer);
+  return Layer.mergeAll(domainWithAllServices, testingLayer);
 }
 
 /**

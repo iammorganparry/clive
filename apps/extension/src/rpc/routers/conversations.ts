@@ -5,6 +5,7 @@ import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
 import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
 import { ErrorCode, getErrorMessage } from "../../lib/error-messages.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
+import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
 import type { RpcContext } from "../context.js";
 import type {
   Message,
@@ -29,6 +30,15 @@ const provideAgentLayer = (ctx: RpcContext) => {
  */
 const getAgentLayer = (ctx: RpcContext) =>
   ctx.agentLayer ?? createAgentServiceLayer(ctx.layerContext);
+
+/**
+ * Global approval state for conversations
+ * Maps conversationId + toolCallId to approval promise resolvers
+ */
+const conversationApprovals = new Map<
+  string,
+  { resolve: (value: unknown) => void; reject: (error: Error) => void }
+>();
 
 /**
  * Conversations router - handles chat/conversation operations
@@ -155,11 +165,34 @@ export const conversationsRouter = {
             content: msg.content,
           }));
 
-          // Call planning agent with history using new API
+          // Create approval callback that waits for frontend approval
+          const waitForApproval = (toolCallId: string): Promise<unknown> => {
+            return new Promise((resolve, reject) => {
+              const approvalKey = `${input.conversationId}-${toolCallId}`;
+              conversationApprovals.set(approvalKey, { resolve, reject });
+
+              // Set timeout to prevent hanging
+              setTimeout(() => {
+                conversationApprovals.delete(approvalKey);
+                reject(
+                  new Error("Approval timeout - no response within 5 minutes"),
+                );
+              }, 300000); // 5 minutes
+            });
+          };
+
+          // Call unified agent with approval callback for conversational iteration
           const result = yield* testingAgent
-            .planTest(input.sourceFile, {
+            .planAndExecuteTests(input.sourceFile, {
               conversationHistory,
               outputChannel: ctx.outputChannel,
+              waitForApproval,
+              progressCallback: (status, message) => {
+                // Forward progress to frontend
+                if (onProgress) {
+                  onProgress({ type: "progress", status, message });
+                }
+              },
             })
             .pipe(
               Effect.catchAll((error) =>
@@ -243,6 +276,43 @@ export const conversationsRouter = {
       // Return final result
       return result;
     }),
+
+  /**
+   * Handle approval/rejection for conversation proposals
+   */
+  approveProposal: procedure
+    .input(
+      z.object({
+        conversationId: z.string(),
+        toolCallId: z.string(),
+        approved: z.boolean(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Proposal ${input.approved ? "approved" : "rejected"}: ${input.toolCallId}`,
+        );
+
+        const approvalKey = `${input.conversationId}-${input.toolCallId}`;
+        const approvalPromise = conversationApprovals.get(approvalKey);
+
+        if (approvalPromise) {
+          if (input.approved) {
+            approvalPromise.resolve(APPROVAL.YES);
+          } else {
+            approvalPromise.resolve(APPROVAL.NO);
+          }
+          conversationApprovals.delete(approvalKey);
+        } else {
+          yield* Effect.logDebug(
+            `[ConversationsRouter] No pending approval found for: ${approvalKey}`,
+          );
+        }
+
+        return { success: true };
+      }),
+    ),
 
   /**
    * Get conversation history

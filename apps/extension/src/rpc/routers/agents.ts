@@ -1,13 +1,12 @@
-import { Effect, Runtime } from "effect";
-import { z } from "zod";
-import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
-import { CypressTestAgent } from "../../services/ai-agent/agent.js";
+import { Effect, Runtime } from "effect";
+import * as vscode from "vscode";
+import { z } from "zod";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
+import type { ProposedTest } from "../../services/ai-agent/types.js";
 import { ConversationService } from "../../services/conversation-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
-import type { ProposedTest } from "../../services/ai-agent/types.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
@@ -71,7 +70,7 @@ export const agentsRouter = {
             `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
           );
 
-          const testAgent = yield* CypressTestAgent;
+          const testAgent = yield* TestingAgent;
           const isConfigured = yield* testAgent.isConfigured();
 
           if (!isConfigured) {
@@ -233,208 +232,6 @@ export const agentsRouter = {
         executions: result.executions || [],
       };
     }),
-
-  /**
-   * Generate test for a single file (subscription with progress updates)
-   */
-  generateTest: procedure
-    .input(
-      z.object({
-        sourceFilePath: z.string(),
-      }),
-    )
-    .subscription(async function* ({
-      input,
-      ctx,
-      signal,
-      onProgress,
-    }: {
-      input: { sourceFilePath: string };
-      ctx: RpcContext;
-      signal: AbortSignal;
-      onProgress?: (data: unknown) => void;
-    }) {
-      // Send initial progress
-      if (onProgress) {
-        onProgress({
-          status: "starting",
-          message: `Starting test generation for ${input.sourceFilePath}...`,
-          filePath: input.sourceFilePath,
-        });
-      }
-      yield {
-        type: "data" as const,
-        data: {
-          status: "starting",
-          message: `Starting test generation for ${input.sourceFilePath}...`,
-          filePath: input.sourceFilePath,
-        },
-      };
-
-      // Create progress callback to stream updates
-      const progressCallback = (message: string) => {
-        if (onProgress) {
-          onProgress({
-            status: "generating",
-            message,
-            filePath: input.sourceFilePath,
-          });
-        }
-      };
-
-      const serviceLayer = getAgentLayer(ctx);
-
-      const result = await Runtime.runPromise(runtime)(
-        Effect.gen(function* () {
-          const testAgent = yield* CypressTestAgent;
-          const isConfigured = yield* testAgent.isConfigured();
-
-          if (!isConfigured) {
-            yield* Effect.promise(() =>
-              vscode.window.showErrorMessage(
-                "AI Gateway token not available. Please log in to authenticate.",
-              ),
-            );
-            return {
-              success: false as const,
-              error: "Authentication required. Please log in.",
-            };
-          }
-
-          // Fire-and-forget informational notification
-          vscode.window.showInformationMessage(
-            `Creating Cypress test for ${input.sourceFilePath}...`,
-          );
-
-          const testResult = yield* testAgent.generateTest(
-            {
-              sourceFilePath: input.sourceFilePath,
-              options: {
-                updateExisting: false,
-              },
-            },
-            ctx.outputChannel,
-            ctx.isDev,
-            signal,
-            progressCallback,
-          );
-
-          if (testResult.success) {
-            // Fire-and-forget success notification
-            vscode.window.showInformationMessage(
-              `Cypress test generated successfully: ${testResult.testFilePath || input.sourceFilePath}`,
-            );
-
-            return {
-              success: true as const,
-              testFilePath: testResult.testFilePath,
-              testContent: testResult.testContent,
-              filePath: input.sourceFilePath,
-            };
-          } else {
-            yield* Effect.promise(() =>
-              vscode.window.showErrorMessage(
-                `Failed to generate test: ${testResult.error || "Unknown error"}`,
-              ),
-            );
-
-            return {
-              success: false as const,
-              error: testResult.error || "Unknown error",
-              filePath: input.sourceFilePath,
-            };
-          }
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
-              yield* Effect.logDebug(
-                `[RpcRouter] Test generation failed: ${errorMessage}`,
-              );
-              yield* Effect.promise(() =>
-                vscode.window.showErrorMessage(
-                  `Failed to generate test: ${errorMessage}`,
-                ),
-              );
-              return {
-                success: false as const,
-                error: errorMessage,
-                filePath: input.sourceFilePath,
-              };
-            }),
-          ),
-          Effect.provide(serviceLayer),
-        ),
-      );
-
-      // Return final result
-      return result;
-    }),
-
-  /**
-   * Execute confirmed test plan
-   */
-  executeTest: procedure
-    .input(
-      z.object({
-        test: z.object({
-          id: z.string(),
-          sourceFile: z.string(),
-          targetTestPath: z.string(),
-          description: z.string(),
-          isUpdate: z.boolean(),
-          testType: z.enum(["unit", "integration", "e2e"]).default("e2e"),
-          framework: z.string().default("cypress"),
-        }),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      Effect.gen(function* () {
-        const testAgent = yield* CypressTestAgent;
-        const abortController = new AbortController();
-
-        const result = yield* testAgent.executeTest(
-          {
-            sourceFile: input.test.sourceFile,
-            targetTestPath: input.test.targetTestPath,
-            description: input.test.description,
-            isUpdate: input.test.isUpdate,
-            testType: input.test.testType ?? "e2e",
-            framework: input.test.framework ?? "cypress",
-          },
-          ctx.outputChannel,
-          ctx.isDev,
-          abortController.signal,
-        );
-
-        if (result.success) {
-          return {
-            id: input.test.id,
-            executionStatus: "completed" as const,
-            testFilePath: result.testFilePath,
-            message: result.testContent,
-          };
-        } else {
-          return {
-            id: input.test.id,
-            executionStatus: result.error?.includes("cancelled")
-              ? ("pending" as const)
-              : ("error" as const),
-            error: result.error || "Unknown error",
-          };
-        }
-      }).pipe(
-        Effect.catchAll((error: unknown) =>
-          Effect.succeed({
-            id: input.test.id,
-            executionStatus: "error" as const,
-            error: error instanceof Error ? error.message : "Unknown error",
-          }),
-        ),
-        provideAgentLayer(ctx),
-      ),
-    ),
 
   /**
    * Cancel a running test
