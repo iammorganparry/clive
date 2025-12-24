@@ -34,8 +34,6 @@ export const routerShape: RouterRecord = {
   },
   agents: {
     planTests: createProcedureShape("mutation"),
-    generateTest: createProcedureShape("subscription"),
-    executeTest: createProcedureShape("mutation"),
     cancelTest: createProcedureShape("mutation"),
     previewDiff: createProcedureShape("mutation"),
   },
@@ -63,6 +61,7 @@ export const routerShape: RouterRecord = {
     start: createProcedureShape("mutation"),
     sendMessage: createProcedureShape("subscription"),
     getHistory: createProcedureShape("query"),
+    approveProposal: createProcedureShape("mutation"),
   },
   knowledgeBase: {
     getStatus: createProcedureShape("query"),

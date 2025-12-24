@@ -241,19 +241,46 @@ export const FileChatPage: React.FC = () => {
     ],
   );
 
+  const approveProposalMutation =
+    rpc.conversations.approveProposal.useMutation();
+
   // Handlers for approving/rejecting proposals
   const handleApproveProposal = useCallback(
-    (proposalId: string) => {
-      send({ type: "APPROVE", testId: proposalId });
+    async (proposalId: string) => {
+      // First try to approve via conversations RPC (for conversational flow)
+      try {
+        if (historyData?.conversationId) {
+          await approveProposalMutation.mutateAsync({
+            conversationId: historyData.conversationId,
+            toolCallId: proposalId, // proposalId is actually toolCallId in this context
+            approved: true,
+          });
+        }
+      } catch {
+        // Fallback to actor approval (for dashboard flow)
+        send({ type: "APPROVE", testId: proposalId });
+      }
     },
-    [send],
+    [send, approveProposalMutation, historyData?.conversationId],
   );
 
   const handleRejectProposal = useCallback(
-    (proposalId: string) => {
-      send({ type: "REJECT", testId: proposalId });
+    async (proposalId: string) => {
+      // First try to reject via conversations RPC (for conversational flow)
+      try {
+        if (historyData?.conversationId) {
+          await approveProposalMutation.mutateAsync({
+            conversationId: historyData.conversationId,
+            toolCallId: proposalId, // proposalId is actually toolCallId in this context
+            approved: false,
+          });
+        }
+      } catch {
+        // Fallback to actor rejection (for dashboard flow)
+        send({ type: "REJECT", testId: proposalId });
+      }
     },
-    [send],
+    [send, approveProposalMutation, historyData?.conversationId],
   );
 
   const chatStatus = useMemo<ChatStatus>(() => {
