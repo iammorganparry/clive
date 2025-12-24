@@ -84,7 +84,7 @@ export type QueryHookReturn<TOutput> = {
   data: TOutput | undefined;
   isLoading: boolean;
   error: Error | null;
-  refetch: () => void;
+  refetch: () => Promise<{ data: TOutput | undefined; error: Error | null }>;
 };
 
 export type MutationHookReturn<TInput, TOutput> = {

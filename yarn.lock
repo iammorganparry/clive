@@ -10161,7 +10161,7 @@ sherif@^1.9.0:
     sherif-windows-arm64 "1.9.0"
     sherif-windows-x64 "1.9.0"
 
-shiki@^3.12.2:
+shiki@^3.12.2, shiki@^3.20.0:
   version "3.20.0"
   resolved "https://registry.yarnpkg.com/shiki/-/shiki-3.20.0.tgz#1eb8669857373d74e90822e03663a86b5b1f9a24"
   integrity sha512-kgCOlsnyWb+p0WU+01RjkCH+eBVsjL1jOwUYWv0YDWkM2/A46+LDKVs5yZCUXjJG6bj4ndFoAg5iLIIue6dulg==

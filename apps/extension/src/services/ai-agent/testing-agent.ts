@@ -310,7 +310,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       `[TestingAgent:${correlationId}] Tool call: ${event.toolName}`,
                     );
 
-                    // Send progress checkpoint for tool calls
+                    // Send progress for Task component (separate from tool events)
                     if (event.toolName === "semanticSearch") {
                       progressCallback?.(
                         "searching",
@@ -347,101 +347,113 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                         "proposing",
                         "Generating test proposal...",
                       );
+                    } else if (event.toolName === "writeTestFile") {
+                      progressCallback?.("writing", "Writing test file...");
+                    }
 
-                      // Create plan file immediately when proposeTest is called
-                      // This allows users to review the plan before approving
-                      if (event.toolCallId && event.toolArgs) {
-                        const args = event.toolArgs as ProposeTestInput;
-                        const proposalId = `${args.sourceFile}-${Date.now()}`;
-                        toolCallToProposalId.set(event.toolCallId, proposalId);
-                        toolCallInputs.set(event.toolCallId, args);
+                    // Emit structured tool-call event for chat view
+                    progressCallback?.(
+                      "tool-call",
+                      JSON.stringify({
+                        type: "tool-call",
+                        toolCallId: event.toolCallId,
+                        toolName: event.toolName,
+                        args: event.toolArgs,
+                        state: "input-available",
+                      }),
+                    );
 
-                        // Create plan file asynchronously (don't block stream)
-                        yield* Effect.gen(function* () {
-                          const planUri = yield* planFileService
-                            .createPlanFile(args.sourceFile, {
-                              proposalId,
-                              subscriptionId,
-                              targetTestPath:
-                                args.testStrategies[0]?.targetTestPath || "",
-                              status: "pending",
-                            })
-                            .pipe(
-                              Effect.catchAll((error) =>
-                                Effect.gen(function* () {
-                                  yield* Effect.logDebug(
-                                    `[TestingAgent:${correlationId}] Failed to create plan file: ${error.message}`,
-                                  );
-                                  return yield* Effect.fail(error);
-                                }),
-                              ),
-                            );
+                    // Create plan file immediately when proposeTest is called
+                    // This allows users to review the plan before approving
+                    if (event.toolCallId && event.toolArgs) {
+                      const args = event.toolArgs as ProposeTestInput;
+                      const proposalId = `${args.sourceFile}-${Date.now()}`;
+                      toolCallToProposalId.set(event.toolCallId, proposalId);
+                      toolCallInputs.set(event.toolCallId, args);
 
-                          // Update plan file frontmatter with toolCallId
-                          if (event.toolCallId) {
-                            yield* addToolCallIdToFrontmatter(
-                              planUri,
-                              event.toolCallId,
-                            );
-                            // Refresh CodeLens to show approve/reject buttons
-                            yield* Effect.tryPromise({
-                              try: () =>
-                                vscode.commands.executeCommand(
-                                  Commands.refreshCodeLens,
-                                ),
-                              catch: (error) =>
-                                new TestingAgentError({
-                                  message: `Failed to refresh CodeLens: ${error instanceof Error ? error.message : "Unknown error"}`,
-                                  cause: error,
-                                }),
-                            });
-                          }
-
-                          // Open plan file in editor
-                          yield* planFileService.openPlanFile(planUri).pipe(
+                      // Create plan file asynchronously (don't block stream)
+                      yield* Effect.gen(function* () {
+                        const planUri = yield* planFileService
+                          .createPlanFile(args.sourceFile, {
+                            proposalId,
+                            subscriptionId,
+                            targetTestPath:
+                              args.testStrategies[0]?.targetTestPath || "",
+                            status: "pending",
+                          })
+                          .pipe(
                             Effect.catchAll((error) =>
                               Effect.gen(function* () {
                                 yield* Effect.logDebug(
-                                  `[TestingAgent:${correlationId}] Failed to open plan file: ${error.message}`,
+                                  `[TestingAgent:${correlationId}] Failed to create plan file: ${error.message}`,
                                 );
-                                return Effect.void;
+                                return yield* Effect.fail(error);
                               }),
                             ),
                           );
 
-                          planFileMap.set(proposalId, planUri);
-
-                          // Send plan file created event
-                          progressCallback?.(
-                            "plan_file_created",
-                            JSON.stringify({
-                              type: "plan_file_created",
-                              planFilePath: vscode.workspace.asRelativePath(
-                                planUri,
-                                false,
+                        // Update plan file frontmatter with toolCallId
+                        if (event.toolCallId) {
+                          yield* addToolCallIdToFrontmatter(
+                            planUri,
+                            event.toolCallId,
+                          );
+                          // Refresh CodeLens to show approve/reject buttons
+                          yield* Effect.tryPromise({
+                            try: () =>
+                              vscode.commands.executeCommand(
+                                Commands.refreshCodeLens,
                               ),
-                              proposalId,
-                              subscriptionId,
-                            }),
-                          );
+                            catch: (error) =>
+                              new TestingAgentError({
+                                message: `Failed to refresh CodeLens: ${error instanceof Error ? error.message : "Unknown error"}`,
+                                cause: error,
+                              }),
+                          });
+                        }
 
-                          yield* Effect.logDebug(
-                            `[TestingAgent:${correlationId}] Created plan file early: ${vscode.workspace.asRelativePath(planUri, false)}`,
-                          );
-                        }).pipe(
+                        // Open plan file in editor
+                        yield* planFileService.openPlanFile(planUri).pipe(
                           Effect.catchAll((error) =>
                             Effect.gen(function* () {
                               yield* Effect.logDebug(
-                                `[TestingAgent:${correlationId}] Error creating plan file early: ${error.message}`,
+                                `[TestingAgent:${correlationId}] Failed to open plan file: ${error.message}`,
                               );
-                              // Don't fail the stream - continue processing
                               return Effect.void;
                             }),
                           ),
                         );
-                      }
-                    } else if (event.toolName === "writeTestFile") {
-                      progressCallback?.("writing", "Writing test file...");
+
+                        planFileMap.set(proposalId, planUri);
+
+                        // Send plan file created event
+                        progressCallback?.(
+                          "plan_file_created",
+                          JSON.stringify({
+                            type: "plan_file_created",
+                            planFilePath: vscode.workspace.asRelativePath(
+                              planUri,
+                              false,
+                            ),
+                            proposalId,
+                            subscriptionId,
+                          }),
+                        );
+
+                        yield* Effect.logDebug(
+                          `[TestingAgent:${correlationId}] Created plan file early: ${vscode.workspace.asRelativePath(planUri, false)}`,
+                        );
+                      }).pipe(
+                        Effect.catchAll((error) =>
+                          Effect.gen(function* () {
+                            yield* Effect.logDebug(
+                              `[TestingAgent:${correlationId}] Error creating plan file early: ${error.message}`,
+                            );
+                            // Don't fail the stream - continue processing
+                            return Effect.void;
+                          }),
+                        ),
+                      );
                     }
                   }
 
@@ -475,6 +487,18 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   if (event.type === "tool-result") {
                     yield* Effect.logDebug(
                       `[TestingAgent:${correlationId}] Tool result: ${event.toolName}`,
+                    );
+
+                    // Emit structured tool-result event
+                    progressCallback?.(
+                      "tool-result",
+                      JSON.stringify({
+                        type: "tool-result",
+                        toolCallId: event.toolCallId,
+                        toolName: event.toolName,
+                        output: event.toolResult,
+                        state: "output-available",
+                      }),
                     );
 
                     // Handle tool results for tracking proposals and executions

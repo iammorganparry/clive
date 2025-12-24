@@ -18,6 +18,29 @@ function sendApproval(vscode: VSCodeAPI, message: ApprovalMessage): void {
   vscode.postMessage(message);
 }
 
+export interface ToolEvent {
+  toolCallId: string;
+  toolName: string;
+  args?: unknown;
+  output?: unknown;
+  errorText?: string;
+  state:
+    | "input-streaming"
+    | "input-available"
+    | "output-available"
+    | "output-error";
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: Date;
+  isStreaming?: boolean;
+  isProposal?: boolean;
+  proposalId?: string;
+}
+
 export interface FileTestContext {
   filePath: string;
   vscode: VSCodeAPI;
@@ -32,6 +55,10 @@ export interface FileTestContext {
   error: string | null;
   planFilePath: string | null;
   streamingContent: string;
+  // Chat state
+  isChatLoading: boolean;
+  chatErrorMessages: ChatMessage[];
+  toolEvents: ToolEvent[];
 }
 
 export type FileTestEvent =
@@ -60,7 +87,17 @@ export type FileTestEvent =
     }
   | { type: "SUBSCRIPTION_ERROR"; error: string }
   | { type: "CANCEL" }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  // Chat events
+  | { type: "SET_CHAT_LOADING"; loading: boolean }
+  | { type: "ADD_CHAT_ERROR"; error: ChatMessage }
+  | { type: "CLEAR_CHAT_ERRORS" }
+  | { type: "ADD_TOOL_EVENT"; toolEvent: ToolEvent }
+  | {
+      type: "UPDATE_TOOL_EVENT";
+      toolCallId: string;
+      updates: Partial<ToolEvent>;
+    };
 
 export interface FileTestInput {
   filePath: string;
@@ -181,6 +218,42 @@ export const fileTestMachine = setup({
         // Don't add streaming content to logs - only PROGRESS events should add to logs
       };
     }),
+    setChatLoading: assign(({ event }) => {
+      if (event.type !== "SET_CHAT_LOADING") return {};
+      return { isChatLoading: event.loading };
+    }),
+    addChatError: assign(({ context, event }) => {
+      if (event.type !== "ADD_CHAT_ERROR") return {};
+      return { chatErrorMessages: [...context.chatErrorMessages, event.error] };
+    }),
+    clearChatErrors: assign({ chatErrorMessages: () => [] }),
+    addToolEvent: assign(({ context, event }) => {
+      if (event.type !== "ADD_TOOL_EVENT") return {};
+      const existing = context.toolEvents.find(
+        (t) => t.toolCallId === event.toolEvent.toolCallId,
+      );
+      if (existing) {
+        // Update existing tool event
+        return {
+          toolEvents: context.toolEvents.map((t) =>
+            t.toolCallId === event.toolEvent.toolCallId
+              ? { ...t, ...event.toolEvent }
+              : t,
+          ),
+        };
+      } else {
+        // Add new tool event
+        return { toolEvents: [...context.toolEvents, event.toolEvent] };
+      }
+    }),
+    updateToolEvent: assign(({ context, event }) => {
+      if (event.type !== "UPDATE_TOOL_EVENT") return {};
+      return {
+        toolEvents: context.toolEvents.map((t) =>
+          t.toolCallId === event.toolCallId ? { ...t, ...event.updates } : t,
+        ),
+      };
+    }),
     reset: assign({
       proposals: () => [],
       testStatuses: () => new Map(),
@@ -193,6 +266,10 @@ export const fileTestMachine = setup({
       error: () => null,
       planFilePath: () => null,
       streamingContent: () => "",
+      // Chat state reset
+      isChatLoading: () => false,
+      chatErrorMessages: () => [],
+      toolEvents: () => [],
     }),
   },
 }).createMachine({
@@ -212,6 +289,10 @@ export const fileTestMachine = setup({
     error: null,
     planFilePath: null,
     streamingContent: "",
+    // Chat state
+    isChatLoading: false,
+    chatErrorMessages: [],
+    toolEvents: [],
   }),
   states: {
     idle: {

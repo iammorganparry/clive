@@ -68,6 +68,10 @@
       "types": "./dist/input-otp.d.ts",
       "default": "./dist/input-otp.js"
     },
+    "./badge": {
+      "types": "./dist/badge.d.ts",
+      "default": "./dist/badge.js"
+    },
     "./blocks": {
       "types": "./dist/components/blocks/index.d.ts",
       "default": "./dist/components/blocks/index.js"
@@ -87,6 +91,10 @@
     "./components/ai-elements/prompt-input": {
       "types": "./dist/components/ai-elements/prompt-input.d.ts",
       "default": "./dist/components/ai-elements/prompt-input.js"
+    },
+    "./components/ai-elements/tool": {
+      "types": "./dist/components/ai-elements/tool.d.ts",
+      "default": "./dist/components/ai-elements/tool.js"
     },
     "./styles.css": "./dist/styles.css"
   },
@@ -125,6 +133,7 @@
     "motion": "^12.23.26",
     "nanoid": "^5.1.6",
     "radix-ui": "^1.4.3",
+    "shiki": "^3.20.0",
     "sonner": "^2.0.7",
     "streamdown": "^1.6.10",
     "tailwind-merge": "^3.4.0",
