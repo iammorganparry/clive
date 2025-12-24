@@ -1,12 +1,25 @@
 import { useMemo, useCallback } from "react";
 import { useMachine } from "@xstate/react";
+import { fromPromise } from "xstate";
 import { useQueryClient } from "@tanstack/react-query";
+import { Match } from "effect";
 import { useRpc } from "../../../rpc/provider.js";
 import { fileChatMachine } from "../machines/file-chat-machine.js";
 import type {
   ChatMessage,
   ToolEvent,
 } from "../../dashboard/machines/file-test-machine.js";
+import type { ProposedTest } from "../../../../services/ai-agent/types.js";
+
+// Import types for actor
+type HistoryResult = {
+  conversationId: string | null;
+  messages: ChatMessage[];
+};
+
+type HistoryError = {
+  error: string;
+};
 
 interface UseFileChatOptions {
   sourceFile: string;
@@ -70,10 +83,24 @@ export function useFileChat({ sourceFile }: UseFileChatOptions) {
     }
   }, [historyQuery]);
 
-  const [state, send] = useMachine(fileChatMachine, {
+  // Provide the actor implementation at runtime
+  const machineWithActors = useMemo(
+    () =>
+      fileChatMachine.provide({
+        actors: {
+          loadHistory: fromPromise<HistoryResult | HistoryError, void>(
+            async () => {
+              return await loadHistory();
+            },
+          ),
+        },
+      }),
+    [loadHistory],
+  );
+
+  const [state, send] = useMachine(machineWithActors, {
     input: {
       sourceFile,
-      loadHistory,
     },
   });
 
@@ -94,48 +121,89 @@ export function useFileChat({ sourceFile }: UseFileChatOptions) {
           output?: unknown;
           state?: ToolEvent["state"];
           tests?: unknown[];
+          test?: ProposedTest;
         };
 
-        if (progress.type === "message" && progress.content) {
-          send({
-            type: "RESPONSE_CHUNK",
-            chunkType: "message",
-            content: progress.content,
-          });
-          // Invalidate history to refresh after response
-          queryClient.invalidateQueries({
-            queryKey: ["rpc", "conversations", "getHistory"],
-          });
-        } else if (progress.type === "tool-call") {
-          send({
-            type: "RESPONSE_CHUNK",
-            chunkType: "tool-call",
-            toolEvent: {
-              toolCallId: progress.toolCallId || "",
-              toolName: progress.toolName || "",
-              args: progress.args,
-              state: progress.state || "input-streaming",
-            },
-          });
-        } else if (progress.type === "tool-result") {
-          send({
-            type: "RESPONSE_CHUNK",
-            chunkType: "tool-result",
-            toolResult: {
-              toolCallId: progress.toolCallId || "",
-              updates: {
-                output: progress.output,
-                state: progress.state || "output-available",
+        Match.value(progress).pipe(
+          Match.when({ type: "message" }, (p) => {
+            if (p.content) {
+              send({
+                type: "RESPONSE_CHUNK",
+                chunkType: "message",
+                content: p.content,
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["rpc", "conversations", "getHistory"],
+              });
+            }
+          }),
+          Match.when({ type: "content_streamed" }, (p) => {
+            if (p.content) {
+              send({
+                type: "RESPONSE_CHUNK",
+                chunkType: "message",
+                content: p.content,
+              });
+            }
+          }),
+          Match.when({ type: "tool-call" }, (p) => {
+            send({
+              type: "RESPONSE_CHUNK",
+              chunkType: "tool-call",
+              toolEvent: {
+                toolCallId: p.toolCallId || "",
+                toolName: p.toolName || "",
+                args: p.args,
+                state: p.state || "input-streaming",
               },
-            },
-          });
-        } else if (progress.type === "tests") {
-          send({
-            type: "RESPONSE_CHUNK",
-            chunkType: "tests",
-            tests: progress.tests,
-          });
-        }
+            });
+          }),
+          Match.when({ type: "tool-result" }, (p) => {
+            send({
+              type: "RESPONSE_CHUNK",
+              chunkType: "tool-result",
+              toolResult: {
+                toolCallId: p.toolCallId || "",
+                updates: {
+                  output: p.output,
+                  state: p.state || "output-available",
+                },
+              },
+            });
+          }),
+          Match.when({ type: "tests" }, (p) => {
+            send({
+              type: "RESPONSE_CHUNK",
+              chunkType: "tests",
+              tests: p.tests,
+            });
+          }),
+          Match.when({ type: "reasoning" }, (p) => {
+            if (p.content) {
+              send({
+                type: "RESPONSE_CHUNK",
+                chunkType: "reasoning",
+                content: p.content,
+              });
+            }
+          }),
+          Match.when({ type: "proposal" }, (p) => {
+            const proposalData = p as {
+              type: "proposal";
+              test?: ProposedTest;
+              toolCallId?: string;
+            };
+            send({
+              type: "RESPONSE_CHUNK",
+              chunkType: "proposal",
+              proposal: proposalData.test,
+              toolCallId: proposalData.toolCallId || "",
+            });
+          }),
+          Match.orElse(() => {
+            // No-op for unknown types
+          }),
+        );
       },
       onComplete: () => {
         send({ type: "RESPONSE_COMPLETE" });
@@ -345,5 +413,8 @@ export function useFileChat({ sourceFile }: UseFileChatOptions) {
     historyError: state.context.historyError,
     // Tool events
     toolEvents: state.context.toolEvents,
+    // Reasoning state
+    reasoningContent: state.context.reasoningContent,
+    isReasoningStreaming: state.context.isReasoningStreaming,
   };
 }

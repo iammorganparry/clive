@@ -2,6 +2,7 @@ import { Data, Effect } from "effect";
 import { ConfigService } from "./config-service.js";
 import { TrpcClientService } from "./trpc-client-service.js";
 import { wrapTrpcCall } from "../utils/trpc-utils.js";
+import { chunkArray } from "../utils/array-utils.js";
 import type { IndexingStatusInfo } from "./indexing-status.js";
 
 class RepositoryError extends Data.TaggedError("RepositoryError")<{
@@ -200,6 +201,58 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         });
 
       /**
+       * Delete multiple files (bulk operation)
+       * Processes in batches to avoid URL payload limits
+       */
+      const deleteFiles = (repositoryId: string, relativePaths: string[]) =>
+        Effect.gen(function* () {
+          if (relativePaths.length === 0) return;
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Deleting ${relativePaths.length} files in batches`,
+          );
+
+          const client = yield* trpcClientService.getClient();
+          const batchSize = 500; // Process in batches to avoid payload limits
+
+          const batches = chunkArray(relativePaths, batchSize);
+
+          yield* Effect.forEach(
+            batches,
+            (batch, index) =>
+              Effect.gen(function* () {
+                yield* wrapTrpcCall((c) =>
+                  c.repository.deleteFiles.mutate({
+                    repositoryId,
+                    relativePaths: batch,
+                  }),
+                )(client).pipe(
+                  Effect.catchAll((error) =>
+                    Effect.fail(
+                      new RepositoryError({
+                        message:
+                          error instanceof Error
+                            ? error.message
+                            : "Unknown error",
+                        cause: error,
+                      }),
+                    ),
+                  ),
+                );
+
+                yield* Effect.logDebug(
+                  `[RepositoryService] Deleted batch ${index + 1} of ${batches.length} (${batch.length} files)`,
+                );
+              }),
+            { concurrency: 1 },
+          );
+
+          yield* Effect.logDebug(
+            `[RepositoryService] Deleted ${relativePaths.length} files`,
+          );
+        });
+
+      /**
        * Get file by path
        */
       const getFileByPath = (repositoryId: string, relativePath: string) =>
@@ -347,6 +400,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         getRepository,
         upsertFile,
         deleteFile,
+        deleteFiles,
         getFileByPath,
         getFileHashes,
         searchFiles,

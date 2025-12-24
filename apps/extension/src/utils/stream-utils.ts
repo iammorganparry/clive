@@ -5,7 +5,13 @@ import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
  * Event types emitted from the AI agent stream
  */
 export interface AgentStreamEvent {
-  type: "text-delta" | "tool-call" | "tool-result" | "step-finish" | "finish";
+  type:
+    | "text-delta"
+    | "tool-call"
+    | "tool-result"
+    | "step-finish"
+    | "finish"
+    | "thinking";
   content?: string;
   toolName?: string;
   toolArgs?: unknown;
@@ -75,6 +81,17 @@ export function streamFromAI<TOOLS extends ToolSet>(
         Match.when("finish", () => {
           return {
             type: "finish" as const,
+          } satisfies AgentStreamEvent;
+        }),
+        Match.when("reasoning-delta", () => {
+          // Handle thinking/reasoning events from Anthropic
+          const thinkingChunk = chunk as {
+            type: "reasoning-delta";
+            text: string;
+          };
+          return {
+            type: "thinking" as const,
+            content: thinkingChunk.text,
           } satisfies AgentStreamEvent;
         }),
         Match.orElse(() => ({

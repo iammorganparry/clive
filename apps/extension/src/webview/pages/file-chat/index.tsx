@@ -33,6 +33,34 @@ import {
   ToolOutput,
 } from "@clive/ui/components/ai-elements/tool";
 import { truncateMiddle } from "../../utils/path-utils.js";
+import {
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "@clive/ui/components/ai-elements/reasoning";
+
+// User-friendly tool name mappings
+const toolDisplayNames: Record<
+  string,
+  { title: string; description?: string }
+> = {
+  bashExecute: {
+    title: "Running Command",
+    description: "Executing shell command",
+  },
+  semanticSearch: {
+    title: "Searching Codebase",
+    description: "Finding relevant code",
+  },
+  proposeTest: {
+    title: "Proposing Test",
+    description: "Generating test proposal",
+  },
+  writeTestFile: {
+    title: "Writing Test File",
+    description: "Creating test file",
+  },
+};
 
 export const FileChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -50,6 +78,8 @@ export const FileChatPage: React.FC = () => {
     error,
     historyError,
     toolEvents,
+    reasoningContent,
+    isReasoningStreaming,
     sendMessage,
     approveProposal,
     rejectProposal,
@@ -154,24 +184,36 @@ export const FileChatPage: React.FC = () => {
                 </div>
               )}
               {/* Render tool events */}
-              {toolEvents.map((toolEvent) => (
-                <Tool key={toolEvent.toolCallId}>
-                  <ToolHeader
-                    title={toolEvent.toolName}
-                    type={toolEvent.toolName as `tool-${string}`}
-                    state={toolEvent.state}
-                  />
-                  <ToolContent>
-                    <ToolInput input={toolEvent.args} />
-                    {(toolEvent.output || toolEvent.errorText) && (
-                      <ToolOutput
-                        output={toolEvent.output}
-                        errorText={toolEvent.errorText}
-                      />
-                    )}
-                  </ToolContent>
-                </Tool>
-              ))}
+              {toolEvents.map((toolEvent) => {
+                const toolDisplay =
+                  toolDisplayNames[toolEvent.toolName] ||
+                  ({ title: toolEvent.toolName } as { title: string });
+                return (
+                  <Tool key={toolEvent.toolCallId}>
+                    <ToolHeader
+                      title={toolDisplay.title}
+                      type={toolEvent.toolName as `tool-${string}`}
+                      state={toolEvent.state}
+                    />
+                    <ToolContent>
+                      <ToolInput input={toolEvent.args} />
+                      {(toolEvent.output || toolEvent.errorText) && (
+                        <ToolOutput
+                          output={toolEvent.output}
+                          errorText={toolEvent.errorText}
+                        />
+                      )}
+                    </ToolContent>
+                  </Tool>
+                );
+              })}
+              {/* Reasoning output */}
+              {reasoningContent && (
+                <Reasoning isStreaming={isReasoningStreaming}>
+                  <ReasoningTrigger />
+                  <ReasoningContent>{reasoningContent}</ReasoningContent>
+                </Reasoning>
+              )}
               {isLoading ? (
                 <ConversationEmptyState
                   title="Loading conversation..."
@@ -190,11 +232,7 @@ export const FileChatPage: React.FC = () => {
                 allMessages.map((message) => (
                   <Message key={message.id} from={message.role}>
                     <MessageContent>
-                      <MessageResponse
-                        className={message.isStreaming ? "animate-pulse" : ""}
-                      >
-                        {message.content}
-                      </MessageResponse>
+                      <MessageResponse>{message.content}</MessageResponse>
                       {message.isProposal && message.proposalId && (
                         <div className="flex gap-2 mt-3">
                           <Button

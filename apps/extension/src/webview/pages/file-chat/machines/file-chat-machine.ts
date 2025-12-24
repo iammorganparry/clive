@@ -1,4 +1,4 @@
-import { setup, assign } from "xstate";
+import { setup, assign, fromPromise } from "xstate";
 import type {
   ToolEvent,
   ChatMessage,
@@ -39,6 +39,8 @@ export interface FileChatContext {
   proposalStatuses: Map<string, "pending" | "approved" | "rejected">;
   error: ChatError | null;
   historyError: string | null;
+  reasoningContent: string;
+  isReasoningStreaming: boolean;
 }
 
 export type FileChatEvent =
@@ -54,11 +56,19 @@ export type FileChatEvent =
   | { type: "CONVERSATION_ERROR"; error: unknown }
   | {
       type: "RESPONSE_CHUNK";
-      chunkType: "message" | "tool-call" | "tool-result" | "tests";
+      chunkType:
+        | "message"
+        | "tool-call"
+        | "tool-result"
+        | "tests"
+        | "reasoning"
+        | "proposal";
       content?: string;
       toolEvent?: ToolEvent;
       toolResult?: { toolCallId: string; updates: Partial<ToolEvent> };
       tests?: unknown[];
+      proposal?: ProposedTest;
+      toolCallId?: string;
     }
   | { type: "RESPONSE_COMPLETE" }
   | { type: "RESPONSE_ERROR"; error: unknown }
@@ -73,7 +83,6 @@ export type FileChatEvent =
 
 export interface FileChatInput {
   sourceFile: string;
-  loadHistory: () => Promise<HistoryResult | HistoryError>;
 }
 
 const createChatError = (
@@ -99,6 +108,12 @@ export const fileChatMachine = setup({
     context: {} as FileChatContext,
     events: {} as FileChatEvent,
     input: {} as FileChatInput,
+  },
+  actors: {
+    loadHistory: fromPromise<HistoryResult | HistoryError, void>(async () => ({
+      conversationId: null,
+      messages: [],
+    })),
   },
   actions: {
     setHistory: assign(({ event }) => {
@@ -157,6 +172,19 @@ export const fileChatMachine = setup({
       };
     }),
     clearStreamingContent: assign({ streamingContent: () => "" }),
+    appendReasoningContent: assign(({ context, event }) => {
+      if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "reasoning")
+        return {};
+      return {
+        reasoningContent: context.reasoningContent + (event.content || ""),
+        isReasoningStreaming: true,
+      };
+    }),
+    clearReasoningContent: assign({
+      reasoningContent: () => "",
+      isReasoningStreaming: () => false,
+    }),
+    stopReasoningStreaming: assign({ isReasoningStreaming: () => false }),
     addToolEvent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "tool-call")
         return {};
@@ -192,10 +220,39 @@ export const fileChatMachine = setup({
         error: createChatError("RESPONSE_FAILED", event.error),
       };
     }),
-    addProposal: assign(() => {
-      // Extract proposals from tests if needed
-      // For now, we'll handle proposals separately via the file-test-machine
-      return {};
+    addProposal: assign(({ context, event }) => {
+      if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "proposal")
+        return {};
+      if (!event.proposal || !event.toolCallId) return {};
+
+      const proposal = event.proposal as ProposedTest;
+      const toolCallId = event.toolCallId;
+
+      // Add proposal to proposals array
+      const updatedProposals = [...context.proposals, proposal];
+
+      // Create a message with isProposal flag
+      const proposalMessage: ChatMessage = {
+        id: `proposal-${toolCallId}`,
+        role: "assistant",
+        content: `Test proposal for ${proposal.sourceFile}`,
+        timestamp: new Date(),
+        isProposal: true,
+        proposalId: toolCallId,
+      };
+
+      // Add proposal message to messages
+      const updatedMessages = [...context.messages, proposalMessage];
+
+      // Set proposal status to pending
+      const nextStatuses = new Map(context.proposalStatuses);
+      nextStatuses.set(toolCallId, "pending");
+
+      return {
+        proposals: updatedProposals,
+        messages: updatedMessages,
+        proposalStatuses: nextStatuses,
+      };
     }),
     setProposalStatus: assign(({ context, event }) => {
       if (
@@ -247,9 +304,41 @@ export const fileChatMachine = setup({
     proposalStatuses: new Map(),
     error: null,
     historyError: null,
+    reasoningContent: "",
+    isReasoningStreaming: false,
   }),
   states: {
     initializing: {
+      invoke: {
+        src: "loadHistory",
+        onDone: {
+          target: "idle",
+          actions: assign(({ event }) => {
+            const result = event.output;
+            if ("error" in result) {
+              return {
+                historyError: result.error,
+                messages: [],
+              };
+            }
+            return {
+              conversationId: result.conversationId,
+              messages: result.messages,
+              historyError: null,
+            };
+          }),
+        },
+        onError: {
+          target: "idle",
+          actions: assign(({ event }) => ({
+            historyError:
+              event.error instanceof Error
+                ? event.error.message
+                : "Failed to load history",
+            messages: [],
+          })),
+        },
+      },
       on: {
         HISTORY_LOADED: {
           target: "idle",
@@ -310,6 +399,7 @@ export const fileChatMachine = setup({
           target: "streaming",
           actions: [
             "appendStreamingContent",
+            "appendReasoningContent",
             "addToolEvent",
             "updateToolEvent",
             "addProposal",
@@ -326,6 +416,7 @@ export const fileChatMachine = setup({
         RESPONSE_CHUNK: {
           actions: [
             "appendStreamingContent",
+            "appendReasoningContent",
             "addToolEvent",
             "updateToolEvent",
             "addProposal",
@@ -333,7 +424,11 @@ export const fileChatMachine = setup({
         },
         RESPONSE_COMPLETE: {
           target: "idle",
-          actions: ["clearStreamingContent", "clearPendingMessages"],
+          actions: [
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+            "clearPendingMessages",
+          ],
         },
         RESPONSE_ERROR: {
           target: "idle",

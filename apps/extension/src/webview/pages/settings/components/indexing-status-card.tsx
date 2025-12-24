@@ -166,6 +166,15 @@ export const IndexingStatusCard: React.FC = () => {
   const statusColor = STATUS_COLORS[status];
   const statusLabel = STATUS_LABELS[status];
 
+  // Use progress.totalFiles when indexing, otherwise use fileCount from database
+  const displayFileCount =
+    status === "in_progress" &&
+    data &&
+    "progress" in data &&
+    data.progress?.totalFiles !== undefined
+      ? data.progress.totalFiles
+      : data?.fileCount;
+
   return (
     <Card>
       <CardHeader>
@@ -213,9 +222,9 @@ export const IndexingStatusCard: React.FC = () => {
                   />
                   <span className="text-sm font-medium">{statusLabel}</span>
                 </div>
-                {data?.fileCount !== undefined && (
+                {displayFileCount !== undefined && (
                   <span className="text-sm text-muted-foreground">
-                    {data.fileCount} file{data.fileCount !== 1 ? "s" : ""}
+                    {displayFileCount} file{displayFileCount !== 1 ? "s" : ""}
                   </span>
                 )}
               </div>

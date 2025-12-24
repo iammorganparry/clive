@@ -24,6 +24,7 @@ export default defineConfig({
     "src/components/ai-elements/message.tsx",
     "src/components/ai-elements/prompt-input.tsx",
     "src/components/ai-elements/tool.tsx",
+    "src/components/ai-elements/reasoning.tsx",
   ],
   format: ["esm"],
   dts: true,
