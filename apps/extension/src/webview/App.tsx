@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import type { VSCodeAPI } from "./services/vscode.js";
 import { WebviewMessages } from "../constants.js";
 import { logger } from "./services/logger.js";
@@ -7,10 +7,32 @@ import { useAuth } from "./contexts/auth-context.js";
 import { useRouter, Routes } from "./router/index.js";
 import { Header } from "./components/layout/header.js";
 import { InitializingScreen } from "./components/initializing-screen.js";
-import { LoginPage } from "./pages/login/index.js";
-import { DashboardPage } from "./pages/dashboard/index.js";
-import { SettingsPage } from "./pages/settings/index.js";
-import { OnboardingPage } from "./pages/onboarding/index.js";
+// Lazy load route components
+const LoginPage = lazy(() =>
+  import("./pages/login/index.js").then((module) => ({
+    default: module.LoginPage,
+  })),
+);
+const DashboardPage = lazy(() =>
+  import("./pages/dashboard/index.js").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/settings/index.js").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const OnboardingPage = lazy(() =>
+  import("./pages/onboarding/index.js").then((module) => ({
+    default: module.OnboardingPage,
+  })),
+);
+const FileChatPage = lazy(() =>
+  import("./pages/file-chat/index.js").then((module) => ({
+    default: module.FileChatPage,
+  })),
+);
 
 interface AppProps {
   vscode: VSCodeAPI;
@@ -91,6 +113,10 @@ const App: React.FC<AppProps> = ({ vscode }) => {
       );
     }
 
+    if (route === Routes.fileChat) {
+      return <FileChatPage />;
+    }
+
     // Default to dashboard
     return (
       <DashboardPage
@@ -108,7 +134,9 @@ const App: React.FC<AppProps> = ({ vscode }) => {
   return (
     <div className="w-full h-full flex flex-col bg-background text-foreground">
       {showHeader && <Header />}
-      <div className="flex-1 overflow-auto">{renderPage()}</div>
+      <Suspense fallback={<InitializingScreen />}>
+        <div className="flex-1 overflow-auto">{renderPage()}</div>
+      </Suspense>
     </div>
   );
 };

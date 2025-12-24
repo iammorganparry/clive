@@ -1,27 +1,12 @@
 import { Data, Effect } from "effect";
-import SuperJSON from "superjson";
 import { ConfigService } from "./config-service.js";
-import { parseTrpcError } from "../lib/error-messages.js";
+import { TrpcClientService } from "./trpc-client-service.js";
+import { wrapTrpcCall } from "../utils/trpc-utils.js";
 import type { IndexingStatusInfo } from "./indexing-status.js";
 
 class RepositoryError extends Data.TaggedError("RepositoryError")<{
   message: string;
   cause?: unknown;
-}> {}
-
-class ApiError extends Data.TaggedError("ApiError")<{
-  message: string;
-  status?: number;
-  cause?: unknown;
-}> {}
-
-class NetworkError extends Data.TaggedError("NetworkError")<{
-  message: string;
-  cause?: unknown;
-}> {}
-
-class AuthTokenMissingError extends Data.TaggedError("AuthTokenMissingError")<{
-  message: string;
 }> {}
 
 /**
@@ -69,201 +54,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
   {
     effect: Effect.gen(function* () {
       const configService = yield* ConfigService;
-
-      /**
-       * Helper to get auth token
-       */
-      const getAuthToken = () =>
-        Effect.gen(function* () {
-          const token = yield* configService.getAuthToken().pipe(
-            Effect.catchAll(() =>
-              Effect.fail(
-                new AuthTokenMissingError({
-                  message: "Failed to retrieve auth token. Please log in.",
-                }),
-              ),
-            ),
-          );
-          if (!token) {
-            return yield* Effect.fail(
-              new AuthTokenMissingError({
-                message: "Auth token not available. Please log in.",
-              }),
-            );
-          }
-          return token;
-        });
-
-      /**
-       * Helper to make tRPC API calls (queries)
-       */
-      const callTrpcQuery = <T>(procedure: string, input: unknown) =>
-        Effect.gen(function* () {
-          const authToken = yield* getAuthToken();
-          const backendUrl = "http://localhost:3000";
-
-          const response = yield* Effect.tryPromise({
-            try: async () => {
-              const serializedInput = SuperJSON.serialize(input);
-              const inputStr = encodeURIComponent(
-                JSON.stringify(serializedInput),
-              );
-              const url = `${backendUrl}/api/trpc/${procedure}?input=${inputStr}`;
-
-              return fetch(url, {
-                method: "GET",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${authToken}`,
-                },
-              });
-            },
-            catch: (error) =>
-              new NetworkError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          if (!response.ok) {
-            const errorText = yield* Effect.tryPromise({
-              try: () => response.text(),
-              catch: () =>
-                new NetworkError({
-                  message: "Failed to read error response",
-                }),
-            });
-            const userMessage = parseTrpcError(errorText, response.status);
-            return yield* Effect.fail(
-              new ApiError({
-                message: userMessage,
-                status: response.status,
-                cause: errorText,
-              }),
-            );
-          }
-
-          const responseText = yield* Effect.tryPromise({
-            try: () => response.text(),
-            catch: (error) =>
-              new ApiError({
-                message: "Failed to read API response body",
-                cause: error,
-              }),
-          });
-
-          yield* Effect.logDebug(
-            `[RepositoryService] Response body (first 500 chars): ${responseText.substring(0, 500)}`,
-          );
-
-          const data = yield* Effect.try({
-            try: () =>
-              JSON.parse(responseText) as { result?: { data?: unknown } },
-            catch: (error) =>
-              new ApiError({
-                message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
-                cause: error,
-              }),
-          });
-
-          if (data.result?.data !== undefined && data.result.data !== null) {
-            return SuperJSON.deserialize<T>(
-              data.result.data as Parameters<typeof SuperJSON.deserialize>[0],
-            );
-          }
-
-          return yield* Effect.fail(
-            new ApiError({
-              message: "Invalid response format from API",
-            }),
-          );
-        });
-
-      /**
-       * Helper to make tRPC API calls (mutations)
-       */
-      const callTrpcMutation = <T>(procedure: string, input: unknown) =>
-        Effect.gen(function* () {
-          const authToken = yield* getAuthToken();
-          const backendUrl = "http://localhost:3000";
-
-          const response = yield* Effect.tryPromise({
-            try: async () => {
-              const url = `${backendUrl}/api/trpc/${procedure}`;
-              const serializedInput = SuperJSON.serialize(input);
-              const body = JSON.stringify(serializedInput);
-
-              return fetch(url, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${authToken}`,
-                },
-                body,
-              });
-            },
-            catch: (error) =>
-              new NetworkError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          if (!response.ok) {
-            const errorText = yield* Effect.tryPromise({
-              try: () => response.text(),
-              catch: () =>
-                new NetworkError({
-                  message: "Failed to read error response",
-                }),
-            });
-            const userMessage = parseTrpcError(errorText, response.status);
-            return yield* Effect.fail(
-              new ApiError({
-                message: userMessage,
-                status: response.status,
-                cause: errorText,
-              }),
-            );
-          }
-
-          const responseText = yield* Effect.tryPromise({
-            try: () => response.text(),
-            catch: (error) =>
-              new ApiError({
-                message: "Failed to read API response body",
-                cause: error,
-              }),
-          });
-
-          yield* Effect.logDebug(
-            `[RepositoryService] Response body (first 500 chars): ${responseText.substring(0, 500)}`,
-          );
-
-          const data = yield* Effect.try({
-            try: () =>
-              JSON.parse(responseText) as { result?: { data?: unknown } },
-            catch: (error) =>
-              new ApiError({
-                message: `Failed to parse API response: ${responseText.substring(0, 200)}`,
-                cause: error,
-              }),
-          });
-
-          if (data.result?.data !== undefined && data.result.data !== null) {
-            return SuperJSON.deserialize<T>(
-              data.result.data as Parameters<typeof SuperJSON.deserialize>[0],
-            );
-          }
-
-          return yield* Effect.fail(
-            new ApiError({
-              message: "Invalid response format from API",
-            }),
-          );
-        });
+      const trpcClientService = yield* TrpcClientService;
 
       /**
        * Get current user ID from auth token
@@ -290,10 +81,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Upserting repository: ${name} at ${rootPath}`,
           );
 
-          const repository = yield* callTrpcMutation<Repository>(
-            "repository.upsert",
-            { name, rootPath, organizationId: organizationId ?? null },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const repository = yield* wrapTrpcCall((c) =>
+            c.repository.upsert.mutate({
+              name,
+              rootPath,
+              organizationId: organizationId ?? null,
+            }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -325,10 +120,13 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Getting repository: ${rootPath}`,
           );
 
-          const repository = yield* callTrpcQuery<Repository | null>(
-            "repository.get",
-            { rootPath, organizationId: organizationId ?? null },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const repository = yield* wrapTrpcCall((c) =>
+            c.repository.get.query({
+              rootPath,
+              organizationId: organizationId ?? null,
+            }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -352,10 +150,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Upserting file: ${file.relativePath}`,
           );
 
-          yield* callTrpcMutation<{ success: boolean }>(
-            "repository.upsertFile",
-            { repositoryId, file },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          yield* wrapTrpcCall((c) =>
+            c.repository.upsertFile.mutate({ repositoryId, file }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -381,10 +179,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Deleting file: ${relativePath}`,
           );
 
-          yield* callTrpcMutation<{ success: boolean }>(
-            "repository.deleteFile",
-            { repositoryId, relativePath },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          yield* wrapTrpcCall((c) =>
+            c.repository.deleteFile.mutate({ repositoryId, relativePath }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -410,10 +208,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Getting file: ${relativePath}`,
           );
 
-          const file = yield* callTrpcQuery<unknown | null>(
-            "repository.getFileByPath",
-            { repositoryId, relativePath },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const file = yield* wrapTrpcCall((c) =>
+            c.repository.getFileByPath.query({ repositoryId, relativePath }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -437,10 +235,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Getting file hashes for repository: ${repositoryId}`,
           );
 
-          const hashMap = yield* callTrpcQuery<Record<string, string>>(
-            "repository.getFileHashes",
-            { repositoryId },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const hashMap = yield* wrapTrpcCall((c) =>
+            c.repository.getFileHashes.query({ repositoryId }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -475,10 +273,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Searching files in repository: ${repositoryId}`,
           );
 
-          const results = yield* callTrpcQuery<FileSearchResult[]>(
-            "repository.searchFiles",
-            { repositoryId, queryEmbedding, limit },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const results = yield* wrapTrpcCall((c) =>
+            c.repository.searchFiles.query({
+              repositoryId,
+              queryEmbedding,
+              limit,
+            }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -511,10 +313,13 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             `[RepositoryService] Getting indexing status for: ${rootPath}`,
           );
 
-          const status = yield* callTrpcQuery<IndexingStatusInfo>(
-            "repository.getStatus",
-            { rootPath, organizationId: organizationId ?? null },
-          ).pipe(
+          const client = yield* trpcClientService.getClient();
+          const status = yield* wrapTrpcCall((c) =>
+            c.repository.getStatus.query({
+              rootPath,
+              organizationId: organizationId ?? null,
+            }),
+          )(client).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new RepositoryError({
@@ -526,20 +331,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
             ),
           );
 
-          return status;
+          return status as IndexingStatusInfo;
         });
 
       /**
-       * Call tRPC query (exposed for other services)
+       * Get the typed tRPC client for direct access
+       * Use this for procedures not wrapped by this service
        */
-      const callTrpcQueryPublic = <T>(procedure: string, input: unknown) =>
-        callTrpcQuery<T>(procedure, input);
-
-      /**
-       * Call tRPC mutation (exposed for other services)
-       */
-      const callTrpcMutationPublic = <T>(procedure: string, input: unknown) =>
-        callTrpcMutation<T>(procedure, input);
+      const getClient = () => trpcClientService.getClient();
 
       return {
         getUserId,
@@ -552,8 +351,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
         getFileHashes,
         searchFiles,
         getIndexingStatus,
-        callTrpcQuery: callTrpcQueryPublic,
-        callTrpcMutation: callTrpcMutationPublic,
+        getClient,
       };
     }),
     // No dependencies - allows test injection via Layer.provide()

@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
 import { CypressTestAgent } from "../../services/ai-agent/agent.js";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
+import { ConversationService } from "../../services/conversation-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 import type { ProposedTest } from "../../services/ai-agent/types.js";
@@ -142,6 +143,48 @@ export const agentsRouter = {
               : undefined,
             signal,
           });
+
+          // Persist conversation to database
+          const conversationService = yield* ConversationService;
+          const sourceFile = input.files[0];
+
+          // Get or create conversation for this file
+          const conversation = yield* conversationService
+            .getOrCreateConversation(sourceFile)
+            .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+          if (conversation && result.response) {
+            // Build context object with full data
+            const context = {
+              proposals: result.proposals,
+              executions: result.executions,
+              timestamp: new Date().toISOString(),
+            };
+
+            // Save assistant message with context in toolCalls
+            yield* conversationService
+              .addMessage(
+                conversation.id,
+                "assistant",
+                result.response,
+                context,
+              )
+              .pipe(Effect.catchAll(() => Effect.void));
+
+            // Update conversation status
+            const hasExecutions =
+              result.executions && result.executions.length > 0;
+            yield* conversationService
+              .updateStatus(
+                conversation.id,
+                hasExecutions ? "completed" : "planning",
+              )
+              .pipe(Effect.catchAll(() => Effect.void));
+
+            yield* Effect.logDebug(
+              `[RpcRouter:${requestId}] Persisted conversation for ${sourceFile}`,
+            );
+          }
 
           const totalDuration = Date.now() - startTime;
           yield* Effect.logDebug(

@@ -29,6 +29,7 @@ import { VSCodeService, SecretStorageService } from "../services/vs-code.js";
 import { createLoggerLayer } from "../services/logger-service.js";
 import { ConfigService } from "../services/config-service.js";
 import { ApiKeyService } from "../services/api-key-service.js";
+import { TrpcClientService } from "../services/trpc-client-service.js";
 import { RepositoryService } from "../services/repository-service.js";
 import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
 import { ConversationService } from "../services/conversation-service.js";
@@ -468,17 +469,62 @@ export function createBaseTestLayer(
     Layer.provide(createSecretStorageTestLayer(core.mockSecrets)),
   );
 
+  // TrpcClientService depends on ConfigService
+  const trpcClientLayer = TrpcClientService.Default.pipe(
+    Layer.provide(configLayer),
+  );
+
   // Merge all layers together
-  const layer = Layer.mergeAll(core.layer, apiKeyLayer, configLayer);
+  const layer = Layer.mergeAll(
+    core.layer,
+    apiKeyLayer,
+    configLayer,
+    trpcClientLayer,
+  );
 
   return { ...core, layer };
 }
 
 /**
  * Create Config test layer (for config router tests)
- * Includes: Base + RepositoryService, IndexingService, ConversationService, ReactFileFilter, KnowledgeBaseAgent, KnowledgeBaseService, KnowledgeFileService
+ * Includes: Base + Domain services + Indexing + Knowledge Base services
  * This matches the type signature of createConfigServiceLayer from layer-factory.ts
  */
+/**
+ * Create a test domain layer that mirrors production createDomainLayer
+ * but uses mock services instead of real ones
+ */
+function createDomainTestLayer(
+  baseLayer: ReturnType<typeof createBaseTestLayer>,
+  options?: {
+    repositoryOverrides?: RepositoryServiceOverrides;
+    conversationOverrides?: ConversationServiceOverrides;
+    reactFileFilterOverrides?: ReactFileFilterOverrides;
+  },
+) {
+  // RepositoryService depends on ConfigService (in baseLayer)
+  const repoLayer = createMockRepositoryServiceLayer(
+    options?.repositoryOverrides,
+  ).pipe(Layer.provide(baseLayer.layer));
+
+  // ConversationService depends on ConfigService (in baseLayer)
+  const convLayer = createMockConversationServiceLayer(
+    options?.conversationOverrides,
+  ).pipe(Layer.provide(baseLayer.layer));
+
+  // ReactFileFilter depends on VSCodeService (in baseLayer via coreLayer)
+  const reactFilterLayer = createMockReactFileFilterLayer(
+    options?.reactFileFilterOverrides,
+  ).pipe(Layer.provide(baseLayer.layer));
+
+  return Layer.mergeAll(
+    baseLayer.layer,
+    repoLayer,
+    convLayer,
+    reactFilterLayer,
+  );
+}
+
 export function createConfigTestLayer(
   options?: Parameters<typeof createCoreTestLayer>[0] & {
     repositoryOverrides?: RepositoryServiceOverrides;
@@ -492,15 +538,43 @@ export function createConfigTestLayer(
 ) {
   const base = createBaseTestLayer(options);
 
+  // Domain layer (mirrors production createDomainLayer)
+  const domainLayer = createDomainTestLayer(base, {
+    repositoryOverrides: options?.repositoryOverrides,
+    conversationOverrides: options?.conversationOverrides,
+    reactFileFilterOverrides: options?.reactFileFilterOverrides,
+  });
+
+  // Add indexing layer
+  const indexingLayer = CodebaseIndexingService.Default.pipe(
+    Layer.provide(domainLayer),
+  );
+
+  // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const knowledgeFileLayer = createMockKnowledgeFileServiceLayer(
+    options?.knowledgeFileServiceOverrides,
+  ).pipe(Layer.provide(base.layer));
+
+  // KnowledgeBaseAgent depends on ConfigService, RepositoryService, and KnowledgeFileService
+  const knowledgeBaseAgentLayer = createMockKnowledgeBaseAgentLayer(
+    options?.knowledgeBaseAgentOverrides,
+  ).pipe(Layer.provide(Layer.mergeAll(domainLayer, knowledgeFileLayer)));
+
+  // KnowledgeBaseService depends on KnowledgeBaseAgent and KnowledgeFileService
+  const knowledgeBaseServiceLayer = createMockKnowledgeBaseServiceLayer(
+    options?.knowledgeBaseServiceOverrides,
+  ).pipe(
+    Layer.provide(
+      Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer, knowledgeFileLayer),
+    ),
+  );
+
   const layer = Layer.mergeAll(
-    base.layer,
-    createMockRepositoryServiceLayer(options?.repositoryOverrides),
-    createMockIndexingServiceLayer(options?.indexingOverrides),
-    createMockConversationServiceLayer(options?.conversationOverrides),
-    createMockReactFileFilterLayer(options?.reactFileFilterOverrides),
-    createMockKnowledgeBaseAgentLayer(options?.knowledgeBaseAgentOverrides),
-    createMockKnowledgeBaseServiceLayer(options?.knowledgeBaseServiceOverrides),
-    createMockKnowledgeFileServiceLayer(options?.knowledgeFileServiceOverrides),
+    domainLayer,
+    indexingLayer,
+    knowledgeFileLayer,
+    knowledgeBaseAgentLayer,
+    knowledgeBaseServiceLayer,
   );
 
   return { ...base, layer };

@@ -15,6 +15,7 @@ export const routerMachine = setup({
   types: {
     context: {} as {
       route: Route;
+      routeParams: Record<string, string>;
       isAuthenticated: boolean;
       onboardingComplete: boolean;
     },
@@ -24,13 +25,14 @@ export const routerMachine = setup({
       | { type: "LOGIN_SUCCESS" }
       | { type: "ONBOARDING_COMPLETE" }
       | { type: "LOGOUT" }
-      | { type: "NAVIGATE"; route: Route },
+      | { type: "NAVIGATE"; route: Route; params?: Record<string, string> },
   },
 }).createMachine({
   id: "router",
   initial: "initializing",
   context: {
     route: Routes.dashboard,
+    routeParams: {},
     isAuthenticated: false,
     onboardingComplete: false,
   },
@@ -103,7 +105,10 @@ export const routerMachine = setup({
     ready: {
       on: {
         NAVIGATE: {
-          actions: assign({ route: ({ event }) => event.route }),
+          actions: assign({
+            route: ({ event }) => event.route,
+            routeParams: ({ event }) => event.params || {},
+          }),
         },
         LOGOUT: {
           target: "unauthenticated",

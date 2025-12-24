@@ -1,21 +1,12 @@
-import { Data, Effect } from "effect";
+import { Effect } from "effect";
 import { ConfigService } from "./config-service.js";
-import { parseTrpcError } from "../lib/error-messages.js";
-
-class ApiError extends Data.TaggedError("ApiError")<{
-  message: string;
-  status?: number;
-  cause?: unknown;
-}> {}
-
-class NetworkError extends Data.TaggedError("NetworkError")<{
-  message: string;
-  cause?: unknown;
-}> {}
-
-class AuthTokenMissingError extends Data.TaggedError("AuthTokenMissingError")<{
-  message: string;
-}> {}
+import { TrpcClientService } from "./trpc-client-service.js";
+import {
+  wrapTrpcCall,
+  type ApiError,
+  type NetworkError,
+  type AuthTokenMissingError,
+} from "../utils/trpc-utils.js";
 
 export interface Conversation {
   id: string;
@@ -43,141 +34,8 @@ export class ConversationService extends Effect.Service<ConversationService>()(
   "ConversationService",
   {
     effect: Effect.gen(function* () {
-      const configService = yield* ConfigService;
-
-      /**
-       * Helper to get auth token
-       */
-      const getAuthToken = () =>
-        Effect.gen(function* () {
-          const token = yield* configService.getAuthToken().pipe(
-            Effect.catchAll(() =>
-              Effect.fail(
-                new AuthTokenMissingError({
-                  message: "Failed to retrieve auth token. Please log in.",
-                }),
-              ),
-            ),
-          );
-          if (!token) {
-            return yield* Effect.fail(
-              new AuthTokenMissingError({
-                message: "Auth token not available. Please log in.",
-              }),
-            );
-          }
-          return token;
-        });
-
-      /**
-       * Helper to make tRPC API calls
-       * tRPC HTTP API uses format: /api/trpc/[procedure]?input=... for queries
-       * and POST with JSON body for mutations
-       */
-      const callTrpcQuery = <T>(procedure: string, input: unknown) =>
-        Effect.gen(function* () {
-          const authToken = yield* getAuthToken();
-          const backendUrl = "http://localhost:3000";
-
-          const response = yield* Effect.tryPromise({
-            try: async () => {
-              const inputStr = encodeURIComponent(JSON.stringify(input));
-              const url = `${backendUrl}/api/trpc/${procedure}?input=${inputStr}`;
-
-              return fetch(url, {
-                method: "GET",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${authToken}`,
-                },
-              });
-            },
-            catch: (error) =>
-              new NetworkError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          if (!response.ok) {
-            const errorText = yield* Effect.promise(() => response.text());
-            const userMessage = parseTrpcError(errorText, response.status);
-            return yield* Effect.fail(
-              new ApiError({
-                message: userMessage,
-                status: response.status,
-                cause: errorText,
-              }),
-            );
-          }
-
-          const data = (yield* Effect.promise(() => response.json())) as {
-            result?: { data?: T };
-          };
-          if (data.result?.data !== undefined) {
-            return data.result.data;
-          }
-
-          return yield* Effect.fail(
-            new ApiError({
-              message: "Invalid response format from API",
-            }),
-          );
-        });
-
-      const callTrpcMutation = <T>(procedure: string, input: unknown) =>
-        Effect.gen(function* () {
-          const authToken = yield* getAuthToken();
-          const backendUrl = "http://localhost:3000";
-
-          const response = yield* Effect.tryPromise({
-            try: async () => {
-              const url = `${backendUrl}/api/trpc/${procedure}`;
-              const body = JSON.stringify(input);
-
-              return fetch(url, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${authToken}`,
-                },
-                body,
-              });
-            },
-            catch: (error) =>
-              new NetworkError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                cause: error,
-              }),
-          });
-
-          if (!response.ok) {
-            const errorText = yield* Effect.promise(() => response.text());
-            const userMessage = parseTrpcError(errorText, response.status);
-            return yield* Effect.fail(
-              new ApiError({
-                message: userMessage,
-                status: response.status,
-                cause: errorText,
-              }),
-            );
-          }
-
-          const data = (yield* Effect.promise(() => response.json())) as {
-            result?: { data?: T };
-          };
-          if (data.result?.data !== undefined) {
-            return data.result.data;
-          }
-
-          return yield* Effect.fail(
-            new ApiError({
-              message: "Invalid response format from API",
-            }),
-          );
-        });
+      const _configService = yield* ConfigService;
+      const trpcClientService = yield* TrpcClientService;
 
       return {
         /**
@@ -185,11 +43,12 @@ export class ConversationService extends Effect.Service<ConversationService>()(
          */
         getOrCreateConversation: (sourceFile: string) =>
           Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+
             // First try to get existing
-            const existing = yield* callTrpcQuery<Conversation | null>(
-              "conversation.getByFile",
-              { sourceFile },
-            ).pipe(
+            const existing = yield* wrapTrpcCall((c) =>
+              c.conversation.getByFile.query({ sourceFile }),
+            )(client).pipe(
               Effect.catchTag("ApiError", (error) => {
                 if (error.status === 404) {
                   return Effect.succeed(null);
@@ -203,24 +62,31 @@ export class ConversationService extends Effect.Service<ConversationService>()(
             }
 
             // Create new if not found
-            return yield* callTrpcMutation<Conversation>(
-              "conversation.create",
-              { sourceFile },
-            );
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.create.mutate({ sourceFile }),
+            )(client);
           }),
 
         /**
          * Get conversation by ID
          */
         getConversation: (id: string) =>
-          callTrpcQuery<Conversation>("conversation.getById", { id }),
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.getById.query({ id }),
+            )(client);
+          }),
 
         /**
          * Get all messages for a conversation
          */
         getMessages: (conversationId: string) =>
-          callTrpcQuery<Message[]>("conversation.getMessages", {
-            conversationId,
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.getMessages.query({ conversationId }),
+            )(client);
           }),
 
         /**
@@ -232,11 +98,16 @@ export class ConversationService extends Effect.Service<ConversationService>()(
           content: string,
           toolCalls?: unknown,
         ) =>
-          callTrpcMutation<Message>("conversation.addMessage", {
-            conversationId,
-            role,
-            content,
-            toolCalls,
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.addMessage.mutate({
+                conversationId,
+                role,
+                content,
+                toolCalls,
+              }),
+            )(client);
           }),
 
         /**
@@ -246,16 +117,26 @@ export class ConversationService extends Effect.Service<ConversationService>()(
           conversationId: string,
           status: "planning" | "confirmed" | "completed",
         ) =>
-          callTrpcMutation<Conversation>("conversation.updateStatus", {
-            id: conversationId,
-            status,
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.updateStatus.mutate({
+                id: conversationId,
+                status,
+              }),
+            )(client);
           }),
 
         /**
          * List all conversations for the user
          */
         listConversations: () =>
-          callTrpcQuery<Conversation[]>("conversation.list", {}),
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) => c.conversation.list.query())(
+              client,
+            );
+          }),
       };
     }),
     // No dependencies - allows test injection via Layer.provide()

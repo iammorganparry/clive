@@ -8,8 +8,9 @@ import { routerMachine, type RouterMachineEvent } from "./router-machine.js";
 
 interface RouterContextValue {
   route: Route;
+  routeParams: Record<string, string>;
   isInitializing: boolean;
-  navigate: (route: Route) => void;
+  navigate: (route: Route, params?: Record<string, string>) => void;
   goBack: () => void;
   send: (event: RouterMachineEvent) => void;
 }
@@ -57,12 +58,13 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
   const isInitializing =
     state.matches("initializing") || state.matches("checkingOnboarding");
 
-  // Get current route from machine context
+  // Get current route and params from machine context
   const route = state.context.route;
+  const routeParams = state.context.routeParams;
 
   const navigate = useCallback(
-    (newRoute: Route) => {
-      send({ type: "NAVIGATE", route: newRoute });
+    (newRoute: Route, params?: Record<string, string>) => {
+      send({ type: "NAVIGATE", route: newRoute, params });
     },
     [send],
   );
@@ -70,12 +72,12 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
   const goBack = useCallback(() => {
     // For simplicity, navigate to dashboard when going back
     // Could be enhanced with history tracking in machine context if needed
-    send({ type: "NAVIGATE", route: Routes.dashboard });
+    send({ type: "NAVIGATE", route: Routes.dashboard, params: {} });
   }, [send]);
 
   return (
     <RouterContext.Provider
-      value={{ route, isInitializing, navigate, goBack, send }}
+      value={{ route, routeParams, isInitializing, navigate, goBack, send }}
     >
       {children}
     </RouterContext.Provider>

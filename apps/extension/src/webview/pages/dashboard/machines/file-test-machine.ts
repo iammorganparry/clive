@@ -260,9 +260,6 @@ export const fileTestMachine = setup({
         },
         streaming: {
           on: {
-            CONTENT_STREAMED: {
-              actions: ["appendStreamingContent"],
-            },
             PROPOSAL_RECEIVED: {
               target: "awaitingApproval",
               actions: [
@@ -365,6 +362,9 @@ export const fileTestMachine = setup({
       on: {
         PROGRESS: {
           actions: "addLog",
+        },
+        CONTENT_STREAMED: {
+          actions: "appendStreamingContent",
         },
         SUBSCRIPTION_ERROR: {
           target: "error",
