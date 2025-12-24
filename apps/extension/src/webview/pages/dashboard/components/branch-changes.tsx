@@ -78,14 +78,12 @@ const BranchHeader: React.FC<BranchHeaderProps> = ({
 
 interface BranchContentProps {
   files: EligibleFile[];
-  vscode: VSCodeAPI;
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const BranchContent: React.FC<BranchContentProps> = ({
   files,
-  vscode,
   onViewTest,
   onPreviewDiff,
 }) => (
@@ -95,7 +93,6 @@ const BranchContent: React.FC<BranchContentProps> = ({
         <FileTestRow
           key={file.path}
           file={file}
-          vscode={vscode}
           onViewTest={onViewTest}
           onPreviewDiff={onPreviewDiff}
         />
@@ -156,7 +153,6 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       {isExpanded && (
         <BranchContent
           files={props.changes.files}
-          vscode={props.vscode}
           onViewTest={props.onViewTest}
           onPreviewDiff={props.onPreviewDiff}
         />

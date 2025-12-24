@@ -8,6 +8,7 @@ import { WebviewMessages } from "../constants.js";
 import { initLogger } from "./services/logger.js";
 import { getVSCodeAPI } from "./services/vscode.js";
 import { AuthProvider } from "./contexts/auth-context.js";
+import { FileTestActorsProvider } from "./contexts/file-test-actors-context.js";
 import { RouterProvider } from "./router/index.js";
 import { RpcProvider } from "./rpc/provider.js";
 
@@ -60,9 +61,11 @@ root.render(
     <QueryClientProvider client={queryClient}>
       <RpcProvider vscode={vscode}>
         <AuthProvider>
-          <RouterProvider>
-            <App vscode={vscode} />
-          </RouterProvider>
+          <FileTestActorsProvider vscode={vscode}>
+            <RouterProvider>
+              <App vscode={vscode} />
+            </RouterProvider>
+          </FileTestActorsProvider>
         </AuthProvider>
       </RpcProvider>
     </QueryClientProvider>

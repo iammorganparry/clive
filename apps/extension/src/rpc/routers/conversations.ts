@@ -6,7 +6,10 @@ import { ConversationService as ConversationServiceEffect } from "../../services
 import { ErrorCode, getErrorMessage } from "../../lib/error-messages.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
-import type { Message } from "../../services/conversation-service.js";
+import type {
+  Message,
+  Conversation,
+} from "../../services/conversation-service.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
@@ -48,7 +51,7 @@ export const conversationsRouter = {
         const conversationService = yield* ConversationServiceEffect;
 
         // Get or create conversation
-        const conversation = yield* conversationService
+        const conversation: Conversation = yield* conversationService
           .getOrCreateConversation(input.sourceFile)
           .pipe(
             Effect.catchTag("ApiError", (error) =>
@@ -56,16 +59,8 @@ export const conversationsRouter = {
                 yield* Effect.logDebug(
                   `[ConversationsRouter] Failed to start conversation: ${error.message}`,
                 );
-                return yield* Effect.fail(error);
-              }),
-            ),
-            Effect.catchTag("NetworkError", (error) =>
-              Effect.gen(function* () {
-                yield* Effect.logDebug(
-                  `[ConversationsRouter] Network error starting conversation: ${error.message}`,
-                );
                 return yield* Effect.fail(
-                  new Error(getErrorMessage(ErrorCode.NETWORK)),
+                  new Error(getErrorMessage(ErrorCode.SERVER_ERROR)),
                 );
               }),
             ),
@@ -79,31 +74,12 @@ export const conversationsRouter = {
                 );
               }),
             ),
-            Effect.catchAll((error) =>
-              Effect.gen(function* () {
-                const errorMessage =
-                  error instanceof Error ? error.message : "Unknown error";
-                yield* Effect.logDebug(
-                  `[ConversationsRouter] Failed to start conversation: ${errorMessage}`,
-                );
-                return yield* Effect.fail(
-                  new Error(getErrorMessage(ErrorCode.SERVER_ERROR)),
-                );
-              }),
-            ),
           );
 
         // Load existing messages
         const messages = yield* conversationService
           .getMessages(conversation.id)
-          .pipe(
-            Effect.catchTag("ApiError", (_error) =>
-              Effect.sync(() => {
-                return [] as Message[];
-              }),
-            ),
-            Effect.catchAll(() => Effect.succeed([] as Message[])),
-          );
+          .pipe(Effect.catchAll(() => Effect.succeed([] as Message[])));
 
         return {
           conversationId: conversation.id,
@@ -158,24 +134,6 @@ export const conversationsRouter = {
           yield* conversationService
             .addMessage(input.conversationId, "user", input.message)
             .pipe(
-              Effect.catchTag("ApiError", (error) =>
-                Effect.gen(function* () {
-                  yield* Effect.logDebug(
-                    `[ConversationsRouter] Failed to save user message: ${error.message}`,
-                  );
-                  return yield* Effect.fail(error);
-                }),
-              ),
-              Effect.catchTag("NetworkError", (error) =>
-                Effect.gen(function* () {
-                  yield* Effect.logDebug(
-                    `[ConversationsRouter] Network error saving message: ${error.message}`,
-                  );
-                  return yield* Effect.fail(
-                    new Error(getErrorMessage(ErrorCode.NETWORK)),
-                  );
-                }),
-              ),
               Effect.catchAll((error) =>
                 Effect.gen(function* () {
                   yield* Effect.logDebug(
@@ -189,14 +147,7 @@ export const conversationsRouter = {
           // Get conversation history
           const history = yield* conversationService
             .getMessages(input.conversationId)
-            .pipe(
-              Effect.catchTag("ApiError", (_error) =>
-                Effect.sync(() => {
-                  return [] as Message[];
-                }),
-              ),
-              Effect.catchAll(() => Effect.succeed([] as Message[])),
-            );
+            .pipe(Effect.catchAll(() => Effect.succeed([] as Message[])));
 
           // Convert to planning agent format
           const conversationHistory = history.map((msg: Message) => ({
@@ -312,17 +263,10 @@ export const conversationsRouter = {
         const conversation = yield* conversationService
           .getOrCreateConversation(input.sourceFile)
           .pipe(
-            Effect.catchTag("ApiError", (_error) =>
-              Effect.sync(() => {
-                return null;
-              }),
+            Effect.catchTag("ApiError", () => Effect.succeed(null)),
+            Effect.catchTag("AuthTokenMissingError", () =>
+              Effect.succeed(null),
             ),
-            Effect.catchTag("NetworkError", (_error) =>
-              Effect.sync(() => {
-                return null;
-              }),
-            ),
-            Effect.catchAll(() => Effect.succeed(null)),
           );
 
         if (!conversation) {
@@ -334,14 +278,7 @@ export const conversationsRouter = {
 
         const messages = yield* conversationService
           .getMessages(conversation.id)
-          .pipe(
-            Effect.catchTag("ApiError", (_error) =>
-              Effect.sync(() => {
-                return [] as Message[];
-              }),
-            ),
-            Effect.catchAll(() => Effect.succeed([] as Message[])),
-          );
+          .pipe(Effect.catchAll(() => Effect.succeed([] as Message[])));
 
         return {
           conversationId: conversation.id,

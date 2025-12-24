@@ -1,9 +1,9 @@
-import { authRouter } from "./router/auth";
-import { configRouter } from "./router/config";
-import { conversationRouter } from "./router/conversation";
-import { postRouter } from "./router/post";
-import { repositoryRouter } from "./router/repository";
-import { createTRPCRouter } from "./trpc";
+import { authRouter } from "./router/auth.js";
+import { configRouter } from "./router/config.js";
+import { conversationRouter } from "./router/conversation.js";
+import { postRouter } from "./router/post.js";
+import { repositoryRouter } from "./router/repository.js";
+import { createTRPCRouter } from "./trpc.js";
 
 const _appRouter = createTRPCRouter({
   auth: authRouter,

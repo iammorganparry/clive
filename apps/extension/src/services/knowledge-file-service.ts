@@ -5,7 +5,6 @@
 
 import { Effect, Data } from "effect";
 import * as vscode from "vscode";
-import * as path from "node:path";
 import {
   getWorkspaceRoot,
   readFileAsStringEffect,
@@ -115,7 +114,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           const colonIndex = line.indexOf(":");
           if (colonIndex > 0) {
             const key = line.substring(0, colonIndex).trim();
-            let valueStr = line.substring(colonIndex + 1).trim();
+            const valueStr = line.substring(colonIndex + 1).trim();
             let value: unknown = valueStr;
 
             // Handle array values (YAML-like)
@@ -154,7 +153,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
         }
         lines.push(`updatedAt: ${metadata.updatedAt}`);
         lines.push("---");
-        return lines.join("\n") + "\n";
+        return `${lines.join("\n")}\n`;
       };
 
       /**
@@ -253,8 +252,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             }
           }
 
-          const fullContent =
-            generateFrontmatter(metadata) + "\n" + markdownContent;
+          const fullContent = `${generateFrontmatter(metadata)}\n${markdownContent}`;
 
           // Read existing content if appending
           let existingContent = "";
@@ -291,7 +289,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               }),
           });
 
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const _workspaceRoot = yield* getWorkspaceRoot();
           const relativePath = vscode.workspace.asRelativePath(fileUri, false);
 
           return {
@@ -350,7 +348,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
       const listKnowledgeFiles = () =>
         Effect.gen(function* () {
           const knowledgeDir = yield* getKnowledgeDir();
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const _workspaceRoot = yield* getWorkspaceRoot();
 
           // Find all markdown files in knowledge directory
           const files = yield* findFilesEffect(
@@ -390,7 +388,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
       ) =>
         Effect.gen(function* () {
           const knowledgeDir = yield* getKnowledgeDir();
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const _workspaceRoot = yield* getWorkspaceRoot();
 
           // Find all markdown files
           const files = yield* findFilesEffect(

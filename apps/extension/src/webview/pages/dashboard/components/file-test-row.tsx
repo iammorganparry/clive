@@ -1,4 +1,6 @@
 import React, { useCallback } from "react";
+import { useRouter } from "../../../router/router-context.js";
+import { Routes } from "../../../router/routes.js";
 import { useFileTestActor } from "../hooks/use-file-test-actor.js";
 import type { EligibleFile } from "./branch-changes.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -19,13 +21,13 @@ import {
   Circle,
   Check,
   X,
+  MessageSquare,
 } from "lucide-react";
 import {
   truncateMiddle,
   truncateLogMessage,
 } from "../../../utils/path-utils.js";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
-import type { VSCodeAPI } from "../../../services/vscode.js";
 
 // Helper to safely extract Map entries with proper typing
 function getMapEntries<K, V>(map: Map<K, V>): Array<[K, V]> {
@@ -79,26 +81,41 @@ const LogIcon: React.FC<LogIconProps> = ({ log, isCompleted }) => {
 
 interface FileTestRowProps {
   file: EligibleFile;
-  vscode: VSCodeAPI;
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const FileTestRow: React.FC<FileTestRowProps> = ({
   file,
-  vscode,
   onViewTest,
   onPreviewDiff: _onPreviewDiff,
 }) => {
-  const { state, send } = useFileTestActor(file.path, vscode);
+  const { navigate } = useRouter();
+  const { state, send } = useFileTestActor(file.path);
 
-  const handleCreateTest = useCallback(() => {
-    send({ type: "CREATE_TEST" });
-  }, [send]);
+  const handleCreateTest = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      send({ type: "CREATE_TEST" });
+    },
+    [send],
+  );
 
-  const handleCancel = useCallback(() => {
-    send({ type: "CANCEL" });
-  }, [send]);
+  const handleCancel = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      send({ type: "CANCEL" });
+    },
+    [send],
+  );
+
+  const handleChat = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigate(Routes.fileChat, { sourceFile: file.path });
+    },
+    [navigate, file.path],
+  );
 
   const isPlanning = state.matches({ planningPhase: "planning" });
   const isStreaming = state.matches({ planningPhase: "streaming" });
@@ -172,6 +189,15 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
             {truncateMiddle(file.relativePath)}
           </span>
           <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 flex-shrink-0"
+              onClick={handleChat}
+            >
+              <MessageSquare className="h-3 w-3 mr-1" />
+              Chat
+            </Button>
             {isPlanning || isStreaming || isGenerating ? (
               <Button
                 size="sm"
@@ -189,9 +215,10 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
                     size="sm"
                     variant="default"
                     className="h-6 px-2 flex-shrink-0"
-                    onClick={() =>
-                      send({ type: "APPROVE", testId: proposal.id })
-                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      send({ type: "APPROVE", testId: proposal.id });
+                    }}
                   >
                     <Check className="h-3 w-3 mr-1" />
                     Approve
@@ -200,9 +227,10 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
                     size="sm"
                     variant="ghost"
                     className="h-6 px-2 flex-shrink-0"
-                    onClick={() =>
-                      send({ type: "REJECT", testId: proposal.id })
-                    }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      send({ type: "REJECT", testId: proposal.id });
+                    }}
                   >
                     <X className="h-3 w-3 mr-1" />
                     Reject
@@ -217,7 +245,10 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
                     size="sm"
                     variant="ghost"
                     className="h-6 px-2 flex-shrink-0"
-                    onClick={() => onViewTest?.(testPath)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewTest?.(testPath);
+                    }}
                   >
                     <Eye className="h-3 w-3 mr-1" />
                     View

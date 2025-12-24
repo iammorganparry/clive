@@ -1,7 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@clive/ui/styles.css";
 
 @custom-variant dark (&:is(.dark *));
+
+/* Dashboard-specific @source for local components */
+@source "../**/*.{ts,tsx}";
 
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,

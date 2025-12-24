@@ -1,5 +1,4 @@
 import { defineConfig } from "tsup";
-import { copyFileSync } from "node:fs";
 
 export default defineConfig({
   entry: [
@@ -20,6 +19,9 @@ export default defineConfig({
     "src/toast.tsx",
     "src/components/blocks/index.ts",
     "src/components/ai-elements/plan.tsx",
+    "src/components/ai-elements/conversation.tsx",
+    "src/components/ai-elements/message.tsx",
+    "src/components/ai-elements/prompt-input.tsx",
   ],
   format: ["esm"],
   dts: true,
@@ -32,8 +34,5 @@ export default defineConfig({
   esbuildOptions(options) {
     options.jsx = "automatic";
   },
-  onSuccess: () => {
-    // Copy CSS file to dist
-    copyFileSync("src/styles.css", "dist/styles.css");
-  },
+  // CSS is built separately by tailwindcss CLI via build:css script
 });

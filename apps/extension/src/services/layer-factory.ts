@@ -21,6 +21,7 @@ import {
 import { createLoggerLayer } from "./logger-service.js";
 import { ConfigServiceLive } from "./config-service.js";
 import { ApiKeyServiceLive } from "./api-key-service.js";
+import { TrpcClientServiceLive } from "./trpc-client-service.js";
 import { RepositoryServiceLive } from "./repository-service.js";
 import { CodebaseIndexingServiceLive } from "./codebase-indexing-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
@@ -70,7 +71,12 @@ export function createBaseLayer(coreLayer: ReturnType<typeof createCoreLayer>) {
     Layer.provide(apiKeyLayer),
   );
 
-  return Layer.mergeAll(coreLayer, apiKeyLayer, configLayer);
+  // TrpcClientService depends on ConfigService
+  const trpcClientLayer = TrpcClientServiceLive.pipe(
+    Layer.provide(configLayer),
+  );
+
+  return Layer.mergeAll(coreLayer, apiKeyLayer, configLayer, trpcClientLayer);
 }
 
 /**

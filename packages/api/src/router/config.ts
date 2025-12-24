@@ -1,6 +1,6 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 
-import { protectedProcedure } from "../trpc";
+import { protectedProcedure } from "../trpc.js";
 
 export const configRouter = {
   getApiKeys: protectedProcedure.query(async () => {
