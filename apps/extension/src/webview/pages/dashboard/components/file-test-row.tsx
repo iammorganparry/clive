@@ -1,6 +1,7 @@
 import React, { useCallback } from "react";
 import { useRouter } from "../../../router/router-context.js";
 import { Routes } from "../../../router/routes.js";
+import { useRpc } from "../../../rpc/provider.js";
 import { useFileTestActor } from "../hooks/use-file-test-actor.js";
 import type { EligibleFile } from "./branch-changes.js";
 import { Button } from "../../../../components/ui/button.js";
@@ -91,7 +92,13 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   onPreviewDiff: _onPreviewDiff,
 }) => {
   const { navigate } = useRouter();
+  const rpc = useRpc();
   const { state, send } = useFileTestActor(file.path);
+
+  // Query for chat context
+  const { data: chatContext } = rpc.conversations.hasConversation.useQuery({
+    input: { sourceFile: file.path },
+  });
 
   const handleCreateTest = useCallback(
     (e: React.MouseEvent) => {
@@ -128,6 +135,9 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
 
   const hasProposals = state.context.proposals.length > 0;
 
+  // Check if there's chat history for this file
+  const hasChatHistory = chatContext?.exists && chatContext.messageCount > 0;
+
   // Show accordion if planning, streaming, generating, completed, or has proposals
   const showAccordion =
     isPlanning ||
@@ -150,15 +160,33 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
         >
           {truncateMiddle(file.relativePath)}
         </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 flex-shrink-0"
-          onClick={handleCreateTest}
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          Test
-        </Button>
+        <div className="flex items-center gap-1">
+          {hasChatHistory && chatContext && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 flex-shrink-0"
+              onClick={handleChat}
+            >
+              <MessageSquare className="h-3 w-3 mr-1" />
+              Chat
+              {chatContext.messageCount > 0 && (
+                <span className="ml-1 text-xs opacity-60">
+                  ({chatContext.messageCount})
+                </span>
+              )}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 flex-shrink-0"
+            onClick={handleCreateTest}
+          >
+            <Plus className="h-3 w-3 mr-1" />
+            Test
+          </Button>
+        </div>
       </div>
     );
   }

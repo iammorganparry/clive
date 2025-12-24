@@ -315,6 +315,40 @@ export const conversationsRouter = {
     ),
 
   /**
+   * Check if conversation exists for a source file
+   */
+  hasConversation: procedure
+    .input(z.object({ sourceFile: z.string() }))
+    .query(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Checking conversation for: ${input.sourceFile}`,
+        );
+        const conversationService = yield* ConversationServiceEffect;
+
+        // getConversationByFile returns null when no conversation exists (not an error)
+        const conversation = yield* conversationService.getConversationByFile(
+          input.sourceFile,
+        );
+
+        if (!conversation) {
+          return { exists: false, messageCount: 0, status: null };
+        }
+
+        // Get messages - empty array is valid for new conversations
+        const messages = yield* conversationService.getMessages(
+          conversation.id,
+        );
+
+        return {
+          exists: true,
+          messageCount: messages.length,
+          status: conversation.status,
+        };
+      }).pipe(provideAgentLayer(ctx)),
+    ),
+
+  /**
    * Get conversation history
    */
   getHistory: procedure

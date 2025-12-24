@@ -5,7 +5,11 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
-import type { RpcMessage, RpcHookFactories } from "@clive/webview-rpc";
+import type {
+  RpcMessage,
+  RpcHookFactories,
+  QueryHookReturn,
+} from "@clive/webview-rpc";
 import type { VSCodeAPI } from "../services/vscode.js";
 
 // Pending request storage
@@ -294,12 +298,19 @@ export function createRpcHookFactories(): RpcHookFactories<VSCodeAPI> {
           },
         );
         // Narrow down to match the interface
-        return {
+        const returnValue: QueryHookReturn<TOutput> = {
           data: result.data as TOutput | undefined,
           isLoading: result.isLoading,
           error: result.error,
-          refetch: result.refetch,
+          refetch: async () => {
+            const refetchResult = await result.refetch();
+            return {
+              data: refetchResult.data as TOutput | undefined,
+              error: refetchResult.error,
+            };
+          },
         };
+        return returnValue;
       };
     },
 

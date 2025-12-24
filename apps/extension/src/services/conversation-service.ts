@@ -68,6 +68,17 @@ export class ConversationService extends Effect.Service<ConversationService>()(
           }),
 
         /**
+         * Get existing conversation for a source file (returns null if not found)
+         */
+        getConversationByFile: (sourceFile: string) =>
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.getByFile.query({ sourceFile }),
+            )(client);
+          }),
+
+        /**
          * Get conversation by ID
          */
         getConversation: (id: string) =>
