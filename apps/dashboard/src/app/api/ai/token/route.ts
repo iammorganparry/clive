@@ -4,8 +4,8 @@ import { Effect } from "effect";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { env } from "~/env.js";
-import { logTokenRequest } from "~/lib/audit-log.js";
-import { checkTokenEndpointRateLimit } from "~/lib/rate-limit.js";
+import { logTokenRequest } from "~/lib/audit-log";
+import { checkTokenEndpointRateLimit } from "~/lib/rate-limit";
 
 class UnauthorizedError {
   readonly _tag = "UnauthorizedError";

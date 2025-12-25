@@ -17,16 +17,17 @@ export const createWriteKnowledgeFileTool = (
   const runtime = Runtime.defaultRuntime;
 
   return tool({
-    description: `Store a knowledge base entry for this repository's testing patterns as a markdown file.
-    Use this after discovering and analyzing testing patterns, frameworks, mocks, fixtures, etc.
-    Also use this to record gaps (missing mocks, fixtures, test coverage) and improvements (suggestions for better testing practices).
-    Each entry should be focused on a specific category and include concrete examples.
-    Categories: framework, patterns, mocks, fixtures, selectors, routes, assertions, hooks, utilities, coverage, gaps, improvements.
+    description: `Store a knowledge base entry as a markdown file. Use this to document any valuable 
+    discovery about the codebase - architecture, components, user journeys, data models, API integrations, 
+    testing patterns, error handling, security, or any other insights that would help understand the codebase.
+    
+    Choose a descriptive category name that makes sense for this codebase (e.g., "authentication-flow", 
+    "payment-integration", "component-composition"). Each entry should include concrete examples and file references.
     
     Knowledge files are stored in .clive/knowledge/ and can be committed to version control.`,
     inputSchema: z.object({
       category: KnowledgeBaseCategorySchema.describe(
-        "Category of knowledge entry",
+        "Category name for this knowledge entry (e.g., 'architecture', 'user-journeys', 'api-integrations'). Choose a descriptive name that makes sense for this codebase.",
       ),
       title: z
         .string()
