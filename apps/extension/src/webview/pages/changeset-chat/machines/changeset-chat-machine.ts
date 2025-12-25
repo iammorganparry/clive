@@ -207,12 +207,12 @@ export const changesetChatMachine = setup({
     },
     shouldStartFreshAnalysis: ({ context, event }): boolean => {
       if (event.type !== "RECEIVE_BACKEND_HISTORY") return false;
-      // Start fresh if no backend history and cache wasn't loaded
+      // Start fresh if no backend history and no messages were loaded from cache
       return (
         (!event.historyData ||
           !event.historyData.conversationId ||
           event.historyData.messages.length === 0) &&
-        !context.cacheLoaded
+        context.messages.length === 0
       );
     },
   },
