@@ -18,6 +18,7 @@ import {
   createWebTools,
   createSearchKnowledgeTool,
   createWriteKnowledgeFileTool,
+  createRunTestTool,
 } from "./tools/index.js";
 import type { WriteTestFileOutput } from "./types.js";
 
@@ -128,6 +129,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               selfApprovingRegistry,
             );
 
+            // Create test execution tool with approval registry
+            const testApprovalRegistry = new Set<string>();
+            const runTest = createRunTestTool(testApprovalRegistry);
+
             // Create web tools if API key is available
             const webTools = firecrawlApiKey
               ? createWebTools({ enableSearch: true })
@@ -140,6 +145,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               writeKnowledgeFile:
                 createWriteKnowledgeFileTool(knowledgeFileService),
               writeTestFile,
+              runTest,
               ...webTools,
             };
 
@@ -305,6 +311,15 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       }
                     } else if (event.toolName === "writeTestFile") {
                       progressCallback?.("writing", "Writing test file...");
+                    } else if (event.toolName === "runTest") {
+                      const args = event.toolArgs as
+                        | { testType?: string; command?: string }
+                        | undefined;
+                      const testType = args?.testType || "unknown";
+                      progressCallback?.(
+                        "running",
+                        `Running ${testType} test: ${args?.command || ""}`,
+                      );
                     }
 
                     // Emit structured tool-call event for chat view

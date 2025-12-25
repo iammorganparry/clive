@@ -221,3 +221,22 @@ export interface BashExecuteOutput {
   wasTruncated: boolean;
   command: string;
 }
+
+export interface RunTestInput {
+  testType: "unit" | "integration" | "e2e";
+  command: string;
+  testFile?: string;
+  reason: string;
+}
+
+export interface RunTestOutput {
+  status: "pending_approval" | "completed" | "failed";
+  approvalId?: string;
+  testType: string;
+  command: string;
+  reason?: string;
+  output?: string;
+  exitCode?: number;
+  passed?: boolean;
+  message?: string;
+}
