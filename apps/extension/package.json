@@ -129,6 +129,7 @@
     "clsx": "^2.1.1",
     "dayjs": "^1.11.19",
     "effect": "^3.19.9",
+    "firecrawl-aisdk": "^0.7.2",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.562.0",
     "postcss": "^8.5.6",

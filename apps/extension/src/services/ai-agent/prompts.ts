@@ -9,9 +9,10 @@ export const TEST_AGENT_SYSTEM_PROMPT = `<role>You are a conversational testing 
 This is a conversational workflow where you analyze, propose, and optionally write tests:
 
 PHASE 1: ANALYSIS & PROPOSAL
-  - Analyze the file using bashExecute, semanticSearch, and knowledge base
+  - Analyze the file using bashExecute, semanticSearch, webSearch, and knowledge base
   - Determine appropriate test types (unit, integration, E2E) based on file context
   - Check .clive/knowledge/ FIRST for existing testing patterns and frameworks
+  - Use webSearch to look up framework documentation or best practices if needed
   - Call proposeTest with comprehensive testStrategies array (auto-approves)
   - Stream your analysis and recommendations to the user
   - Plan file is generated and the request completes
@@ -38,7 +39,7 @@ You are in a conversational testing workflow:
 4. **Iterate based on user feedback** - revise proposals when user provides input, ask clarifying questions if needed
 5. **Write tests when requested** - when user asks to write tests or expresses approval, use writeTestFile with the approved proposalId
 
-**IMPORTANT**: You have ALL tools available (bashExecute, semanticSearch, proposeTest, writeTestFile). Proposals auto-approve, so writeTestFile can be called once a proposal exists.
+**IMPORTANT**: You have ALL tools available (bashExecute, semanticSearch, webSearch, proposeTest, writeTestFile). Use webSearch to look up framework documentation, testing best practices, or API references when needed. Proposals auto-approve, so writeTestFile can be called once a proposal exists.
 
 **Output format for your natural language response:**
 - **Lead with recommendation**: Start with "## Recommendation: [Test Type] Tests with [Framework]"
@@ -167,13 +168,14 @@ export const PromptFactory = {
 1. **Query Knowledge Base FIRST**: Use bashExecute to check .clive/knowledge/ for existing testing patterns, frameworks, and conventions
 2. **Detect Frameworks**: bashExecute to check package.json and config files for vitest/jest/playwright/cypress
 3. **Analyze File**: bashExecute to read file and understand its type (utility, component, service, page)
-4. **Determine Test Types**: Based on file analysis, decide which test types are appropriate
-5. **Call proposeTest ONCE** with testStrategies array containing:
+4. **Look Up Documentation** (if needed): Use webSearch to find framework-specific testing patterns or best practices
+5. **Determine Test Types**: Based on file analysis, decide which test types are appropriate
+6. **Call proposeTest ONCE** with testStrategies array containing:
    - Unit tests for isolated functionality
    - Integration tests for component interactions
    - E2E tests for complete user journeys
 
-**CRITICAL**: Start by checking .clive/knowledge/ if it exists, then framework detection, then proposeTest with comprehensive testStrategies.
+**CRITICAL**: Start by checking .clive/knowledge/ if it exists, then framework detection, then proposeTest with comprehensive testStrategies. Use webSearch only when local knowledge is insufficient.
 </steps>
 
 <test_type_requirements>
@@ -414,12 +416,14 @@ Knowledge files are stored in .clive/knowledge/ and can be committed to version 
 ${description}
 
 Use bashExecute to find relevant files, read 1-2 representative files, then call writeKnowledgeFile with your findings.
+Use webSearch or webScrape to look up official documentation or examples if codebase patterns are unclear or incomplete.
 Knowledge files are stored in .clive/knowledge/ as markdown and can be committed to version control.
 </your_task>
 
 <rules>
 - Use bashExecute efficiently (1-2 commands maximum) to discover relevant files
 - Read 1-2 representative files (not all files - sample efficiently)
+- Use webSearch/webScrape only when local codebase patterns are unclear
 - Call writeKnowledgeFile exactly once for this category before finishing
 - Include concrete code examples in your writeKnowledgeFile call
 - Store source file paths so knowledge can be traced back

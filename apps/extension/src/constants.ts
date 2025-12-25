@@ -23,8 +23,11 @@ export const Views = {
  */
 export const SecretKeys = {
   anthropicApiKey: "clive.anthropic_api_key",
+  firecrawlApiKey: "clive.firecrawl_api_key",
   authToken: "clive.auth_token",
   userInfo: "clive.user_info",
+  gatewayToken: "clive.gateway_token",
+  gatewayTokenExpiry: "clive.gateway_token_expiry",
 } as const;
 
 /**

@@ -48,10 +48,100 @@ export class ConfigService extends Effect.Service<ConfigService>()(
   {
     effect: Effect.gen(function* () {
       /**
+       * Gateway token TTL: 55 minutes (tokens are valid for 1 hour)
+       */
+      const GATEWAY_TOKEN_TTL_MS = 55 * 60 * 1000;
+
+      /**
+       * Get cached gateway token if valid
+       */
+      const getCachedGatewayToken = () =>
+        Effect.gen(function* () {
+          const secretStorage = yield* SecretStorageService;
+          const [token, expiryStr] = yield* Effect.all([
+            Effect.tryPromise({
+              try: () => secretStorage.secrets.get(SecretKeys.gatewayToken),
+              catch: () => null,
+            }),
+            Effect.tryPromise({
+              try: () =>
+                secretStorage.secrets.get(SecretKeys.gatewayTokenExpiry),
+              catch: () => null,
+            }),
+          ]);
+
+          if (!token || !expiryStr) {
+            return null;
+          }
+
+          const expiry = Number.parseInt(expiryStr, 10);
+          const now = Date.now();
+
+          if (Number.isNaN(expiry) || now >= expiry) {
+            // Cache expired, clear it
+            yield* Effect.tryPromise({
+              try: () => secretStorage.secrets.delete(SecretKeys.gatewayToken),
+              catch: () => null,
+            });
+            yield* Effect.tryPromise({
+              try: () =>
+                secretStorage.secrets.delete(SecretKeys.gatewayTokenExpiry),
+              catch: () => null,
+            });
+            return null;
+          }
+
+          return token;
+        });
+
+      /**
+       * Cache gateway token with expiry
+       */
+      const cacheGatewayToken = (token: string) =>
+        Effect.gen(function* () {
+          const secretStorage = yield* SecretStorageService;
+          const expiry = Date.now() + GATEWAY_TOKEN_TTL_MS;
+          yield* Effect.all([
+            Effect.tryPromise({
+              try: () =>
+                secretStorage.secrets.store(SecretKeys.gatewayToken, token),
+              catch: (error) =>
+                new SecretStorageError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            }),
+            Effect.tryPromise({
+              try: () =>
+                secretStorage.secrets.store(
+                  SecretKeys.gatewayTokenExpiry,
+                  expiry.toString(),
+                ),
+              catch: (error) =>
+                new SecretStorageError({
+                  message:
+                    error instanceof Error ? error.message : "Unknown error",
+                }),
+            }),
+          ]);
+        });
+
+      /**
        * Helper function to fetch the AI Gateway OIDC token
        */
-      const fetchGatewayToken = () =>
+      const fetchGatewayToken = (skipCache = false) =>
         Effect.gen(function* () {
+          // Check cache first unless skipCache is true
+          if (!skipCache) {
+            const cachedToken = yield* getCachedGatewayToken();
+            if (cachedToken) {
+              yield* Effect.logDebug(
+                "[ConfigService] Using cached gateway token",
+              );
+              return cachedToken;
+            }
+          }
+
           yield* Effect.logDebug("[ConfigService] Fetching AI Gateway token");
           const service = yield* ConfigService;
           // Get auth token first
@@ -80,6 +170,8 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                 headers: {
                   Authorization: `Bearer ${authToken}`,
                   "Content-Type": "application/json",
+                  "X-Clive-Extension": "true",
+                  "User-Agent": "Clive-Extension/1.0",
                 },
               });
 
@@ -104,8 +196,11 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               }),
           });
 
+          // Cache the token
+          yield* cacheGatewayToken(gatewayToken);
+
           yield* Effect.logDebug(
-            "[ConfigService] Gateway token fetched successfully",
+            "[ConfigService] Gateway token fetched and cached successfully",
           );
           return gatewayToken;
         });
@@ -139,15 +234,64 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               } as AiTokenResult;
             }
 
-            // Fall back to gateway token
+            // Fall back to gateway token (checks cache first)
             yield* Effect.logDebug(
-              "[ConfigService] No stored key, fetching gateway token",
+              "[ConfigService] No stored key, using gateway token",
             );
             const gatewayToken = yield* fetchGatewayToken();
             return {
               token: gatewayToken,
               isGateway: true,
             } as AiTokenResult;
+          }),
+
+        /**
+         * Refreshes the gateway token (forces new fetch)
+         */
+        refreshGatewayToken: () => fetchGatewayToken(true),
+
+        /**
+         * Clears the cached gateway token
+         */
+        clearGatewayTokenCache: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[ConfigService] Clearing gateway token cache",
+            );
+            const secretStorage = yield* SecretStorageService;
+            yield* Effect.all([
+              Effect.tryPromise({
+                try: () =>
+                  secretStorage.secrets.delete(SecretKeys.gatewayToken),
+                catch: () => null,
+              }),
+              Effect.tryPromise({
+                try: () =>
+                  secretStorage.secrets.delete(SecretKeys.gatewayTokenExpiry),
+                catch: () => null,
+              }),
+            ]);
+            yield* Effect.logDebug(
+              "[ConfigService] Gateway token cache cleared",
+            );
+          }),
+
+        /**
+         * Gets the Firecrawl API key from ApiKeyService
+         */
+        getFirecrawlApiKey: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug("[ConfigService] Getting Firecrawl API key");
+            const apiKeyService = yield* ApiKeyService;
+            const key = yield* apiKeyService.getApiKey("firecrawl");
+            if (!key || key.length === 0) {
+              yield* Effect.logDebug(
+                "[ConfigService] Firecrawl API key not found",
+              );
+              return null;
+            }
+            yield* Effect.logDebug("[ConfigService] Firecrawl API key found");
+            return key;
           }),
 
         /**
@@ -173,21 +317,35 @@ export class ConfigService extends Effect.Service<ConfigService>()(
 
         /**
          * Deletes the auth token from secret storage
+         * Also clears gateway token cache
          */
         deleteAuthToken: () =>
           Effect.gen(function* () {
             yield* Effect.logDebug("[ConfigService] Deleting auth token");
             const secretStorage = yield* SecretStorageService;
-            yield* Effect.tryPromise({
-              try: () => secretStorage.secrets.delete(SecretKeys.authToken),
-              catch: (error) =>
-                new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
-                }),
-            });
+            yield* Effect.all([
+              Effect.tryPromise({
+                try: () => secretStorage.secrets.delete(SecretKeys.authToken),
+                catch: (error) =>
+                  new SecretStorageError({
+                    message:
+                      error instanceof Error ? error.message : "Unknown error",
+                  }),
+              }),
+              // Also clear gateway token cache on logout
+              Effect.tryPromise({
+                try: () =>
+                  secretStorage.secrets.delete(SecretKeys.gatewayToken),
+                catch: () => null,
+              }),
+              Effect.tryPromise({
+                try: () =>
+                  secretStorage.secrets.delete(SecretKeys.gatewayTokenExpiry),
+                catch: () => null,
+              }),
+            ]);
             yield* Effect.logDebug(
-              "[ConfigService] Auth token deleted successfully",
+              "[ConfigService] Auth token and gateway cache deleted successfully",
             );
           }),
 

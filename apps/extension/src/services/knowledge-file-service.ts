@@ -3,15 +3,15 @@
  * Stores knowledge as markdown files in .clive/knowledge/ directory
  */
 
-import { Effect, Data } from "effect";
+import { Data, Effect } from "effect";
 import * as vscode from "vscode";
+import type { KnowledgeBaseCategory } from "../constants.js";
 import {
+  findFilesEffect,
   getWorkspaceRoot,
   readFileAsStringEffect,
   statFileEffect,
-  findFilesEffect,
 } from "../lib/vscode-effects.js";
-import type { KnowledgeBaseCategory } from "../constants.js";
 
 /**
  * Error types for knowledge file operations

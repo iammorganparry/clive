@@ -8,6 +8,7 @@ import { streamFromAI } from "../../utils/stream-utils.js";
 import {
   createBashExecuteTool,
   createWriteKnowledgeFileTool,
+  createWebTools,
 } from "./tools/index.js";
 import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { makeTokenBudget } from "./token-budget.js";
@@ -138,7 +139,18 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
             message: "Preparing repository analysis...",
           });
 
+          // Get Firecrawl API key and set as environment variable
+          const firecrawlApiKey = yield* configService
+            .getFirecrawlApiKey()
+            .pipe(Effect.catchAll(() => Effect.succeed(null)));
+          if (firecrawlApiKey) {
+            process.env.FIRECRAWL_API_KEY = firecrawlApiKey;
+          }
+
           // Create tools
+          const webTools = firecrawlApiKey
+            ? createWebTools({ enableSearch: true, enableScrape: true })
+            : {};
           const tools = {
             bashExecute: createBashExecuteTool(budget),
             writeKnowledgeFile: createWriteKnowledgeFileTool(
@@ -156,6 +168,7 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                 }
               },
             ),
+            ...webTools,
           };
 
           // Get AI token

@@ -319,6 +319,18 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
             };
             yield* configService.storeUserInfo(userInfo);
 
+            // Fetch and cache gateway token on successful login
+            yield* configService.refreshGatewayToken().pipe(
+              Effect.catchAll((error) =>
+                Effect.gen(function* () {
+                  // Log but don't fail - gateway token can be fetched later
+                  yield* Effect.logDebug(
+                    `[DeviceAuth] Failed to cache gateway token: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  );
+                }),
+              ),
+            );
+
             yield* Effect.logDebug("[DeviceAuth] Device auth flow completed");
 
             return userInfo;
