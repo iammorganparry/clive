@@ -1,4 +1,12 @@
 /**
+ * API URLs used for backend communication
+ */
+export const ApiUrls = {
+  dashboard: "http://localhost:3000",
+  trpc: "http://localhost:3000/api/trpc",
+} as const;
+
+/**
  * Command IDs used throughout the extension
  */
 export const Commands = {
@@ -106,6 +114,8 @@ export const SuggestedKnowledgeCategories = [
   "security",
   "environment",
   "state-management",
+  "code-activity",
+  "active-development-areas",
 ] as const;
 
 /**

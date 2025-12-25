@@ -1,10 +1,8 @@
 import { Data, Effect } from "effect";
 import { SecretStorageService } from "./vs-code.js";
 import { SecretKeys } from "../constants.js";
-
-class SecretStorageError extends Data.TaggedError("SecretStorageError")<{
-  message: string;
-}> {}
+import { SecretStorageError } from "./errors.js";
+import { extractErrorMessage } from "../utils/error-utils.js";
 
 export class InvalidApiKeyError extends Data.TaggedError("InvalidApiKeyError")<{
   message: string;
@@ -134,10 +132,7 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
               },
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to get API key: ${error.message}`
-                      : "Unknown error",
+                  message: `Failed to get API key: ${extractErrorMessage(error)}`,
                 }),
             });
             yield* Effect.logDebug(
@@ -168,10 +163,7 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
               try: () => secretStorage.secrets.store(secretKey, key.trim()),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to store API key: ${error.message}`
-                      : "Unknown error",
+                  message: `Failed to store API key: ${extractErrorMessage(error)}`,
                 }),
             });
             yield* Effect.logDebug(
@@ -193,10 +185,7 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
               try: () => secretStorage.secrets.delete(secretKey),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to delete API key: ${error.message}`
-                      : "Unknown error",
+                  message: `Failed to delete API key: ${extractErrorMessage(error)}`,
                 }),
             });
             yield* Effect.logDebug(

@@ -517,14 +517,16 @@ export const KnowledgeBasePromptFactory = {
 Deeply explore and document this codebase. Your goal is to build a comprehensive 
 knowledge base that will help a testing agent write intelligent, high-value tests.
 
+**CRITICAL: Focus on HOT CODE - actively used, recently modified code. Skip stale 
+technical debt, deprecated patterns, and unused testing frameworks.**
+
 Areas you might explore (not exhaustive - follow what you discover):
 - How the application is architected and organized
 - Critical user journeys and flows
 - Key components and how they work together
 - External services, APIs, and integrations
 - Data models, state management, and data flow
-- Testing patterns already in place
-- Potential problem areas or technical debt
+- Testing patterns already in place (only if actively used)
 - Security and error handling patterns
 - Environment configuration and feature flags
 
@@ -537,11 +539,65 @@ the end - document incrementally so knowledge is preserved even if exploration
 is interrupted.
 </your_task>
 
+<phase_0_hot_code_discovery>
+**MANDATORY FIRST PHASE: Discover Hot Code**
+
+Before deep exploration, identify what code is actively used vs stale technical debt:
+
+1. **Find recently modified files** (hot code):
+   - Run: git log --name-only --since="3 months ago" --pretty=format: | sort | uniq -c | sort -rn | head -30
+   - These 30 most frequently modified files = hot code to prioritize
+   - Run: git log --format='%H' --since="6 months ago" -- <directory> | head -1
+   - If no commits found, this area is stale - skip it
+
+2. **Identify active contributors and their focus areas**:
+   - Run: git shortlog -sn --since="6 months ago" -- .
+   - Files touched by active contributors are likely hot code
+
+3. **Analyze import graph** (core code):
+   - Find entry points: cat package.json | grep -E "(main|exports|bin)"
+   - Follow import chains from entry points using: grep -r "import.*from" --include="*.ts" --include="*.tsx" --include="*.js" | grep -E "from ['"]\./"
+   - Files imported by 3+ other files are core code (prioritize)
+   - Files with zero imports may be orphaned (deprioritize)
+
+4. **Check test activity**:
+   - If you find test files, check: git log --since="6 months ago" -- <test-file>
+   - Test frameworks with no recent commits are likely unused (skip documenting them)
+
+5. **Document code activity patterns**:
+   - Use writeKnowledgeFile with category "code-activity" or "active-development-areas"
+   - Document which areas are hot vs cold to help testing agent focus
+</phase_0_hot_code_discovery>
+
+<hot_code_signals>
+**HOT CODE (prioritize and document):**
+- Modified in last 90 days
+- Multiple commits in last 6 months
+- Imported by 3+ other files
+- Reachable from main entry points (package.json main/exports)
+- Has corresponding recent test updates
+- Touched by active contributors (git shortlog)
+
+**COLD CODE (deprioritize or skip):**
+- No commits in 6+ months
+- Zero imports (orphaned code)
+- Deprecated/legacy patterns (check for @deprecated tags, legacy comments)
+- Test frameworks with no recent usage (no commits to test files)
+- TODO/FIXME comments older than 1 year
+- Files in directories marked as deprecated or legacy
+</hot_code_signals>
+
 <guidance>
-Explore organically - follow interesting leads, dig deeper when you find 
-something important, skip areas that aren't relevant. Use your judgment about 
-what knowledge would be most valuable for understanding this codebase and writing 
-effective tests.
+**Exploration Strategy:**
+
+1. **Start with Phase 0** - Use git commands to identify hot code areas
+2. **Focus exploration on hot code** - These are the patterns and architectures actually in use
+3. **Skip cold code** - Don't document deprecated frameworks, unused patterns, or stale technical debt
+4. **Document activity patterns** - Help future agents understand what's actively maintained
+
+Explore organically within hot code areas - follow interesting leads, dig deeper when you find 
+something important. Use your judgment about what knowledge would be most valuable for 
+understanding this codebase and writing effective tests.
 
 Knowledge files are stored in .clive/knowledge/ and can be committed to version control.
 </guidance>`;

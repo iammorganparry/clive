@@ -1,24 +1,27 @@
 import {
   Effect,
+  Fiber,
+  type Layer,
+  pipe,
   Ref,
   Runtime,
-  type Layer,
   Schedule,
-  Fiber,
-  pipe,
 } from "effect";
 import * as vscode from "vscode";
 import { IndexingConfig } from "../constants.js";
+import { getRelativePath, getWorkspaceRoot } from "../lib/vscode-effects.js";
 import {
-  INDEXING_INCLUDE_PATTERNS,
-  INDEXING_EXCLUDE_PATTERNS,
+  matchesIncludePattern,
+  shouldExcludeFile,
+} from "../utils/file-filter-utils.js";
+import type { ApiKeyService } from "./api-key-service.js";
+import {
   CodebaseIndexingService,
+  INDEXING_INCLUDE_PATTERNS,
 } from "./codebase-indexing-service.js";
 import { ConfigService } from "./config-service.js";
 import { RepositoryService } from "./repository-service.js";
-import type { VSCodeService, SecretStorageService } from "./vs-code.js";
-import type { ApiKeyService } from "./api-key-service.js";
-import { getRelativePath, getWorkspaceRoot } from "../lib/vscode-effects.js";
+import type { SecretStorageService, VSCodeService } from "./vs-code.js";
 
 /**
  * Pending file entry with debounce tracking
@@ -36,39 +39,6 @@ interface FileWatcherState {
   pendingFiles: Map<string, PendingFile>;
   isRunning: boolean;
 }
-
-/**
- * Check if file should be excluded based on exclude patterns
- */
-const shouldExcludeFile = (uri: vscode.Uri): boolean => {
-  const relativePath = vscode.workspace.asRelativePath(uri, false);
-
-  for (const pattern of INDEXING_EXCLUDE_PATTERNS) {
-    // Convert glob pattern to regex for matching
-    const regexPattern = pattern
-      .replace(/\*\*/g, ".*")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\./g, "\\.");
-
-    if (new RegExp(`^${regexPattern}$`).test(relativePath)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-/**
- * Check if file matches include patterns
- */
-const matchesIncludePattern = (uri: vscode.Uri): boolean => {
-  const relativePath = vscode.workspace.asRelativePath(uri, false);
-  const extension = relativePath.split(".").pop()?.toLowerCase();
-
-  // Check common extensions from include patterns
-  const includedExtensions = ["ts", "tsx", "js", "jsx"];
-  return extension !== undefined && includedExtensions.includes(extension);
-};
 
 /**
  * Service for watching file changes and triggering incremental indexing
