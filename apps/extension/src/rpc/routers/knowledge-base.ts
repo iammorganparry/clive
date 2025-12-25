@@ -1,13 +1,13 @@
+import { createRouter } from "@clive/webview-rpc";
 import { Effect } from "effect";
 import { z } from "zod";
-import { createRouter } from "@clive/webview-rpc";
-import { KnowledgeBaseService } from "../../services/knowledge-base-service.js";
-import { RepositoryService } from "../../services/repository-service.js";
-import { ConfigService } from "../../services/config-service.js";
-import { createConfigServiceLayer } from "../../services/layer-factory.js";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
-import type { RpcContext } from "../context.js";
+import { ConfigService } from "../../services/config-service.js";
+import { KnowledgeBaseService } from "../../services/knowledge-base-service.js";
 import type { KnowledgeBaseProgressEvent } from "../../services/knowledge-base-types.js";
+import { createConfigServiceLayer } from "../../services/layer-factory.js";
+import { RepositoryService } from "../../services/repository-service.js";
+import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
 

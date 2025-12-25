@@ -17,6 +17,7 @@ import {
   createProposeTestTool,
   createSemanticSearchTool,
   createWriteTestFileTool,
+  createWebTools,
 } from "./tools/index.js";
 import type {
   ProposedTest,
@@ -219,6 +220,14 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Create token budget
             const budget = yield* makeTokenBudget();
 
+            // Get Firecrawl API key and set as environment variable
+            const firecrawlApiKey = yield* configService
+              .getFirecrawlApiKey()
+              .pipe(Effect.catchAll(() => Effect.succeed(null)));
+            if (firecrawlApiKey) {
+              process.env.FIRECRAWL_API_KEY = firecrawlApiKey;
+            }
+
             // Create shared approval registry to track approved proposal IDs
             const approvalRegistry = new Set<string>();
 
@@ -230,11 +239,17 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             );
             const writeTestFile = createWriteTestFileTool(approvalRegistry);
 
+            // Create web tools if API key is available
+            const webTools = firecrawlApiKey
+              ? createWebTools({ enableSearch: true })
+              : {};
+
             const tools = {
               bashExecute: createBashExecuteTool(budget),
               semanticSearch: createSemanticSearchTool(indexingService),
               proposeTest,
               writeTestFile,
+              ...webTools,
             };
 
             // Build initial prompt

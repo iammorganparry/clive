@@ -146,6 +146,7 @@ export const authRouter = {
 
   /**
    * Store auth token and user info to secret storage
+   * Also fetches and caches gateway token on successful login
    */
   storeToken: procedure
     .input(
@@ -162,6 +163,18 @@ export const authRouter = {
         if (input.userInfo) {
           yield* configService.storeUserInfo(input.userInfo);
         }
+
+        // Fetch and cache gateway token on successful login
+        yield* configService.refreshGatewayToken().pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              // Log but don't fail - gateway token can be fetched later
+              yield* Effect.logDebug(
+                `[AuthRouter] Failed to cache gateway token: ${error instanceof Error ? error.message : "Unknown error"}`,
+              );
+            }),
+          ),
+        );
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {

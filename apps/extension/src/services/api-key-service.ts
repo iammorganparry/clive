@@ -11,13 +11,14 @@ export class InvalidApiKeyError extends Data.TaggedError("InvalidApiKeyError")<{
   reason: "empty" | "invalid_prefix" | "too_short" | "invalid_format";
 }> {}
 
-export type ApiProvider = "anthropic";
+export type ApiProvider = "anthropic" | "firecrawl";
 
 export const API_PROVIDERS: Record<
   ApiProvider,
   { name: string; keyPrefix: string }
 > = {
   anthropic: { name: "Anthropic", keyPrefix: "sk-ant-" },
+  firecrawl: { name: "Firecrawl", keyPrefix: "fc-" },
 } as const;
 
 export interface ApiKeyStatus {
@@ -52,6 +53,8 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
         switch (provider) {
           case "anthropic":
             return SecretKeys.anthropicApiKey;
+          case "firecrawl":
+            return SecretKeys.firecrawlApiKey;
           default:
             throw new Error(`Unknown provider: ${provider}`);
         }
@@ -225,7 +228,7 @@ export class ApiKeyService extends Effect.Service<ApiKeyService>()(
           Effect.gen(function* () {
             yield* Effect.logDebug("[ApiKeyService] Getting API keys status");
             const service = yield* ApiKeyService;
-            const providers: ApiProvider[] = ["anthropic"];
+            const providers: ApiProvider[] = ["anthropic", "firecrawl"];
             const statuses: ApiKeyStatus[] = [];
 
             for (const provider of providers) {
