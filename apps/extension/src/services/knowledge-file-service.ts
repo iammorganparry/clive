@@ -158,24 +158,19 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
 
       /**
        * Get file path for a category
-       * Categories like "mocks" and "fixtures" go into subdirectories
+       * Uses directory structure: each category gets its own directory
+       * Articles within a category are separate files named by title
        */
       const getCategoryPath = (
         category: KnowledgeBaseCategory,
         knowledgeDir: vscode.Uri,
       ): vscode.Uri => {
-        // Categories that should have their own directories
-        const directoryCategories: KnowledgeBaseCategory[] = [
-          "mocks",
-          "fixtures",
-        ];
-
-        if (directoryCategories.includes(category)) {
-          return vscode.Uri.joinPath(knowledgeDir, category);
-        }
-
-        // Single file categories
-        return vscode.Uri.joinPath(knowledgeDir, `${category}.md`);
+        // Sanitize category name for directory
+        const sanitizedCategory = category
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+        return vscode.Uri.joinPath(knowledgeDir, sanitizedCategory);
       };
 
       /**
@@ -195,39 +190,31 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           const knowledgeDir = yield* ensureKnowledgeDir();
           const categoryPath = getCategoryPath(category, knowledgeDir);
 
-          // For directory categories, create subdirectory and use title as filename
-          const directoryCategories: KnowledgeBaseCategory[] = [
-            "mocks",
-            "fixtures",
-          ];
-          let fileUri: vscode.Uri;
+          // Ensure category directory exists
+          yield* Effect.tryPromise({
+            try: async () => {
+              try {
+                await vscode.workspace.fs.stat(categoryPath);
+              } catch {
+                await vscode.workspace.fs.createDirectory(categoryPath);
+              }
+            },
+            catch: (error) =>
+              new KnowledgeFileError({
+                message: `Failed to create category directory: ${error instanceof Error ? error.message : "Unknown error"}`,
+                cause: error,
+              }),
+          });
 
-          if (directoryCategories.includes(category)) {
-            // Ensure subdirectory exists
-            yield* Effect.tryPromise({
-              try: async () => {
-                try {
-                  await vscode.workspace.fs.stat(categoryPath);
-                } catch {
-                  await vscode.workspace.fs.createDirectory(categoryPath);
-                }
-              },
-              catch: (error) =>
-                new KnowledgeFileError({
-                  message: `Failed to create category directory: ${error instanceof Error ? error.message : "Unknown error"}`,
-                  cause: error,
-                }),
-            });
-
-            // Sanitize title for filename
-            const sanitizedTitle = title
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "");
-            fileUri = vscode.Uri.joinPath(categoryPath, `${sanitizedTitle}.md`);
-          } else {
-            fileUri = categoryPath;
-          }
+          // Sanitize title for filename
+          const sanitizedTitle = title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+          const fileUri = vscode.Uri.joinPath(
+            categoryPath,
+            `${sanitizedTitle}.md`,
+          );
 
           const metadata: KnowledgeFileMetadata = {
             category,
@@ -487,7 +474,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             }
           }
 
-          // Generate index content
+          // Generate index content with summaries
           let indexContent = `---
 title: Knowledge Base Index
 updatedAt: ${new Date().toISOString().split("T")[0]}
@@ -495,31 +482,80 @@ updatedAt: ${new Date().toISOString().split("T")[0]}
 
 # Knowledge Base Index
 
-This file provides an overview of all testing knowledge documented for this repository.
+This file provides an overview of all knowledge documented for this repository.
 
 `;
 
-          const categoryOrder: KnowledgeBaseCategory[] = [
-            "framework",
-            "patterns",
-            "mocks",
-            "fixtures",
-            "selectors",
-            "routes",
-            "assertions",
-            "hooks",
-            "utilities",
-            "coverage",
-            "gaps",
-            "improvements",
-          ];
+          // Extract summaries from article content
+          const articlesWithSummaries: Record<
+            string,
+            Array<{ title: string; path: string; summary: string }>
+          > = {};
 
-          for (const category of categoryOrder) {
-            const files = byCategory[category] || [];
-            if (files.length > 0) {
-              indexContent += `## ${category.charAt(0).toUpperCase() + category.slice(1)}\n\n`;
-              for (const file of files) {
-                indexContent += `- [${file.title}](${file.path})\n`;
+          // Read all files in parallel to extract summaries
+          const allFiles = Object.values(byCategory).flat();
+          const fileContentsMap = new Map<string, string>();
+          const fileContents = yield* Effect.all(
+            allFiles.map((file) =>
+              readFileAsStringEffect(
+                vscode.Uri.joinPath(workspaceRoot, file.path),
+              ).pipe(
+                Effect.map((content) => ({ path: file.path, content })),
+                Effect.catchAll(() =>
+                  Effect.succeed({ path: file.path, content: null }),
+                ),
+              ),
+            ),
+            { concurrency: 10 },
+          );
+
+          // Build map for quick lookup
+          for (const fc of fileContents) {
+            if (fc.content) {
+              fileContentsMap.set(fc.path, fc.content);
+            }
+          }
+
+          // Process summaries
+          for (const [category, files] of Object.entries(byCategory)) {
+            articlesWithSummaries[category] = [];
+            for (const file of files) {
+              const content = fileContentsMap.get(file.path);
+              if (content) {
+                const { body } = parseFrontmatter(content);
+                // Extract first 1-2 sentences as summary
+                const summary = body
+                  .split("\n")
+                  .filter((line) => line.trim().length > 0)
+                  .slice(0, 2)
+                  .join(" ")
+                  .substring(0, 200)
+                  .trim();
+                articlesWithSummaries[category].push({
+                  ...file,
+                  summary: summary || "No summary available",
+                });
+              } else {
+                articlesWithSummaries[category].push({
+                  ...file,
+                  summary: "Unable to read summary",
+                });
+              }
+            }
+          }
+
+          // Sort categories alphabetically
+          const sortedCategories = Object.keys(articlesWithSummaries).sort();
+
+          for (const category of sortedCategories) {
+            const articles = articlesWithSummaries[category];
+            if (articles.length > 0) {
+              const categoryDisplay =
+                category.charAt(0).toUpperCase() + category.slice(1);
+              indexContent += `## ${categoryDisplay}\n\n`;
+              for (const article of articles) {
+                indexContent += `### [${article.title}](${article.path})\n\n`;
+                indexContent += `${article.summary}\n\n`;
               }
               indexContent += "\n";
             }

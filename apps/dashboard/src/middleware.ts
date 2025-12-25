@@ -3,12 +3,28 @@ import { getSessionCookie } from "better-auth/cookies";
 
 const publicRoutes = ["/sign-in", "/sign-up", "/api/auth", "/api/trpc"];
 
+// Routes that accept Bearer token authentication
+const bearerAuthRoutes = ["/api/ai"];
+
 export function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some((route) =>
     request.nextUrl.pathname.startsWith(route),
   );
 
   if (isPublicRoute) return NextResponse.next();
+
+  // Check for Bearer token on specific API routes
+  const isBearerAuthRoute = bearerAuthRoutes.some((route) =>
+    request.nextUrl.pathname.startsWith(route),
+  );
+
+  if (isBearerAuthRoute) {
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      // Let the route handler validate the token
+      return NextResponse.next();
+    }
+  }
 
   const sessionCookie = getSessionCookie(request);
   if (!sessionCookie) {

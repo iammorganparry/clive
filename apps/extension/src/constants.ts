@@ -79,43 +79,45 @@ export const GlobalStateKeys = {
 } as const;
 
 /**
- * Knowledge base categories
+ * Suggested knowledge base categories (examples, not enforced)
+ * Agents can create articles with any category name that makes sense for the codebase
  */
-export const KnowledgeBaseCategories = {
-  framework: "framework",
-  patterns: "patterns",
-  mocks: "mocks",
-  fixtures: "fixtures",
-  selectors: "selectors",
-  routes: "routes",
-  assertions: "assertions",
-  hooks: "hooks",
-  utilities: "utilities",
-  coverage: "coverage",
-  gaps: "gaps",
-  improvements: "improvements",
-} as const;
+export const SuggestedKnowledgeCategories = [
+  "architecture",
+  "user-journeys",
+  "components",
+  "data-models",
+  "api-integrations",
+  "testing-patterns",
+  "framework",
+  "patterns",
+  "mocks",
+  "fixtures",
+  "selectors",
+  "routes",
+  "assertions",
+  "hooks",
+  "utilities",
+  "coverage",
+  "gaps",
+  "improvements",
+  "error-handling",
+  "brittle-code",
+  "security",
+  "environment",
+  "state-management",
+] as const;
 
-export type KnowledgeBaseCategory =
-  (typeof KnowledgeBaseCategories)[keyof typeof KnowledgeBaseCategories];
+/**
+ * Knowledge base category type - accepts any string
+ * Agents have freedom to create categories that make sense for each codebase
+ */
+export type KnowledgeBaseCategory = string;
 
 /**
  * Zod schema for knowledge base categories
- * Used for validation across extension and API layers
+ * Accepts any string to allow agent-driven organization
  */
 import { z } from "zod";
 
-export const KnowledgeBaseCategorySchema = z.enum([
-  KnowledgeBaseCategories.framework,
-  KnowledgeBaseCategories.patterns,
-  KnowledgeBaseCategories.mocks,
-  KnowledgeBaseCategories.fixtures,
-  KnowledgeBaseCategories.selectors,
-  KnowledgeBaseCategories.routes,
-  KnowledgeBaseCategories.assertions,
-  KnowledgeBaseCategories.hooks,
-  KnowledgeBaseCategories.utilities,
-  KnowledgeBaseCategories.coverage,
-  KnowledgeBaseCategories.gaps,
-  KnowledgeBaseCategories.improvements,
-]);
+export const KnowledgeBaseCategorySchema = z.string();

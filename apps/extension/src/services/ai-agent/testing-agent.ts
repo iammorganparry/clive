@@ -10,6 +10,7 @@ import { createAnthropicProvider } from "../ai-provider-factory.js";
 import { CodebaseIndexingService } from "../codebase-indexing-service.js";
 import { ConfigService } from "../config-service.js";
 import { PlanFileService } from "../plan-file-service.js";
+import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { PromptFactory, TEST_AGENT_SYSTEM_PROMPT } from "./prompts.js";
 import { makeTokenBudget } from "./token-budget.js";
 import {
@@ -18,6 +19,8 @@ import {
   createSemanticSearchTool,
   createWriteTestFileTool,
   createWebTools,
+  createSearchKnowledgeTool,
+  createWriteKnowledgeFileTool,
 } from "./tools/index.js";
 import type {
   ProposedTest,
@@ -48,6 +51,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const configService = yield* ConfigService;
       const indexingService = yield* CodebaseIndexingService;
       const planFileService = yield* PlanFileService;
+      const knowledgeFileService = yield* KnowledgeFileService;
 
       const readPlanFile = (uri: vscode.Uri) =>
         Effect.tryPromise({
@@ -247,6 +251,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const tools = {
               bashExecute: createBashExecuteTool(budget),
               semanticSearch: createSemanticSearchTool(indexingService),
+              searchKnowledge: createSearchKnowledgeTool(knowledgeFileService),
+              writeKnowledgeFile:
+                createWriteKnowledgeFileTool(knowledgeFileService),
               proposeTest,
               writeTestFile,
               ...webTools,

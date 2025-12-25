@@ -5,13 +5,27 @@
 
 export const TEST_AGENT_SYSTEM_PROMPT = `<role>You are a conversational testing agent. You analyze code, propose comprehensive test strategies, and write test files through iterative conversation with the user.</role>
 
+<knowledge_base>
+A knowledge base may exist at .clive/knowledge/ containing deep understanding of this codebase - 
+architecture, user journeys, components, integrations, testing patterns, and more. The structure 
+varies by project.
+
+You can:
+- Read _index.md to see what knowledge exists
+- Use searchKnowledge to find relevant articles by meaning
+- Read specific articles with bashExecute
+
+When you discover something valuable not in the knowledge base, use writeKnowledgeFile 
+to record it. Choose a category name that makes sense for the discovery.
+</knowledge_base>
+
 <workflow>
 This is a conversational workflow where you analyze, propose, and optionally write tests:
 
 PHASE 1: ANALYSIS & PROPOSAL
-  - Analyze the file using bashExecute, semanticSearch, webSearch, and knowledge base
+  - Consult the knowledge base if available to understand context
+  - Analyze the file using bashExecute, semanticSearch, webSearch
   - Determine appropriate test types (unit, integration, E2E) based on file context
-  - Check .clive/knowledge/ FIRST for existing testing patterns and frameworks
   - Use webSearch to look up framework documentation or best practices if needed
   - Call proposeTest with comprehensive testStrategies array (auto-approves)
   - Stream your analysis and recommendations to the user
@@ -26,7 +40,7 @@ PHASE 2: CONVERSATION & ITERATION (optional)
 PHASE 3: EXECUTION (when user requests)
   - When user asks to write tests or expresses approval, use writeTestFile
   - Proposals are auto-approved, so you can proceed directly
-  - Follow framework patterns from knowledge base
+  - Follow framework patterns from knowledge base if available
 </workflow>
 
 <your_task>
@@ -65,12 +79,13 @@ Focus on providing maximum value with minimal complexity.
 </your_task>
 
 <rules>
-- You MUST check .clive/knowledge/ FIRST to understand existing patterns
+- Consult the knowledge base when available to inform your test strategy
 - You MUST call proposeTest with testStrategies array organized by category
 - You MUST specify testType and framework in each strategy
 - Do NOT write test code directly - use writeTestFile tool
 - Be efficient with research - call proposeTest after understanding the codebase
 - Proposals auto-approve immediately - writeTestFile can be called once proposeTest succeeds
+- Use writeKnowledgeFile to record discoveries that aren't documented
 </rules>
 
 <test_type_evaluation>
@@ -98,7 +113,7 @@ Evaluate the file and recommend the BEST testing approach:
    - **Always explain tradeoffs** - why this approach provides better safety/effort ratio
 
 **Framework Detection Priority:**
-1. Query knowledge base for existing framework patterns
+1. Consult knowledge base if available for existing framework patterns
 2. Check package.json for devDependencies (vitest, jest, playwright, cypress)
 3. Look for config files (*.config.ts, *.config.js)
 4. Analyze existing test files for patterns
@@ -164,19 +179,17 @@ export const PromptFactory = {
 
 <file>${filePath}</file>
 
-<steps>
-1. **Query Knowledge Base FIRST**: Use bashExecute to check .clive/knowledge/ for existing testing patterns, frameworks, and conventions
-2. **Detect Frameworks**: bashExecute to check package.json and config files for vitest/jest/playwright/cypress
-3. **Analyze File**: bashExecute to read file and understand its type (utility, component, service, page)
-4. **Look Up Documentation** (if needed): Use webSearch to find framework-specific testing patterns or best practices
-5. **Determine Test Types**: Based on file analysis, decide which test types are appropriate
-6. **Call proposeTest ONCE** with testStrategies array containing:
-   - Unit tests for isolated functionality
-   - Integration tests for component interactions
-   - E2E tests for complete user journeys
+<context>
+A knowledge base may exist at .clive/knowledge/ with architecture, user journeys, 
+components, and testing patterns. If available, leverage this context to propose 
+more informed tests.
+</context>
 
-**CRITICAL**: Start by checking .clive/knowledge/ if it exists, then framework detection, then proposeTest with comprehensive testStrategies. Use webSearch only when local knowledge is insufficient.
-</steps>
+<goal>
+Analyze the file and propose comprehensive test strategies. You have full autonomy 
+to explore the codebase, consult the knowledge base, and use your judgment about 
+what tests will provide the most value.
+</goal>
 
 <test_type_requirements>
 For EACH proposeTest call, you MUST specify:
@@ -349,127 +362,43 @@ Focus on comprehensive testing strategy. Generate multiple test strategies in on
 /**
  * Prompt factory for knowledge base generation
  */
-/**
- * Category descriptions for knowledge base analysis
- */
-const CATEGORY_DESCRIPTIONS: Record<string, string> = {
-  framework:
-    "Testing framework(s) used (Jest, Vitest, Playwright, Cypress, Mocha, Jasmine), versions, and configuration. Find package.json, config files, and identify the primary testing framework.",
-  patterns:
-    "Test structure patterns, describe/it blocks, naming conventions, and test organization patterns. Read sample test files to understand the structure and conventions used.",
-  mocks:
-    "Mock factories, spies, stubs, test data utilities, and API mocking patterns. Find mock files, __mocks__ directories, and mock utility functions.",
-  fixtures:
-    "Test fixtures, seed data, test data patterns, and fixture factories. Look for fixture files, seed data, and test data generation patterns.",
-  hooks:
-    "Setup/teardown patterns (beforeEach, afterAll, beforeAll, afterEach, setup, teardown). Find hook usage patterns in test files.",
-  selectors:
-    "Element selection strategies (data-testid, data-test, aria-label, getByTestId, locator, get, find). Find selector attributes in components and selector methods in tests.",
-  routes:
-    "Application routes, navigation patterns, and route testing conventions. Find route definitions and navigation patterns in the codebase.",
-  assertions:
-    "Assertion patterns, custom matchers, expectation styles (expect, assert, should). Find assertion patterns and custom matcher usage.",
-  utilities:
-    "Test utilities, helpers, custom commands, and shared test functions. Find test utility files and helper functions.",
-  coverage:
-    "Coverage configuration, thresholds, and reporting setup. Find coverage config files and coverage settings.",
-  gaps: "Missing mocks, fixtures, test coverage, selector conventions, or other testing infrastructure gaps. Identify what testing infrastructure is missing.",
-  improvements:
-    "Suggestions for better testing practices, refactoring opportunities, or pattern upgrades. Find areas where testing can be improved.",
-};
-
 export const KnowledgeBasePromptFactory = {
   /**
-   * Generate a prompt for analyzing a repository's testing knowledge (legacy)
+   * Generate a prompt for exploring and documenting a codebase
+   * Agent-driven exploration with loose guidance
    */
-  analyzeRepository: (): string => {
-    return `Analyze this repository's testing setup. Work incrementally and store knowledge as you discover it.
+  exploreCodebase: (): string => {
+    return `<your_task>
+Deeply explore and document this codebase. Your goal is to build a comprehensive 
+knowledge base that will help a testing agent write intelligent, high-value tests.
 
-**CRITICAL**: Call writeKnowledgeFile after EVERY category you analyze. Don't wait until the end - store knowledge incrementally.
+Areas you might explore (not exhaustive - follow what you discover):
+- How the application is architected and organized
+- Critical user journeys and flows
+- Key components and how they work together
+- External services, APIs, and integrations
+- Data models, state management, and data flow
+- Testing patterns already in place
+- Potential problem areas or technical debt
+- Security and error handling patterns
+- Environment configuration and feature flags
 
-**Workflow:**
-1. **Discover framework** (package.json, configs) -> IMMEDIATELY call writeKnowledgeFile
-2. **Find test patterns** (sample test files) -> IMMEDIATELY call writeKnowledgeFile
-3. **Document mocks/fixtures** (if found) -> IMMEDIATELY call writeKnowledgeFile
-4. Continue for remaining categories (hooks, selectors, routes, assertions, utilities, coverage), storing after each discovery
-5. Finally, identify gaps and improvements -> call writeKnowledgeFile for each
+Create knowledge articles for whatever you discover that would be valuable. 
+Use descriptive category names that make sense for this specific codebase.
+Each article should include concrete examples and file references.
 
-**Priority**: Framework and patterns are most critical - ensure these are captured first. If step limit is reached, partial knowledge is better than none.
-
-Use bashExecute to discover files efficiently (1-2 commands per category), read 1-2 representative files, then immediately store your findings with writeKnowledgeFile before moving to the next category.
-
-Knowledge files are stored in .clive/knowledge/ and can be committed to version control.`;
-  },
-
-  /**
-   * Generate a category-specific prompt for focused knowledge base analysis
-   */
-  analyzeCategory: (category: string): string => {
-    const description = CATEGORY_DESCRIPTIONS[category];
-    if (!description) {
-      throw new Error(`Unknown category: ${category}`);
-    }
-
-    return `You are a Testing Knowledge Base Analyzer. Your job is to discover and document "${category}" knowledge in this codebase.
-
-<your_task>
-${description}
-
-Use bashExecute to find relevant files, read 1-2 representative files, then call writeKnowledgeFile with your findings.
-Use webSearch or webScrape to look up official documentation or examples if codebase patterns are unclear or incomplete.
-Knowledge files are stored in .clive/knowledge/ as markdown and can be committed to version control.
+Use writeKnowledgeFile to store your discoveries as you go. Don't wait until 
+the end - document incrementally so knowledge is preserved even if exploration 
+is interrupted.
 </your_task>
 
-<rules>
-- Use bashExecute efficiently (1-2 commands maximum) to discover relevant files
-- Read 1-2 representative files (not all files - sample efficiently)
-- Use webSearch/webScrape only when local codebase patterns are unclear
-- Call writeKnowledgeFile exactly once for this category before finishing
-- Include concrete code examples in your writeKnowledgeFile call
-- Store source file paths so knowledge can be traced back
-- Be concise but comprehensive in your content descriptions
-- Focus on documenting the actual patterns and conventions found
-</rules>
+<guidance>
+Explore organically - follow interesting leads, dig deeper when you find 
+something important, skip areas that aren't relevant. Use your judgment about 
+what knowledge would be most valuable for understanding this codebase and writing 
+effective tests.
 
-<category_specific_guidance>
-${getCategoryGuidance(category)}
-</category_specific_guidance>
-
-**CRITICAL**: You MUST call writeKnowledgeFile exactly once for this category before finishing.`;
+Knowledge files are stored in .clive/knowledge/ and can be committed to version control.
+</guidance>`;
   },
 } as const;
-
-/**
- * Get category-specific guidance for discovery
- */
-function getCategoryGuidance(category: string): string {
-  const guidance: Record<string, string> = {
-    framework:
-      "Identify testing framework(s), versions, and configuration. Check package.json and config files.",
-    patterns:
-      "Document test structure, naming conventions, and organization patterns from sample test files.",
-    mocks:
-      "Find mock factories, spies, stubs, and test data utilities. Look for __mocks__ directories and mock patterns.",
-    fixtures:
-      "Document fixture patterns, seed data, and factory functions for test data generation.",
-    hooks:
-      "Identify setup/teardown patterns like beforeEach, afterAll, and custom setup functions.",
-    selectors:
-      "Document element selection strategies - data-testid conventions, locator patterns, query methods.",
-    routes:
-      "Map application routes and navigation patterns relevant for E2E testing.",
-    assertions:
-      "Document assertion patterns, custom matchers, and expectation styles used.",
-    utilities: "Find test utilities, helpers, and shared test functions.",
-    coverage:
-      "Document coverage configuration, thresholds, and reporting setup.",
-    gaps: "Identify missing test infrastructure - untested components, unmocked APIs, missing fixtures.",
-    improvements:
-      "Note opportunities for better testing practices - skipped tests, inconsistencies, outdated patterns.",
-  };
-
-  return (
-    guidance[category] ||
-    "Explore the codebase and document relevant patterns found."
-  );
-}
