@@ -1,8 +1,9 @@
 import { Data, Effect } from "effect";
 import * as vscode from "vscode";
+import { ApiUrls } from "../constants.js";
+import { extractErrorMessage } from "../utils/error-utils.js";
 import { ConfigService, type UserInfo } from "./config-service.js";
 
-const DASHBOARD_URL = "http://localhost:3000";
 const CLIENT_ID = "clive-vscode-extension";
 const POLL_INTERVAL_MS = 5000;
 
@@ -67,7 +68,7 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
 
           const response = yield* Effect.tryPromise({
             try: () =>
-              fetch(`${DASHBOARD_URL}/api/auth/device/code`, {
+              fetch(`${ApiUrls.dashboard}/api/auth/device/code`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -77,7 +78,7 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
               }),
             catch: (error) =>
               new DeviceAuthError({
-                message: `Failed to request device code: ${error instanceof Error ? error.message : "Unknown error"}`,
+                message: `Failed to request device code: ${extractErrorMessage(error)}`,
               }),
           });
 
@@ -120,7 +121,7 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
 
           const response = yield* Effect.tryPromise({
             try: () =>
-              fetch(`${DASHBOARD_URL}/api/auth/device/token`, {
+              fetch(`${ApiUrls.dashboard}/api/auth/device/token`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -131,7 +132,7 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
               }),
             catch: (error) =>
               new DeviceAuthError({
-                message: `Failed to poll for token: ${error instanceof Error ? error.message : "Unknown error"}`,
+                message: `Failed to poll for token: ${extractErrorMessage(error)}`,
               }),
           });
 
@@ -203,14 +204,14 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
 
           const response = yield* Effect.tryPromise({
             try: () =>
-              fetch(`${DASHBOARD_URL}/api/auth/get-session`, {
+              fetch(`${ApiUrls.dashboard}/api/auth/get-session`, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
                 },
               }),
             catch: (error) =>
               new DeviceAuthError({
-                message: `Failed to fetch session: ${error instanceof Error ? error.message : "Unknown error"}`,
+                message: `Failed to fetch session: ${extractErrorMessage(error)}`,
               }),
           });
 
@@ -235,6 +236,83 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
           );
 
           return session;
+        });
+
+      /**
+       * Poll for access token until authorization is complete
+       */
+      const pollUntilComplete = (
+        deviceCode: string,
+        interval: number,
+        signal?: AbortSignal,
+        onPending?: () => void,
+      ) =>
+        Effect.gen(function* () {
+          const pollInterval = Math.max(interval * 1000, POLL_INTERVAL_MS);
+          let accessToken: string | null = null;
+
+          while (!accessToken) {
+            // Check if cancelled
+            if (signal?.aborted) {
+              return yield* Effect.fail(
+                new DeviceAuthError({
+                  message: "Authorization cancelled",
+                  code: "cancelled",
+                }),
+              );
+            }
+
+            // Wait before polling
+            yield* Effect.promise(
+              () => new Promise((resolve) => setTimeout(resolve, pollInterval)),
+            );
+
+            // Poll for token
+            accessToken = yield* pollForToken(deviceCode, onPending);
+          }
+
+          return accessToken;
+        });
+
+      /**
+       * Store user session after successful authentication
+       */
+      const storeUserSession = (
+        session: UserSession,
+        cacheGatewayToken = false,
+      ) =>
+        Effect.gen(function* () {
+          const configService = yield* ConfigService;
+
+          // Store token and user info
+          yield* configService.storeAuthToken(session.session.token);
+
+          const userInfo: UserInfo = {
+            userId: session.user.id,
+            email: session.user.email,
+            name: session.user.name,
+            image: session.user.image,
+            organizationId: session.session.activeOrganizationId,
+          };
+          yield* configService.storeUserInfo(userInfo);
+
+          // Fetch and cache gateway token on successful login if requested
+          if (cacheGatewayToken) {
+            yield* configService.refreshGatewayToken().pipe(
+              Effect.catchAll((error) =>
+                Effect.gen(function* () {
+                  // Log but don't fail - gateway token can be fetched later
+                  yield* Effect.logDebug(
+                    `[DeviceAuth] Failed to cache gateway token: ${extractErrorMessage(error)}`,
+                  );
+                }),
+              ),
+            );
+          }
+
+          yield* Effect.logDebug("[DeviceAuth] Device auth flow completed");
+
+          return userInfo;
         });
 
       return {
@@ -278,62 +356,13 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
           signal?: AbortSignal,
         ) =>
           Effect.gen(function* () {
-            const configService = yield* ConfigService;
-            const pollInterval = Math.max(interval * 1000, POLL_INTERVAL_MS);
-
-            let accessToken: string | null = null;
-
-            while (!accessToken) {
-              // Check if cancelled
-              if (signal?.aborted) {
-                return yield* Effect.fail(
-                  new DeviceAuthError({
-                    message: "Authorization cancelled",
-                    code: "cancelled",
-                  }),
-                );
-              }
-
-              // Wait before polling
-              yield* Effect.promise(
-                () =>
-                  new Promise((resolve) => setTimeout(resolve, pollInterval)),
-              );
-
-              // Poll for token
-              accessToken = yield* pollForToken(deviceCode);
-            }
-
-            // Fetch user session
-            const session = yield* fetchUserSession(accessToken);
-
-            // Store token and user info
-            yield* configService.storeAuthToken(session.session.token);
-
-            const userInfo: UserInfo = {
-              userId: session.user.id,
-              email: session.user.email,
-              name: session.user.name,
-              image: session.user.image,
-              organizationId: session.session.activeOrganizationId,
-            };
-            yield* configService.storeUserInfo(userInfo);
-
-            // Fetch and cache gateway token on successful login
-            yield* configService.refreshGatewayToken().pipe(
-              Effect.catchAll((error) =>
-                Effect.gen(function* () {
-                  // Log but don't fail - gateway token can be fetched later
-                  yield* Effect.logDebug(
-                    `[DeviceAuth] Failed to cache gateway token: ${error instanceof Error ? error.message : "Unknown error"}`,
-                  );
-                }),
-              ),
+            const accessToken = yield* pollUntilComplete(
+              deviceCode,
+              interval,
+              signal,
             );
-
-            yield* Effect.logDebug("[DeviceAuth] Device auth flow completed");
-
-            return userInfo;
+            const session = yield* fetchUserSession(accessToken);
+            return yield* storeUserSession(session, true);
           }),
 
         /**
@@ -350,7 +379,7 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
           signal?: AbortSignal,
         ) =>
           Effect.gen(function* () {
-            const configService = yield* ConfigService;
+            const _configService = yield* ConfigService;
 
             // Step 1: Request device code
             const deviceCodeResponse = yield* requestDeviceCode();
@@ -369,55 +398,18 @@ export class DeviceAuthService extends Effect.Service<DeviceAuthService>()(
             );
 
             // Step 3: Poll for token
-            const pollInterval = Math.max(
-              deviceCodeResponse.interval * 1000,
-              POLL_INTERVAL_MS,
+            const accessToken = yield* pollUntilComplete(
+              deviceCodeResponse.device_code,
+              deviceCodeResponse.interval,
+              signal,
+              onPending,
             );
-
-            let accessToken: string | null = null;
-
-            while (!accessToken) {
-              // Check if cancelled
-              if (signal?.aborted) {
-                return yield* Effect.fail(
-                  new DeviceAuthError({
-                    message: "Authorization cancelled",
-                    code: "cancelled",
-                  }),
-                );
-              }
-
-              // Wait before polling
-              yield* Effect.promise(
-                () =>
-                  new Promise((resolve) => setTimeout(resolve, pollInterval)),
-              );
-
-              // Poll for token
-              accessToken = yield* pollForToken(
-                deviceCodeResponse.device_code,
-                onPending,
-              );
-            }
 
             // Step 4: Fetch user session
             const session = yield* fetchUserSession(accessToken);
 
             // Step 5: Store token and user info
-            yield* configService.storeAuthToken(session.session.token);
-
-            const userInfo: UserInfo = {
-              userId: session.user.id,
-              email: session.user.email,
-              name: session.user.name,
-              image: session.user.image,
-              organizationId: session.session.activeOrganizationId,
-            };
-            yield* configService.storeUserInfo(userInfo);
-
-            yield* Effect.logDebug("[DeviceAuth] Device auth flow completed");
-
-            return userInfo;
+            return yield* storeUserSession(session, false);
           }),
       };
     }),

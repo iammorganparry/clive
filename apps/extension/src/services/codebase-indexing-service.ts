@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect";
+import { Data, Effect, Ref } from "effect";
 import vscode from "vscode";
 import { embedMany } from "ai";
 import { createHash } from "node:crypto";
@@ -15,6 +15,10 @@ import {
   getRelativePath,
 } from "../lib/vscode-effects.js";
 import { estimateTokensFast } from "../utils/token-utils.js";
+import {
+  matchesAllowedExtension,
+  shouldExcludeFilePath,
+} from "../utils/file-filter-utils.js";
 
 /**
  * File metadata stored in the index
@@ -140,22 +144,23 @@ interface FileChunk {
 /**
  * Module-level shared state for indexing (singleton across service invocations)
  * This ensures the forked daemon and RPC queries share the same state
+ * Using Effect.Ref for safe concurrent access
  */
-let indexingState: {
+const indexingStateRef = Ref.unsafeMake<{
   status: IndexingStatus;
   error?: string;
   progress?: {
     filesIndexed: number;
     totalFiles: number;
   };
-} = { status: "idle" };
+}>({ status: "idle" });
 
-let cancellationRequested = false;
+const cancellationRequestedRef = Ref.unsafeMake<boolean>(false);
 
 /**
  * AbortController for cancelling active embedding API requests
  */
-let currentAbortController: AbortController | null = null;
+const currentAbortControllerRef = Ref.unsafeMake<AbortController | null>(null);
 
 /**
  * Service for indexing codebase files with embeddings and semantic search
@@ -175,7 +180,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const checkCancellation = () =>
         Effect.gen(function* () {
-          const isCancelled = yield* Effect.sync(() => cancellationRequested);
+          const isCancelled = yield* Ref.get(cancellationRequestedRef);
           if (isCancelled) {
             return yield* Effect.interrupt;
           }
@@ -185,11 +190,9 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        * Update indexing progress state
        */
       const updateProgress = (filesIndexed: number, totalFiles: number) =>
-        Effect.sync(() => {
-          indexingState = {
-            status: "in_progress",
-            progress: { filesIndexed, totalFiles },
-          };
+        Ref.set(indexingStateRef, {
+          status: "in_progress",
+          progress: { filesIndexed, totalFiles },
         });
 
       /**
@@ -248,16 +251,15 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           });
 
           // Create new abort controller for this batch
-          yield* Effect.sync(() => {
-            currentAbortController = new AbortController();
-          });
+          const abortController = new AbortController();
+          yield* Ref.set(currentAbortControllerRef, abortController);
 
           const embeddings = yield* Effect.tryPromise({
             try: async () => {
               const { embeddings: results } = await embedMany({
                 model: provider.embedding(AIModels.openai.embedding),
                 values: texts,
-                abortSignal: currentAbortController?.signal,
+                abortSignal: abortController.signal,
               });
 
               if (!results || results.length === 0) {
@@ -273,8 +275,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
               return results;
             },
             catch: (error) => {
-              // Clear abort controller on error (including abort)
-              currentAbortController = null;
               const errorMessage =
                 error instanceof Error ? error.message : "Unknown error";
               return new EmbeddingError({
@@ -283,6 +283,10 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
               });
             },
           }).pipe(
+            Effect.tapError(() =>
+              // Clear abort controller on error (including abort)
+              Ref.set(currentAbortControllerRef, null),
+            ),
             Effect.tapError((error) =>
               Effect.logDebug(
                 `[CodebaseIndexing] Embedding computation failed: ${error instanceof EmbeddingError ? error.message : String(error)}`,
@@ -291,9 +295,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           );
 
           // Clear abort controller after successful completion
-          yield* Effect.sync(() => {
-            currentAbortController = null;
-          });
+          yield* Ref.set(currentAbortControllerRef, null);
 
           return embeddings;
         });
@@ -657,12 +659,10 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
       const indexWorkspace = () =>
         Effect.gen(function* () {
           // Reset cancellation flag and update status to in_progress
-          yield* Effect.sync(() => {
-            cancellationRequested = false;
-            indexingState = {
-              status: "in_progress",
-              progress: { filesIndexed: 0, totalFiles: 0 },
-            };
+          yield* Ref.set(cancellationRequestedRef, false);
+          yield* Ref.set(indexingStateRef, {
+            status: "in_progress",
+            progress: { filesIndexed: 0, totalFiles: 0 },
           });
           yield* Effect.logDebug(
             "[CodebaseIndexing] Starting workspace indexing",
@@ -694,47 +694,6 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           // Try git ls-files first (respects .gitignore), fall back to findFiles
           let files: vscode.Uri[] = [];
 
-          // Helper to check if file matches allowed extensions
-          const matchesAllowedExtension = (filePath: string): boolean => {
-            const ext = filePath.split(".").pop()?.toLowerCase();
-            return (
-              ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx"
-            );
-          };
-
-          // Helper to check if file should be excluded (test files, configs, etc.)
-          const shouldExclude = (filePath: string): boolean => {
-            const lowerPath = filePath.toLowerCase();
-            // Test files
-            if (
-              lowerPath.includes(".test.") ||
-              lowerPath.includes(".spec.") ||
-              lowerPath.includes(".cy.") ||
-              lowerPath.includes("/__tests__/") ||
-              lowerPath.includes("/__mocks__/") ||
-              lowerPath.includes("/test/") ||
-              lowerPath.includes("/tests/")
-            ) {
-              return true;
-            }
-            // Config files
-            if (
-              lowerPath.includes(".config.") ||
-              lowerPath.endsWith("tsconfig.json") ||
-              lowerPath.endsWith("package.json") ||
-              lowerPath.endsWith("biome.json") ||
-              lowerPath.includes("/scripts/") ||
-              lowerPath.includes("/tooling/")
-            ) {
-              return true;
-            }
-            // Type definitions
-            if (lowerPath.endsWith(".d.ts")) {
-              return true;
-            }
-            return false;
-          };
-
           // Try git ls-files first (respects .gitignore automatically)
           const trackedFiles = yield* gitService
             .getTrackedFiles(workspaceRootPath)
@@ -748,7 +707,8 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
             // Filter tracked files by extension and exclude patterns
             const filteredPaths = trackedFiles.filter(
               (filePath) =>
-                matchesAllowedExtension(filePath) && !shouldExclude(filePath),
+                matchesAllowedExtension(filePath) &&
+                !shouldExcludeFilePath(filePath),
             );
 
             // Convert to URIs
@@ -924,43 +884,33 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
           );
 
           // Check if cancelled before marking complete
-          const isCancelled = yield* Effect.sync(() => cancellationRequested);
+          const isCancelled = yield* Ref.get(cancellationRequestedRef);
           if (isCancelled) {
-            yield* Effect.sync(() => {
-              indexingState = { status: "idle" };
-            });
+            yield* Ref.set(indexingStateRef, { status: "idle" });
             return yield* Effect.interrupt;
           }
 
           // Update status to complete
-          yield* Effect.sync(() => {
-            indexingState = {
-              status: "complete",
-              progress: undefined,
-            };
+          yield* Ref.set(indexingStateRef, {
+            status: "complete",
+            progress: undefined,
           });
         }).pipe(
           Effect.catchAll((error) =>
             Effect.gen(function* () {
               // Check if error was due to cancellation
-              const isCancelled = yield* Effect.sync(
-                () => cancellationRequested,
-              );
+              const isCancelled = yield* Ref.get(cancellationRequestedRef);
               if (isCancelled) {
-                yield* Effect.sync(() => {
-                  indexingState = { status: "idle" };
-                });
+                yield* Ref.set(indexingStateRef, { status: "idle" });
                 return yield* Effect.interrupt;
               }
 
               const errorMessage =
                 error instanceof Error ? error.message : String(error);
-              yield* Effect.sync(() => {
-                indexingState = {
-                  status: "error",
-                  error: errorMessage,
-                  progress: undefined,
-                };
+              yield* Ref.set(indexingStateRef, {
+                status: "error",
+                error: errorMessage,
+                progress: undefined,
               });
               yield* Effect.logDebug(
                 `[CodebaseIndexing] Indexing failed: ${errorMessage}`,
@@ -1006,7 +956,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const getStatus = () =>
         Effect.gen(function* () {
-          const state = yield* Effect.sync(() => indexingState);
+          const state = yield* Ref.get(indexingStateRef);
           return state.status;
         });
 
@@ -1015,7 +965,7 @@ export class CodebaseIndexingService extends Effect.Service<CodebaseIndexingServ
        */
       const getState = () =>
         Effect.gen(function* () {
-          const state = yield* Effect.sync(() => indexingState);
+          const state = yield* Ref.get(indexingStateRef);
           return state;
         });
 
@@ -1055,15 +1005,14 @@ export const CodebaseIndexingServiceLive = CodebaseIndexingService.Default;
  */
 export const cancelIndexingDirect = () =>
   Effect.gen(function* () {
-    yield* Effect.sync(() => {
-      cancellationRequested = true;
-      indexingState = { status: "idle" };
-      // Abort any active embedding request
-      if (currentAbortController) {
-        currentAbortController.abort();
-        currentAbortController = null;
-      }
-    });
+    yield* Ref.set(cancellationRequestedRef, true);
+    yield* Ref.set(indexingStateRef, { status: "idle" });
+    // Abort any active embedding request
+    const abortController = yield* Ref.get(currentAbortControllerRef);
+    if (abortController) {
+      abortController.abort();
+      yield* Ref.set(currentAbortControllerRef, null);
+    }
     yield* Effect.logDebug("[CodebaseIndexing] Indexing cancelled");
   });
 

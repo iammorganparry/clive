@@ -12,6 +12,12 @@ import {
   readFileAsStringEffect,
   statFileEffect,
 } from "../lib/vscode-effects.js";
+import {
+  parseFrontmatter,
+  generateFrontmatter as generateFrontmatterUtil,
+} from "../utils/frontmatter-utils.js";
+import { ensureDirectoryExists } from "../utils/fs-effects.js";
+import { extractErrorMessage } from "../utils/error-utils.js";
 
 /**
  * Error types for knowledge file operations
@@ -63,97 +69,28 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
       const ensureKnowledgeDir = () =>
         Effect.gen(function* () {
           const knowledgeDir = yield* getKnowledgeDir();
-
-          // Check if directory exists
-          const dirExists = yield* Effect.gen(function* () {
-            try {
-              const stat = yield* statFileEffect(knowledgeDir);
-              return stat.type === vscode.FileType.Directory;
-            } catch {
-              return false;
-            }
-          }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-
-          if (!dirExists) {
-            // Create directory (and parent .clive if needed)
-            yield* Effect.tryPromise({
-              try: async () => {
-                const cliveDir = vscode.Uri.joinPath(knowledgeDir, "..");
-                await vscode.workspace.fs.createDirectory(cliveDir);
-                await vscode.workspace.fs.createDirectory(knowledgeDir);
-              },
-              catch: (error) =>
+          return yield* ensureDirectoryExists(knowledgeDir).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
                 new KnowledgeFileError({
-                  message: `Failed to create knowledge directory: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  message: `Failed to create knowledge directory: ${extractErrorMessage(error)}`,
                   cause: error,
                 }),
-            });
-          }
-
-          return knowledgeDir;
+              ),
+            ),
+          );
         });
-
-      /**
-       * Parse frontmatter from markdown content
-       */
-      const parseFrontmatter = (
-        content: string,
-      ): { frontmatter: Record<string, unknown>; body: string } => {
-        const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/;
-        const match = content.match(frontmatterRegex);
-
-        if (!match) {
-          return { frontmatter: {}, body: content };
-        }
-
-        const frontmatterText = match[1];
-        const body = match[2];
-
-        const frontmatter: Record<string, unknown> = {};
-        for (const line of frontmatterText.split("\n")) {
-          const colonIndex = line.indexOf(":");
-          if (colonIndex > 0) {
-            const key = line.substring(0, colonIndex).trim();
-            const valueStr = line.substring(colonIndex + 1).trim();
-            let value: unknown = valueStr;
-
-            // Handle array values (YAML-like)
-            if (valueStr.startsWith("-")) {
-              const items = line
-                .substring(colonIndex + 1)
-                .split("\n")
-                .map((item) => item.replace(/^-\s*/, "").trim())
-                .filter((item) => item.length > 0);
-              value = items;
-            } else if (valueStr.startsWith('"') && valueStr.endsWith('"')) {
-              value = valueStr.slice(1, -1);
-            } else if (valueStr.startsWith("'") && valueStr.endsWith("'")) {
-              value = valueStr.slice(1, -1);
-            }
-
-            frontmatter[key] = value;
-          }
-        }
-
-        return { frontmatter, body };
-      };
 
       /**
        * Generate frontmatter string from metadata
        */
       const generateFrontmatter = (metadata: KnowledgeFileMetadata): string => {
-        const lines = ["---"];
-        lines.push(`category: ${metadata.category}`);
-        lines.push(`title: "${metadata.title.replace(/"/g, '\\"')}"`);
-        if (metadata.sourceFiles && metadata.sourceFiles.length > 0) {
-          lines.push("sourceFiles:");
-          for (const file of metadata.sourceFiles) {
-            lines.push(`  - ${file}`);
-          }
-        }
-        lines.push(`updatedAt: ${metadata.updatedAt}`);
-        lines.push("---");
-        return `${lines.join("\n")}\n`;
+        return generateFrontmatterUtil({
+          category: metadata.category,
+          title: metadata.title,
+          sourceFiles: metadata.sourceFiles,
+          updatedAt: metadata.updatedAt,
+        });
       };
 
       /**
@@ -191,20 +128,16 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           const categoryPath = getCategoryPath(category, knowledgeDir);
 
           // Ensure category directory exists
-          yield* Effect.tryPromise({
-            try: async () => {
-              try {
-                await vscode.workspace.fs.stat(categoryPath);
-              } catch {
-                await vscode.workspace.fs.createDirectory(categoryPath);
-              }
-            },
-            catch: (error) =>
-              new KnowledgeFileError({
-                message: `Failed to create category directory: ${error instanceof Error ? error.message : "Unknown error"}`,
-                cause: error,
-              }),
-          });
+          yield* ensureDirectoryExists(categoryPath).pipe(
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new KnowledgeFileError({
+                  message: `Failed to create category directory: ${extractErrorMessage(error)}`,
+                  cause: error,
+                }),
+              ),
+            ),
+          );
 
           // Sanitize title for filename
           const sanitizedTitle = title
@@ -244,13 +177,14 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           // Read existing content if appending
           let existingContent = "";
           if (options?.append) {
-            try {
-              const existing = yield* readFileAsStringEffect(fileUri);
-              const parsed = parseFrontmatter(existing);
-              existingContent = parsed.body;
-            } catch {
-              // File doesn't exist, that's okay
-            }
+            const existing = yield* readFileAsStringEffect(fileUri).pipe(
+              Effect.map((content) => {
+                const parsed = parseFrontmatter(content);
+                return parsed.body;
+              }),
+              Effect.catchAll(() => Effect.succeed("")),
+            );
+            existingContent = existing;
           }
 
           const finalContent = options?.append
@@ -271,7 +205,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             },
             catch: (error) =>
               new KnowledgeFileError({
-                message: `Failed to write knowledge file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
                 cause: error,
               }),
           });
@@ -350,16 +284,19 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
 
           for (const file of files) {
             const relativePath = vscode.workspace.asRelativePath(file, false);
-            try {
-              const content = yield* readFileAsStringEffect(file);
-              const { frontmatter } = parseFrontmatter(content);
-              knowledgeFiles.push({
-                path: file.fsPath,
-                relativePath,
-                category: frontmatter.category as string | undefined,
-              });
-            } catch {
-              // Skip files that can't be read
+            const result = yield* readFileAsStringEffect(file).pipe(
+              Effect.map((content) => {
+                const { frontmatter } = parseFrontmatter(content);
+                return {
+                  path: file.fsPath,
+                  relativePath,
+                  category: frontmatter.category as string | undefined,
+                };
+              }),
+              Effect.catchAll(() => Effect.succeed(null)),
+            );
+            if (result) {
+              knowledgeFiles.push(result);
             }
           }
 
@@ -396,33 +333,50 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           );
 
           for (const file of files) {
-            try {
-              const content = yield* readFileAsStringEffect(file);
-              const { frontmatter, body } = parseFrontmatter(content);
+            const result = yield* readFileAsStringEffect(file).pipe(
+              Effect.map((content) => {
+                const { frontmatter, body } = parseFrontmatter(content);
 
-              // Filter by category if specified
-              if (
-                options?.category &&
-                frontmatter.category !== options.category
-              ) {
-                continue;
-              }
-
-              const lines = body.split("\n");
-              for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                if (regex.test(line)) {
-                  matches.push({
-                    file: file.fsPath,
-                    relativePath: vscode.workspace.asRelativePath(file, false),
-                    lineNumber: i + 1,
-                    line: line.trim(),
-                    category: frontmatter.category as string | undefined,
-                  });
+                // Filter by category if specified
+                if (
+                  options?.category &&
+                  frontmatter.category !== options.category
+                ) {
+                  return null;
                 }
-              }
-            } catch {
-              // Skip files that can't be read
+
+                const lines = body.split("\n");
+                const fileMatches: Array<{
+                  file: string;
+                  relativePath: string;
+                  lineNumber: number;
+                  line: string;
+                  category?: string;
+                }> = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i];
+                  if (regex.test(line)) {
+                    fileMatches.push({
+                      file: file.fsPath,
+                      relativePath: vscode.workspace.asRelativePath(
+                        file,
+                        false,
+                      ),
+                      lineNumber: i + 1,
+                      line: line.trim(),
+                      category: frontmatter.category as string | undefined,
+                    });
+                  }
+                }
+
+                return fileMatches;
+              }),
+              Effect.catchAll(() => Effect.succeed([])),
+            );
+
+            if (result && result.length > 0) {
+              matches.push(...result);
             }
           }
 
@@ -452,26 +406,29 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               continue; // Skip index file itself
             }
 
-            try {
-              const content = yield* readFileAsStringEffect(
-                vscode.Uri.joinPath(workspaceRoot, file.relativePath),
-              );
-              const { frontmatter } = parseFrontmatter(content);
-              const category =
-                (frontmatter.category as string) || "uncategorized";
-              const title = (frontmatter.title as string) || file.relativePath;
+            yield* readFileAsStringEffect(
+              vscode.Uri.joinPath(workspaceRoot, file.relativePath),
+            ).pipe(
+              Effect.flatMap((content) =>
+                Effect.sync(() => {
+                  const { frontmatter } = parseFrontmatter(content);
+                  const category =
+                    (frontmatter.category as string) || "uncategorized";
+                  const title =
+                    (frontmatter.title as string) || file.relativePath;
 
-              if (!byCategory[category]) {
-                byCategory[category] = [];
-              }
+                  if (!byCategory[category]) {
+                    byCategory[category] = [];
+                  }
 
-              byCategory[category].push({
-                title,
-                path: file.relativePath,
-              });
-            } catch {
-              // Skip files that can't be read
-            }
+                  byCategory[category].push({
+                    title,
+                    path: file.relativePath,
+                  });
+                }),
+              ),
+              Effect.catchAll(() => Effect.void),
+            );
           }
 
           // Generate index content with summaries
@@ -571,7 +528,7 @@ This file provides an overview of all knowledge documented for this repository.
             },
             catch: (error) =>
               new KnowledgeFileError({
-                message: `Failed to write index file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                message: `Failed to write index file: ${extractErrorMessage(error)}`,
                 cause: error,
               }),
           });
@@ -585,12 +542,12 @@ This file provides an overview of all knowledge documented for this repository.
       const knowledgeBaseExists = () =>
         Effect.gen(function* () {
           const knowledgeDir = yield* getKnowledgeDir();
-          try {
-            const stat = yield* statFileEffect(knowledgeDir);
-            return stat.type === vscode.FileType.Directory;
-          } catch {
-            return false;
-          }
+          const stat = yield* statFileEffect(knowledgeDir).pipe(
+            Effect.catchAll(() =>
+              Effect.fail(new Error("Directory not found")),
+            ),
+          );
+          return stat.type === vscode.FileType.Directory;
         }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
       return {

@@ -1,11 +1,9 @@
 import { Data, Effect } from "effect";
-import { SecretStorageService } from "./vs-code.js";
+import { ApiUrls, ConfigFile, SecretKeys } from "../constants.js";
+import { extractErrorMessage } from "../utils/error-utils.js";
 import { ApiKeyService } from "./api-key-service.js";
-import { SecretKeys, ConfigFile } from "../constants.js";
-
-class SecretStorageError extends Data.TaggedError("SecretStorageError")<{
-  message: string;
-}> {}
+import { SecretStorageError } from "./errors.js";
+import { SecretStorageService } from "./vs-code.js";
 
 class GatewayTokenError extends Data.TaggedError("GatewayTokenError")<{
   message: string;
@@ -107,8 +105,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                 secretStorage.secrets.store(SecretKeys.gatewayToken, token),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
+                  message: extractErrorMessage(error),
                 }),
             }),
             Effect.tryPromise({
@@ -119,8 +116,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                 ),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
+                  message: extractErrorMessage(error),
                 }),
             }),
           ]);
@@ -164,16 +160,18 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           // Fetch OIDC gateway token from app
           const gatewayToken = yield* Effect.tryPromise({
             try: async () => {
-              const backendUrl = "http://localhost:3000";
-              const response = await fetch(`${backendUrl}/api/ai/token`, {
-                method: "GET",
-                headers: {
-                  Authorization: `Bearer ${authToken}`,
-                  "Content-Type": "application/json",
-                  "X-Clive-Extension": "true",
-                  "User-Agent": "Clive-Extension/1.0",
+              const response = await fetch(
+                `${ApiUrls.dashboard}/api/ai/token`,
+                {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                    "Content-Type": "application/json",
+                    "X-Clive-Extension": "true",
+                    "User-Agent": "Clive-Extension/1.0",
+                  },
                 },
-              });
+              );
 
               if (!response.ok) {
                 const errorText = await response.text();
@@ -191,8 +189,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
             },
             catch: (error) =>
               new GatewayTokenError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
+                message: extractErrorMessage(error),
               }),
           });
 
@@ -306,8 +303,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                 secretStorage.secrets.store(SecretKeys.authToken, token),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
+                  message: extractErrorMessage(error),
                 }),
             });
             yield* Effect.logDebug(
@@ -364,10 +360,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               },
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to get the secret storage: ${error.message}`
-                      : "Unknown error",
+                  message: `Failed to get the secret storage: ${extractErrorMessage(error)}`,
                 }),
             });
             yield* Effect.logDebug(
@@ -391,8 +384,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
                 ),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
+                  message: extractErrorMessage(error),
                 }),
             });
             yield* Effect.logDebug(
@@ -415,10 +407,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               },
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error
-                      ? `Failed to get user info: ${error.message}`
-                      : "Unknown error",
+                  message: `Failed to get user info: ${extractErrorMessage(error)}`,
                 }),
             });
 
@@ -452,8 +441,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               try: () => secretStorage.secrets.delete(SecretKeys.userInfo),
               catch: (error) =>
                 new SecretStorageError({
-                  message:
-                    error instanceof Error ? error.message : "Unknown error",
+                  message: extractErrorMessage(error),
                 }),
             });
             yield* Effect.logDebug(
