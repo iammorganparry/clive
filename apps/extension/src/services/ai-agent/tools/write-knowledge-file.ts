@@ -1,11 +1,15 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { Effect, Runtime } from "effect";
-import { KnowledgeFileService } from "../../knowledge-file-service.js";
+import {
+  KnowledgeFileError,
+  KnowledgeFileService,
+} from "../../knowledge-file-service.js";
 import {
   KnowledgeBaseCategorySchema,
   type KnowledgeBaseCategory,
 } from "../../../constants.js";
+import { extractErrorMessage } from "../../../utils/error-utils.js";
 
 /**
  * Create a writeKnowledgeFile tool that stores knowledge entries as markdown files
@@ -85,7 +89,17 @@ export const createWriteKnowledgeFileTool = (
               sourceFiles,
               append,
             })
-            .pipe(Effect.provide(KnowledgeFileService.Default)),
+            .pipe(
+              Effect.catchAll((error) =>
+                Effect.fail(
+                  new KnowledgeFileError({
+                    message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+                ),
+              ),
+              Effect.provide(KnowledgeFileService.Default),
+            ),
         );
 
         console.log(
@@ -98,8 +112,7 @@ export const createWriteKnowledgeFileTool = (
           relativePath: result.relativePath,
         };
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
+        const errorMessage = extractErrorMessage(error);
         console.error(`[WriteKnowledgeFile] Error: ${errorMessage}`);
         onComplete?.(category, false);
         return {

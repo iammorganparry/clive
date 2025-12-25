@@ -26,6 +26,8 @@ export default defineConfig({
     "src/components/ai-elements/tool.tsx",
     "src/components/ai-elements/reasoning.tsx",
     "src/components/ai-elements/code-block.tsx",
+    "src/components/ai-elements/queue.tsx",
+    "src/components/ai-elements/file-code-block.tsx",
     "src/lib/utils.ts",
   ],
   format: ["esm"],

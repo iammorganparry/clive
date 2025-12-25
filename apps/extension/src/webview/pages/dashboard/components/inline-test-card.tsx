@@ -60,15 +60,15 @@ const InlineTestCard: React.FC<InlineTestCardProps> = ({
         };
       case "completed":
         return {
-          border: "border-l-2 border-l-green-500",
-          bg: "bg-green-50 dark:bg-green-950/20",
-          icon: <Check className="h-3 w-3 text-green-500" />,
+          border: "border-l-2 border-l-success",
+          bg: "bg-success-muted",
+          icon: <Check className="h-3 w-3 text-success" />,
         };
       case "error":
         return {
-          border: "border-l-2 border-l-red-500",
-          bg: "bg-red-50 dark:bg-red-950/20",
-          icon: <AlertCircle className="h-3 w-3 text-red-500" />,
+          border: "border-l-2 border-l-destructive",
+          bg: "bg-error-muted",
+          icon: <AlertCircle className="h-3 w-3 text-destructive" />,
         };
     }
   };
@@ -111,7 +111,7 @@ const InlineTestCard: React.FC<InlineTestCardProps> = ({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30"
+                className="h-6 px-1.5 text-success hover:text-success-foreground hover:bg-success-muted"
                 onClick={() => onAccept(test.id)}
                 title="Accept"
               >
@@ -120,7 +120,7 @@ const InlineTestCard: React.FC<InlineTestCardProps> = ({
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30"
+                className="h-6 px-1.5 text-destructive hover:text-destructive/80 hover:bg-error-muted"
                 onClick={() => onReject(test.id)}
                 title="Reject"
               >
@@ -143,7 +143,7 @@ const InlineTestCard: React.FC<InlineTestCardProps> = ({
             </div>
           )}
           {error && status === "error" && (
-            <div className="text-red-600 dark:text-red-400">{error}</div>
+            <div className="text-destructive">{error}</div>
           )}
         </div>
       </CardContent>

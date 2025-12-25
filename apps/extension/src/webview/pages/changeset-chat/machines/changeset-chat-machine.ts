@@ -5,6 +5,35 @@ import type {
   MessagePart,
   ToolState,
 } from "../../../types/chat.js";
+import {
+  parseScratchpad,
+  type ScratchpadTodo,
+} from "../utils/parse-scratchpad.js";
+
+// Type guards for bash execute operations
+interface BashExecuteArgs {
+  command: string;
+}
+
+const isBashExecuteArgs = (args: unknown): args is BashExecuteArgs =>
+  typeof args === "object" &&
+  args !== null &&
+  "command" in args &&
+  typeof (args as BashExecuteArgs).command === "string";
+
+interface BashExecuteOutput {
+  stdout: string;
+  stderr?: string;
+  exitCode: number;
+  wasTruncated: boolean;
+  command: string;
+}
+
+const isBashExecuteOutput = (output: unknown): output is BashExecuteOutput =>
+  typeof output === "object" &&
+  output !== null &&
+  "stdout" in output &&
+  typeof (output as BashExecuteOutput).stdout === "string";
 
 export interface ChangesetChatError {
   type: "SUBSCRIPTION_FAILED" | "ANALYSIS_FAILED";
@@ -23,6 +52,7 @@ export interface ChangesetChatContext {
   reasoningContent: string;
   isReasoningStreaming: boolean;
   hasCompletedAnalysis: boolean;
+  scratchpadTodos: ScratchpadTodo[];
 }
 
 export type ChangesetChatEvent =
@@ -116,17 +146,100 @@ export const changesetChatMachine = setup({
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "tool-result")
         return {};
       if (!event.toolResult) return {};
+      const toolResult = event.toolResult;
+      const toolCallId = toolResult.toolCallId;
       return {
         toolEvents: context.toolEvents.map((t) =>
-          t.toolCallId === event.toolResult?.toolCallId
+          t.toolCallId === toolCallId
             ? {
                 ...t,
-                ...event.toolResult?.updates,
+                ...toolResult.updates,
                 timestamp: t.timestamp, // Preserve existing timestamp
               }
             : t,
         ),
       };
+    }),
+    updateScratchpadTodos: assign(({ context, event }) => {
+      // Check for scratchpad content from bashExecute tool results
+      if (
+        event.type === "RESPONSE_CHUNK" &&
+        event.chunkType === "tool-result" &&
+        event.toolResult
+      ) {
+        const toolCallId = event.toolResult.toolCallId;
+        const toolEvent = context.toolEvents.find(
+          (t) => t.toolCallId === toolCallId,
+        );
+
+        if (
+          toolEvent &&
+          toolEvent.toolName === "bashExecute" &&
+          isBashExecuteArgs(toolEvent.args)
+        ) {
+          const command = toolEvent.args.command;
+          // Check if command interacts with scratchpad files (.clive/plans/)
+          const isScratchpadOperation =
+            command.includes(".clive/plans/") &&
+            (command.includes("test-plan-") || command.includes("plans/"));
+
+          if (isScratchpadOperation && event.toolResult.updates.output) {
+            // Extract scratchpad content from output
+            // For read operations (cat .clive/plans/...), content is in stdout
+            // For write operations, we might need to read it back, but let's try output first
+            const output = event.toolResult.updates.output;
+            let content = "";
+
+            if (typeof output === "string") {
+              content = output;
+            } else if (isBashExecuteOutput(output)) {
+              content = output.stdout;
+            }
+
+            // Only parse if we have meaningful content (not just empty string or whitespace)
+            if (content.trim().length > 0) {
+              try {
+                const todos = parseScratchpad(content);
+                // Only update if we found actual TODOs
+                if (todos.length > 0) {
+                  return { scratchpadTodos: todos };
+                }
+              } catch (error) {
+                // Log parsing errors for debugging but don't crash
+                console.warn("Failed to parse scratchpad content:", error);
+              }
+            }
+          }
+        }
+      }
+
+      // Also check assistant message text content for checkboxes
+      // This handles cases where the agent includes TODOs in markdown responses
+      const lastMessage = context.messages[context.messages.length - 1];
+      if (lastMessage && lastMessage.role === "assistant") {
+        // Collect all text parts from the assistant message
+        const textParts = lastMessage.parts
+          .filter(
+            (part): part is { type: "text"; text: string } =>
+              part.type === "text",
+          )
+          .map((part) => part.text)
+          .join("\n");
+
+        if (textParts.trim().length > 0) {
+          try {
+            const todos = parseScratchpad(textParts);
+            // Only update if we found actual TODOs
+            if (todos.length > 0) {
+              return { scratchpadTodos: todos };
+            }
+          } catch (_error) {
+            // Silently ignore parsing errors for message content
+          }
+        }
+      }
+
+      return {};
     }),
     markAnalysisComplete: assign({ hasCompletedAnalysis: () => true }),
     addUserMessage: assign(({ context, event }) => {
@@ -252,21 +365,24 @@ export const changesetChatMachine = setup({
         return {};
       if (!event.toolResult) return {};
 
+      const toolCallId = event.toolResult.toolCallId;
+      const updates = event.toolResult.updates;
+
       return {
         messages: context.messages.map((msg) => {
           const updatedParts = msg.parts.map((part) => {
             if (
               part.type.startsWith("tool-") &&
               "toolCallId" in part &&
-              part.toolCallId === event.toolResult?.toolCallId
+              part.toolCallId === toolCallId
             ) {
               return {
                 ...part,
-                state: (event.toolResult.updates.errorText
+                state: (updates.errorText
                   ? "output-error"
                   : "output-available") as ToolState,
-                output: event.toolResult.updates.output,
-                errorText: event.toolResult.updates.errorText,
+                output: updates.output,
+                errorText: updates.errorText,
               };
             }
             return part;
@@ -290,6 +406,7 @@ export const changesetChatMachine = setup({
       reasoningContent: () => "",
       isReasoningStreaming: () => false,
       hasCompletedAnalysis: () => false,
+      scratchpadTodos: () => [],
     }),
   },
 }).createMachine({
@@ -305,6 +422,7 @@ export const changesetChatMachine = setup({
     reasoningContent: "",
     isReasoningStreaming: false,
     hasCompletedAnalysis: false,
+    scratchpadTodos: [],
   }),
   states: {
     idle: {
@@ -341,6 +459,7 @@ export const changesetChatMachine = setup({
             "addTextPart",
             "addToolPart",
             "updateToolPart",
+            "updateScratchpadTodos",
           ],
         },
         RESPONSE_ERROR: {
@@ -364,6 +483,7 @@ export const changesetChatMachine = setup({
             "addTextPart",
             "addToolPart",
             "updateToolPart",
+            "updateScratchpadTodos",
           ],
         },
         RESPONSE_COMPLETE: {

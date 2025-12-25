@@ -75,7 +75,7 @@ export const OnboardingPage: React.FC = () => {
           {/* Privacy Section */}
           <div className="rounded-lg bg-muted/50 p-4 space-y-2">
             <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-green-600 dark:text-green-400" />
+              <Shield className="w-4 h-4 text-success" />
               <span className="font-medium text-sm">
                 Your Code Stays Private
               </span>

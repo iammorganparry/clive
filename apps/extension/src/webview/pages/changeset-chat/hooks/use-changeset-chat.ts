@@ -178,5 +178,6 @@ export function useChangesetChat({
     error: state.context.error,
     isLoading: state.matches("analyzing") || state.matches("streaming"),
     hasCompletedAnalysis: state.context.hasCompletedAnalysis,
+    scratchpadTodos: state.context.scratchpadTodos,
   };
 }

@@ -202,7 +202,7 @@ export const IndexingStatusCard: React.FC = () => {
 
         {/* Privacy note */}
         <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md p-2">
-          <Shield className="w-3 h-3 mt-0.5 flex-shrink-0 text-green-600 dark:text-green-400" />
+          <Shield className="w-3 h-3 mt-0.5 flex-shrink-0 text-success" />
           <span>
             Your code stays private. Only semantic embeddings are stored
             securely.
@@ -299,11 +299,11 @@ export const IndexingStatusCard: React.FC = () => {
               "errorMessage" in data &&
               data.errorMessage &&
               getErrorDisplay(data.errorMessage) && (
-                <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
-                  <p className="font-medium text-red-800 dark:text-red-200">
+                <div className="rounded-md bg-error-muted p-3 text-sm">
+                  <p className="font-medium text-destructive">
                     {getErrorDisplay(data.errorMessage)?.title}
                   </p>
-                  <p className="text-red-700 dark:text-red-300 mt-1">
+                  <p className="text-destructive mt-1">
                     {getErrorDisplay(data.errorMessage)?.message}
                   </p>
                 </div>
