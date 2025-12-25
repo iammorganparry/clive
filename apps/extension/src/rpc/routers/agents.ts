@@ -3,7 +3,6 @@ import { Effect, Runtime } from "effect";
 import * as vscode from "vscode";
 import { z } from "zod";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
-import type { ProposedTest } from "../../services/ai-agent/types.js";
 import { ConversationService } from "../../services/conversation-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
@@ -39,6 +38,14 @@ export const agentsRouter = {
     .input(
       z.object({
         files: z.array(z.string()),
+        conversationHistory: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant", "system"]),
+              content: z.string(),
+            }),
+          )
+          .optional(),
       }),
     )
     .subscription(async function* ({
@@ -48,7 +55,13 @@ export const agentsRouter = {
       onProgress,
       subscriptionId,
     }: {
-      input: { files: string[] };
+      input: {
+        files: string[];
+        conversationHistory?: Array<{
+          role: "user" | "assistant" | "system";
+          content: string;
+        }>;
+      };
       ctx: RpcContext;
       signal: AbortSignal;
       onProgress?: (data: unknown) => void;
@@ -81,7 +94,6 @@ export const agentsRouter = {
               ),
             );
             return {
-              proposals: [] as ProposedTest[],
               executions: [],
               error: "API key not configured",
             };
@@ -92,7 +104,6 @@ export const agentsRouter = {
               `[RpcRouter:${requestId}] ERROR: No files provided`,
             );
             return {
-              proposals: [] as ProposedTest[],
               executions: [],
               error: "No files provided",
             };
@@ -101,6 +112,15 @@ export const agentsRouter = {
           vscode.window.showInformationMessage(
             `Planning Cypress tests for ${input.files.length} file(s)...`,
           );
+
+          // Create conversation BEFORE running agent so it exists when proposals stream
+          const conversationService = yield* ConversationService;
+          const sourceFile = input.files[0];
+
+          // Create fresh conversation for this file
+          const conversation = yield* conversationService
+            .createConversation(sourceFile)
+            .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
           const testingAgent = yield* TestingAgent;
 
@@ -133,24 +153,17 @@ export const agentsRouter = {
 
           // Use planAndExecuteTests - proposals auto-approve
           const result = yield* testingAgent.planAndExecuteTests(input.files, {
+            conversationHistory: input.conversationHistory,
             outputChannel: ctx.outputChannel,
             progressCallback,
             signal,
           });
 
-          // Persist conversation to database
-          const conversationService = yield* ConversationService;
-          const sourceFile = input.files[0];
-
-          // Get or create conversation for this file
-          const conversation = yield* conversationService
-            .getOrCreateConversation(sourceFile)
-            .pipe(Effect.catchAll(() => Effect.succeed(null)));
+          // Persist conversation messages to database
 
           if (conversation && result.response) {
             // Build context object with full data
             const context = {
-              proposals: result.proposals,
               executions: result.executions,
               timestamp: new Date().toISOString(),
             };
@@ -209,7 +222,6 @@ export const agentsRouter = {
               }
 
               return {
-                proposals: [] as ProposedTest[],
                 executions: [],
                 error: isCancellation ? "Cancelled by user" : errorMessage,
               };
@@ -223,7 +235,6 @@ export const agentsRouter = {
       // Final result is returned below
 
       return {
-        proposals: result.proposals || [],
         executions: result.executions || [],
       };
     }),

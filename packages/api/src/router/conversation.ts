@@ -102,6 +102,74 @@ export const conversationRouter = {
     }),
 
   /**
+   * Get conversation by user, branch name, and base branch
+   */
+  getByBranch: protectedProcedure
+    .input(
+      z.object({
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return Effect.gen(function* () {
+        const repo = yield* ConversationRepository;
+        return yield* repo.findByUserAndBranch(
+          ctx.userId,
+          input.branchName,
+          input.baseBranch,
+        );
+      }).pipe(
+        Effect.catchTag("ConversationError", (error) =>
+          Effect.fail(
+            new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: error.message,
+              cause: error.cause,
+            }),
+          ),
+        ),
+        Effect.provide(ConversationRepository.Default),
+        Runtime.runPromise(runtime),
+      );
+    }),
+
+  /**
+   * Create a new conversation for a branch
+   */
+  createForBranch: protectedProcedure
+    .input(
+      z.object({
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
+        sourceFiles: z.array(z.string()),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return Effect.gen(function* () {
+        const repo = yield* ConversationRepository;
+        return yield* repo.createForBranch(
+          ctx.userId,
+          input.branchName,
+          input.baseBranch,
+          input.sourceFiles,
+        );
+      }).pipe(
+        Effect.catchTag("ConversationError", (error) =>
+          Effect.fail(
+            new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: error.message,
+              cause: error.cause,
+            }),
+          ),
+        ),
+        Effect.provide(ConversationRepository.Default),
+        Runtime.runPromise(runtime),
+      );
+    }),
+
+  /**
    * List all conversations for the user
    */
   list: protectedProcedure.query(async ({ ctx }) => {

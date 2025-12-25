@@ -1,6 +1,4 @@
 import { setup, assign } from "xstate";
-import type { ActorRefFrom } from "xstate";
-import type { fileTestMachine } from "./file-test-machine.js";
 import type { BranchChangesData } from "../components/branch-changes.js";
 
 interface CypressStatusData {
@@ -18,22 +16,14 @@ interface CypressStatusData {
 
 export interface DashboardContext {
   branchChanges: BranchChangesData | null;
-  fileActors: Map<string, ActorRefFrom<typeof fileTestMachine>>;
   cypressStatus: CypressStatusData | null;
 }
 
-export type DashboardEvent =
-  | {
-      type: "DATA_LOADED";
-      branchChanges: BranchChangesData | null;
-      cypressStatus: CypressStatusData | null;
-    }
-  | {
-      type: "SPAWN_FILE_ACTOR";
-      filePath: string;
-      actor: ActorRefFrom<typeof fileTestMachine>;
-    }
-  | { type: "REMOVE_FILE_ACTOR"; filePath: string };
+export type DashboardEvent = {
+  type: "DATA_LOADED";
+  branchChanges: BranchChangesData | null;
+  cypressStatus: CypressStatusData | null;
+};
 
 export interface DashboardInput {
   branchChanges: BranchChangesData | null;
@@ -51,7 +41,6 @@ export const dashboardMachine = setup({
   initial: "loading",
   context: ({ input }): DashboardContext => ({
     branchChanges: input.branchChanges ?? null,
-    fileActors: new Map<string, ActorRefFrom<typeof fileTestMachine>>(),
     cypressStatus: input.cypressStatus ?? null,
   }),
   states: {
@@ -68,24 +57,6 @@ export const dashboardMachine = setup({
     },
     ready: {
       on: {
-        SPAWN_FILE_ACTOR: {
-          actions: assign({
-            fileActors: ({ context, event }) => {
-              const next = new Map(context.fileActors);
-              next.set(event.filePath, event.actor);
-              return next;
-            },
-          }),
-        },
-        REMOVE_FILE_ACTOR: {
-          actions: assign({
-            fileActors: ({ context, event }) => {
-              const next = new Map(context.fileActors);
-              next.delete(event.filePath);
-              return next;
-            },
-          }),
-        },
         DATA_LOADED: {
           actions: assign({
             branchChanges: ({ event }) => event.branchChanges,

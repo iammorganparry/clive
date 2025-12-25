@@ -188,7 +188,10 @@ export const conversation = pgTable("conversation", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
-  sourceFile: text("source_file").notNull(),
+  sourceFile: text("source_file"), // Deprecated: kept for backward compatibility
+  branchName: text("branch_name"),
+  baseBranch: text("base_branch").default("main"),
+  sourceFiles: text("source_files"), // JSON array of file paths
   status: conversationStatusEnum("status").notNull().default("planning"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")

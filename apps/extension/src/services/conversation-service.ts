@@ -11,7 +11,10 @@ import {
 export interface Conversation {
   id: string;
   userId: string;
-  sourceFile: string;
+  sourceFile: string | null;
+  branchName: string | null;
+  baseBranch: string | null;
+  sourceFiles: string | null; // JSON array of file paths
   status: "planning" | "confirmed" | "completed";
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +41,17 @@ export class ConversationService extends Effect.Service<ConversationService>()(
       const trpcClientService = yield* TrpcClientService;
 
       return {
+        /**
+         * Create a new conversation for a source file
+         */
+        createConversation: (sourceFile: string) =>
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.create.mutate({ sourceFile }),
+            )(client);
+          }),
+
         /**
          * Create or get existing conversation for a source file
          */
@@ -147,6 +161,60 @@ export class ConversationService extends Effect.Service<ConversationService>()(
             return yield* wrapTrpcCall((c) => c.conversation.list.query())(
               client,
             );
+          }),
+
+        /**
+         * Get or create conversation for a branch
+         */
+        getOrCreateBranchConversation: (
+          branchName: string,
+          baseBranch: string,
+          sourceFiles: string[],
+        ) =>
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+
+            // First try to get existing
+            const existing = yield* wrapTrpcCall((c) =>
+              c.conversation.getByBranch.query({
+                branchName,
+                baseBranch,
+              }),
+            )(client).pipe(
+              Effect.catchTag("ApiError", (error) => {
+                if (error.status === 404) {
+                  return Effect.succeed(null);
+                }
+                return Effect.fail(error);
+              }),
+            );
+
+            if (existing) {
+              return existing;
+            }
+
+            // Create new if not found
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.createForBranch.mutate({
+                branchName,
+                baseBranch,
+                sourceFiles,
+              }),
+            )(client);
+          }),
+
+        /**
+         * Get existing conversation for a branch (returns null if not found)
+         */
+        getConversationByBranch: (branchName: string, baseBranch: string) =>
+          Effect.gen(function* () {
+            const client = yield* trpcClientService.getClient();
+            return yield* wrapTrpcCall((c) =>
+              c.conversation.getByBranch.query({
+                branchName,
+                baseBranch,
+              }),
+            )(client);
           }),
       };
     }),

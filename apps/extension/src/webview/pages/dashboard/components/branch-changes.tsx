@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -12,6 +12,9 @@ import FileTestRow from "./file-test-row.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
 import { useRpc } from "../../../rpc/provider.js";
+import { useRouter } from "../../../router/router-context.js";
+import { Routes } from "../../../router/routes.js";
+import { Button } from "../../../../components/ui/button.js";
 
 export interface EligibleFile {
   path: string;
@@ -79,16 +82,19 @@ const BranchHeader: React.FC<BranchHeaderProps> = ({
 
 interface BranchContentProps {
   files: EligibleFile[];
+  branchName: string;
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
 }
 
 const BranchContent: React.FC<BranchContentProps> = ({
   files,
+  branchName,
   onViewTest,
   onPreviewDiff,
 }) => {
   const rpc = useRpc();
+  const { navigate } = useRouter();
   const filePaths = useMemo(() => files.map((f) => f.path), [files]);
 
   const { data: conversationMap } =
@@ -97,8 +103,33 @@ const BranchContent: React.FC<BranchContentProps> = ({
       enabled: filePaths.length > 0,
     });
 
+  // Check if branch conversation exists and auto-redirect
+  const { data: branchConversation } =
+    rpc.conversations.hasBranchConversation.useQuery({
+      input: { branchName, baseBranch: "main" },
+      enabled: branchName.length > 0,
+    });
+
+  useEffect(() => {
+    if (branchConversation?.exists && filePaths.length > 0) {
+      const filesJson = JSON.stringify(filePaths);
+      navigate(Routes.changesetChat, {
+        files: filesJson,
+        branchName,
+      });
+    }
+  }, [branchConversation, filePaths, branchName, navigate]);
+
+  const handleGenerateTests = useCallback(() => {
+    const filesJson = JSON.stringify(filePaths);
+    navigate(Routes.changesetChat, {
+      files: filesJson,
+      branchName,
+    });
+  }, [filePaths, branchName, navigate]);
+
   return (
-    <CardContent className="space-y-2">
+    <CardContent className="space-y-4">
       <div className="space-y-2">
         {files.map((file) => (
           <FileTestRow
@@ -106,9 +137,19 @@ const BranchContent: React.FC<BranchContentProps> = ({
             file={file}
             chatContext={conversationMap?.[file.path]}
             onViewTest={onViewTest}
-            onPreviewDiff={onPreviewDiff}
+            onPreviewDiff={
+              onPreviewDiff
+                ? (test) => onPreviewDiff(test as ProposedTest)
+                : undefined
+            }
           />
         ))}
+      </div>
+      <div className="pt-2 border-t">
+        <Button onClick={handleGenerateTests} className="w-full">
+          Generate Tests for All Changes ({files.length} file
+          {files.length !== 1 ? "s" : ""})
+        </Button>
       </div>
     </CardContent>
   );
@@ -166,9 +207,18 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       {isExpanded && (
         <BranchContent
           files={props.changes.files}
+          branchName={props.changes.branchName}
           onViewTest={props.onViewTest}
           onPreviewDiff={props.onPreviewDiff}
         />
+      )}
+      {isExpanded && (
+        <div className="px-6 pb-4">
+          <div className="text-xs text-muted-foreground">
+            Analyzing all files together helps identify integration test
+            opportunities
+          </div>
+        </div>
       )}
     </Card>
   );
