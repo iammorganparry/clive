@@ -33,7 +33,8 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
        */
       const ensurePlansDirectory = (): Effect.Effect<
         vscode.Uri,
-        PlanFileError
+        PlanFileError,
+        never
       > =>
         Effect.gen(function* () {
           const workspaceFolders = vscodeService.workspace.workspaceFolders;

@@ -71,15 +71,15 @@ const TestCard: React.FC<TestCardProps> = ({
         };
       case "completed":
         return {
-          border: "border-l-4 border-l-green-500",
-          bg: "bg-green-50 dark:bg-green-950/20",
-          icon: <Check className="h-4 w-4 text-green-500" />,
+          border: "border-l-4 border-l-success",
+          bg: "bg-success-muted",
+          icon: <Check className="h-4 w-4 text-success" />,
         };
       case "error":
         return {
-          border: "border-l-4 border-l-red-500",
-          bg: "bg-red-50 dark:bg-red-950/20",
-          icon: <AlertCircle className="h-4 w-4 text-red-500" />,
+          border: "border-l-4 border-l-destructive",
+          bg: "bg-error-muted",
+          icon: <AlertCircle className="h-4 w-4 text-destructive" />,
         };
     }
   };
@@ -139,7 +139,7 @@ const TestCard: React.FC<TestCardProps> = ({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-950/30"
+                    className="h-7 px-2 text-success hover:text-success-foreground hover:bg-success-muted"
                     onClick={(e) => {
                       e.stopPropagation();
                       onAccept(test.id);
@@ -151,7 +151,7 @@ const TestCard: React.FC<TestCardProps> = ({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950/30"
+                    className="h-7 px-2 text-destructive hover:text-destructive/80 hover:bg-error-muted"
                     onClick={(e) => {
                       e.stopPropagation();
                       onReject(test.id);
@@ -166,7 +166,7 @@ const TestCard: React.FC<TestCardProps> = ({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-950/30"
+                  className="h-7 px-2 text-warning hover:text-warning-foreground hover:bg-warning/10"
                   onClick={(e) => {
                     e.stopPropagation();
                     onCancel(test.id);
@@ -199,7 +199,7 @@ const TestCard: React.FC<TestCardProps> = ({
             </div>
           )}
           {error && status === "error" && (
-            <div className="text-red-600 dark:text-red-400 mt-1">{error}</div>
+            <div className="text-destructive mt-1">{error}</div>
           )}
         </div>
       </CardContent>

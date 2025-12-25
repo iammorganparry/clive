@@ -1,16 +1,14 @@
 import { Effect } from "effect";
 import * as vscode from "vscode";
-import {
-  statFileEffect,
-  VSCodeFileStatError,
-} from "../lib/vscode-effects.js";
-import { wrapError } from "./error-utils.js";
+import { statFileEffect, VSCodeFileStatError } from "../lib/vscode-effects.js";
 
 /**
  * Ensure a directory exists, creating it if needed
  * Also creates parent directories if they don't exist
  */
-export const ensureDirectoryExists = (uri: vscode.Uri) =>
+export const ensureDirectoryExists = (
+  uri: vscode.Uri,
+): Effect.Effect<vscode.Uri, VSCodeFileStatError, never> =>
   Effect.gen(function* () {
     const exists = yield* statFileEffect(uri).pipe(
       Effect.map((stat) => stat.type === vscode.FileType.Directory),
@@ -31,10 +29,13 @@ export const ensureDirectoryExists = (uri: vscode.Uri) =>
 
       yield* Effect.tryPromise({
         try: () => vscode.workspace.fs.createDirectory(uri),
-        catch: wrapError(VSCodeFileStatError),
+        catch: (error) =>
+          new VSCodeFileStatError({
+            uri: uri.fsPath,
+            cause: error,
+          }),
       });
     }
 
     return uri;
   });
-

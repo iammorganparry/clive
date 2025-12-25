@@ -274,23 +274,23 @@ export const KnowledgeBaseCard: React.FC = () => {
       <CardContent className="space-y-4">
         {/* Error display */}
         {isError && errorDisplay && (
-          <div className="rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm">
+          <div className="rounded-md bg-error-muted p-3 text-sm">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
-                  <p className="font-medium text-red-800 dark:text-red-200">
+                  <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                  <p className="font-medium text-destructive">
                     {errorDisplay.title}
                   </p>
                 </div>
-                <p className="text-red-700 dark:text-red-300 mt-1">
+                <p className="text-destructive mt-1">
                   {errorDisplay.message}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleDismiss}
-                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
+                className="text-destructive hover:text-destructive/80"
                 aria-label="Dismiss error"
               >
                 <X className="w-4 h-4" />
@@ -301,7 +301,7 @@ export const KnowledgeBaseCard: React.FC = () => {
                 onClick={handleRetry}
                 variant="outline"
                 size="sm"
-                className="text-red-700 dark:text-red-300 border-red-300 dark:border-red-700 hover:bg-red-100 dark:hover:bg-red-900"
+                className="text-destructive border-destructive/50 hover:bg-error-muted"
               >
                 {errorDisplay.action}
               </Button>

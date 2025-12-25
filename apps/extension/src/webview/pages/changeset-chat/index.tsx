@@ -29,6 +29,7 @@ import {
 import { useChangesetChat } from "./hooks/use-changeset-chat.js";
 import { ToolTask } from "./components/tool-task.js";
 import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
+import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 
 export const ChangesetChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -54,6 +55,7 @@ export const ChangesetChatPage: React.FC = () => {
     error,
     isLoading,
     hasCompletedAnalysis,
+    scratchpadTodos,
     send,
   } = useChangesetChat({ files, branchName });
 
@@ -109,10 +111,10 @@ export const ChangesetChatPage: React.FC = () => {
             <ConversationContent>
               {/* Error banner */}
               {error && (
-                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                <div className="mb-4 p-3 bg-error-muted border border-destructive/50 rounded-lg flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-destructive" />
                   <div className="flex-1">
-                    <p className="text-sm text-red-800 dark:text-red-200">
+                    <p className="text-sm text-destructive">
                       {error.message}
                     </p>
                     {error.retryable && (
@@ -136,6 +138,9 @@ export const ChangesetChatPage: React.FC = () => {
                   <ReasoningContent>{reasoningContent}</ReasoningContent>
                 </Reasoning>
               )}
+
+              {/* Scratchpad Queue - shows agent's TODO list */}
+              <ScratchpadQueue todos={scratchpadTodos} />
 
               {/* Empty state */}
               {isLoading && messages.length === 0 ? (

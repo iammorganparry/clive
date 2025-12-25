@@ -13,8 +13,48 @@ import type { LucideIcon } from "lucide-react";
 import { Task, TaskTrigger, TaskContent, TaskItem } from "@clive/ui/task";
 import { Badge } from "@clive/ui/badge";
 import { CodeBlock } from "@clive/ui/components/ai-elements/code-block";
+import { FileCodeBlock } from "@clive/ui/components/ai-elements/file-code-block";
 import type { ToolState } from "../../../types/chat.js";
-import { cn } from "@clive/ui/lib/utils";
+
+// Type guards and interfaces for output types
+interface BashExecuteArgs {
+  command: string;
+}
+
+const isBashExecuteArgs = (input: unknown): input is BashExecuteArgs =>
+  typeof input === "object" &&
+  input !== null &&
+  "command" in input &&
+  typeof (input as BashExecuteArgs).command === "string";
+
+interface BashOutput {
+  stdout: string;
+  wasTruncated?: boolean;
+}
+
+const isBashOutput = (value: unknown): value is BashOutput =>
+  typeof value === "object" &&
+  value !== null &&
+  "stdout" in value &&
+  typeof (value as BashOutput).stdout === "string";
+
+interface SemanticSearchResult {
+  filePath: string;
+  content: string;
+  similarity?: number;
+}
+
+interface SemanticSearchOutput {
+  results: SemanticSearchResult[];
+}
+
+const isSemanticSearchOutput = (
+  value: unknown,
+): value is SemanticSearchOutput =>
+  typeof value === "object" &&
+  value !== null &&
+  "results" in value &&
+  Array.isArray((value as SemanticSearchOutput).results);
 
 interface ToolTaskProps {
   toolName: string;
@@ -104,13 +144,27 @@ export const ToolTask: React.FC<ToolTaskProps> = ({
     });
   const Icon = config.icon;
 
-  // Extract command for bashExecute
+  // Extract command for bashExecute with type guard
   const command =
-    toolName === "bashExecute" &&
-    input &&
-    typeof input === "object" &&
-    "command" in input
-      ? String(input.command)
+    toolName === "bashExecute" && isBashExecuteArgs(input)
+      ? input.command
+      : null;
+
+  // Check if bashExecute command is a cat command
+  const isCatCommand = command?.trim().startsWith("cat ");
+  const catFileName =
+    isCatCommand && command !== null
+      ? command
+          .trim()
+          .replace(/^cat\s+/, "")
+          .split(/\s+/)[0]
+          .replace(/['"]/g, "")
+      : null;
+
+  // Check if output is semanticSearch results with type guard
+  const semanticSearchOutput =
+    toolName === "semanticSearch" && isSemanticSearchOutput(output)
+      ? output
       : null;
 
   return (
@@ -155,32 +209,57 @@ export const ToolTask: React.FC<ToolTaskProps> = ({
             <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
               {errorText ? "Error" : "Result"}
             </h4>
-            <div
-              className={cn(
-                "overflow-x-auto rounded-md text-xs",
-                errorText
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-muted/50 text-foreground",
-              )}
-            >
-              {errorText !== undefined && (
-                <div className="p-2">{String(errorText)}</div>
-              )}
-              {output !== undefined && output !== null && (
-                <div className="p-2">
-                  {typeof output === "string" ? (
-                    <pre className="whitespace-pre-wrap break-words text-xs">
-                      {output}
-                    </pre>
-                  ) : (
-                    <CodeBlock
-                      code={JSON.stringify(output, null, 2)}
-                      language="json"
+            {errorText !== undefined && (
+              <div className="rounded-md bg-destructive/10 p-2 text-destructive text-xs">
+                {String(errorText)}
+              </div>
+            )}
+            {output !== undefined && output !== null && !errorText && (
+              <div className="space-y-4">
+                {/* Render semanticSearch results as file blocks */}
+                {semanticSearchOutput?.results.map((result, index) => (
+                  <FileCodeBlock
+                    key={`${result.filePath}-${index}`}
+                    code={result.content}
+                    filePath={result.filePath}
+                    badge={
+                      result.similarity !== undefined
+                        ? Math.round(result.similarity * 100)
+                        : undefined
+                    }
+                  />
+                ))}
+                {/* Render bashExecute cat output as file block */}
+                {!semanticSearchOutput &&
+                  isCatCommand &&
+                  catFileName !== null &&
+                  isBashOutput(output) &&
+                  output.stdout.trim().length > 0 && (
+                    <FileCodeBlock
+                      code={output.stdout}
+                      filePath={catFileName}
+                      badge={output.wasTruncated ? "truncated" : undefined}
                     />
                   )}
-                </div>
-              )}
-            </div>
+                {/* Fallback to default rendering for other outputs */}
+                {!semanticSearchOutput &&
+                  !(isCatCommand && catFileName !== null) &&
+                  (typeof output === "string" ? (
+                    <div className="rounded-md bg-muted/50 p-2">
+                      <pre className="whitespace-pre-wrap break-words text-xs">
+                        {output}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="rounded-md bg-muted/50">
+                      <CodeBlock
+                        code={JSON.stringify(output, null, 2)}
+                        language="json"
+                      />
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         )}
       </TaskContent>

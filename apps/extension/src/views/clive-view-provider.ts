@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import { getWebviewHtml } from "./webview-html.js";
-import { Views } from "../constants.js";
+import { Views, WebviewMessages } from "../constants.js";
 import { Effect, Layer, Runtime, pipe } from "effect";
 import { GitService as GitServiceEffect } from "../services/git-service.js";
 import { VSCodeService } from "../services/vs-code.js";
@@ -93,10 +93,30 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       this._extensionUri,
     );
 
-    // Listen for theme changes (theme is now handled via RPC system.ready)
+    // Send initial theme info
+    const initialTheme = vscode.window.activeColorTheme;
+    const initialColorScheme =
+      initialTheme.kind === vscode.ColorThemeKind.Dark ||
+      initialTheme.kind === vscode.ColorThemeKind.HighContrast
+        ? "dark"
+        : "light";
+    webviewView.webview.postMessage({
+      command: WebviewMessages.themeInfo,
+      colorScheme: initialColorScheme,
+    });
+
+    // Listen for theme changes and notify webview
     this.themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(
-      () => {
-        // Theme changes are handled via RPC system.getTheme query
+      (theme) => {
+        const colorScheme =
+          theme.kind === vscode.ColorThemeKind.Dark ||
+          theme.kind === vscode.ColorThemeKind.HighContrast
+            ? "dark"
+            : "light";
+        webviewView.webview.postMessage({
+          command: WebviewMessages.themeChange,
+          colorScheme,
+        });
       },
     );
 
