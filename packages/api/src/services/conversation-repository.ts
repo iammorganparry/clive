@@ -18,7 +18,10 @@ class ConversationNotFoundError extends Data.TaggedError(
 export interface Conversation {
   id: string;
   userId: string;
-  sourceFile: string;
+  sourceFile: string | null;
+  branchName: string | null;
+  baseBranch: string | null;
+  sourceFiles: string | null; // JSON array of file paths
   status: "planning" | "confirmed" | "completed";
   createdAt: Date;
   updatedAt: Date;
@@ -60,6 +63,9 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             id,
             userId,
             sourceFile,
+            branchName: null,
+            baseBranch: null,
+            sourceFiles: null,
             status: "planning" as const,
             createdAt: now,
             updatedAt: now,
@@ -93,7 +99,10 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
           return {
             id: result.id,
             userId: result.userId,
-            sourceFile: result.sourceFile,
+            sourceFile: result.sourceFile ?? null,
+            branchName: result.branchName ?? null,
+            baseBranch: result.baseBranch ?? null,
+            sourceFiles: result.sourceFiles ?? null,
             status: result.status as "planning" | "confirmed" | "completed",
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
@@ -129,10 +138,103 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
           return {
             id: result.id,
             userId: result.userId,
-            sourceFile: result.sourceFile,
+            sourceFile: result.sourceFile ?? null,
+            branchName: result.branchName ?? null,
+            baseBranch: result.baseBranch ?? null,
+            sourceFiles: result.sourceFiles ?? null,
             status: result.status as "planning" | "confirmed" | "completed",
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
+          } satisfies Conversation;
+        });
+
+      /**
+       * Find conversation by user ID, branch name, and base branch
+       */
+      const findByUserAndBranch = (
+        userId: string,
+        branchName: string,
+        baseBranch: string,
+      ) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.tryPromise({
+            try: () =>
+              db.query.conversation.findFirst({
+                where: and(
+                  eq(conversation.userId, userId),
+                  eq(conversation.branchName, branchName),
+                  eq(conversation.baseBranch, baseBranch),
+                ),
+                orderBy: desc(conversation.createdAt),
+              }),
+            catch: (error) =>
+              new ConversationError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          if (!result) {
+            return null;
+          }
+
+          return {
+            id: result.id,
+            userId: result.userId,
+            sourceFile: result.sourceFile ?? null,
+            branchName: result.branchName ?? null,
+            baseBranch: result.baseBranch ?? null,
+            sourceFiles: result.sourceFiles ?? null,
+            status: result.status as "planning" | "confirmed" | "completed",
+            createdAt: result.createdAt,
+            updatedAt: result.updatedAt,
+          } satisfies Conversation;
+        });
+
+      /**
+       * Create a new conversation for a branch
+       */
+      const createForBranch = (
+        userId: string,
+        branchName: string,
+        baseBranch: string,
+        sourceFiles: string[], // Array of file paths
+      ) =>
+        Effect.gen(function* () {
+          const id = randomUUID();
+          const now = new Date();
+
+          yield* Effect.tryPromise({
+            try: () =>
+              db.insert(conversation).values({
+                id,
+                userId,
+                branchName,
+                baseBranch,
+                sourceFiles: JSON.stringify(sourceFiles),
+                status: "planning",
+                createdAt: now,
+                updatedAt: now,
+              }),
+            catch: (error) =>
+              new ConversationError({
+                message:
+                  error instanceof Error ? error.message : "Unknown error",
+                cause: error,
+              }),
+          });
+
+          return {
+            id,
+            userId,
+            sourceFile: null,
+            branchName,
+            baseBranch,
+            sourceFiles: JSON.stringify(sourceFiles),
+            status: "planning" as const,
+            createdAt: now,
+            updatedAt: now,
           } satisfies Conversation;
         });
 
@@ -186,7 +288,10 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
               ({
                 id: result.id,
                 userId: result.userId,
-                sourceFile: result.sourceFile,
+                sourceFile: result.sourceFile ?? null,
+                branchName: result.branchName ?? null,
+                baseBranch: result.baseBranch ?? null,
+                sourceFiles: result.sourceFiles ?? null,
                 status: result.status as "planning" | "confirmed" | "completed",
                 createdAt: result.createdAt,
                 updatedAt: result.updatedAt,
@@ -214,6 +319,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
         create,
         findById,
         findByUserAndFile,
+        findByUserAndBranch,
+        createForBranch,
         updateStatus,
         list,
         delete: deleteConversation,

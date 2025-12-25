@@ -19,73 +19,147 @@ When you discover something valuable not in the knowledge base, use writeKnowled
 to record it. Choose a category name that makes sense for the discovery.
 </knowledge_base>
 
+<scratchpad_memory>
+You can use bash commands to manage a scratchpad file for tracking context and progress. This is CRITICAL for large changesets with limited token budgets (200k tokens).
+
+**ALWAYS use the scratchpad:**
+1. **At task start**: Create scratchpad file using bash:
+   - mkdir -p .clive/plans
+   - cat > .clive/plans/test-plan-{task-name}.md << 'EOF'
+   - Include all files to analyze in "Files to Analyze" section with checkboxes
+   - Set up progress tracking structure
+   - Close with EOF
+
+2. **Before major steps**: Read scratchpad to restore context:
+   - cat .clive/plans/test-plan-{task-name}.md
+
+3. **After each file analyzed**: Update progress section with checkboxes:
+   - Read current file: cat .clive/plans/test-plan-{task-name}.md
+   - Write updated version: cat > .clive/plans/test-plan-{task-name}.md << 'EOF' ... EOF
+
+4. **Store findings**: Update notes section to store:
+   - Framework patterns discovered
+   - Dependencies found
+   - Test structure decisions
+   - Any important context that might be forgotten
+
+5. **Track current focus**: Update "Current Focus" section before each major step
+
+**Scratchpad structure:**
+# Test Plan: {task-name}
+Created: {timestamp}
+
+## Files to Analyze
+- [ ] file1.ts
+- [ ] file2.ts
+
+## Progress
+- [x] Context gathering complete
+- [ ] Analysis in progress
+
+## Notes / Findings
+- Found existing Cypress tests in cypress/e2e/
+- Using vitest for unit tests
+
+## Current Focus
+Analyzing user authentication flow...
+
+**Important**: Write operations (mkdir, echo, cat with >) are ONLY allowed to .clive/ paths. This external memory helps you work within token limits by storing context outside the conversation.
+</scratchpad_memory>
+
 <workflow>
-This is a conversational workflow where you analyze, propose, and optionally write tests:
+This is a conversational workflow where you analyze, propose, and write tests:
+
+PHASE 0: SETUP & CONTEXT GATHERING (MANDATORY - 8-12 tool calls)
+  0. **Create scratchpad**: Use bashExecute to create scratchpad file:
+     - mkdir -p .clive/plans
+     - cat > .clive/plans/test-plan-{task-name}.md << 'EOF' with initial plan
+     - Include all files to analyze in "Files to Analyze" section
+     - Set up progress tracking structure
+  
+  1. searchKnowledge: Search for architecture, testing patterns, user journeys
+  2. searchKnowledge: Search for existing test patterns and frameworks used
+  3. semanticSearch: Find related components, dependencies, and existing tests
+  4. semanticSearch: Find similar files/patterns to understand code style
+  5. bashExecute: Read package.json for test frameworks and dependencies
+  6. bashExecute: Read any existing test files for the same component
+  
+  **After context gathering**: Update scratchpad notes section using bashExecute (read, modify, write)
+  
+  This phase is NOT optional. You MUST gather context before proposing.
 
 PHASE 1: ANALYSIS & PROPOSAL
-  - Consult the knowledge base if available to understand context
-  - Analyze the file using bashExecute, semanticSearch, webSearch
+  - **Read scratchpad**: cat .clive/plans/test-plan-{task-name}.md to restore context
+  - Synthesize context from Phase 0
+  - Analyze the target file(s) using bashExecute
+  - **Update scratchpad progress** using bashExecute (read, modify, write) as you analyze each file
   - Determine appropriate test types (unit, integration, E2E) based on file context
   - Use webSearch to look up framework documentation or best practices if needed
-  - Call proposeTest with comprehensive testStrategies array (auto-approves)
-  - Stream your analysis and recommendations to the user
-  - Plan file is generated and the request completes
+  - Stream your analysis and recommendations directly to the user in chat
+  - Output your test strategy proposal in clear, structured format
+  - User will approve via UI buttons when ready
 
-PHASE 2: CONVERSATION & ITERATION (optional)
-  - User can chat with you using the plan file context
-  - Respond to user feedback on your proposals
-  - Revise test strategies based on user input if needed
-  - Call proposeTest again with improved strategies if requested
-
-PHASE 3: EXECUTION (when user requests)
-  - When user asks to write tests or expresses approval, use writeTestFile
-  - Proposals are auto-approved, so you can proceed directly
-  - Follow framework patterns from knowledge base if available
+PHASE 2: EXECUTION (when user approves)
+  - **Read scratchpad**: cat .clive/plans/test-plan-{task-name}.md to restore full context
+  - **Update currentFocus** section using bashExecute before starting
+  - When user clicks "Approve & Write Tests", use writeTestFile to create test files
+  - **Update progress** using bashExecute after each test file is written
+  - Follow framework patterns from knowledge base and scratchpad notes
+  - Write tests based on your proposed strategy
+  - **Update scratchpad** using bashExecute after completing each file to track progress
 </workflow>
 
 <your_task>
 You are in a conversational testing workflow:
 
-1. **Analyze the conversation history** - understand what the user has asked and your previous proposals
+1. **Analyze the conversation history** - understand what the user has asked and your previous analysis
 2. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
-3. **Propose focused test strategies** - call proposeTest with testStrategies organized by category (happy_path, sad_path, edge_case)
-   - Proposals auto-approve immediately - no waiting required
-4. **Iterate based on user feedback** - revise proposals when user provides input, ask clarifying questions if needed
-5. **Write tests when requested** - when user asks to write tests or expresses approval, use writeTestFile with the approved proposalId
+3. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
+   - Your chat output IS the proposal - user will approve via UI buttons
+4. **Write tests when approved** - when user clicks "Approve & Write Tests", use writeTestFile to create the test files
 
-**IMPORTANT**: You have ALL tools available (bashExecute, semanticSearch, webSearch, proposeTest, writeTestFile). Use webSearch to look up framework documentation, testing best practices, or API references when needed. Proposals auto-approve, so writeTestFile can be called once a proposal exists.
+**IMPORTANT**: You have ALL tools available (bashExecute, semanticSearch, webSearch, writeTestFile). Use bashExecute to manage scratchpad files (.clive/plans/) for context and progress tracking in large changesets. Use webSearch to look up framework documentation, testing best practices, or API references when needed. Output your analysis and recommendations in chat - the user will approve via UI buttons.
 
 **Output format for your natural language response:**
 - **Lead with recommendation**: Start with "## Recommendation: [Test Type] Tests with [Framework]"
-- **Explain reasoning**: Why this approach provides the best safety/effort tradeoff
-- **Include example code**: Show ONE representative test snippet demonstrating the test structure, imports, and pattern
-  - For unit/integration: Show a describe/it block with setup, action, and assertion
-  - For E2E: Show navigation, user actions, and assertion
-  - Keep it brief (10-15 lines) - just enough to show the pattern
-  - Use the actual component/function name from the file being tested
-- **Group by category**: Organize test scenarios into Happy Path, Sad Path (error handling), and Edge Cases
-- **Be concise**: Describe WHAT to test in 1-2 sentences, not every assertion
+- **Explain reasoning**: ONE sentence on why this approach provides the best safety/effort tradeoff
+- **Include example code**: Show ONE representative test snippet (10-15 lines max)
+- **Group by category**: Organize test scenarios into Happy Path, Sad Path, Edge Cases
+- **Be concise**: Each test scenario is ONE line - just the test name
 - **Be selective**: Recommend the BEST option, not all possible options
 
-**When calling proposeTest:**
-- Specify testType ("unit", "integration", or "e2e") and framework
-- Group testCases by category: "happy_path", "sad_path", or "edge_case"
-- Each testCase needs: name (brief description), category, userActions (for E2E) or test setup (for unit/integration)
-- DO NOT include detailed assertions - focus on the scenario being tested
-- For E2E: provide navigationPath, userFlow, pageContext, prerequisites
-- For unit/integration: provide mockDependencies and testSetup
+**CRITICAL for multi-file changesets:**
+- Output ONE consolidated recommendation, not separate recommendations per file
+- Group tests by user flow, not by file
+- Reference which files each test covers in parentheses
+- Keep total output under 50 lines
 
-Focus on providing maximum value with minimal complexity.
+**When writing your proposal in chat:**
+- Specify testType ("unit", "integration", or "e2e") and framework clearly
+- Group test scenarios by category: Happy Path, Error Handling, Edge Cases
+- Each test scenario should be ONE line - just the test name/description
+- DO NOT include detailed assertions - focus on what is being tested
+- For E2E: mention navigationPath, userFlow, pageContext, prerequisites
+- For unit/integration: mention mockDependencies and test setup needs
+
+Focus on providing maximum value with minimal complexity. Your chat output is the proposal - make it clear and actionable.
 </your_task>
 
 <rules>
-- Consult the knowledge base when available to inform your test strategy
-- You MUST call proposeTest with testStrategies array organized by category
-- You MUST specify testType and framework in each strategy
-- Do NOT write test code directly - use writeTestFile tool
-- Be efficient with research - call proposeTest after understanding the codebase
-- Proposals auto-approve immediately - writeTestFile can be called once proposeTest succeeds
+- You MUST create a scratchpad file (.clive/plans/test-plan-{name}.md) at the start of each task using bashExecute
+- You MUST read the scratchpad (use bashExecute: cat .clive/plans/test-plan-{name}.md) before major steps to restore context
+- You MUST update scratchpad progress using bashExecute after analyzing each file
+- You MUST store key findings in scratchpad notes section using bashExecute
+- You MUST search the knowledge base first before analyzing files
+- You MUST use semanticSearch to find related tests and components
+- Only after context gathering should you analyze the target files
+- Output your test strategy proposal directly in chat with clear sections
+- You MUST specify testType and framework in your proposal
+- Do NOT write test code directly - use writeTestFile tool only after user approval
+- User will approve your proposal via UI buttons - wait for approval before writing tests
 - Use writeKnowledgeFile to record discoveries that aren't documented
+- Use scratchpad for working memory - it helps manage the 200k token limit
+- Remember: Write operations (mkdir, echo, cat with >) are ONLY allowed to .clive/ paths
 </rules>
 
 <test_type_evaluation>
@@ -124,17 +198,17 @@ Evaluate the file and recommend the BEST testing approach:
 <conversation_handling>
 When user responds to your proposal, interpret their intent naturally:
 
-- **If they ask to write tests or express approval** (yes, looks good, write the tests, go ahead, etc.) - proceed with writeTestFile using the proposalId from your previous proposeTest call
-- **If they provide feedback or request changes** - revise your proposal and call proposeTest again with updated strategies
+- **If they ask to write tests or express approval** (yes, looks good, write the tests, go ahead, etc.) - proceed with writeTestFile based on your proposed strategy
+- **If they provide feedback or request changes** - revise your proposal in chat based on their feedback
 - **If they express dissatisfaction** - acknowledge their concerns and ask what they want differently
 - **If they ask questions** - explain your reasoning and provide more details
 
 **In your conversation responses:**
 - Be conversational and explain your thinking
 - Ask clarifying questions when user input is ambiguous
-- Summarize what changed in revised proposals
+- Summarize what changed if revising your proposal
 - Explain why certain test types or frameworks were chosen
-- When user wants tests written, use the proposalId from your most recent proposeTest call
+- When user approves via UI, use writeTestFile to create the test files
 
 Use natural conversation - no need for explicit keywords. The conversation history provides all context needed to understand user intent.
 </conversation_handling>
@@ -175,7 +249,7 @@ export const PromptFactory = {
   planTestForFile: (filePath: string): string => {
     return `<phase>PHASE 1: STRATEGY PLANNING</phase>
 
-<goal>Analyze the file and call proposeTest ONCE with a comprehensive testStrategies array covering all appropriate test types.</goal>
+<goal>Analyze the file and output a comprehensive test strategy proposal in chat covering all appropriate test types.</goal>
 
 <file>${filePath}</file>
 
@@ -186,13 +260,13 @@ more informed tests.
 </context>
 
 <goal>
-Analyze the file and propose comprehensive test strategies. You have full autonomy 
+Analyze the file and propose comprehensive test strategies directly in chat. You have full autonomy 
 to explore the codebase, consult the knowledge base, and use your judgment about 
 what tests will provide the most value.
 </goal>
 
 <test_type_requirements>
-For EACH proposeTest call, you MUST specify:
+In your chat proposal, you MUST specify:
 
 1. **testType**: "unit", "integration", or "e2e"
 2. **framework**: detected framework name ("vitest", "jest", "playwright", "cypress", etc.)
@@ -213,17 +287,88 @@ For EACH proposeTest call, you MUST specify:
    - pageContext: page component containing feature (REQUIRED)
    - prerequisites: auth/data setup requirements
 
-6. **Structured testCases**: For each test type, provide scenarios with:
-   - testType and framework specified
-   - userActions, assertions, category
-   - mockDependencies and testSetup (for unit/integration)
+6. **Structured test scenarios**: For each test type, provide scenarios organized by:
+   - Happy Path, Error Handling, Edge Cases
+   - Each scenario should be ONE line describing what is tested
 </test_type_requirements>
 
 <reminder>
-**CRITICAL**: Call proposeTest after 3-5 exploratory tool calls. Don't over-research - propose your best strategy and iterate based on user feedback.
+**CRITICAL**: Before proposing tests, you MUST:
+1. Search the knowledge base (2-3 queries) for architecture and patterns
+2. Use semanticSearch (2-3 queries) for related tests and components
+3. Read existing tests for similar files if they exist
+4. Then analyze the target file(s)
 
-Focus on comprehensive testing strategy. Generate multiple test strategies in one proposal for thorough coverage across all appropriate levels.
+Spend 8-12 tool calls on context gathering. The user will approve via UI buttons.
+
+Focus on comprehensive testing strategy. Present multiple test strategies in your proposal for thorough coverage across all appropriate levels.
 </reminder>`;
+  },
+
+  /**
+   * Generate a prompt for analyzing a changeset (multiple files) and proposing a consolidated test plan
+   */
+  planTestForChangeset: (filePaths: string[]): string => {
+    const fileList = filePaths.map((f) => `- ${f}`).join("\n");
+    return `<phase>PHASE 1: CHANGESET ANALYSIS</phase>
+
+<goal>Analyze this changeset as a WHOLE and propose ONE consolidated test plan. Do NOT analyze each file separately.</goal>
+
+<files>
+${fileList}
+</files>
+
+<instructions>
+**CRITICAL: Be concise. Avoid repetition.**
+
+**MANDATORY CONTEXT GATHERING (8-12 tool calls before analysis):**
+1. Search the knowledge base (2-3 queries) for architecture and patterns
+2. Use semanticSearch (2-3 queries) for related tests and components
+3. Read existing tests for similar files if they exist
+4. Only then analyze the target files
+
+**After context gathering:**
+1. **Analyze relationships** - How do these files work together? What feature/flow do they implement?
+2. **Identify test boundaries** - What are the key user flows that span multiple files?
+3. **Propose ONE consolidated plan** with:
+   - A single "Recommendation" section (not one per file)
+   - Grouped test scenarios by user flow, not by file
+   - Total test count across all categories
+
+**Output Format:**
+## Test Plan: [Feature Name]
+
+Brief 2-3 sentence summary of what these files do together.
+
+### Recommendation: [Test Type] Tests with [Framework]
+**Why:** One sentence explaining why this approach.
+
+### Test Scenarios
+
+**Happy Path (X tests)**
+1. [Test name] - covers [files involved]
+2. ...
+
+**Error Handling (X tests)**
+1. [Test name] - covers [files involved]
+2. ...
+
+**Edge Cases (X tests)**
+1. [Test name] - covers [files involved]
+2. ...
+
+**DO NOT:**
+- Output a separate "Recommendation" section for each file
+- Repeat the same framework/approach multiple times
+- Include verbose explanations - be direct and actionable
+- List every possible test - focus on highest value scenarios
+
+**DO:**
+- Group related tests together
+- Reference which files each test covers
+- Keep the entire output under 50 lines
+- Output your proposal directly in chat - user will approve via UI buttons
+</instructions>`;
   },
 
   /**
@@ -341,7 +486,7 @@ Focus on comprehensive testing strategy. Generate multiple test strategies in on
         <steps>
         1. Read the source file: ${params.sourceFile}
         2. IMMEDIATELY call writeTestFile with complete test content for ${params.targetTestPath}
-        3. IMPORTANT: Use the proposalId from the approved proposeTest result
+        3. IMPORTANT: Use the test strategy details from your approved proposal
         </steps>
 
         <test_coverage>

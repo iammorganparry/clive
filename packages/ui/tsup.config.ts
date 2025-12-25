@@ -25,6 +25,8 @@ export default defineConfig({
     "src/components/ai-elements/prompt-input.tsx",
     "src/components/ai-elements/tool.tsx",
     "src/components/ai-elements/reasoning.tsx",
+    "src/components/ai-elements/code-block.tsx",
+    "src/lib/utils.ts",
   ],
   format: ["esm"],
   dts: true,

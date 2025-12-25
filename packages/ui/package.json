@@ -100,6 +100,14 @@
       "types": "./dist/components/ai-elements/reasoning.d.ts",
       "default": "./dist/components/ai-elements/reasoning.js"
     },
+    "./components/ai-elements/code-block": {
+      "types": "./dist/components/ai-elements/code-block.d.ts",
+      "default": "./dist/components/ai-elements/code-block.js"
+    },
+    "./lib/utils": {
+      "types": "./dist/lib/utils.d.ts",
+      "default": "./dist/lib/utils.js"
+    },
     "./styles.css": "./dist/styles.css"
   },
   "license": "MIT",

@@ -13,7 +13,7 @@ const execAsync = promisify(exec);
 
 /**
  * Allowed commands for sandboxed execution
- * Only read-only commands that don't modify the filesystem
+ * Read and write commands allowed within workspace (destructive commands blocked)
  */
 const ALLOWED_COMMANDS = [
   "cat",
@@ -24,6 +24,14 @@ const ALLOWED_COMMANDS = [
   "ls",
   "wc",
   "git",
+  // Write commands
+  "mkdir",
+  "echo",
+  "touch",
+  "tee",
+  "sed",
+  "awk",
+  "printf",
 ] as const;
 
 /**
@@ -36,8 +44,6 @@ const BLOCKED_PATTERNS = [
   /chmod/, // Change permissions
   /chown/, // Change ownership
   /sudo/, // Elevate privileges
-  />\s/, // Output redirection (could overwrite files)
-  />>/, // Append redirection
   /\|.*rm/, // Piped remove
   /;.*rm/, // Chained remove
   /curl/, // Network requests
@@ -80,7 +86,7 @@ function validateCommand(
   return Effect.gen(function* () {
     const trimmed = command.trim();
 
-    // Check for blocked patterns
+    // Check for blocked patterns (destructive commands)
     for (const pattern of BLOCKED_PATTERNS) {
       if (pattern.test(trimmed)) {
         return yield* Effect.fail(
@@ -148,9 +154,10 @@ function validatePathsInWorkspace(
  */
 export const createBashExecuteTool = (budget: TokenBudgetService) =>
   tool({
-    description: `Execute read-only bash commands in the workspace. 
+    description: `Execute bash commands in the workspace with full read and write access.
 Allowed commands: ${ALLOWED_COMMANDS.join(", ")}. 
-Use for: reading files (cat, head, tail), searching (grep, find), listing directories (ls), git operations (git diff, git log, git show), counting (wc).
+Use for: reading files (cat, head, tail), searching (grep, find), listing directories (ls), git operations (git diff, git log, git show), counting (wc), creating/modifying files (mkdir, echo, touch, tee, sed, awk, printf, >, >>).
+Destructive commands (rm, mv, chmod, chown, sudo) are blocked for safety.
 All commands are sandboxed to the workspace directory and have a 30-second timeout.`,
     inputSchema: z.object({
       command: z

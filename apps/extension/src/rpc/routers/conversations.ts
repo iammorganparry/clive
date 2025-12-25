@@ -439,4 +439,159 @@ export const conversationsRouter = {
         };
       }).pipe(provideAgentLayer(ctx)),
     ),
+
+  /**
+   * Start or resume a branch conversation
+   */
+  startBranch: procedure
+    .input(
+      z.object({
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
+        sourceFiles: z.array(z.string()),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Starting branch conversation: ${input.branchName}`,
+        );
+        const conversationService = yield* ConversationServiceEffect;
+
+        // Get or create conversation
+        const conversation: Conversation = yield* conversationService
+          .getOrCreateBranchConversation(
+            input.branchName,
+            input.baseBranch,
+            input.sourceFiles,
+          )
+          .pipe(
+            Effect.catchTag("ApiError", (error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[ConversationsRouter] Failed to start branch conversation: ${error.message}`,
+                );
+                return yield* Effect.fail(
+                  new Error(getErrorMessage(ErrorCode.SERVER_ERROR)),
+                );
+              }),
+            ),
+            Effect.catchTag("AuthTokenMissingError", (error) =>
+              Effect.gen(function* () {
+                yield* Effect.logDebug(
+                  `[ConversationsRouter] Auth error starting branch conversation: ${error.message}`,
+                );
+                return yield* Effect.fail(
+                  new Error(getErrorMessage(ErrorCode.AUTH_REQUIRED)),
+                );
+              }),
+            ),
+          );
+
+        // Load existing messages
+        const messages = yield* conversationService
+          .getMessages(conversation.id)
+          .pipe(Effect.catchAll(() => Effect.succeed([] as Message[])));
+
+        return {
+          conversationId: conversation.id,
+          branchName: conversation.branchName,
+          baseBranch: conversation.baseBranch,
+          sourceFiles: conversation.sourceFiles
+            ? JSON.parse(conversation.sourceFiles)
+            : [],
+          messages: messages.map((msg: Message) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            createdAt: msg.createdAt.toISOString(),
+          })),
+        };
+      }).pipe(provideAgentLayer(ctx)),
+    ),
+
+  /**
+   * Check if conversation exists for a branch
+   */
+  hasBranchConversation: procedure
+    .input(
+      z.object({
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
+      }),
+    )
+    .query(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Checking branch conversation: ${input.branchName}`,
+        );
+        const conversationService = yield* ConversationServiceEffect;
+
+        // getConversationByBranch returns null when no conversation exists (not an error)
+        const conversation = yield* conversationService.getConversationByBranch(
+          input.branchName,
+          input.baseBranch,
+        );
+
+        if (!conversation) {
+          return { exists: false, messageCount: 0, status: null };
+        }
+
+        // Get messages - empty array is valid for new conversations
+        const messages = yield* conversationService.getMessages(
+          conversation.id,
+        );
+
+        return {
+          exists: true,
+          messageCount: messages.length,
+          status: conversation.status,
+        };
+      }).pipe(provideAgentLayer(ctx)),
+    ),
+
+  /**
+   * Get branch conversation history
+   */
+  getBranchHistory: procedure
+    .input(
+      z.object({
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
+      }),
+    )
+    .query(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConversationsRouter] Loading branch conversation: ${input.branchName}`,
+        );
+        const conversationService = yield* ConversationServiceEffect;
+
+        const conversation = yield* conversationService.getConversationByBranch(
+          input.branchName,
+          input.baseBranch,
+        );
+
+        if (!conversation) {
+          return {
+            conversationId: null,
+            messages: [],
+          };
+        }
+
+        const messages = yield* conversationService
+          .getMessages(conversation.id)
+          .pipe(Effect.catchAll(() => Effect.succeed([] as Message[])));
+
+        return {
+          conversationId: conversation.id,
+          messages: messages.map((msg: Message) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            createdAt: msg.createdAt.toISOString(),
+          })),
+        };
+      }).pipe(provideAgentLayer(ctx)),
+    ),
 };

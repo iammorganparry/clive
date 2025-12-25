@@ -28,9 +28,9 @@ const OnboardingPage = lazy(() =>
     default: module.OnboardingPage,
   })),
 );
-const FileChatPage = lazy(() =>
-  import("./pages/file-chat/index.js").then((module) => ({
-    default: module.FileChatPage,
+const ChangesetChatPage = lazy(() =>
+  import("./pages/changeset-chat/index.js").then((module) => ({
+    default: module.ChangesetChatPage,
   })),
 );
 
@@ -113,8 +113,8 @@ const App: React.FC<AppProps> = ({ vscode }) => {
       );
     }
 
-    if (route === Routes.fileChat) {
-      return <FileChatPage />;
+    if (route === Routes.changesetChat) {
+      return <ChangesetChatPage />;
     }
 
     // Default to dashboard

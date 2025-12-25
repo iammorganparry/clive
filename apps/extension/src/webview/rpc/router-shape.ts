@@ -33,7 +33,7 @@ export const routerShape: RouterRecord = {
     branchChanges: createProcedureShape("query"),
   },
   agents: {
-    planTests: createProcedureShape("mutation"),
+    planTests: createProcedureShape("subscription"),
     cancelTest: createProcedureShape("mutation"),
     previewDiff: createProcedureShape("mutation"),
   },
@@ -64,6 +64,9 @@ export const routerShape: RouterRecord = {
     hasConversation: createProcedureShape("query"),
     hasConversationsBatch: createProcedureShape("query"),
     approveProposal: createProcedureShape("mutation"),
+    startBranch: createProcedureShape("mutation"),
+    hasBranchConversation: createProcedureShape("query"),
+    getBranchHistory: createProcedureShape("query"),
   },
   knowledgeBase: {
     getStatus: createProcedureShape("query"),

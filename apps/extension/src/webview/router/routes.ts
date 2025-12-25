@@ -6,7 +6,7 @@ export const Routes = {
   dashboard: "/",
   settings: "/settings",
   onboarding: "/onboarding",
-  fileChat: "/file/chat",
+  changesetChat: "/changeset/chat",
 } as const;
 
 export type Route = (typeof Routes)[keyof typeof Routes];
