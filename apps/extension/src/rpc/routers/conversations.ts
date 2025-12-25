@@ -589,6 +589,7 @@ export const conversationsRouter = {
             id: msg.id,
             role: msg.role,
             content: msg.content,
+            toolCalls: msg.toolCalls,
             createdAt: msg.createdAt.toISOString(),
           })),
         };

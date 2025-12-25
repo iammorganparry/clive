@@ -35,6 +35,62 @@ const isBashExecuteOutput = (output: unknown): output is BashExecuteOutput =>
   "stdout" in output &&
   typeof (output as BashExecuteOutput).stdout === "string";
 
+/**
+ * Parse toolCalls field from backend message to reconstruct parts
+ */
+function parseMessageParts(
+  content: string,
+  toolCalls: string | null | undefined,
+): MessagePart[] {
+  const parts: MessagePart[] = [];
+
+  // Always add text part
+  if (content.trim()) {
+    parts.push({ type: "text", text: content });
+  }
+
+  // Parse toolCalls if present
+  if (toolCalls) {
+    try {
+      const parsed = JSON.parse(toolCalls);
+      // Handle different toolCalls formats
+      if (Array.isArray(parsed)) {
+        // Array of tool calls
+        for (const toolCall of parsed) {
+          if (toolCall && typeof toolCall === "object") {
+            parts.push({
+              type: `tool-${toolCall.toolName || "unknown"}`,
+              toolName: toolCall.toolName || "unknown",
+              toolCallId: toolCall.toolCallId || `tool-${Date.now()}`,
+              state: "output-available",
+              input: toolCall.args,
+              output: toolCall.output,
+              errorText: toolCall.errorText,
+            });
+          }
+        }
+      } else if (parsed && typeof parsed === "object") {
+        // Single tool call or object with tool calls
+        if (parsed.toolName) {
+          parts.push({
+            type: `tool-${parsed.toolName}`,
+            toolName: parsed.toolName,
+            toolCallId: parsed.toolCallId || `tool-${Date.now()}`,
+            state: "output-available",
+            input: parsed.args,
+            output: parsed.output,
+            errorText: parsed.errorText,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to parse toolCalls:", error);
+    }
+  }
+
+  return parts.length > 0 ? parts : [{ type: "text", text: content || "" }];
+}
+
 export interface ChangesetChatError {
   type: "SUBSCRIPTION_FAILED" | "ANALYSIS_FAILED";
   message: string;
@@ -53,11 +109,36 @@ export interface ChangesetChatContext {
   isReasoningStreaming: boolean;
   hasCompletedAnalysis: boolean;
   scratchpadTodos: ScratchpadTodo[];
+  cacheLoaded: boolean;
+  historyLoaded: boolean;
+  cachedAt?: number; // Timestamp of when cache was loaded
+}
+
+interface CachedConversation {
+  messages: ChatMessage[];
+  hasCompletedAnalysis: boolean;
+  scratchpadTodos: ScratchpadTodo[];
+  cachedAt: number;
+}
+
+interface BackendHistoryMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  toolCalls: string | null | undefined;
+  createdAt: string;
+}
+
+interface BackendHistoryData {
+  conversationId: string | null;
+  messages: BackendHistoryMessage[];
 }
 
 export type ChangesetChatEvent =
   | { type: "START_ANALYSIS" }
   | { type: "LOAD_HISTORY"; messages: ChatMessage[] }
+  | { type: "RECEIVE_CACHE"; cache: CachedConversation | null }
+  | { type: "RECEIVE_BACKEND_HISTORY"; historyData: BackendHistoryData | null }
   | {
       type: "RESPONSE_CHUNK";
       chunkType: "message" | "tool-call" | "tool-result" | "reasoning";
@@ -99,6 +180,41 @@ export const changesetChatMachine = setup({
     context: {} as ChangesetChatContext,
     events: {} as ChangesetChatEvent,
     input: {} as ChangesetChatInput,
+  },
+  guards: {
+    shouldLoadBackendHistory: ({ context, event }): boolean => {
+      if (event.type !== "RECEIVE_BACKEND_HISTORY") return false;
+      if (
+        !event.historyData ||
+        !event.historyData.conversationId ||
+        event.historyData.messages.length === 0
+      ) {
+        return false;
+      }
+      // If cache wasn't loaded, always use backend
+      if (!context.cacheLoaded) return true;
+      // If cache was loaded, compare message counts and timestamps
+      const backendMessages = event.historyData.messages;
+      const backendNewer =
+        backendMessages.length > context.messages.length ||
+        (backendMessages.length > 0 &&
+          context.messages.length > 0 &&
+          context.cachedAt !== undefined &&
+          new Date(
+            backendMessages[backendMessages.length - 1].createdAt,
+          ).getTime() > context.cachedAt);
+      return backendNewer;
+    },
+    shouldStartFreshAnalysis: ({ context, event }): boolean => {
+      if (event.type !== "RECEIVE_BACKEND_HISTORY") return false;
+      // Start fresh if no backend history and cache wasn't loaded
+      return (
+        (!event.historyData ||
+          !event.historyData.conversationId ||
+          event.historyData.messages.length === 0) &&
+        !context.cacheLoaded
+      );
+    },
   },
   actions: {
     appendStreamingContent: assign(({ context, event }) => {
@@ -258,8 +374,11 @@ export const changesetChatMachine = setup({
     loadHistory: assign(({ event }) => {
       if (event.type !== "LOAD_HISTORY") return {};
       // Messages should already be in parts format from the hook
+      // If we have messages, mark analysis as complete (conversation was already analyzed)
+      const hasMessages = event.messages.length > 0;
       return {
         messages: event.messages,
+        hasCompletedAnalysis: hasMessages,
       };
     }),
     addInitialMessage: assign(({ context }) => {
@@ -398,6 +517,43 @@ export const changesetChatMachine = setup({
       };
     }),
     clearError: assign({ error: () => null }),
+    markHistoryLoaded: assign({ historyLoaded: () => true }),
+    receiveCache: assign(({ event }) => {
+      if (event.type !== "RECEIVE_CACHE") return {};
+      if (!event.cache || event.cache.messages.length === 0) {
+        return { cacheLoaded: true };
+      }
+      // Load cached messages immediately
+      return {
+        messages: event.cache.messages,
+        hasCompletedAnalysis: event.cache.hasCompletedAnalysis,
+        scratchpadTodos: event.cache.scratchpadTodos,
+        cacheLoaded: true,
+        cachedAt: event.cache.cachedAt,
+      };
+    }),
+    receiveBackendHistory: assign(({ event }) => {
+      if (event.type !== "RECEIVE_BACKEND_HISTORY") return {};
+      if (
+        !event.historyData ||
+        !event.historyData.conversationId ||
+        event.historyData.messages.length === 0
+      ) {
+        return { historyLoaded: true };
+      }
+      // Convert backend format to parts-based format, parsing toolCalls
+      const messages: ChatMessage[] = event.historyData.messages.map((msg) => ({
+        id: msg.id,
+        role: msg.role,
+        parts: parseMessageParts(msg.content, msg.toolCalls),
+        timestamp: new Date(msg.createdAt),
+      }));
+      return {
+        messages,
+        hasCompletedAnalysis: messages.length > 0,
+        historyLoaded: true,
+      };
+    }),
     reset: assign({
       messages: () => [],
       streamingContent: () => "",
@@ -407,6 +563,9 @@ export const changesetChatMachine = setup({
       isReasoningStreaming: () => false,
       hasCompletedAnalysis: () => false,
       scratchpadTodos: () => [],
+      cacheLoaded: () => false,
+      historyLoaded: () => false,
+      cachedAt: () => undefined,
     }),
   },
 }).createMachine({
@@ -423,10 +582,31 @@ export const changesetChatMachine = setup({
     isReasoningStreaming: false,
     hasCompletedAnalysis: false,
     scratchpadTodos: [],
+    cacheLoaded: false,
+    historyLoaded: false,
+    cachedAt: undefined,
   }),
   states: {
     idle: {
       on: {
+        RECEIVE_CACHE: {
+          actions: ["receiveCache"],
+        },
+        RECEIVE_BACKEND_HISTORY: [
+          {
+            guard: "shouldLoadBackendHistory",
+            actions: ["receiveBackendHistory"],
+          },
+          {
+            guard: "shouldStartFreshAnalysis",
+            target: "analyzing",
+            actions: ["addInitialMessage"],
+          },
+          {
+            // Backend history received but cache is newer or already loaded
+            actions: ["markHistoryLoaded"],
+          },
+        ],
         LOAD_HISTORY: {
           actions: ["loadHistory"],
         },

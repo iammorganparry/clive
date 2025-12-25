@@ -38,6 +38,8 @@ export const agentsRouter = {
     .input(
       z.object({
         files: z.array(z.string()),
+        branchName: z.string(),
+        baseBranch: z.string().default("main"),
         conversationHistory: z
           .array(
             z.object({
@@ -57,6 +59,8 @@ export const agentsRouter = {
     }: {
       input: {
         files: string[];
+        branchName: string;
+        baseBranch: string;
         conversationHistory?: Array<{
           role: "user" | "assistant" | "system";
           content: string;
@@ -115,11 +119,14 @@ export const agentsRouter = {
 
           // Create conversation BEFORE running agent so it exists when proposals stream
           const conversationService = yield* ConversationService;
-          const sourceFile = input.files[0];
 
-          // Create fresh conversation for this file
+          // Get or create branch conversation
           const conversation = yield* conversationService
-            .createConversation(sourceFile)
+            .getOrCreateBranchConversation(
+              input.branchName,
+              input.baseBranch,
+              input.files,
+            )
             .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
           const testingAgent = yield* TestingAgent;
@@ -189,7 +196,7 @@ export const agentsRouter = {
               .pipe(Effect.catchAll(() => Effect.void));
 
             yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] Persisted conversation for ${sourceFile}`,
+              `[RpcRouter:${requestId}] Persisted conversation for branch ${input.branchName}`,
             );
           }
 
