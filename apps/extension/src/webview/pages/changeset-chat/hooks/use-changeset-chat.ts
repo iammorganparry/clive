@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useMachine } from "@xstate/react";
 import { Match } from "effect";
 import { useRpc } from "../../../rpc/provider.js";
 import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
-import type { ChatMessage, ToolEvent } from "../../../types/chat.js";
+import type { ToolEvent } from "../../../types/chat.js";
+import { useConversationCache } from "./use-conversation-cache.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -15,7 +16,7 @@ export function useChangesetChat({
   branchName,
 }: UseChangesetChatOptions) {
   const rpc = useRpc();
-  const historyLoadedRef = useRef(false);
+  const cache = useConversationCache(branchName);
 
   const [state, send] = useMachine(changesetChatMachine, {
     input: {
@@ -24,42 +25,28 @@ export function useChangesetChat({
     },
   });
 
-  // Load conversation history
+  // Load conversation history from backend
   const { data: historyData } = rpc.conversations.getBranchHistory.useQuery({
     input: { branchName, baseBranch: "main" },
-    enabled: branchName.length > 0 && !historyLoadedRef.current,
+    enabled: branchName.length > 0,
   });
 
-  // Load history into machine when available
+  // Send cache data when loaded
   useEffect(() => {
-    if (historyData && !historyLoadedRef.current && state.matches("idle")) {
-      historyLoadedRef.current = true;
-      if (historyData.conversationId && historyData.messages.length > 0) {
-        // Convert old format to new parts-based format
-        const messages: ChatMessage[] = historyData.messages.map((msg) => ({
-          id: msg.id,
-          role: msg.role as "user" | "assistant" | "system",
-          parts: [{ type: "text", text: msg.content }],
-          timestamp: new Date(msg.createdAt),
-        }));
-        send({
-          type: "LOAD_HISTORY",
-          messages,
-        });
-      } else {
-        // No history, add initial message
-        send({ type: "START_ANALYSIS" });
-      }
-    } else if (
-      !historyData &&
-      !historyLoadedRef.current &&
-      state.matches("idle")
-    ) {
-      // Query completed but no history found, add initial message
-      historyLoadedRef.current = true;
-      send({ type: "START_ANALYSIS" });
+    if (branchName && state.value === "idle" && !state.context.cacheLoaded) {
+      send({ type: "RECEIVE_CACHE", cache: cache.load() });
     }
-  }, [historyData, state, send]);
+  }, [branchName, state.value, state.context.cacheLoaded, cache, send]);
+
+  // Send backend history when query completes
+  useEffect(() => {
+    if (state.value === "idle" && !state.context.historyLoaded) {
+      send({
+        type: "RECEIVE_BACKEND_HISTORY",
+        historyData: historyData ?? null,
+      });
+    }
+  }, [historyData, state.value, state.context.historyLoaded, send]);
 
   // Subscribe to planTests
   const planTestsSubscription = rpc.agents.planTests.useSubscription({
@@ -163,11 +150,34 @@ export function useChangesetChat({
 
       planTestsSubscription.subscribe({
         files,
+        branchName: state.context.branchName,
+        baseBranch: "main",
         conversationHistory:
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
     }
   }, [files, state, planTestsSubscription]);
+
+  // Save to cache when conversation state changes
+  useEffect(() => {
+    if (
+      state.context.messages.length > 0 &&
+      (state.matches("idle") || state.matches("streaming"))
+    ) {
+      cache.save({
+        messages: state.context.messages,
+        hasCompletedAnalysis: state.context.hasCompletedAnalysis,
+        scratchpadTodos: state.context.scratchpadTodos,
+        cachedAt: Date.now(),
+      });
+    }
+  }, [
+    state.context.messages,
+    state.context.hasCompletedAnalysis,
+    state.context.scratchpadTodos,
+    state.matches,
+    cache,
+  ]);
 
   return {
     state,
