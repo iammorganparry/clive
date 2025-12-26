@@ -28,6 +28,7 @@ export default defineConfig({
     "src/components/ai-elements/code-block.tsx",
     "src/components/ai-elements/queue.tsx",
     "src/components/ai-elements/file-code-block.tsx",
+    "src/components/ai-elements/context.tsx",
     "src/lib/utils.ts",
   ],
   format: ["esm"],

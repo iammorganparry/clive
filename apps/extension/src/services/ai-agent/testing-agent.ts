@@ -4,6 +4,8 @@ import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Stream } from "effect";
 import type * as vscode from "vscode";
 import { streamFromAI } from "../../utils/stream-utils.js";
+import { stringifyEvent, createUsageEvent } from "../../utils/json-utils.js";
+import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import { AIModels } from "../ai-models.js";
 import { createAnthropicProvider } from "../ai-provider-factory.js";
 import { CodebaseIndexingService } from "../codebase-indexing-service.js";
@@ -18,9 +20,16 @@ import {
   createWebTools,
   createSearchKnowledgeTool,
   createWriteKnowledgeFileTool,
-  createRunTestTool,
+  createSummarizeContextTool,
 } from "./tools/index.js";
 import type { WriteTestFileOutput } from "./types.js";
+import {
+  estimateContextSize,
+  shouldSummarize,
+  getMessagesToKeep,
+  type Message,
+} from "./context-tracker.js";
+import { generateText } from "ai";
 
 class TestingAgentError extends Data.TaggedError("TestingAgentError")<{
   message: string;
@@ -129,36 +138,23 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               selfApprovingRegistry,
             );
 
-            // Create test execution tool with approval registry
-            const testApprovalRegistry = new Set<string>();
-            const runTest = createRunTestTool(testApprovalRegistry);
-
             // Create web tools if API key is available
             const webTools = firecrawlApiKey
               ? createWebTools({ enableSearch: true })
               : {};
 
-            const tools = {
-              bashExecute: createBashExecuteTool(budget),
-              semanticSearch: createSemanticSearchTool(indexingService),
-              searchKnowledge: createSearchKnowledgeTool(knowledgeFileService),
-              writeKnowledgeFile:
-                createWriteKnowledgeFileTool(knowledgeFileService),
-              writeTestFile,
-              runTest,
-              ...webTools,
-            };
+            // Get workspace root for path conversion
+            const workspaceRootUri = yield* getWorkspaceRoot();
+            const workspaceRoot = workspaceRootUri.fsPath;
 
-            // Build initial prompt
+            // Build initial prompt with workspace context
             const initialPrompt =
               files.length === 1
-                ? PromptFactory.planTestForFile(files[0])
-                : PromptFactory.planTestForChangeset(files);
+                ? PromptFactory.planTestForFile(files[0], workspaceRoot)
+                : PromptFactory.planTestForChangeset(files, workspaceRoot);
 
-            const messages: Array<{
-              role: "user" | "assistant" | "system";
-              content: string;
-            }> = [];
+            // Use mutable array for messages so summarize tool can update them
+            let messages: Message[] = [];
 
             if (conversationHistory.length === 0) {
               messages.push({
@@ -200,6 +196,106 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // Create Anthropic provider for unified agent
             const anthropic = createAnthropicProvider(tokenResult);
+
+            // Proactive context check before streamText
+            const contextEstimate = estimateContextSize(
+              messages,
+              TEST_AGENT_SYSTEM_PROMPT,
+            );
+
+            yield* Effect.logDebug(
+              `[TestingAgent:${correlationId}] Context estimate: ${contextEstimate.totalTokens} tokens (${(contextEstimate.percentUsed * 100).toFixed(1)}% used)`,
+            );
+
+            if (shouldSummarize(contextEstimate)) {
+              progressCallback?.(
+                "summarizing",
+                "Context window approaching limit, summarizing conversation...",
+              );
+
+              yield* Effect.logDebug(
+                `[TestingAgent:${correlationId}] Context at ${(contextEstimate.percentUsed * 100).toFixed(1)}%, summarizing...`,
+              );
+
+              // Summarize older messages
+              const messagesToKeep = getMessagesToKeep();
+              if (messages.length > messagesToKeep) {
+                const messagesToSummarize = messages.slice(
+                  0,
+                  messages.length - messagesToKeep,
+                );
+                const messagesToKeepArray = messages.slice(-messagesToKeep);
+
+                // Build summarization prompt
+                const summaryPrompt = `Summarize this conversation history concisely, preserving:
+1. Key decisions made and their rationale
+2. Important findings from tool executions
+3. Current task state and next steps
+4. Any file paths, code snippets, or test names that are critical
+
+Keep the summary under 2000 tokens while retaining all actionable information.
+
+Conversation to summarize:
+${messagesToSummarize.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n")}`;
+
+                // Generate summary
+                const summaryResult = yield* Effect.tryPromise({
+                  try: () =>
+                    generateText({
+                      model: anthropic(AIModels.anthropic.testing),
+                      prompt: summaryPrompt,
+                    }),
+                  catch: (error) =>
+                    new TestingAgentError({
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to summarize context",
+                      cause: error,
+                    }),
+                });
+
+                const summary = summaryResult.text;
+
+                // Replace old messages with summary
+                const summarizedMessage: Message = {
+                  role: "system",
+                  content: `Previous conversation summary (${messagesToSummarize.length} messages summarized):\n\n${summary}`,
+                };
+
+                messages = [summarizedMessage, ...messagesToKeepArray];
+
+                progressCallback?.(
+                  "summarized",
+                  `Summarized ${messagesToSummarize.length} messages`,
+                );
+
+                yield* Effect.logDebug(
+                  `[TestingAgent:${correlationId}] Summarized ${messagesToSummarize.length} messages`,
+                );
+              }
+            }
+
+            // Create summarize context tool with access to messages
+            const summarizeContext = createSummarizeContextTool(
+              anthropic,
+              () => messages,
+              (newMessages) => {
+                messages = newMessages;
+              },
+              progressCallback,
+            );
+
+            const tools = {
+              bashExecute: createBashExecuteTool(budget),
+              semanticSearch: createSemanticSearchTool(indexingService),
+              searchKnowledge: createSearchKnowledgeTool(knowledgeFileService),
+              writeKnowledgeFile:
+                createWriteKnowledgeFileTool(knowledgeFileService),
+              writeTestFile,
+              summarizeContext,
+              ...webTools,
+            };
 
             progressCallback?.(
               "analyzing",
@@ -290,6 +386,18 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       const command = args?.command || "";
                       // Detect what type of bash command is being run
                       if (
+                        command.includes("vitest") ||
+                        command.includes("jest") ||
+                        command.includes("playwright") ||
+                        command.includes("cypress") ||
+                        command.includes("npm test") ||
+                        command.includes("npm run test")
+                      ) {
+                        progressCallback?.(
+                          "running",
+                          `Running test: ${command.substring(0, 100)}`,
+                        );
+                      } else if (
                         command.includes("cat ") ||
                         command.includes("head ") ||
                         command.includes("tail ")
@@ -311,14 +419,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       }
                     } else if (event.toolName === "writeTestFile") {
                       progressCallback?.("writing", "Writing test file...");
-                    } else if (event.toolName === "runTest") {
-                      const args = event.toolArgs as
-                        | { testType?: string; command?: string }
-                        | undefined;
-                      const testType = args?.testType || "unknown";
+                    } else if (event.toolName === "summarizeContext") {
                       progressCallback?.(
-                        "running",
-                        `Running ${testType} test: ${args?.command || ""}`,
+                        "summarizing",
+                        "Summarizing conversation to free context...",
                       );
                     }
 
@@ -418,6 +522,38 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const awaitedSteps = yield* Effect.promise(async () => {
               return await result.steps;
             });
+
+            // Get usage information and emit via progressCallback
+            const usage = yield* Effect.promise(async () => {
+              return await result.usage;
+            });
+
+            if (usage) {
+              // Map AI SDK usage properties to LanguageModelUsage format expected by Context component
+              // The usage object from AI SDK may have different property names, so we map them
+              const usageData = usage as {
+                promptTokens?: number;
+                completionTokens?: number;
+                totalTokens?: number;
+                inputTokens?: number;
+                outputTokens?: number;
+                reasoningTokens?: number;
+                cachedInputTokens?: number;
+              };
+
+              // Create type-safe usage event from normalized data
+              const usageEvent = createUsageEvent({
+                inputTokens:
+                  usageData.inputTokens ?? usageData.promptTokens ?? 0,
+                outputTokens:
+                  usageData.outputTokens ?? usageData.completionTokens ?? 0,
+                totalTokens: usageData.totalTokens ?? 0,
+                reasoningTokens: usageData.reasoningTokens ?? 0,
+                cachedInputTokens: usageData.cachedInputTokens ?? 0,
+              });
+
+              progressCallback?.("usage", stringifyEvent(usageEvent));
+            }
 
             const totalDuration = Date.now() - startTime;
             yield* Effect.logDebug(

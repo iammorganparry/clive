@@ -9,6 +9,7 @@ import {
   parseScratchpad,
   type ScratchpadTodo,
 } from "../utils/parse-scratchpad.js";
+import type { LanguageModelUsage } from "ai";
 
 // Type guards for bash execute operations
 interface BashExecuteArgs {
@@ -112,6 +113,7 @@ export interface ChangesetChatContext {
   cacheLoaded: boolean;
   historyLoaded: boolean;
   cachedAt?: number; // Timestamp of when cache was loaded
+  usage: LanguageModelUsage | null;
 }
 
 interface CachedConversation {
@@ -141,10 +143,16 @@ export type ChangesetChatEvent =
   | { type: "RECEIVE_BACKEND_HISTORY"; historyData: BackendHistoryData | null }
   | {
       type: "RESPONSE_CHUNK";
-      chunkType: "message" | "tool-call" | "tool-result" | "reasoning";
+      chunkType:
+        | "message"
+        | "tool-call"
+        | "tool-result"
+        | "reasoning"
+        | "usage";
       content?: string;
       toolEvent?: ToolEvent;
       toolResult?: { toolCallId: string; updates: Partial<ToolEvent> };
+      usage?: LanguageModelUsage;
     }
   | { type: "RESPONSE_COMPLETE" }
   | { type: "RESPONSE_ERROR"; error: unknown }
@@ -514,6 +522,7 @@ export const changesetChatMachine = setup({
       if (event.type !== "RESPONSE_ERROR") return {};
       return {
         error: createChatError("ANALYSIS_FAILED", event.error),
+        hasCompletedAnalysis: true, // Re-enable input even on error
       };
     }),
     clearError: assign({ error: () => null }),
@@ -554,6 +563,13 @@ export const changesetChatMachine = setup({
         historyLoaded: true,
       };
     }),
+    updateUsage: assign(({ event }) => {
+      if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "usage")
+        return {};
+      return {
+        usage: event.usage ?? null,
+      };
+    }),
     reset: assign({
       messages: () => [],
       streamingContent: () => "",
@@ -566,6 +582,7 @@ export const changesetChatMachine = setup({
       cacheLoaded: () => false,
       historyLoaded: () => false,
       cachedAt: () => undefined,
+      usage: () => null,
     }),
   },
 }).createMachine({
@@ -585,6 +602,7 @@ export const changesetChatMachine = setup({
     cacheLoaded: false,
     historyLoaded: false,
     cachedAt: undefined,
+    usage: null,
   }),
   states: {
     idle: {
@@ -640,6 +658,15 @@ export const changesetChatMachine = setup({
             "addToolPart",
             "updateToolPart",
             "updateScratchpadTodos",
+            "updateUsage",
+          ],
+        },
+        RESPONSE_COMPLETE: {
+          target: "idle",
+          actions: [
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+            "markAnalysisComplete",
           ],
         },
         RESPONSE_ERROR: {
@@ -664,6 +691,7 @@ export const changesetChatMachine = setup({
             "addToolPart",
             "updateToolPart",
             "updateScratchpadTodos",
+            "updateUsage",
           ],
         },
         RESPONSE_COMPLETE: {

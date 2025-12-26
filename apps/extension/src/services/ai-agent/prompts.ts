@@ -25,17 +25,16 @@ You can use bash commands to manage a scratchpad file for tracking context and p
 **ALWAYS use the scratchpad:**
 1. **At task start**: Create scratchpad file using bash:
    - mkdir -p .clive/plans
-   - cat > .clive/plans/test-plan-{task-name}.md << 'EOF'
+   - Use printf to write the file: printf '%s\n' "# Test Plan: {task-name}" "Created: {timestamp}" "" "## Files to Analyze" "- [ ] file1.tsx" "- [ ] file2.tsx" "" "## Progress" "- [ ] Context gathering complete" "- [ ] Analysis in progress" "" "## Notes / Findings" "(To be filled)" "" "## Current Focus" "Starting context gathering..." > .clive/plans/test-plan-{task-name}.md
    - Include all files to analyze in "Files to Analyze" section with checkboxes
    - Set up progress tracking structure
-   - Close with EOF
 
 2. **Before major steps**: Read scratchpad to restore context:
    - cat .clive/plans/test-plan-{task-name}.md
 
 3. **After each file analyzed**: Update progress section with checkboxes:
    - Read current file: cat .clive/plans/test-plan-{task-name}.md
-   - Write updated version: cat > .clive/plans/test-plan-{task-name}.md << 'EOF' ... EOF
+   - Write updated version using printf: printf '%s\n' "# Test Plan: {task-name}" "..." > .clive/plans/test-plan-{task-name}.md
 
 4. **Store findings**: Update notes section to store:
    - Framework patterns discovered
@@ -73,7 +72,7 @@ This is a conversational workflow where you analyze, propose, and write tests:
 PHASE 0: SETUP & CONTEXT GATHERING (MANDATORY - 8-12 tool calls)
   0. **Create scratchpad**: Use bashExecute to create scratchpad file:
      - mkdir -p .clive/plans
-     - cat > .clive/plans/test-plan-{task-name}.md << 'EOF' with initial plan
+     - Use printf to write initial plan: printf '%s\n' "# Test Plan: {task-name}" "Created: {timestamp}" "" "## Files to Analyze" "- [ ] file1.tsx" "- [ ] file2.tsx" "" "## Progress" "- [ ] Context gathering complete" "- [ ] Analysis in progress" "" "## Notes / Findings" "(To be filled)" "" "## Current Focus" "Starting context gathering..." > .clive/plans/test-plan-{task-name}.md
      - Include all files to analyze in "Files to Analyze" section
      - Set up progress tracking structure
   
@@ -107,6 +106,14 @@ PHASE 2: EXECUTION (when user approves)
   - Follow framework patterns from knowledge base and scratchpad notes
   - Write tests based on your proposed strategy
   - **Update scratchpad** using bashExecute after completing each file to track progress
+
+PHASE 3: VERIFICATION (MANDATORY after each test file)
+  - **IMMEDIATELY after writeTestFile**: Use bashExecute to run the test command and verify it passes
+  - **If test fails**: Analyze error output, fix test code using writeTestFile with overwrite=true, re-run until passing
+  - **For complex tests** (heavy mocking/setup): Run ONE test at a time using framework-specific flags
+  - **Suite progression**: Only proceed to next suite AFTER current suite passes
+  - **Maximum retries**: 3 fix attempts per test before asking user for help
+  - **Update scratchpad** after verification completes
 </workflow>
 
 <your_task>
@@ -160,6 +167,9 @@ Focus on providing maximum value with minimal complexity. Your chat output is th
 - Use writeKnowledgeFile to record discoveries that aren't documented
 - Use scratchpad for working memory - it helps manage the 200k token limit
 - Remember: Write operations (mkdir, echo, cat with >) are ONLY allowed to .clive/ paths
+- **CRITICAL**: After EVERY writeTestFile call, IMMEDIATELY use bashExecute to run the test command and verify it passes
+- **CRITICAL**: Do NOT write the next test file until the current one passes
+- **CRITICAL**: Always use relative paths (relative to workspace root), never absolute paths
 </rules>
 
 <test_type_evaluation>
@@ -236,38 +246,151 @@ Use natural conversation - no need for explicit keywords. The conversation histo
 - Group related tests appropriately
 </framework_guidelines>
 
+<workspace_context>
+**CRITICAL: All commands execute from the workspace root directory**
+
+All bash commands and file operations are executed with the workspace root as the current working directory (cwd).
+
+1. **Always use RELATIVE paths**, not absolute paths:
+   - CORRECT: \`.clive/plans/test-plan.md\`, \`src/components/Button.tsx\`
+   - WRONG: \`/Users/name/repos/project/.clive/plans/test-plan.md\`
+
+2. **When creating files or directories**:
+   - \`mkdir -p .clive/plans\` - creates relative to workspace root
+   - \`cat > .clive/plans/file.md\` - writes relative to workspace root
+   - DO NOT use absolute paths starting with \`/\` or \`~\`
+
+3. **When running test commands**:
+   - \`npm run test\` - runs from workspace root
+   - \`npx vitest run src/...\` - paths are relative to workspace root
+
+4. **File references in test code**:
+   - Use relative imports: \`import { Button } from '../../components/Button'\`
+   - Reference test files relatively: \`cypress/e2e/spec.cy.ts\`
+
+The workspace root is automatically set - you do not need to \`cd\` into it.
+</workspace_context>
+
 <test_execution>
 **Running Tests to Verify Implementation**
 
-After writing test files, use the runTest tool to verify they pass:
+After writing test files, use bashExecute to run test commands and verify they pass:
 
 1. **Unit tests**: Run directly without special setup
-   - runTest with testType: "unit"
+   - Use bashExecute with test command: \`npx vitest run src/components/Button.test.tsx\`
    - No Docker or sandbox needed
+   - Commands execute from workspace root automatically
 
-2. **Integration/E2E tests**: Requires sandbox environment
-   - runTest with testType: "integration" or "e2e"  
-   - Tool automatically starts Docker services
-   - Tool loads env vars from .clive/.env.test
+2. **Integration/E2E tests**: MUST use sandbox environment
+   - See \`<sandbox_execution>\` section below for required Docker sandbox setup
+   - NEVER run integration/E2E tests without sandbox setup first
    - Tests run against local Docker services, NOT production
 
-**IMPORTANT**: All test execution requires user approval.
-- The runTest tool will pause and request approval
-- User sees the command, test type, and your reason
-- User can approve or reject
-- Only proceed when approved
+**Running individual tests** (for complex setup scenarios):
+- Vitest/Jest: Use \`--grep "test name"\` or \`-t "test name"\` flag
+  Example: \`npx vitest run src/components/Button.test.tsx -t "should render"\`
+- Playwright: Use \`--grep "test name"\` flag
+  Example: \`npx playwright test tests/e2e/login.spec.ts --grep "should login"\`
+- Cypress: Use \`--spec\` with specific file path, or modify test to use \`it()\`
+  Example: \`npx cypress run --spec cypress/e2e/login.cy.ts\`
 
-**Before running integration/E2E tests**:
-1. Search knowledge base for "infrastructure"
-2. Ensure .clive/.env.test exists with sandbox env vars
-3. If missing, create it using bashExecute:
-   mkdir -p .clive
-   cat > .clive/.env.test << 'EOF'
-   NODE_ENV=test
-   DATABASE_URL=postgresql://test:test@localhost:5432/test
-   EOF
-4. Ensure Docker services are referenced in docker-compose.yml
+**Test command examples** (all paths relative to workspace root):
+- Full suite: \`npx vitest run src/components/Button.test.tsx\`
+- Single test: \`npx vitest run src/components/Button.test.tsx -t "should render"\`
+- With npm: \`npm run test -- src/components/Button.test.tsx\`
+- Playwright: \`npx playwright test tests/e2e/login.spec.ts --grep "should login"\`
+
+**Interpreting test results**:
+- Exit code 0 = test passed, proceed to next suite
+- Exit code non-zero = test failed, analyze error output, fix and re-run
+- Check stdout and stderr output for error details
 </test_execution>
+
+<sandbox_execution>
+**CRITICAL: Integration and E2E tests MUST run in a Docker sandbox**
+
+**For UNIT tests**: Run directly without sandbox setup
+- Just use bashExecute with the test command
+- Example: \`npx vitest run src/utils/helper.test.ts\`
+
+**For INTEGRATION and E2E tests**: MUST use sandbox environment
+Before running any integration/E2E test, you MUST execute these steps IN ORDER:
+
+1. **Check Docker availability**:
+   bashExecute: \`docker --version\`
+   If this fails, inform user that Docker is required for integration tests.
+
+2. **Ensure .clive/.env.test exists**:
+   bashExecute: \`cat .clive/.env.test\`
+   If file doesn't exist, create it:
+   bashExecute: \`mkdir -p .clive && printf '%s\n' "NODE_ENV=test" "DATABASE_URL=postgresql://test:test@localhost:5432/test" > .clive/.env.test\`
+   (Add other discovered env vars with localhost values by appending: printf '%s\n' "NEW_VAR=value" >> .clive/.env.test)
+
+3. **Start Docker services**:
+   bashExecute: \`docker-compose up -d\`
+   Wait for command to complete. This starts all services defined in docker-compose.yml.
+
+4. **Wait for services to be healthy** (poll up to 60 seconds):
+   bashExecute: \`docker-compose ps\`
+   Verify all services show "running" or "healthy" status.
+   If services are not healthy, wait a few seconds and check again: bashExecute: \`docker-compose ps\`
+   Repeat until all services are healthy or 60 seconds have elapsed.
+   If not healthy after 60s, inform user that services failed to start.
+
+5. **Run test with sandbox env vars**:
+   bashExecute: \`source .clive/.env.test && npm run test:integration\`
+   OR: \`env $(cat .clive/.env.test | xargs) npx vitest run src/...\`
+   OR: \`export $(cat .clive/.env.test | xargs) && npx vitest run src/...\`
+   
+   The environment variables from .clive/.env.test ensure tests connect to sandbox services, not production.
+
+**NEVER run integration/E2E tests without sandbox setup first.**
+**NEVER run tests against production databases or services.**
+**Always verify Docker services are healthy before running tests.**
+</sandbox_execution>
+
+<verification_rules>
+**CRITICAL: Every test file MUST pass before proceeding**
+
+1. **After EVERY writeTestFile call**:
+   - IMMEDIATELY use bashExecute to run the test command and verify it passes
+   - Do NOT write the next test file until current one passes
+   - **For integration/E2E tests**: Follow \`<sandbox_execution>\` workflow BEFORE running the test command
+
+2. **If test fails**:
+   - Analyze the error output from bashExecute (check stdout and stderr)
+   - Fix the test code using writeTestFile with overwrite=true
+   - Re-run the test using bashExecute with the same command
+   - **For integration/E2E tests**: Ensure sandbox is still running (check with \`docker-compose ps\`) before re-running
+   - Maximum 3 fix attempts per test before asking user for help
+
+3. **Complex setup detection** (requires test-by-test verification):
+   - 3+ mock dependencies
+   - External service mocking (APIs, databases)
+   - Complex state setup (auth, fixtures)
+   - When you detect these, run ONE test at a time using framework-specific flags
+
+4. **Running individual tests**:
+   - Vitest/Jest: Use \`--grep "test name"\` or \`-t "test name"\` in the command
+   - Playwright: Use \`--grep "test name"\` in the command
+   - Cypress: Use \`--spec\` with the test file path, or use \`it()\` in the test code
+
+5. **Suite progression**:
+   - Complete suite A (all tests passing)
+   - Then write suite B
+   - Verify suite B passes
+   - Then write suite C
+   - Never write suite C until suite B passes
+
+6. **All paths are relative to workspace root**:
+   - Test file paths: \`src/components/Button.test.tsx\` (not absolute paths)
+   - Commands run from workspace root automatically
+
+7. **Sandbox setup for integration/E2E tests**:
+   - ALWAYS follow \`<sandbox_execution>\` workflow before running integration/E2E tests
+   - Unit tests do NOT require sandbox setup
+   - If Docker is unavailable, inform user that integration/E2E tests cannot run
+</verification_rules>
 
 Focus on comprehensive testing strategy across all appropriate levels while maintaining natural conversation flow.`;
 
@@ -279,12 +402,18 @@ export const PromptFactory = {
    * Generate a prompt for planning comprehensive tests across all appropriate test types
    * Focuses on framework detection, file analysis, and multi-level test strategies
    */
-  planTestForFile: (filePath: string): string => {
+  planTestForFile: (filePath: string, workspaceRoot?: string): string => {
+    // Convert absolute path to relative if workspace root is provided
+    const relativePath =
+      workspaceRoot && filePath.startsWith(workspaceRoot)
+        ? filePath.slice(workspaceRoot.length).replace(/^\//, "")
+        : filePath;
+
     return `<phase>PHASE 1: STRATEGY PLANNING</phase>
 
 <goal>Analyze the file and output a comprehensive test strategy proposal in chat covering all appropriate test types.</goal>
 
-<file>${filePath}</file>
+<file>${relativePath}</file>
 
 <context>
 A knowledge base may exist at .clive/knowledge/ with architecture, user journeys, 
@@ -341,8 +470,19 @@ Focus on comprehensive testing strategy. Present multiple test strategies in you
   /**
    * Generate a prompt for analyzing a changeset (multiple files) and proposing a consolidated test plan
    */
-  planTestForChangeset: (filePaths: string[]): string => {
-    const fileList = filePaths.map((f) => `- ${f}`).join("\n");
+  planTestForChangeset: (
+    filePaths: string[],
+    workspaceRoot?: string,
+  ): string => {
+    // Convert absolute paths to relative if workspace root is provided
+    const relativeFiles = workspaceRoot
+      ? filePaths.map((f) =>
+          f.startsWith(workspaceRoot)
+            ? f.slice(workspaceRoot.length).replace(/^\//, "")
+            : f,
+        )
+      : filePaths;
+    const fileList = relativeFiles.map((f) => `- ${f}`).join("\n");
     return `<phase>PHASE 1: CHANGESET ANALYSIS</phase>
 
 <goal>Analyze this changeset as a WHOLE and propose ONE consolidated test plan. Do NOT analyze each file separately.</goal>
@@ -650,14 +790,7 @@ For integration/E2E tests to run safely in a sandbox, you MUST:
    Use bashExecute to create a sandbox environment file:
    
    mkdir -p .clive
-   cat > .clive/.env.test << 'EOF'
-   # Sandbox environment for integration/E2E tests
-   # Auto-generated by Clive - points at local Docker services
-   
-   NODE_ENV=test
-   DATABASE_URL=postgresql://test:test@localhost:5432/test
-   # Add other discovered env vars with localhost values
-   EOF
+   printf '%s\n' "# Sandbox environment for integration/E2E tests" "# Auto-generated by Clive - points at local Docker services" "" "NODE_ENV=test" "DATABASE_URL=postgresql://test:test@localhost:5432/test" "# Add other discovered env vars with localhost values" > .clive/.env.test
 
 3. **Document in knowledge base**:
    Write a knowledge file with category "infrastructure" containing:

@@ -2225,6 +2225,14 @@
     "@radix-ui/react-context" "1.1.2"
     "@radix-ui/react-primitive" "2.1.3"
 
+"@radix-ui/react-progress@^1.1.8":
+  version "1.1.8"
+  resolved "https://registry.yarnpkg.com/@radix-ui/react-progress/-/react-progress-1.1.8.tgz#9f9a68d75bf763f9c64808724a83d2de804bd061"
+  integrity sha512-+gISHcSPUJ7ktBy9RnTqbdKW78bcGke3t6taawyZ71pio1JewwGSJizycs7rLhGTvMJYCQB1DBK4KQsxs7U8dA==
+  dependencies:
+    "@radix-ui/react-context" "1.1.3"
+    "@radix-ui/react-primitive" "2.1.4"
+
 "@radix-ui/react-radio-group@1.3.8":
   version "1.3.8"
   resolved "https://registry.yarnpkg.com/@radix-ui/react-radio-group/-/react-radio-group-1.3.8.tgz#93f102b5b948d602c2f2adb1bc5c347cbaf64bd9"
@@ -3187,6 +3195,33 @@
   integrity sha512-WByVZ3zblbvuI+voWQplUP7seSTKXI9z6TMVXEB3dY3JFrZCIXWKNfLbETX5lZV7fYkCMaDtILO1l6s11wdbQA==
   dependencies:
     "@textlint/ast-node-types" "15.4.1"
+
+"@tokenlens/core@1.3.0":
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/@tokenlens/core/-/core-1.3.0.tgz#b3c06b01b87688cbdba309f25254892039f4a1d6"
+  integrity sha512-d8YNHNC+q10bVpi95fELJwJyPVf1HfvBEI18eFQxRSZTdByXrP+f/ZtlhSzkx0Jl0aEmYVeBA5tPeeYRioLViQ==
+
+"@tokenlens/fetch@1.3.0":
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/@tokenlens/fetch/-/fetch-1.3.0.tgz#1e0f6e33ced792b89fc74f6a041cb0797d53577f"
+  integrity sha512-RONDRmETYly9xO8XMKblmrZjKSwCva4s5ebJwQNfNlChZoA5kplPoCgnWceHnn1J1iRjLVlrCNB43ichfmGBKQ==
+  dependencies:
+    "@tokenlens/core" "1.3.0"
+
+"@tokenlens/helpers@1.3.1":
+  version "1.3.1"
+  resolved "https://registry.yarnpkg.com/@tokenlens/helpers/-/helpers-1.3.1.tgz#4ac3374cf9dde7f52110fe76f73fc5f311d6c92c"
+  integrity sha512-t6yL8N6ES8337E6eVSeH4hCKnPdWkZRFpupy9w5E66Q9IeqQ9IO7XQ6gh12JKjvWiRHuyyJ8MBP5I549Cr41EQ==
+  dependencies:
+    "@tokenlens/core" "1.3.0"
+    "@tokenlens/fetch" "1.3.0"
+
+"@tokenlens/models@1.3.0":
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/@tokenlens/models/-/models-1.3.0.tgz#f39ee9086bbd20b15661cda71fedd5c966d6448a"
+  integrity sha512-9mx7ZGeewW4ndXAiD7AT1bbCk4OpJeortbjHHyNkgap+pMPPn1chY6R5zqe1ggXIUzZ2l8VOAKfPqOvpcrisJw==
+  dependencies:
+    "@tokenlens/core" "1.3.0"
 
 "@tootallnate/quickjs-emscripten@^0.23.0":
   version "0.23.0"
@@ -10954,6 +10989,16 @@ to-regex-range@^5.0.1:
   integrity sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==
   dependencies:
     is-number "^7.0.0"
+
+tokenlens@^1.3.1:
+  version "1.3.1"
+  resolved "https://registry.yarnpkg.com/tokenlens/-/tokenlens-1.3.1.tgz#65b12e4144f14292e9c36bcce3577a04ce8e614c"
+  integrity sha512-7oxmsS5PNCX3z+b+z07hL5vCzlgHKkCGrEQjQmWl5l+v5cUrtL7S1cuST4XThaL1XyjbTX8J5hfP0cjDJRkaLA==
+  dependencies:
+    "@tokenlens/core" "1.3.0"
+    "@tokenlens/fetch" "1.3.0"
+    "@tokenlens/helpers" "1.3.1"
+    "@tokenlens/models" "1.3.0"
 
 tough-cookie@^6.0.0:
   version "6.0.0"
