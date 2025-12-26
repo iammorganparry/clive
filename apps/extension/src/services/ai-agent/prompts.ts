@@ -73,6 +73,8 @@ This is a conversational workflow where you analyze, propose, and write tests:
 PHASE 0: SETUP & CONTEXT GATHERING
   - **Optional scratchpad**: For large changesets, consider creating a scratchpad file in .clive/plans/ to track progress
   - searchKnowledge: Search for architecture, testing patterns, user journeys
+  - searchKnowledge: Search for "test-execution" category to understand how to run tests
+  - searchKnowledge: Search for framework-specific patterns (vitest, jest, playwright, cypress)
   - searchKnowledge: Search for existing test patterns and frameworks used
   - semanticSearch: Find related components, dependencies, and existing tests
   - semanticSearch: Find similar files/patterns to understand code style
@@ -180,12 +182,13 @@ Evaluate the file and recommend the BEST testing approach:
    - **Always explain tradeoffs** - why this approach provides better safety/effort ratio
 
 **Framework Detection Priority:**
-1. Consult knowledge base if available for existing framework patterns
-2. Check package.json for devDependencies (vitest, jest, playwright, cypress)
-3. Look for config files (*.config.ts, *.config.js)
-4. Analyze existing test files for patterns
+1. **FIRST**: Search knowledge base for "test-execution" category to find documented test frameworks and commands
+2. Search knowledge base for framework-specific patterns (vitest, jest, playwright, cypress)
+3. Check package.json for devDependencies (vitest, jest, playwright, cypress)
+4. Look for config files (*.config.ts, *.config.js)
+5. Analyze existing test files for patterns
 
-**CRITICAL**: Recommend the BEST approach, not all possible approaches. Explain why this provides maximum safety with reasonable effort.
+**CRITICAL**: Always check knowledge base first for test-execution patterns. Recommend the BEST approach, not all possible approaches. Explain why this provides maximum safety with reasonable effort.
 </test_type_evaluation>
 
 <conversation_handling>
@@ -251,14 +254,24 @@ Commands execute from workspace root automatically. Use relative paths for best 
 <test_execution>
 **Running Tests to Verify Implementation**
 
+**CRITICAL: Before running ANY test, search knowledge base for test-execution patterns**
+
+Before running tests, you MUST:
+1. Search knowledge base for test-execution patterns matching the test type (unit, integration, E2E)
+2. Use the documented command from knowledge base if available
+3. If not found in knowledge base, fall back to analyzing package.json and config files
+4. Verify the command exists before executing
+
 After writing test files, use bashExecute to run test commands and verify they pass:
 
 1. **Unit tests**: Run directly without special setup
-   - Use bashExecute with test command: \`npx vitest run src/components/Button.test.tsx\`
+   - First: searchKnowledge("test-execution unit") to find documented commands
+   - Use documented command from knowledge base, or fallback: \`npx vitest run src/components/Button.test.tsx\`
    - No Docker or sandbox needed
    - Commands execute from workspace root automatically
 
 2. **Integration/E2E tests**: MUST use sandbox environment
+   - First: searchKnowledge("test-execution integration") or searchKnowledge("test-execution e2e")
    - See \`<sandbox_execution>\` section below for required Docker sandbox setup
    - NEVER run integration/E2E tests without sandbox setup first
    - Tests run against local Docker services, NOT production
@@ -341,7 +354,9 @@ After EVERY writeTestFile call:
 **CRITICAL: Every test file MUST pass before proceeding**
 
 1. **After EVERY writeTestFile call**:
+   - **FIRST**: Search knowledge base for test-execution patterns to get the correct command
    - IMMEDIATELY use bashExecute to run the test command and verify it passes
+   - Use the documented command from knowledge base if available
    - Do NOT write the next test file until current one passes
    - **For integration/E2E tests**: Follow \`<sandbox_execution>\` workflow BEFORE running the test command
 
@@ -591,6 +606,116 @@ For integration/E2E tests to run safely in a sandbox, you MUST:
    - Which test types need which services
 
 The .clive/.env.test file will be loaded automatically when running integration/E2E tests.
-</infrastructure_discovery>`;
+</infrastructure_discovery>
+
+<test_framework_discovery>
+**CRITICAL: Discover How Tests Are Run**
+
+You MUST systematically discover and document how different test types are executed in this codebase. This knowledge is essential for the testing agent to run tests correctly.
+
+**Discovery Steps:**
+
+1. **Find all test configuration files**:
+   - Run: find . -name "*.config.ts" -o -name "*.config.js" | grep -E "(vitest|jest|playwright|cypress|mocha|tape)" | grep -v node_modules
+   - Read each config file to understand test patterns and settings
+   - Example: cat apps/extension/vitest.config.ts
+
+2. **Analyze package.json test scripts for each workspace**:
+   - Find all package.json files: find . -name package.json -not -path "*/node_modules/*"
+   - Read test scripts: cat package.json | grep -A 10 '"scripts"' | grep -E "(test|spec)"
+   - Document which commands run which test types
+
+3. **Discover test file patterns from configs**:
+   - Extract include/exclude patterns: cat vitest.config.ts | grep -E "(include|exclude|test)"
+   - Identify test directories and naming conventions (*.test.ts, *.spec.ts, etc.)
+   - Map test types to their file locations
+
+4. **Identify workspace-specific test setups**:
+   - Check if monorepo: cat package.json | grep -A 10 '"workspaces"'
+   - For each workspace, document its test configuration independently
+   - Note any workspace-specific commands or environments
+
+5. **Map test types to execution commands**:
+   - Unit tests: Usually run with vitest/jest directly
+   - Integration tests: May require environment setup or different commands
+   - E2E tests: Usually playwright/cypress with specific commands
+   - Component tests: May use React Testing Library with specific setup
+
+**What to Document:**
+
+Create knowledge articles with category "test-execution" for each distinct test setup. Each article should contain:
+
+- **Test Type**: unit, integration, E2E, component, etc.
+- **Framework**: vitest, jest, playwright, cypress, etc. with version if available
+- **Command**: Exact command to run tests (e.g., "yarn test:unit", "npx vitest run", "npx playwright test")
+- **Test Patterns**: File patterns (e.g., "src/**/*.spec.ts", "tests/**/*.test.ts")
+- **Exclude Patterns**: What files/directories are excluded
+- **Configuration File**: Path to config file (e.g., "apps/extension/vitest.config.ts")
+- **Environment**: Test environment (node, jsdom, happy-dom, etc.)
+- **Setup Files**: Any setup files referenced (e.g., "./src/test/setup.ts")
+- **Workspace Context**: Package/workspace name (for monorepos)
+- **Dependencies**: Required environment variables or services
+- **Special Notes**: Any workspace-specific nuances (e.g., "Runs independently from other packages", "Requires Docker services")
+
+**Example Knowledge Structure:**
+
+Use writeKnowledgeFile with category "test-execution" and a descriptive title like "Unit Tests - Extension Package":
+
+\`\`\`markdown
+---
+category: test-execution
+title: Unit Tests - Extension Package
+---
+
+## Framework
+Vitest 4.0.16
+
+## Command
+\`yarn test:unit\` or \`vitest run\`
+
+## Test Patterns
+- Include: \`src/**/*.spec.ts\`
+- Exclude: \`node_modules\`, \`dist\`, \`out\`, \`src/test/**\`
+
+## Configuration
+File: \`apps/extension/vitest.config.ts\`
+Environment: jsdom
+Setup: \`./src/test/setup.ts\`
+
+## Workspace Context
+Package: apps/extension
+Runs independently from other packages
+
+## Notes
+- Uses jsdom for React component testing
+- Setup file configures global test utilities
+\`\`\`
+
+**Bash Commands for Discovery:**
+
+Use these commands to gather information:
+
+- Find all package.json files: \`find . -name package.json -not -path "*/node_modules/*"\`
+- Read test scripts: \`cat package.json | grep -A 5 '"scripts"'\`
+- Find test configs: \`find . -name "*.config.ts" -o -name "*.config.js" | grep -E "(vitest|jest|playwright|cypress)"\`
+- Analyze test file patterns: \`cat vitest.config.ts | grep -E "(include|exclude|test)"\`
+- Identify workspace structure: \`cat package.json | grep -A 10 '"workspaces"'\`
+- Find existing test files: \`find . -name "*.test.*" -o -name "*.spec.*" | grep -v node_modules | head -20\`
+- Check test activity: \`git log --since="6 months ago" --name-only --pretty=format: | grep -E "(test|spec)\\." | sort | uniq -c | sort -rn\`
+
+**Priority:**
+
+1. Document actively used test frameworks (check git history for recent test file commits)
+2. Focus on test types that are actually run (unit, integration, E2E)
+3. Skip deprecated or unused test frameworks
+4. For monorepos, document each workspace's test setup separately
+
+**Integration with Infrastructure:**
+
+When documenting test-execution, reference any infrastructure requirements:
+- If integration/E2E tests need Docker services, reference the infrastructure knowledge article
+- Document which test types require which services
+- Note environment variable requirements for each test type
+</test_framework_discovery>`;
   },
 } as const;

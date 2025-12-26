@@ -133,14 +133,12 @@ export const authRouter = {
   ),
 
   /**
-   * Logout - clears auth token and user info
+   * Logout - clears all secrets from secret storage
    */
   logout: procedure.input(z.void()).mutation(({ ctx }) =>
     Effect.gen(function* () {
       const configService = yield* ConfigServiceEffect;
-      yield* configService.deleteAuthToken();
-      yield* configService.deleteUserInfo();
-      // OIDC gateway tokens are fetched on-demand, no need to clear them
+      yield* configService.clearAllSecrets();
     }).pipe(provideAuthLayer(ctx)),
   ),
 

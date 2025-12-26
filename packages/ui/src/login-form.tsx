@@ -106,7 +106,7 @@ export function LoginForm({
             </Button>
           </Field>
           <FieldSeparator>Or</FieldSeparator>
-          <Field className="grid gap-4 sm:grid-cols-2">
+          <Field className="grid gap-4 w-full">
             {onGitHubClick && (
               <Button
                 variant="outline"

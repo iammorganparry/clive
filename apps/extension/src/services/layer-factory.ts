@@ -29,6 +29,7 @@ import { ReactFileFilterLive } from "./react-file-filter.js";
 import { GitServiceLive } from "./git-service.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
+import { SummaryServiceLive } from "./ai-agent/summary-service.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
 import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
 import { FileWatcherServiceLive } from "./file-watcher-service.js";
@@ -228,16 +229,20 @@ export function createAgentServiceLayer(ctx: LayerContext) {
     ),
   );
 
-  // Domain layer with all services including knowledge base
+  // SummaryService has no dependencies - can be added directly
+  const summaryServiceLayer = SummaryServiceLive;
+
+  // Domain layer with all services including knowledge base and summary service
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
     knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
+    summaryServiceLayer,
   );
 
   // Add agent layers
-  // TestingAgent depends on CodebaseIndexingService, PlanFileService, and KnowledgeBaseService
+  // TestingAgent depends on CodebaseIndexingService, PlanFileService, KnowledgeBaseService, and SummaryService
   const testingLayer = TestingAgentLive.pipe(
     Layer.provide(domainWithAllServices),
   );

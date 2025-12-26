@@ -97,6 +97,7 @@ export const SuggestedKnowledgeCategories = [
   "data-models",
   "api-integrations",
   "testing-patterns",
+  "test-execution",
   "framework",
   "patterns",
   "mocks",

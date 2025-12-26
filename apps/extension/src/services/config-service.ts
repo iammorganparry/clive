@@ -450,6 +450,41 @@ export class ConfigService extends Effect.Service<ConfigService>()(
           }),
 
         /**
+         * Clears all secrets from secret storage
+         * Used during logout to ensure complete cleanup
+         */
+        clearAllSecrets: () =>
+          Effect.gen(function* () {
+            yield* Effect.logDebug(
+              "[ConfigService] Clearing all secret storage",
+            );
+            const secretStorage = yield* SecretStorageService;
+
+            // Delete all secret keys
+            const keysToDelete = [
+              SecretKeys.authToken,
+              SecretKeys.userInfo,
+              SecretKeys.gatewayToken,
+              SecretKeys.gatewayTokenExpiry,
+              SecretKeys.anthropicApiKey,
+              SecretKeys.firecrawlApiKey,
+            ];
+
+            yield* Effect.all(
+              keysToDelete.map((key) =>
+                Effect.tryPromise({
+                  try: () => secretStorage.secrets.delete(key),
+                  catch: () => null,
+                }),
+              ),
+            );
+
+            yield* Effect.logDebug(
+              "[ConfigService] All secrets cleared successfully",
+            );
+          }),
+
+        /**
          * Checks if the service is configured
          * Returns true if either a stored API key OR auth token exists
          */

@@ -526,9 +526,10 @@ export const changesetChatMachine = setup({
             ) {
               return {
                 ...part,
-                state: (updates.errorText
-                  ? "output-error"
-                  : "output-available") as ToolState,
+                state: (updates.state ||
+                  (updates.errorText
+                    ? "output-error"
+                    : "output-available")) as ToolState,
                 output: updates.output,
                 errorText: updates.errorText,
               };
