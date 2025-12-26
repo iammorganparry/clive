@@ -18,6 +18,9 @@ import {
 } from "../utils/frontmatter-utils.js";
 import { ensureDirectoryExists } from "../utils/fs-effects.js";
 import { extractErrorMessage } from "../utils/error-utils.js";
+import { GitignoreManager } from "./gitignore-manager.js";
+import { VSCodeService } from "./vs-code.js";
+import { Layer } from "effect";
 
 /**
  * Error types for knowledge file operations
@@ -65,11 +68,12 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
 
       /**
        * Ensure knowledge directory exists, creating it if needed
+       * Also ensures .gitignore is updated with Clive patterns (one-time operation)
        */
       const ensureKnowledgeDir = () =>
         Effect.gen(function* () {
           const knowledgeDir = yield* getKnowledgeDir();
-          return yield* ensureDirectoryExists(knowledgeDir).pipe(
+          const createdDir = yield* ensureDirectoryExists(knowledgeDir).pipe(
             Effect.catchAll((error) =>
               Effect.fail(
                 new KnowledgeFileError({
@@ -79,6 +83,26 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               ),
             ),
           );
+
+          // Update .gitignore to ignore .clive/knowledge/ and .clive/.env.test
+          // This is a one-time operation - GitignoreManager checks if patterns already exist
+          yield* GitignoreManager.pipe(
+            Effect.flatMap((manager) => manager.ensureCliveIgnored()),
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                // Log error but don't fail the main operation
+                // Gitignore update is a convenience feature, not critical
+                console.warn(
+                  `Failed to update .gitignore: ${extractErrorMessage(error)}`,
+                );
+              }),
+            ),
+            Effect.provide(
+              Layer.merge(GitignoreManager.Default, VSCodeService.Default),
+            ),
+          );
+
+          return createdDir;
         });
 
       /**
@@ -433,13 +457,13 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
 
           // Generate index content with summaries
           let indexContent = `---
-title: Knowledge Base Index
-updatedAt: ${new Date().toISOString().split("T")[0]}
----
+              title: Knowledge Base Index
+              updatedAt: ${new Date().toISOString().split("T")[0]}
+              ---
 
-# Knowledge Base Index
+              # Knowledge Base Index
 
-This file provides an overview of all knowledge documented for this repository.
+              This file provides an overview of all knowledge documented for this repository.
 
 `;
 

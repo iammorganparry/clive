@@ -5,7 +5,11 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "--folder-uri=${workspaceFolder}",
+        "--new-window"
+      ],
       "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.{js,cjs}"],
       "preLaunchTask": "${defaultBuildTask}"
     },
@@ -13,7 +17,11 @@
       "name": "Run Extension (Watch Mode)",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/extension"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "--folder-uri=${workspaceFolder}",
+        "--new-window"
+      ],
       "outFiles": ["${workspaceFolder}/apps/extension/dist/**/*.{js,cjs}"],
       "preLaunchTask": "watch:all",
       "presentation": {
@@ -27,7 +35,9 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
-        "--extensionTestsPath=${workspaceFolder}/apps/extension/out/test/suite/index"
+        "--extensionTestsPath=${workspaceFolder}/apps/extension/out/test/suite/index",
+        "--folder-uri=${workspaceFolder}",
+        "--new-window"
       ],
       "outFiles": ["${workspaceFolder}/apps/extension/out/test/**/*.js"],
       "preLaunchTask": "${defaultBuildTask}"

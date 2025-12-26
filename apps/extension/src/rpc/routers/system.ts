@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import { ReactFileFilter as ReactFileFilterService } from "../../services/react-file-filter.js";
+import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 
@@ -39,9 +39,9 @@ export const systemRouter = {
 
       // Get branch changes
       const branchChanges = yield* ctx.gitService.getBranchChanges();
-      const reactFileFilter = yield* ReactFileFilterService;
+      const sourceFileFilter = yield* SourceFileFilterService;
       const eligibleFiles = branchChanges
-        ? yield* reactFileFilter.filterEligibleFiles(branchChanges.files)
+        ? yield* sourceFileFilter.filterEligibleFiles(branchChanges.files)
         : [];
 
       // Get theme

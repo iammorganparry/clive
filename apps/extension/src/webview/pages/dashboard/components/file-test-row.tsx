@@ -20,18 +20,32 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
   onViewTest: _onViewTest,
   onPreviewDiff: _onPreviewDiff,
 }) => {
+  const isEligible = file.isEligible;
+  const tooltipText = isEligible
+    ? file.path
+    : `${file.path}${file.reason ? ` - ${file.reason}` : ""}`;
+
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className={`flex items-center gap-2 ${!isEligible ? "opacity-50" : ""}`}
+      title={tooltipText}
+    >
       <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
       <span className="text-xs font-mono w-4 flex-shrink-0 text-muted-foreground">
         {file.status}
       </span>
       <span
-        className="text-sm flex-1 truncate text-muted-foreground"
-        title={file.path}
+        className={`text-sm flex-1 truncate ${
+          isEligible ? "text-foreground" : "text-muted-foreground"
+        }`}
       >
         {truncateMiddle(file.relativePath)}
       </span>
+      {!isEligible && (
+        <span className="text-xs text-muted-foreground italic">
+          (ineligible)
+        </span>
+      )}
     </div>
   );
 };

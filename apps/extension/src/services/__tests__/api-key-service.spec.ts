@@ -346,9 +346,11 @@ describe("ApiKeyService", () => {
         return yield* service.getApiKeysStatus();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       expect(result[0].provider).toBe("anthropic");
       expect(result[0].hasKey).toBe(false);
+      expect(result[1].provider).toBe("firecrawl");
+      expect(result[1].hasKey).toBe(false);
     });
 
     it("should include masked key when key exists", async () => {
@@ -404,8 +406,8 @@ describe("ApiKeyService", () => {
         return yield* service.listProviders();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual(["anthropic"]);
-      expect(result).toHaveLength(1);
+      expect(result).toEqual(["anthropic", "firecrawl"]);
+      expect(result).toHaveLength(2);
     });
   });
 

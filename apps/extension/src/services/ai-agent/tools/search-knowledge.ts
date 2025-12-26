@@ -4,11 +4,34 @@ import { Effect, Runtime } from "effect";
 import { KnowledgeFileService } from "../../knowledge-file-service.js";
 
 /**
+ * Critical categories that should return full content instead of truncated
+ */
+const CRITICAL_CATEGORIES = [
+  "test-execution",
+  "test-patterns",
+  "infrastructure",
+] as const;
+
+/**
+ * Callback function called when knowledge is retrieved
+ * Used to store knowledge in persistent context
+ */
+export type OnKnowledgeRetrieved = (
+  results: Array<{
+    category: string;
+    title: string;
+    content: string;
+    path: string;
+  }>,
+) => void;
+
+/**
  * Create a search tool for the knowledge base
  * Searches knowledge articles by text matching (category, title, content)
  */
 export const createSearchKnowledgeTool = (
   knowledgeFileService: KnowledgeFileService,
+  onKnowledgeRetrieved?: OnKnowledgeRetrieved,
 ) => {
   const runtime = Runtime.defaultRuntime;
 
@@ -74,7 +97,7 @@ export const createSearchKnowledgeTool = (
 
         // Text-based search: match query terms against category, title, and content
         const queryLower = query.toLowerCase();
-        const scoredArticles = articles
+        const scoredItems = articles
           .map((article) => {
             const searchableText =
               `${article.metadata.category} ${article.metadata.title} ${article.content}`.toLowerCase();
@@ -103,14 +126,38 @@ export const createSearchKnowledgeTool = (
           })
           .filter((item) => item.score > 0)
           .sort((a, b) => b.score - a.score)
-          .slice(0, limit)
-          .map((item) => ({
+          .slice(0, limit);
+
+        // Call callback to store knowledge in persistent context BEFORE truncating
+        if (onKnowledgeRetrieved && scoredItems.length > 0) {
+          // Pass full content (not truncated) to callback - always use full article content
+          const fullResults = scoredItems.map((item) => ({
             category: item.article.metadata.category,
             title: item.article.metadata.title,
-            content: item.article.content.substring(0, 500), // Truncate for response
+            content: item.article.content, // Always use full content for persistent storage
+            path: item.article.relativePath,
+          }));
+          onKnowledgeRetrieved(fullResults);
+        }
+
+        // Map to final result format with truncation for response
+        const scoredArticles = scoredItems.map((item) => {
+          const category = item.article.metadata.category;
+          const isCritical = CRITICAL_CATEGORIES.includes(
+            category as (typeof CRITICAL_CATEGORIES)[number],
+          );
+
+          return {
+            category,
+            title: item.article.metadata.title,
+            // Return full content for critical categories, truncated for others
+            content: isCritical
+              ? item.article.content
+              : item.article.content.substring(0, 500),
             path: item.article.relativePath,
             similarity: item.score / (queryLower.split(/\s+/).length + 4), // Normalize to 0-1
-          }));
+          };
+        });
 
         return {
           results: scoredArticles,

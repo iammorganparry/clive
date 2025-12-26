@@ -10,6 +10,13 @@ import {
   type ScratchpadTodo,
 } from "../utils/parse-scratchpad.js";
 import { parsePlan } from "../utils/parse-plan.js";
+import {
+  isTestCommand,
+  updateTestExecution,
+  updateTestExecutionFromStream,
+  extractTestFilePath,
+  type TestFileExecution,
+} from "../utils/parse-test-output.js";
 import type { LanguageModelUsage } from "ai";
 
 // Type guards for bash execute operations
@@ -116,6 +123,8 @@ export interface ChangesetChatContext {
   cachedAt?: number; // Timestamp of when cache was loaded
   usage: LanguageModelUsage | null;
   planContent: string | null; // Plan content extracted from scratchpad file
+  testExecutions: TestFileExecution[]; // Accumulated test execution results
+  accumulatedTestOutput: Map<string, string>; // Map of toolCallId -> accumulated output for streaming
 }
 
 interface CachedConversation {
@@ -149,11 +158,17 @@ export type ChangesetChatEvent =
         | "message"
         | "tool-call"
         | "tool-result"
+        | "tool-output-streaming"
         | "reasoning"
         | "usage";
       content?: string;
       toolEvent?: ToolEvent;
       toolResult?: { toolCallId: string; updates: Partial<ToolEvent> };
+      streamingOutput?: {
+        toolCallId: string;
+        command: string;
+        output: string;
+      };
       usage?: LanguageModelUsage;
     }
   | { type: "RESPONSE_COMPLETE" }
@@ -161,7 +176,8 @@ export type ChangesetChatEvent =
   | { type: "CLEAR_ERROR" }
   | { type: "RESET" }
   | { type: "SEND_MESSAGE"; content: string }
-  | { type: "CANCEL_STREAM" };
+  | { type: "CANCEL_STREAM" }
+  | { type: "CLOSE_TEST_DRAWER" };
 
 export interface ChangesetChatInput {
   files: string[];
@@ -387,6 +403,136 @@ export const changesetChatMachine = setup({
 
       return {};
     }),
+    updateTestExecutionFromStream: assign(({ context, event }) => {
+      // Check for streaming output from bashExecute tool
+      if (
+        event.type === "RESPONSE_CHUNK" &&
+        event.chunkType === "tool-output-streaming" &&
+        event.streamingOutput
+      ) {
+        const { toolCallId, command, output } = event.streamingOutput;
+        const toolEvent = context.toolEvents.find(
+          (t) => t.toolCallId === toolCallId,
+        );
+
+        if (
+          toolEvent &&
+          toolEvent.toolName === "bashExecute" &&
+          isBashExecuteArgs(toolEvent.args)
+        ) {
+          // Check if this is a test command
+          if (isTestCommand(command)) {
+            // Accumulate output
+            const currentAccumulated =
+              context.accumulatedTestOutput.get(toolCallId) || "";
+            const newAccumulated = currentAccumulated + output;
+            const updatedAccumulated = new Map(context.accumulatedTestOutput);
+            updatedAccumulated.set(toolCallId, newAccumulated);
+
+            // Update test execution with accumulated output
+            const updated = updateTestExecutionFromStream(
+              context.testExecutions.find((te) => {
+                const filePath = extractTestFilePath(command) || "unknown";
+                return te.filePath === filePath;
+              }) || null,
+              command,
+              output,
+              newAccumulated,
+            );
+
+            if (!updated) {
+              return {
+                accumulatedTestOutput: updatedAccumulated,
+              };
+            }
+
+            // Find existing execution or add new one
+            const filePath = updated.filePath;
+            const existingIndex = context.testExecutions.findIndex(
+              (te) => te.filePath === filePath,
+            );
+
+            const updatedExecutions = [...context.testExecutions];
+            if (existingIndex >= 0) {
+              updatedExecutions[existingIndex] = updated;
+            } else {
+              updatedExecutions.push(updated);
+            }
+
+            return {
+              testExecutions: updatedExecutions,
+              accumulatedTestOutput: updatedAccumulated,
+            };
+          }
+        }
+      }
+
+      return {};
+    }),
+    updateTestExecution: assign(({ context, event }) => {
+      // Check for test command execution from bashExecute tool results
+      if (
+        event.type === "RESPONSE_CHUNK" &&
+        event.chunkType === "tool-result" &&
+        event.toolResult
+      ) {
+        const toolCallId = event.toolResult.toolCallId;
+        const toolEvent = context.toolEvents.find(
+          (t) => t.toolCallId === toolCallId,
+        );
+
+        if (
+          toolEvent &&
+          toolEvent.toolName === "bashExecute" &&
+          isBashExecuteArgs(toolEvent.args)
+        ) {
+          const command = toolEvent.args.command;
+
+          // Check if this is a test command
+          if (isTestCommand(command)) {
+            const output = event.toolResult.updates.output;
+            const filePath = extractTestFilePath(command) || "unknown";
+            const existing = context.testExecutions.find(
+              (te) => te.filePath === filePath,
+            );
+            const updated = updateTestExecution(existing || null, command, output);
+
+            if (!updated) {
+              // Clear accumulated output for this toolCallId
+              const updatedAccumulated = new Map(context.accumulatedTestOutput);
+              updatedAccumulated.delete(toolCallId);
+              return {
+                accumulatedTestOutput: updatedAccumulated,
+              };
+            }
+
+            // Find existing execution or add new one
+            const existingIndex = context.testExecutions.findIndex(
+              (te) => te.filePath === filePath,
+            );
+
+            const updatedExecutions = [...context.testExecutions];
+            if (existingIndex >= 0) {
+              updatedExecutions[existingIndex] = updated;
+            } else {
+              updatedExecutions.push(updated);
+            }
+
+            // Clear accumulated output for this toolCallId
+            const updatedAccumulated = new Map(context.accumulatedTestOutput);
+            updatedAccumulated.delete(toolCallId);
+
+            return {
+              testExecutions: updatedExecutions,
+              accumulatedTestOutput: updatedAccumulated,
+            };
+          }
+        }
+      }
+
+      return {};
+    }),
+    clearTestExecutions: assign({ testExecutions: () => [] }),
     markAnalysisComplete: assign({ hasCompletedAnalysis: () => true }),
     addUserMessage: assign(({ context, event }) => {
       if (event.type !== "SEND_MESSAGE") return {};
@@ -607,6 +753,7 @@ export const changesetChatMachine = setup({
       cachedAt: () => undefined,
       usage: () => null,
       planContent: () => null,
+      testExecutions: () => [],
     }),
     cancelStream: assign({
       hasCompletedAnalysis: () => true, // Re-enable input
@@ -632,6 +779,8 @@ export const changesetChatMachine = setup({
     cachedAt: undefined,
     usage: null,
     planContent: null,
+    testExecutions: [],
+    accumulatedTestOutput: new Map(),
   }),
   states: {
     idle: {
@@ -687,6 +836,7 @@ export const changesetChatMachine = setup({
             "addToolPart",
             "updateToolPart",
             "updateScratchpadTodos",
+            "updateTestExecution",
             "updateUsage",
           ],
         },
@@ -728,6 +878,8 @@ export const changesetChatMachine = setup({
             "addToolPart",
             "updateToolPart",
             "updateScratchpadTodos",
+            "updateTestExecutionFromStream",
+            "updateTestExecution",
             "updateUsage",
           ],
         },

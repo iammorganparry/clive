@@ -63,6 +63,7 @@ export function useChangesetChat({
         errorText?: string;
         state?: ToolEvent["state"];
         usage?: LanguageModelUsage;
+        command?: string;
       };
 
       Match.value(event).pipe(
@@ -101,6 +102,17 @@ export function useChangesetChat({
                   ? "output-error"
                   : p.state || "output-available",
               },
+            },
+          });
+        }),
+        Match.when({ type: "tool-output-streaming" }, (p) => {
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "tool-output-streaming",
+            streamingOutput: {
+              toolCallId: p.toolCallId || "",
+              command: p.command || "",
+              output: typeof p.output === "string" ? p.output : "",
             },
           });
         }),
@@ -215,6 +227,7 @@ export function useChangesetChat({
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,
     planContent: state.context.planContent,
+    testExecutions: state.context.testExecutions,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });

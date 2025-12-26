@@ -7,7 +7,7 @@
  * Tier Architecture:
  * - Tier 0 (Core): VSCodeService, SecretStorage, Logger - context-dependent
  * - Tier 1 (Base): ConfigService, ApiKeyService - common business logic
- * - Tier 2 (Domain): RepositoryService, ConversationService, ReactFileFilter
+ * - Tier 2 (Domain): RepositoryService, ConversationService, SourceFileFilter
  * - Tier 3 (Features): CodebaseIndexing, Agents
  */
 
@@ -24,11 +24,12 @@ import { ApiKeyServiceLive } from "./api-key-service.js";
 import { TrpcClientServiceLive } from "./trpc-client-service.js";
 import { RepositoryServiceLive } from "./repository-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
-import { ReactFileFilterLive } from "./react-file-filter.js";
+import { SourceFileFilterLive } from "./source-file-filter.js";
 import { GitServiceLive } from "./git-service.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { SummaryServiceLive } from "./ai-agent/summary-service.js";
+import { CompletionDetectorLive } from "./ai-agent/completion-detector.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
 import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
@@ -91,8 +92,8 @@ export function createDomainLayer(
   // ConversationService depends on ConfigService
   const convLayer = ConversationServiceLive.pipe(Layer.provide(baseLayer));
 
-  // ReactFileFilter depends on VSCodeService (in baseLayer via coreLayer)
-  const reactFilterLayer = ReactFileFilterLive.pipe(Layer.provide(baseLayer));
+  // SourceFileFilter depends on VSCodeService (in baseLayer via coreLayer)
+  const sourceFilterLayer = SourceFileFilterLive.pipe(Layer.provide(baseLayer));
 
   // GitService depends on VSCodeService (in baseLayer via coreLayer)
   const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer));
@@ -101,7 +102,7 @@ export function createDomainLayer(
     baseLayer,
     repoLayer,
     convLayer,
-    reactFilterLayer,
+    sourceFilterLayer,
     gitLayer,
   );
 }
@@ -188,6 +189,9 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   // SummaryService has no dependencies - can be added directly
   const summaryServiceLayer = SummaryServiceLive;
 
+  // CompletionDetector has no dependencies - can be added directly
+  const completionDetectorLayer = CompletionDetectorLive;
+
   // Domain layer with all services including knowledge base and summary service
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
@@ -195,6 +199,7 @@ export function createAgentServiceLayer(ctx: LayerContext) {
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
     summaryServiceLayer,
+    completionDetectorLayer,
   );
 
   // Add agent layers

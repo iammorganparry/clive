@@ -23,6 +23,8 @@ const esbuildProblemMatcherPlugin = {
 	},
 };
 
+
+
 async function main() {
 	const ctx = await esbuild.context({
 		entryPoints: [

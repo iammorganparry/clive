@@ -24,6 +24,7 @@ export const createSummarizeContextTool = (
   getMessages: Effect.Effect<Message[]>,
   updateMessages: (messages: Message[]) => Effect.Effect<void>,
   progressCallback?: (status: string, message: string) => void,
+  getPersistentContext?: Effect.Effect<string>,
 ) => {
   const runtime = Runtime.defaultRuntime;
 
@@ -83,9 +84,21 @@ export const createSummarizeContextTool = (
             ),
           );
 
+          // Get persistent context if available
+          const persistentContext = getPersistentContext
+            ? yield* getPersistentContext.pipe(
+                Effect.catchAll(() => Effect.succeed("")),
+              )
+            : undefined;
+
           // Generate summary using SummaryService
           const summary = yield* summaryService
-            .summarizeMessages(messagesToSummarize, model, focus)
+            .summarizeMessages(
+              messagesToSummarize,
+              model,
+              focus,
+              persistentContext,
+            )
             .pipe(
               Effect.catchAll((error) =>
                 Effect.fail(

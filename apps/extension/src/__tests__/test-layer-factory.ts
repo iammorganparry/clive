@@ -7,7 +7,7 @@
  * Tier Architecture (mirrors production):
  * - Tier 0 (Core): VSCodeService, SecretStorage, Logger
  * - Tier 1 (Base): ConfigService, ApiKeyService
- * - Tier 2 (Domain): RepositoryService, ConversationService, ReactFileFilter
+ * - Tier 2 (Domain): RepositoryService, ConversationService, SourceFileFilter
  * - Tier 3 (Features): Agents
  *
  * Usage:
@@ -32,7 +32,7 @@ import { ApiKeyService } from "../services/api-key-service.js";
 import { TrpcClientService } from "../services/trpc-client-service.js";
 import { RepositoryService } from "../services/repository-service.js";
 import { ConversationService } from "../services/conversation-service.js";
-import { ReactFileFilter } from "../services/react-file-filter.js";
+import { SourceFileFilter } from "../services/source-file-filter.js";
 import { GitServiceLive } from "../services/git-service.js";
 import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
 import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
@@ -254,29 +254,27 @@ export function createMockConversationServiceLayer(
   } as unknown as ConversationService);
 }
 
-export interface ReactFileFilterOverrides {
-  checkFileEligibility?: Mock;
+export interface SourceFileFilterOverrides {
+  isEligible?: Mock;
   filterEligibleFiles?: Mock;
 }
 
 /**
- * Create a mock ReactFileFilter layer
+ * Create a mock SourceFileFilter layer
  */
-export function createMockReactFileFilterLayer(
-  overrides: ReactFileFilterOverrides = {},
-): Layer.Layer<ReactFileFilter> {
+export function createMockSourceFileFilterLayer(
+  overrides: SourceFileFilterOverrides = {},
+): Layer.Layer<SourceFileFilter> {
   const defaults = {
-    checkFileEligibility: vi
-      .fn()
-      .mockReturnValue(Effect.succeed({ isEligible: true })),
+    isEligible: vi.fn().mockReturnValue(Effect.succeed(true)),
     filterEligibleFiles: vi.fn().mockReturnValue(Effect.succeed([])),
   };
 
-  return Layer.succeed(ReactFileFilter, {
-    _tag: "ReactFileFilter",
+  return Layer.succeed(SourceFileFilter, {
+    _tag: "SourceFileFilter",
     ...defaults,
     ...overrides,
-  } as unknown as ReactFileFilter);
+  } as unknown as SourceFileFilter);
 }
 
 export interface KnowledgeBaseAgentOverrides {
@@ -472,7 +470,7 @@ function createDomainTestLayer(
   options?: {
     repositoryOverrides?: RepositoryServiceOverrides;
     conversationOverrides?: ConversationServiceOverrides;
-    reactFileFilterOverrides?: ReactFileFilterOverrides;
+    sourceFileFilterOverrides?: SourceFileFilterOverrides;
   },
 ) {
   // RepositoryService depends on ConfigService (in baseLayer)
@@ -485,9 +483,9 @@ function createDomainTestLayer(
     options?.conversationOverrides,
   ).pipe(Layer.provide(baseLayer.layer));
 
-  // ReactFileFilter depends on VSCodeService (in baseLayer via coreLayer)
-  const reactFilterLayer = createMockReactFileFilterLayer(
-    options?.reactFileFilterOverrides,
+  // SourceFileFilter depends on VSCodeService (in baseLayer via coreLayer)
+  const sourceFilterLayer = createMockSourceFileFilterLayer(
+    options?.sourceFileFilterOverrides,
   ).pipe(Layer.provide(baseLayer.layer));
 
   // GitService depends on VSCodeService (in baseLayer via coreLayer)
@@ -497,7 +495,7 @@ function createDomainTestLayer(
     baseLayer.layer,
     repoLayer,
     convLayer,
-    reactFilterLayer,
+    sourceFilterLayer,
     gitLayer,
   );
 }
@@ -506,7 +504,7 @@ export function createConfigTestLayer(
   options?: Parameters<typeof createCoreTestLayer>[0] & {
     repositoryOverrides?: RepositoryServiceOverrides;
     conversationOverrides?: ConversationServiceOverrides;
-    reactFileFilterOverrides?: ReactFileFilterOverrides;
+    sourceFileFilterOverrides?: SourceFileFilterOverrides;
     knowledgeBaseAgentOverrides?: KnowledgeBaseAgentOverrides;
     knowledgeBaseServiceOverrides?: KnowledgeBaseServiceOverrides;
     knowledgeFileServiceOverrides?: KnowledgeFileServiceOverrides;
@@ -518,7 +516,7 @@ export function createConfigTestLayer(
   const domainLayer = createDomainTestLayer(base, {
     repositoryOverrides: options?.repositoryOverrides,
     conversationOverrides: options?.conversationOverrides,
-    reactFileFilterOverrides: options?.reactFileFilterOverrides,
+    sourceFileFilterOverrides: options?.sourceFileFilterOverrides,
   });
 
   // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)

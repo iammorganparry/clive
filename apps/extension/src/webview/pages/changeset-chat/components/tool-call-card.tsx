@@ -1,52 +1,44 @@
 import type React from "react";
+import { useCallback } from "react";
 import {
-  Terminal,
-  Search,
-  FileCode,
-  FilePlus,
-  BookOpen,
-  BookPlus,
-  Globe,
-  WrenchIcon,
+  CheckCircleIcon,
+  CircleIcon,
+  ClockIcon,
+  XCircleIcon,
+  FileTextIcon,
+  TerminalIcon,
+  SearchIcon,
+  BookOpenIcon,
+  FileCheckIcon,
+  GlobeIcon,
+  CodeIcon,
+  ChevronDownIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { Badge } from "@clive/ui/badge";
+import {
+  Task,
+  TaskTrigger,
+  TaskContent,
+  TaskItem,
+  TaskItemFile,
+} from "@clive/ui/task";
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+} from "@clive/ui/components/ai-elements/code-block";
+import type { BundledLanguage } from "shiki";
 import { cn } from "@clive/ui/lib/utils";
 import type { ToolState } from "../../../types/chat.js";
+import { getVSCodeAPI } from "../../../services/vscode.js";
 
 interface ToolCallCardProps {
   toolName: string;
   state: ToolState;
   input?: unknown;
+  output?: unknown;
   errorText?: string;
 }
 
-const toolDisplayConfig: Record<string, { title: string; icon: LucideIcon }> = {
-  bashExecute: {
-    title: "Running Command",
-    icon: Terminal,
-  },
-  proposeTest: {
-    title: "Proposing Test",
-    icon: FileCode,
-  },
-  writeTestFile: {
-    title: "Writing Test File",
-    icon: FilePlus,
-  },
-  searchKnowledge: {
-    title: "Searching Knowledge Base",
-    icon: BookOpen,
-  },
-  writeKnowledgeFile: {
-    title: "Updating Knowledge Base",
-    icon: BookPlus,
-  },
-  webSearch: {
-    title: "Searching Web",
-    icon: Globe,
-  },
-};
+// Tool display config removed - using natural language summaries instead
 
 // Type guards for input structures
 interface BashExecuteArgs {
@@ -70,10 +62,19 @@ const isProposeTestArgs = (input: unknown): input is ProposeTestArgs =>
 interface WriteTestFileArgs {
   filePath?: string;
   targetTestPath?: string;
+  targetPath?: string;
+  testContent?: string;
 }
 
 const isWriteTestFileArgs = (input: unknown): input is WriteTestFileArgs =>
   typeof input === "object" && input !== null;
+
+interface WriteTestFileOutput {
+  success?: boolean;
+  filePath?: string;
+  path?: string;
+  message?: string;
+}
 
 interface SearchKnowledgeArgs {
   query?: string;
@@ -87,6 +88,7 @@ interface WriteKnowledgeFileArgs {
   filePath?: string;
   category?: string;
   topic?: string;
+  content?: string;
 }
 
 const isWriteKnowledgeFileArgs = (
@@ -94,11 +96,26 @@ const isWriteKnowledgeFileArgs = (
 ): input is WriteKnowledgeFileArgs =>
   typeof input === "object" && input !== null;
 
+interface WriteKnowledgeFileOutput {
+  success?: boolean;
+  path?: string;
+  relativePath?: string;
+  error?: string;
+}
+
 interface WebSearchArgs {
   query?: string;
 }
 
 const isWebSearchArgs = (input: unknown): input is WebSearchArgs =>
+  typeof input === "object" && input !== null;
+
+interface ReadFileArgs {
+  filePath?: string;
+  targetPath?: string;
+}
+
+const isReadFileArgs = (input: unknown): input is ReadFileArgs =>
   typeof input === "object" && input !== null;
 
 /**
@@ -111,145 +128,895 @@ const extractFilename = (path: string): string => {
 };
 
 /**
- * Formats tool input into a user-friendly display string
+ * Generate natural language summary for tool header
+ * Returns a concise description of what the tool did
  */
-const formatToolInput = (toolName: string, input: unknown): string | null => {
-  if (!input || typeof input !== "object") {
+const generateToolSummary = (
+  toolName: string,
+  input?: unknown,
+  output?: unknown,
+): string => {
+  // bashExecute: Show the command with smart formatting
+  if (toolName === "bashExecute" && isBashExecuteArgs(input)) {
+    const command = input.command.trim();
+    // Extract filename from cat commands for cleaner display
+    if (command.startsWith("cat ")) {
+      const filePath = command
+        .replace(/^cat\s+/, "")
+        .split(/\s+/)[0]
+        .replace(/['"]/g, "");
+      const filename = extractFilename(filePath);
+      return `cat ${filename}`;
+    }
+    // For find commands, try to extract directory
+    if (command.startsWith("find ")) {
+      const match = command.match(/find\s+([^\s]+)/);
+      if (match) {
+        const dir = extractFilename(match[1]);
+        return `find ${dir}`;
+      }
+      return "find files";
+    }
+    // For grep commands, show "Grepped <pattern> in <directory>" format
+    if (command.startsWith("grep ")) {
+      // Extract pattern (could be quoted or unquoted)
+      const patternMatch = command.match(/grep\s+(?:-r\s+)?(?:['"]([^'"]+)['"]|([^\s]+))/);
+      const pattern = patternMatch?.[1] || patternMatch?.[2] || "";
+      
+      // Extract directory/path (usually after pattern)
+      const pathMatch = command.match(/grep\s+(?:-r\s+)?(?:['"][^'"]+['"]|[^\s]+)\s+([^\s]+)/);
+      const path = pathMatch?.[1] || "";
+      
+      if (pattern && path) {
+        const dirName = extractFilename(path);
+        return `Grepped ${pattern} in ${dirName}`;
+      } else if (pattern) {
+        return `Grepped ${pattern}`;
+      }
+      return "grep";
+    }
+    // For git commands, show simplified version
+    if (command.startsWith("git ")) {
+      const parts = command.split(/\s+/);
+      if (parts.length > 1) {
+        return `git ${parts[1]}`;
+      }
+      return "git";
+    }
+    // Truncate long commands but preserve readability
+    return command.length > 50 ? `${command.slice(0, 47)}...` : command;
+  }
+
+  // read_file: Show "Read <filename>"
+  if (toolName === "read_file") {
+    if (isReadFileArgs(input)) {
+      const path = input.filePath || input.targetPath;
+      if (path) {
+        const filename = extractFilename(path);
+        // Check if output has line range info
+        if (output && typeof output === "object") {
+          const fileOutput = output as { startLine?: number; endLine?: number };
+          if (fileOutput.startLine && fileOutput.endLine) {
+            return `Read ${filename} L${fileOutput.startLine}-${fileOutput.endLine}`;
+          }
+        }
+        return `Read ${filename}`;
+      }
+    }
+    return "Read file";
+  }
+
+  // searchKnowledge: Show query or result count
+  if (toolName === "searchKnowledge") {
+    if (output && typeof output === "object") {
+      const searchOutput = output as { count?: number; results?: unknown[] };
+      const count = searchOutput.count ?? searchOutput.results?.length ?? 0;
+      if (isSearchKnowledgeArgs(input) && input.query) {
+        return count > 0
+          ? `Found ${count} result${count !== 1 ? "s" : ""} for "${input.query}"`
+          : `No results for "${input.query}"`;
+      }
+    }
+    if (isSearchKnowledgeArgs(input)) {
+      return input.query
+        ? `Searching "${input.query}"`
+        : input.category
+          ? `Searching category: ${input.category}`
+          : "Searching knowledge base";
+    }
+    return "Searching knowledge base";
+  }
+
+  // writeTestFile: Show filename (handled separately in component)
+  if (toolName === "writeTestFile") {
+    if (isWriteTestFileArgs(input)) {
+      const path = input.filePath || input.targetTestPath || input.targetPath;
+      if (path) {
+        return extractFilename(path);
+      }
+    }
+    return "Writing test file";
+  }
+
+  // writeKnowledgeFile: Show filename (handled separately in component)
+  if (toolName === "writeKnowledgeFile") {
+    if (isWriteKnowledgeFileArgs(input)) {
+      if (input.filePath) {
+        return extractFilename(input.filePath);
+      }
+      return input.category || input.topic || "Writing knowledge file";
+    }
+    return "Writing knowledge file";
+  }
+
+  // proposeTest: Show source file
+  if (toolName === "proposeTest") {
+    if (isProposeTestArgs(input) && input.sourceFile) {
+      return `Proposing test for ${extractFilename(input.sourceFile)}`;
+    }
+    return "Proposing test";
+  }
+
+  // webSearch: Show query
+  if (toolName === "webSearch") {
+    if (isWebSearchArgs(input) && input.query) {
+      return `Searching web: ${input.query}`;
+    }
+    return "Searching web";
+  }
+
+  // Default: return tool name as-is
+  return toolName;
+};
+
+/**
+ * Get icon for tool type
+ */
+const getToolIcon = (toolName: string): React.ReactNode => {
+  const iconClass = "size-4";
+  
+  switch (toolName) {
+    case "readFile":
+      return <FileTextIcon className={iconClass} />;
+    case "bashExecute":
+      return <TerminalIcon className={iconClass} />;
+    case "codebaseSearch":
+      return <SearchIcon className={iconClass} />;
+    case "searchKnowledge":
+      return <BookOpenIcon className={iconClass} />;
+    case "writeTestFile":
+      return <FileCheckIcon className={iconClass} />;
+    case "writeKnowledgeFile":
+      return <FileTextIcon className={iconClass} />;
+    case "proposeTest":
+      return <FileCheckIcon className={iconClass} />;
+    case "webSearch":
+      return <GlobeIcon className={iconClass} />;
+    default:
+      return <CodeIcon className={iconClass} />;
+  }
+};
+
+const getStatusBadge = (state: ToolState): React.ReactNode | null => {
+  const icons: Record<ToolState, React.ReactNode> = {
+    "input-streaming": <CircleIcon className="size-3" />,
+    "input-available": <ClockIcon className="size-3 animate-pulse" />,
+    "output-available": <CheckCircleIcon className="size-3 text-green-600" />,
+    "output-error": <XCircleIcon className="size-3 text-red-600" />,
+  };
+
+  // Only show badge for completed/error states, not for running states
+  if (state === "output-available" || state === "output-error") {
+    return (
+      <div className="flex items-center">
+        {icons[state]}
+      </div>
+    );
+  }
+
+  // Return null for running states (no badge)
+  return null;
+};
+
+/**
+ * Detect if a tool is a file-writing tool
+ */
+const isFileWritingTool = (toolName: string): boolean => {
+  return ["writeTestFile", "writeKnowledgeFile"].includes(toolName);
+};
+
+/**
+ * Detect language from file extension
+ */
+const detectLanguageFromPath = (filePath: string): BundledLanguage => {
+  const ext = filePath.split(".").pop()?.toLowerCase() || "text";
+  const languageMap: Record<string, BundledLanguage> = {
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    jsx: "jsx",
+    json: "json",
+    md: "markdown",
+    py: "python",
+    go: "go",
+    rs: "rust",
+    java: "java",
+    cpp: "cpp",
+    c: "c",
+    html: "html",
+    css: "css",
+    yml: "yaml",
+    yaml: "yaml",
+    sh: "bash",
+    bash: "bash",
+    zsh: "bash",
+    sql: "sql",
+    xml: "xml",
+    toml: "toml",
+    ini: "ini",
+  };
+  // Use a valid BundledLanguage - default to typescript if unknown
+  const lang = languageMap[ext];
+  return (lang || "typescript") as BundledLanguage;
+};
+
+/**
+ * Extract file info (path and content) for file-writing tools
+ */
+const extractFileInfo = (
+  toolName: string,
+  input?: unknown,
+  output?: unknown,
+): { filePath: string; content: string; language: BundledLanguage } | null => {
+  if (!isFileWritingTool(toolName)) {
     return null;
   }
 
-  switch (toolName) {
-    case "bashExecute": {
-      if (isBashExecuteArgs(input)) {
-        const command = input.command.trim();
-        // Extract filename from cat commands
-        if (command.startsWith("cat ")) {
-          const filePath = command
-            .replace(/^cat\s+/, "")
-            .split(/\s+/)[0]
-            .replace(/['"]/g, "");
-          const filename = extractFilename(filePath);
-          return `cat ${filename}`;
-        }
-        // Truncate long commands
-        return command.length > 60 ? `${command.slice(0, 57)}...` : command;
+  // Try output first
+  if (output && typeof output === "object") {
+    let filePath: string | undefined;
+    let content: string | undefined;
+
+    if (toolName === "writeTestFile") {
+      const out = output as WriteTestFileOutput;
+      filePath = out.filePath || out.path;
+
+      // Content is in input for writeTestFile
+      if (input && typeof input === "object" && isWriteTestFileArgs(input)) {
+        content = input.testContent;
       }
-      break;
+    } else if (toolName === "writeKnowledgeFile") {
+      const out = output as WriteKnowledgeFileOutput;
+      filePath = out.path || out.relativePath;
+
+      // Content is in input for writeKnowledgeFile
+      if (
+        input &&
+        typeof input === "object" &&
+        isWriteKnowledgeFileArgs(input)
+      ) {
+        content = input.content;
+      }
     }
 
-    case "proposeTest": {
-      if (isProposeTestArgs(input) && input.sourceFile) {
-        return extractFilename(input.sourceFile);
-      }
-      break;
-    }
-
-    case "writeTestFile": {
-      if (isWriteTestFileArgs(input)) {
-        const path = input.filePath || input.targetTestPath;
-        return path ? extractFilename(path) : null;
-      }
-      break;
-    }
-
-    case "searchKnowledge": {
-      if (isSearchKnowledgeArgs(input)) {
-        return input.query || input.category || null;
-      }
-      break;
-    }
-
-    case "writeKnowledgeFile": {
-      if (isWriteKnowledgeFileArgs(input)) {
-        if (input.filePath) {
-          return extractFilename(input.filePath);
-        }
-        return input.category || input.topic || null;
-      }
-      break;
-    }
-
-    case "webSearch": {
-      if (isWebSearchArgs(input) && input.query) {
-        return input.query;
-      }
-      break;
-    }
-  }
-
-  // Default: try to extract first meaningful string value
-  const obj = input as Record<string, unknown>;
-  for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string" && value.length > 0) {
-      // Skip common metadata fields
-      if (!["limit", "offset", "maxResults", "timeout"].includes(key)) {
-        return value.length > 60 ? `${value.slice(0, 57)}...` : value;
-      }
+    if (filePath && content) {
+      return {
+        filePath,
+        content,
+        language: detectLanguageFromPath(filePath),
+      };
     }
   }
 
   return null;
 };
 
-const getStatusBadge = (state: ToolState) => {
-  const labels: Record<ToolState, string> = {
-    "input-streaming": "Pending",
-    "input-available": "Running",
-    "output-available": "Completed",
-    "output-error": "Error",
+/**
+ * Extract file paths from tool input/output for clickable links
+ */
+const extractFilePaths = (
+  _toolName: string,
+  input?: unknown,
+  output?: unknown,
+): string[] => {
+  const paths: string[] = [];
+
+  // Extract from input
+  if (input && typeof input === "object") {
+    if (isProposeTestArgs(input) && input.sourceFile) {
+      paths.push(input.sourceFile);
+    }
+    if (isWriteTestFileArgs(input)) {
+      const path = input.filePath || input.targetTestPath || input.targetPath;
+      if (path) paths.push(path);
+    }
+    if (isReadFileArgs(input)) {
+      const path = input.filePath || input.targetPath;
+      if (path) paths.push(path);
+    }
+    if (isWriteKnowledgeFileArgs(input) && input.filePath) {
+      paths.push(input.filePath);
+    }
+  }
+
+  // Extract from output (for tools like read_file and write tools)
+  if (output && typeof output === "object") {
+    const outputObj = output as Record<string, unknown>;
+    if (outputObj.filePath && typeof outputObj.filePath === "string") {
+      paths.push(outputObj.filePath);
+    }
+    if (outputObj.path && typeof outputObj.path === "string") {
+      paths.push(outputObj.path);
+    }
+    if (outputObj.relativePath && typeof outputObj.relativePath === "string") {
+      paths.push(outputObj.relativePath);
+    }
+  }
+
+  return [...new Set(paths)]; // Remove duplicates
+};
+
+/**
+ * Generate action list items for tool output
+ * Returns an array of action descriptions to display
+ */
+const generateActionList = (
+  toolName: string,
+  input?: unknown,
+  output?: unknown,
+): string[] => {
+  const actions: string[] = [];
+
+  // bashExecute: Show command as action
+  if (toolName === "bashExecute" && isBashExecuteArgs(input)) {
+    actions.push(input.command.trim());
+    return actions;
+  }
+
+  // read_file: Show file read action
+  if (toolName === "read_file") {
+    if (isReadFileArgs(input)) {
+      const path = input.filePath || input.targetPath;
+      if (path) {
+        const filename = extractFilename(path);
+        if (output && typeof output === "object") {
+          const fileOutput = output as { startLine?: number; endLine?: number };
+          if (fileOutput.startLine && fileOutput.endLine) {
+            actions.push(`Read ${filename} L${fileOutput.startLine}-${fileOutput.endLine}`);
+          } else {
+            actions.push(`Read ${filename}`);
+          }
+        } else {
+          actions.push(`Read ${filename}`);
+        }
+      }
+    }
+    return actions;
+  }
+
+  // searchKnowledge: Show search results
+  if (toolName === "searchKnowledge" && output && typeof output === "object") {
+    const searchOutput = output as {
+      results?: Array<{ title?: string; path?: string }>;
+      count?: number;
+    };
+    if (searchOutput.results && searchOutput.results.length > 0) {
+      searchOutput.results.forEach((result) => {
+        if (result.title) {
+          actions.push(`Found: ${result.title}`);
+        } else if (result.path) {
+          actions.push(`Found: ${extractFilename(result.path)}`);
+        }
+      });
+    }
+    return actions;
+  }
+
+  // writeTestFile: Show file written
+  if (toolName === "writeTestFile") {
+    if (output && typeof output === "object") {
+      const writeOutput = output as WriteTestFileOutput;
+      const path = writeOutput.filePath || writeOutput.path;
+      if (path) {
+        actions.push(`Wrote ${extractFilename(path)}`);
+      }
+    }
+    return actions;
+  }
+
+  // writeKnowledgeFile: Show file written
+  if (toolName === "writeKnowledgeFile") {
+    if (output && typeof output === "object") {
+      const writeOutput = output as WriteKnowledgeFileOutput;
+      const path = writeOutput.path || writeOutput.relativePath;
+      if (path) {
+        actions.push(`Wrote ${extractFilename(path)}`);
+      }
+    }
+    return actions;
+  }
+
+  return actions;
+};
+
+/**
+ * Format output based on tool type for display in body
+ */
+const formatToolOutput = (
+  toolName: string,
+  output: unknown,
+  errorText?: string,
+): React.ReactNode => {
+  if (errorText) {
+    return (
+      <div className="rounded-md bg-destructive/10 p-3 text-destructive text-sm">
+        {errorText}
+      </div>
+    );
+  }
+
+  if (!output) {
+    return null;
+  }
+
+  // Handle bashExecute output - return file matches for grep/find, null for others (handled separately)
+  if (toolName === "bashExecute" && typeof output === "object") {
+    const bashOutput = output as { stdout?: string; stderr?: string; command?: string };
+    const command = bashOutput.command || "";
+    
+    // For grep/find commands, return null - we'll handle them in the component body
+    if (command.includes("grep") || command.includes("find")) {
+      return null;
+    }
+    
+    // For other commands, show stdout/stderr
+    if (bashOutput.stdout || bashOutput.stderr) {
+      return (
+        <div className="space-y-2">
+          {bashOutput.stdout && (
+            <div>
+              <CodeBlock code={bashOutput.stdout} language="bash" />
+            </div>
+          )}
+          {bashOutput.stderr && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                stderr
+              </div>
+              <CodeBlock code={bashOutput.stderr} language="bash" />
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+
+  // Handle read_file output - show file content
+  if (toolName === "read_file" && typeof output === "object") {
+    const fileOutput = output as { content?: string; filePath?: string };
+    if (fileOutput.content) {
+      const filePath = fileOutput.filePath || "";
+      const ext = filePath.split(".").pop()?.toLowerCase() || "text";
+      const languageMap: Record<string, string> = {
+        ts: "typescript",
+        tsx: "tsx",
+        js: "javascript",
+        jsx: "jsx",
+        json: "json",
+        md: "markdown",
+        py: "python",
+        go: "go",
+        rs: "rust",
+        java: "java",
+        cpp: "cpp",
+        c: "c",
+        html: "html",
+        css: "css",
+      };
+      const language = (languageMap[ext] || "typescript") as BundledLanguage;
+      return <CodeBlock code={fileOutput.content} language={language} />;
+    }
+  }
+
+  // Handle searchKnowledge output - show results list
+  if (toolName === "searchKnowledge" && typeof output === "object") {
+    const searchOutput = output as {
+      results?: Array<{ title?: string; path?: string; content?: string }>;
+    };
+    if (searchOutput.results && searchOutput.results.length > 0) {
+      return (
+        <div className="space-y-2">
+          {searchOutput.results.map((result) => {
+            const key = result.path || result.title || `result-${Math.random()}`;
+            return (
+              <div key={key} className="text-sm">
+                {result.title && (
+                  <div className="font-medium">{result.title}</div>
+                )}
+                {result.path && (
+                  <div className="text-muted-foreground text-xs">
+                    {result.path}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+  }
+
+  // For other tools, don't show raw JSON - just return null
+  // Action list will be shown instead
+  return null;
+};
+
+/**
+ * Parse grep output to extract file matches with counts
+ * Grep output format: "file.tsx:10: match line" or "file.tsx:10:match line"
+ */
+interface FileMatch {
+  filePath: string;
+  count: number;
+}
+
+const parseGrepOutput = (stdout: string): FileMatch[] => {
+  const fileMatches = new Map<string, number>();
+  
+  // Match lines like "file.tsx:10: match" or "file.tsx:10:match"
+  const lines = stdout.split("\n").filter((line) => line.trim());
+  
+  for (const line of lines) {
+    // Match file path before first colon
+    const match = line.match(/^([^:]+):/);
+    if (match) {
+      const filePath = match[1].trim();
+      fileMatches.set(filePath, (fileMatches.get(filePath) || 0) + 1);
+    }
+  }
+  
+  return Array.from(fileMatches.entries()).map(([filePath, count]) => ({
+    filePath,
+    count,
+  }));
+};
+
+/**
+ * Parse find output to extract file paths
+ */
+const parseFindOutput = (stdout: string): string[] => {
+  return stdout
+    .split("\n")
+    .filter((line) => line.trim() && !line.startsWith("find:"))
+    .map((line) => line.trim());
+};
+
+/**
+ * Get file type icon/label for display
+ */
+const getFileTypeDisplay = (filePath: string): { icon: string; label: string } => {
+  const ext = filePath.split(".").pop()?.toLowerCase() || "";
+  
+  // React/JSX files
+  if (ext === "tsx" || ext === "jsx") {
+    return { icon: "⚛", label: "" };
+  }
+  
+  // TypeScript
+  if (ext === "ts") {
+    return { icon: "", label: "TS" };
+  }
+  
+  // JavaScript
+  if (ext === "js") {
+    return { icon: "", label: "JS" };
+  }
+  
+  // Default
+  return { icon: "", label: ext.toUpperCase() || "FILE" };
+};
+
+/**
+ * Truncate path for display (show last N segments)
+ */
+const truncatePath = (path: string, maxSegments: number = 2): string => {
+  const parts = path.split(/[/\\]/);
+  if (parts.length <= maxSegments) {
+    return path;
+  }
+  return `.../${parts.slice(-maxSegments).join("/")}`;
+};
+
+
+/**
+ * FileLink component for clickable file paths
+ */
+const _FileLink: React.FC<{ filePath: string }> = ({ filePath }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const vscode = getVSCodeAPI();
+    vscode.postMessage({
+      command: "open-file",
+      filePath,
+    });
   };
 
-  const variants: Record<ToolState, "secondary" | "destructive"> = {
-    "input-streaming": "secondary",
-    "input-available": "secondary",
-    "output-available": "secondary",
-    "output-error": "destructive",
-  };
+  const filename = extractFilename(filePath);
 
   return (
-    <Badge variant={variants[state]} className="text-xs">
-      {labels[state]}
-    </Badge>
+    <button
+      type="button"
+      onClick={handleClick}
+      className="text-primary hover:underline font-medium text-sm"
+      title={`Open ${filePath}`}
+    >
+      {filename}
+    </button>
   );
 };
+
 
 export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   toolName,
   state,
   input,
+  output,
   errorText,
 }) => {
-  const config =
-    toolDisplayConfig[toolName] ??
-    ({ title: toolName, icon: WrenchIcon } as {
-      title: string;
-      icon: LucideIcon;
-    });
-  const Icon = config.icon;
-
-  const formattedInput = formatToolInput(toolName, input);
+  const summary = generateToolSummary(toolName, input, output);
   const hasError = state === "output-error" || !!errorText;
+  const filePaths = extractFilePaths(toolName, input, output);
+
+  // Check if this is a file-writing tool with code content
+  const fileInfo = extractFileInfo(toolName, input, output);
+  const isCodeWritingTool =
+    isFileWritingTool(toolName) &&
+    fileInfo &&
+    state === "output-available" &&
+    !errorText;
+
+  // Handler to open file
+  const handleOpenFile = useCallback((filePath: string) => {
+    const vscode = getVSCodeAPI();
+    vscode.postMessage({
+      command: "open-file",
+      filePath,
+    });
+  }, []);
+
+  // Check if this tool has grouped results (grep/find with file matches)
+  const command = isBashExecuteArgs(input)
+    ? input.command
+    : output && typeof output === "object"
+      ? (output as { command?: string }).command
+      : "";
+  const hasGroupedResults = Boolean(
+    toolName === "bashExecute" &&
+    command &&
+    (command.includes("grep") || command.includes("find")) &&
+    output &&
+    typeof output === "object" &&
+    (output as { stdout?: string }).stdout
+  );
+
+  // Render grep/find file lists
+  const renderGrepFindResults = useCallback((): React.ReactNode => {
+    if (toolName === "bashExecute" && typeof output === "object") {
+      const bashOutput = output as { stdout?: string; command?: string };
+      const cmd = isBashExecuteArgs(input)
+        ? input.command
+        : bashOutput.command || "";
+      
+      // Grep results
+      if (cmd.includes("grep") && bashOutput.stdout) {
+        const fileMatches = parseGrepOutput(bashOutput.stdout);
+        if (fileMatches.length > 0) {
+          return (
+            <>
+              {fileMatches.map((match: FileMatch) => {
+                const { icon, label } = getFileTypeDisplay(match.filePath);
+                const filename = extractFilename(match.filePath);
+                const truncatedPath = truncatePath(match.filePath);
+                return (
+                  <TaskItem key={match.filePath}>
+                    <div className="flex items-center gap-2 w-full">
+                      {icon ? (
+                        <span className="text-base leading-none">{icon}</span>
+                      ) : (
+                        <span className="flex items-center justify-center rounded bg-blue-500/80 px-1 py-0.5 min-w-[1.75rem] h-4">
+                          <span className="text-[10px] font-medium text-white leading-none">
+                            {label}
+                          </span>
+                        </span>
+                      )}
+                      <TaskItemFile
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFile(match.filePath);
+                        }}
+                        className="cursor-pointer flex-1"
+                      >
+                        <span className="truncate">{filename}</span>
+                        <span className="text-muted-foreground text-xs ml-2">
+                          {truncatedPath}
+                        </span>
+                        <span className="ml-auto text-xs font-medium">
+                          {match.count}
+                        </span>
+                      </TaskItemFile>
+                    </div>
+                  </TaskItem>
+                );
+              })}
+            </>
+          );
+        }
+      }
+      
+      // Find results
+      if (cmd.includes("find") && bashOutput.stdout) {
+        const files = parseFindOutput(bashOutput.stdout);
+        if (files.length > 0) {
+          return (
+            <>
+              {files.slice(0, 50).map((filePath: string) => {
+                const { icon, label } = getFileTypeDisplay(filePath);
+                const filename = extractFilename(filePath);
+                const truncatedPath = truncatePath(filePath);
+                return (
+                  <TaskItem key={filePath}>
+                    <div className="flex items-center gap-2 w-full">
+                      {icon ? (
+                        <span className="text-base leading-none">{icon}</span>
+                      ) : (
+                        <span className="flex items-center justify-center rounded bg-blue-500/80 px-1 py-0.5 min-w-[1.75rem] h-4">
+                          <span className="text-[10px] font-medium text-white leading-none">
+                            {label}
+                          </span>
+                        </span>
+                      )}
+                      <TaskItemFile
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFile(filePath);
+                        }}
+                        className="cursor-pointer flex-1"
+                      >
+                        <span className="truncate">{filename}</span>
+                        <span className="text-muted-foreground text-xs ml-2">
+                          {truncatedPath}
+                        </span>
+                      </TaskItemFile>
+                    </div>
+                  </TaskItem>
+                );
+              })}
+              {files.length > 50 && (
+                <TaskItem>
+                  <span className="text-xs text-muted-foreground">
+                    ... and {files.length - 50} more files
+                  </span>
+                </TaskItem>
+              )}
+            </>
+          );
+        }
+      }
+    }
+    return null;
+  }, [toolName, input, output, handleOpenFile]);
+
+  // Render action list
+  const renderActionList = useCallback((): React.ReactNode => {
+    const actions = generateActionList(toolName, input, output);
+    if (actions.length > 0) {
+      return (
+        <>
+          {actions.map((action) => (
+            <TaskItem key={action}>
+              {action}
+            </TaskItem>
+          ))}
+        </>
+      );
+    }
+    return null;
+  }, [toolName, input, output]);
+
+  // Render formatted output
+  const renderFormattedOutput = useCallback((): React.ReactNode => {
+    const formattedOutput = formatToolOutput(toolName, output, errorText);
+    if (formattedOutput) {
+      return (
+        <div className="mt-2">
+          {formattedOutput}
+        </div>
+      );
+    }
+    return null;
+  }, [toolName, output, errorText]);
+
+  // Determine title for TaskTrigger
+  const triggerTitle = isCodeWritingTool && fileInfo
+    ? extractFilename(fileInfo.filePath)
+    : summary;
+
+  const statusBadge = getStatusBadge(state);
+
+  const toolIcon = getToolIcon(toolName);
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-        hasError
-          ? "border-destructive/50 bg-destructive/5"
-          : "border-border bg-muted/30",
-      )}
-    >
-      <Icon className="size-4 shrink-0" />
-      <span className="font-medium">{config.title}</span>
-      {formattedInput && (
-        <>
-          <span className="text-muted-foreground">•</span>
-          <span className="truncate text-muted-foreground text-xs">
-            {formattedInput}
-          </span>
-        </>
-      )}
-      <div className="ml-auto shrink-0">{getStatusBadge(state)}</div>
-    </div>
+    <Task defaultOpen={hasGroupedResults} className={cn("mb-1", hasError && "opacity-75")}>
+      <TaskTrigger title={triggerTitle}>
+        <div className="group flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+          {toolIcon}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {isCodeWritingTool && fileInfo ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenFile(fileInfo.filePath);
+                }}
+                className="font-medium text-sm hover:underline text-left"
+                title={`Open ${fileInfo.filePath}`}
+              >
+                {extractFilename(fileInfo.filePath)}
+              </button>
+            ) : (
+              <span className="text-sm">{summary}</span>
+            )}
+          </div>
+          {statusBadge && (
+            <div className="flex items-center gap-2 shrink-0">
+              {statusBadge}
+            </div>
+          )}
+          <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180 shrink-0" />
+        </div>
+      </TaskTrigger>
+      <TaskContent>
+        {/* Code Writing Tools - Show code prominently */}
+        {isCodeWritingTool && fileInfo ? (
+          <div className="mt-2">
+            <CodeBlock
+              code={fileInfo.content}
+              language={fileInfo.language}
+              showLineNumbers={true}
+            >
+              <CodeBlockCopyButton />
+            </CodeBlock>
+          </div>
+        ) : (
+          <>
+            {/* Grep/Find File Lists - Show grouped file results */}
+            {renderGrepFindResults()}
+
+            {/* Action List - Clean list of actions taken */}
+            {renderActionList()}
+
+            {/* Output/Result - Show formatted output for tools that need it */}
+            {renderFormattedOutput()}
+
+            {/* File Links Section - Show clickable file links */}
+            {filePaths.length > 0 && (
+              filePaths.map((filePath) => (
+                  <TaskItem key={filePath}>
+                    <TaskItemFile
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenFile(filePath);
+                      }}
+                      className="cursor-pointer"
+                    >
+                      {extractFilename(filePath)}
+                    </TaskItemFile>
+                  </TaskItem>
+                ))
+            )}
+          </>
+        )}
+      </TaskContent>
+    </Task>
   );
 };

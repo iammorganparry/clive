@@ -1,14 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { Effect, Runtime, Data } from "effect";
 import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import type { TokenBudgetService } from "../token-budget.js";
 import { getWorkspaceRoot } from "../../../lib/vscode-effects.js";
-
-const execAsync = promisify(exec);
 
 /**
  * Blocked patterns that indicate destructive or unsafe operations
@@ -110,10 +107,23 @@ function validateCommand(
 }
 
 /**
+ * Streaming output callback type
+ * Receives command and output, should look up toolCallId internally
+ */
+export type StreamingOutputCallback = (chunk: {
+  command: string;
+  output: string;
+}) => void;
+
+/**
  * Factory function to create bashExecuteTool with token budget awareness
  * Uses MEDIUM priority - up to 25% of remaining budget
+ * Supports streaming output via onStreamingOutput callback
  */
-export const createBashExecuteTool = (budget: TokenBudgetService) =>
+export const createBashExecuteTool = (
+  budget: TokenBudgetService,
+  onStreamingOutput?: StreamingOutputCallback,
+) =>
   tool({
     description: `Execute bash commands in the workspace.
 
@@ -156,21 +166,125 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
             `[BashExecute] Executing command: ${command.substring(0, 100)}...`,
           );
 
-          // Execute command with timeout
+          // Execute command with spawn for streaming support
           const result = yield* Effect.tryPromise({
             try: () =>
-              execAsync(command, {
-                cwd: workspaceRoot,
-                timeout: EXECUTION_TIMEOUT_MS,
-                maxBuffer: 10 * 1024 * 1024, // 10MB max output
+              new Promise<{
+                stdout: string;
+                stderr: string;
+                exitCode: number;
+              }>((resolve, reject) => {
+                const child = spawn(command, {
+                  shell: true,
+                  cwd: workspaceRoot,
+                  stdio: ["ignore", "pipe", "pipe"],
+                });
+
+                let stdout = "";
+                let stderr = "";
+                let stdoutBuffer = "";
+                let stderrBuffer = "";
+
+                // Set timeout
+                const timeout = setTimeout(() => {
+                  child.kill();
+                  reject(
+                    new BashCommandError({
+                      message: `Command timed out after ${EXECUTION_TIMEOUT_MS}ms`,
+                      command,
+                    }),
+                  );
+                }, EXECUTION_TIMEOUT_MS);
+
+                // Stream stdout
+                child.stdout?.on("data", (data: Buffer) => {
+                  const chunk = data.toString();
+                  stdout += chunk;
+                  stdoutBuffer += chunk;
+
+                  // Emit streaming output when we have a complete line or buffer gets large
+                  if (
+                    onStreamingOutput &&
+                    (chunk.includes("\n") || stdoutBuffer.length > 1000)
+                  ) {
+                    onStreamingOutput({
+                      command,
+                      output: stdoutBuffer,
+                    });
+                    stdoutBuffer = ""; // Reset buffer after emitting
+                  }
+                });
+
+                // Stream stderr
+                child.stderr?.on("data", (data: Buffer) => {
+                  const chunk = data.toString();
+                  stderr += chunk;
+                  stderrBuffer += chunk;
+
+                  // Emit streaming output for stderr as well
+                  if (
+                    onStreamingOutput &&
+                    (chunk.includes("\n") || stderrBuffer.length > 1000)
+                  ) {
+                    const combinedOutput = `${stdout}\n--- stderr ---\n${stderrBuffer}`;
+                    onStreamingOutput({
+                      command,
+                      output: combinedOutput,
+                    });
+                    stderrBuffer = ""; // Reset buffer after emitting
+                  }
+                });
+
+                // Handle process completion
+                child.on("close", (code) => {
+                  clearTimeout(timeout);
+
+                  // Emit any remaining buffered output
+                  if (onStreamingOutput) {
+                    const remainingOutput =
+                      stdoutBuffer || stderrBuffer
+                        ? stdout + (stderr ? `\n--- stderr ---\n${stderr}` : "")
+                        : stdout +
+                          (stderr ? `\n--- stderr ---\n${stderr}` : "");
+                    if (remainingOutput) {
+                      onStreamingOutput({
+                        command,
+                        output: remainingOutput,
+                      });
+                    }
+                  }
+
+                  resolve({
+                    stdout,
+                    stderr,
+                    exitCode: code ?? 0,
+                  });
+                });
+
+                // Handle process errors
+                child.on("error", (error) => {
+                  clearTimeout(timeout);
+                  reject(
+                    new BashCommandError({
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : "Unknown error",
+                      command,
+                      cause: error,
+                    }),
+                  );
+                });
               }),
             catch: (error) =>
-              new BashCommandError({
-                message:
-                  error instanceof Error ? error.message : "Unknown error",
-                command,
-                cause: error,
-              }),
+              error instanceof BashCommandError
+                ? error
+                : new BashCommandError({
+                    message:
+                      error instanceof Error ? error.message : "Unknown error",
+                    command,
+                    cause: error,
+                  }),
           });
 
           const stdout = result.stdout || "";
@@ -196,7 +310,7 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
           return {
             stdout: truncated,
             stderr: stderr || undefined,
-            exitCode: 0, // execAsync only resolves on success (exit code 0)
+            exitCode: result.exitCode,
             wasTruncated,
             command,
           };

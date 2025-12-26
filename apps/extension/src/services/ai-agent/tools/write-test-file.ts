@@ -100,6 +100,17 @@ export const createWriteTestFileTool = (approvalRegistry: Set<string>) =>
 
         const relativePath = vscode.workspace.asRelativePath(fileUri, false);
 
+        // Open the file in the editor so the user can see what was created
+        try {
+          const document = await vscode.workspace.openTextDocument(fileUri);
+          await vscode.window.showTextDocument(document, {
+            preview: false, // Keep the tab open (not preview mode)
+            preserveFocus: false, // Focus the new editor tab
+          });
+        } catch {
+          // If opening fails, don't fail the whole operation - file was still written
+        }
+
         return {
           success: true,
           filePath: relativePath,

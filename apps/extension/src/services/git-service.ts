@@ -121,7 +121,55 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
       });
 
     /**
-     * Helper to get changed files
+     * Helper to parse git diff output into ChangedFile array
+     */
+    const parseGitDiffOutput = (
+      stdout: string,
+      workspaceRoot: string,
+      vscodeWorkspace: typeof import("vscode").workspace,
+    ): ChangedFile[] => {
+      const files: ChangedFile[] = [];
+      const lines = stdout
+        .trim()
+        .split("\n")
+        .filter((line) => line.trim());
+
+      for (const line of lines) {
+        const match = line.match(/^([MADRC])\s+(.+)$/);
+        if (match) {
+          const [, statusChar, filePath] = match;
+          const fullPath = path.join(workspaceRoot, filePath);
+          const relativePath = vscodeWorkspace.asRelativePath(
+            Uri.file(fullPath),
+            false,
+          );
+
+          // Map git status to our status
+          let status: "M" | "A" | "D" | "R";
+          if (statusChar === "M") {
+            status = "M";
+          } else if (statusChar === "A") {
+            status = "A";
+          } else if (statusChar === "D") {
+            status = "D";
+          } else if (statusChar === "R" || statusChar === "C") {
+            status = "R";
+          } else {
+            status = "M"; // Default to modified
+          }
+
+          files.push({
+            path: fullPath,
+            relativePath,
+            status,
+          });
+        }
+      }
+      return files;
+    };
+
+    /**
+     * Helper to get changed files (committed branch changes + uncommitted changes)
      */
     const getChangedFilesHelper = (workspaceRoot: string, baseBranch: string) =>
       Effect.gen(function* () {
@@ -130,51 +178,51 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         );
         const vscode = yield* VSCodeService;
 
-        const stdout = yield* executeGitCommand(
+        // Get committed changes between branches
+        const committedStdout = yield* executeGitCommand(
           `git diff --name-status ${baseBranch}...HEAD`,
           workspaceRoot,
         ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
-        const files: ChangedFile[] = [];
-        const lines = stdout
-          .trim()
-          .split("\n")
-          .filter((line) => line.trim());
+        // Get uncommitted changes (unstaged)
+        const unstagedStdout = yield* executeGitCommand(
+          "git diff --name-status",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
-        for (const line of lines) {
-          const match = line.match(/^([MADRC])\s+(.+)$/);
-          if (match) {
-            const [, statusChar, filePath] = match;
-            const fullPath = path.join(workspaceRoot, filePath);
-            const relativePath = vscode.workspace.asRelativePath(
-              Uri.file(fullPath),
-              false,
-            );
+        // Get staged changes
+        const stagedStdout = yield* executeGitCommand(
+          "git diff --name-status --cached",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
-            // Map git status to our status
-            let status: "M" | "A" | "D" | "R";
-            if (statusChar === "M") {
-              status = "M";
-            } else if (statusChar === "A") {
-              status = "A";
-            } else if (statusChar === "D") {
-              status = "D";
-            } else if (statusChar === "R" || statusChar === "C") {
-              status = "R";
-            } else {
-              status = "M"; // Default to modified
-            }
+        // Parse all outputs
+        const committedFiles = parseGitDiffOutput(committedStdout, workspaceRoot, vscode.workspace);
+        const unstagedFiles = parseGitDiffOutput(unstagedStdout, workspaceRoot, vscode.workspace);
+        const stagedFiles = parseGitDiffOutput(stagedStdout, workspaceRoot, vscode.workspace);
 
-            files.push({
-              path: fullPath,
-              relativePath,
-              status,
-            });
-          }
+        // Merge and deduplicate (uncommitted changes take precedence)
+        const fileMap = new Map<string, ChangedFile>();
+        
+        // Add committed files first
+        for (const file of committedFiles) {
+          fileMap.set(file.path, file);
+        }
+        
+        // Add staged files (overwrite if exists)
+        for (const file of stagedFiles) {
+          fileMap.set(file.path, file);
+        }
+        
+        // Add unstaged files (overwrite if exists)
+        for (const file of unstagedFiles) {
+          fileMap.set(file.path, file);
         }
 
+        const files = Array.from(fileMap.values());
+
         yield* Effect.logDebug(
-          `[GitService] Found ${files.length} changed file(s)`,
+          `[GitService] Found ${files.length} changed file(s) (${committedFiles.length} committed, ${stagedFiles.length} staged, ${unstagedFiles.length} unstaged)`,
         );
         return files;
       });
