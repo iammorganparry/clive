@@ -34,6 +34,7 @@ import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
 import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
+import { TestResultsPanel } from "./components/test-results-panel.js";
 import { parsePlan } from "./utils/parse-plan.js";
 import type { MessagePart } from "../../types/chat.js";
 
@@ -65,6 +66,7 @@ export const ChangesetChatPage: React.FC = () => {
     scratchpadTodos,
     usage,
     planContent,
+    testExecutions,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName });
@@ -147,6 +149,7 @@ export const ChangesetChatPage: React.FC = () => {
                     toolName={part.toolName}
                     state={part.state}
                     input={part.input}
+                    output={part.output}
                     errorText={part.errorText}
                   />
                 );
@@ -262,11 +265,14 @@ export const ChangesetChatPage: React.FC = () => {
             <ConversationScrollButton />
           </Conversation>
 
-          {/* Floating Approval Bar */}
+          {/* Floating Approval Bar - only show when there's a test proposal */}
           <FloatingApprovalBar
-            isVisible={hasCompletedAnalysis && !isLoading}
+            isVisible={hasCompletedAnalysis && !isLoading && parsedPlan !== null}
             onApprove={handleApprove}
           />
+
+          {/* Test Results Panel - persistent panel below chat */}
+          <TestResultsPanel testExecutions={testExecutions} />
 
           {/* Input Area */}
           <div className="border-t bg-background">

@@ -231,8 +231,8 @@ describe("handleRpcMessage", () => {
       const message = {
         id: "test-1",
         type: "subscription" as const,
-        path: ["agents", "generateTest"],
-        input: { sourceFilePath: "test.ts" },
+        path: ["agents", "planTests"],
+        input: { files: ["test.ts"], branchName: "test-branch" },
       };
 
       const response = await handleRpcMessage(message, mockContext);
@@ -250,8 +250,8 @@ describe("handleRpcMessage", () => {
       const message = {
         id: "test-1",
         type: "subscription" as const,
-        path: ["agents", "generateTest"],
-        input: { sourceFilePath: "test.ts" },
+        path: ["agents", "planTests"],
+        input: { files: ["test.ts"], branchName: "test-branch" },
       };
 
       const response = await handleRpcMessage(message, mockContext);
@@ -268,7 +268,7 @@ describe("handleRpcMessage", () => {
       const message = {
         id: "test-1",
         type: "subscription" as const,
-        path: ["agents", "generateTest"],
+        path: ["agents", "planTests"],
         input: { _unsubscribe: true },
       };
 

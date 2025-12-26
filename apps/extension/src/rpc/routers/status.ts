@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { z } from "zod";
 import { createRouter } from "@clive/webview-rpc";
-import { ReactFileFilter as ReactFileFilterService } from "../../services/react-file-filter.js";
+import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 
@@ -55,8 +55,8 @@ export const statusRouter = {
         return null;
       }
 
-      const reactFileFilter = yield* ReactFileFilterService;
-      const eligibleFiles = yield* reactFileFilter.filterEligibleFiles(
+      const sourceFileFilter = yield* SourceFileFilterService;
+      const eligibleFiles = yield* sourceFileFilter.filterEligibleFiles(
         branchChanges.files,
       );
 

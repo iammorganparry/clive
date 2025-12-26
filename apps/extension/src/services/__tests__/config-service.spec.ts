@@ -239,6 +239,8 @@ describe("ConfigService", () => {
           headers: {
             Authorization: `Bearer ${authToken}`,
             "Content-Type": "application/json",
+            "X-Clive-Extension": "true",
+            "User-Agent": "Clive-Extension/1.0",
           },
         },
       );
@@ -473,6 +475,12 @@ describe("ConfigService", () => {
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       expect(firstToken).toBe(firstGatewayToken);
+
+      // Clear cache to ensure second fetch gets a new token
+      await Effect.gen(function* () {
+        const configService = yield* ConfigService;
+        yield* configService.clearGatewayTokenCache();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       // Second fetch (simulating token refresh)
       vi.mocked(global.fetch).mockResolvedValueOnce({

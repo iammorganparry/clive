@@ -1,6 +1,6 @@
 import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import type { ToolResult } from "@ai-sdk/provider-utils";
-import { stepCountIs, streamText } from "ai";
+import { streamText } from "ai";
 import { Data, Effect, Match, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
@@ -15,6 +15,7 @@ import { ConfigService } from "../config-service.js";
 import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { SummaryService } from "./summary-service.js";
 import { emitAgentError } from "./agent-error-utils.js";
+import { CompletionDetector } from "./completion-detector.js";
 import {
   estimateContextSize,
   getMessagesToKeep,
@@ -32,6 +33,7 @@ import {
   createWriteTestFileTool,
 } from "./tools/index.js";
 import type { WriteTestFileOutput } from "./types.js";
+import { KnowledgeContext } from "./knowledge-context.js";
 
 class TestingAgentError extends Data.TaggedError("TestingAgentError")<{
   message: string;
@@ -59,6 +61,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const configService = yield* ConfigService;
       const knowledgeFileService = yield* KnowledgeFileService;
       const summaryService = yield* SummaryService;
+      const completionDetector = yield* CompletionDetector;
 
       return {
         /**
@@ -122,6 +125,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const messagesRef = yield* Ref.make<Message[]>([]);
             const executionsRef = yield* Ref.make<Execution[]>([]);
 
+            // Track toolCallIds for bash commands to enable streaming
+            // Maps command to toolCallId (command may not be unique, but we'll use the most recent)
+            const commandToToolCallId = new Map<string, string>();
+
+            // Knowledge context for persistent storage across summarization
+            const knowledgeContext = new KnowledgeContext();
+
             // Setup Token Budget
             const budget = yield* makeTokenBudget();
 
@@ -182,18 +192,54 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               ? createWebTools({ enableSearch: true })
               : {};
 
-            // Create summarize context tool with Ref access
+            // Callback to store knowledge in persistent context
+            const onKnowledgeRetrieved = (
+              results: Array<{
+                category: string;
+                title: string;
+                content: string;
+                path: string;
+              }>,
+            ) => {
+              knowledgeContext.addFromSearchResults(results);
+            };
+
+            // Create summarize context tool with Ref access and persistent context
             const summarizeContext = createSummarizeContextTool(
               summaryService,
               summaryModel,
               Ref.get(messagesRef),
               (newMessages) => Ref.set(messagesRef, newMessages),
               progressCallback,
+              Effect.sync(() => knowledgeContext.formatForPrompt()),
             );
 
+            // Create streaming callback for bash execute tool
+            const bashStreamingCallback = (chunk: {
+              command: string;
+              output: string;
+            }) => {
+              // Look up toolCallId from command
+              const toolCallId = commandToToolCallId.get(chunk.command) || "";
+
+              // Emit streaming output event
+              progressCallback?.(
+                "tool-output-streaming",
+                JSON.stringify({
+                  type: "tool-output-streaming",
+                  toolCallId,
+                  command: chunk.command,
+                  output: chunk.output,
+                }),
+              );
+            };
+
             const tools = {
-              bashExecute: createBashExecuteTool(budget),
-              searchKnowledge: createSearchKnowledgeTool(knowledgeFileService),
+              bashExecute: createBashExecuteTool(budget, bashStreamingCallback),
+              searchKnowledge: createSearchKnowledgeTool(
+                knowledgeFileService,
+                onKnowledgeRetrieved,
+              ),
               writeKnowledgeFile:
                 createWriteKnowledgeFileTool(knowledgeFileService),
               writeTestFile,
@@ -263,8 +309,16 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                     -messagesToKeep,
                   );
 
+                  // Get persistent knowledge context
+                  const persistentContext = knowledgeContext.formatForPrompt();
+
                   const summary = yield* summaryService
-                    .summarizeMessages(messagesToSummarize, summaryModel)
+                    .summarizeMessages(
+                      messagesToSummarize,
+                      summaryModel,
+                      undefined,
+                      persistentContext,
+                    )
                     .pipe(
                       Effect.catchAll(
                         (error) =>
@@ -296,19 +350,30 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Run context check
             yield* manageContext;
 
+            // Get knowledge context for system prompt
+            const knowledgeContextPrompt = knowledgeContext.formatForPrompt();
+            const knowledgeContextSection = knowledgeContextPrompt
+              ? `\n\n${knowledgeContextPrompt}`
+              : "";
+
             // System prompt
             const systemPromptWithWorkspace = `${TEST_AGENT_SYSTEM_PROMPT}
 
               <workspace_root>
               The workspace root is: ${workspaceRoot}
               All paths should be relative to this root. Use this information to understand the project structure and create test files in appropriate locations.
-              </workspace_root>`;
+              </workspace_root>${knowledgeContextSection}`;
 
             const emitError = (error: unknown) => {
               emitAgentError(error, progressCallback);
             };
 
-            // Stream execution
+            // Create completion state for detecting [COMPLETE] delimiter
+            const completionStateRef = yield* completionDetector.createState();
+            const stopWhenComplete =
+              completionDetector.createStopCondition(completionStateRef);
+
+            // Stream execution with unlimited steps (stops on [COMPLETE] delimiter)
             const currentMessages = yield* Ref.get(messagesRef);
             const streamResult = yield* Effect.try({
               try: () =>
@@ -316,7 +381,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   model: anthropic(AIModels.anthropic.testing),
                   tools,
                   maxRetries: 0,
-                  stopWhen: stepCountIs(100),
+                  stopWhen: stopWhenComplete,
                   abortSignal: signal,
                   messages: [
                     {
@@ -380,6 +445,17 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                         yield* Effect.logDebug(
                           `[TestingAgent:${correlationId}] Tool call: ${e.toolName}`,
                         );
+
+                        // Track toolCallId for bash commands
+                        if (e.toolName === "bashExecute") {
+                          const args = e.toolArgs as
+                            | { command?: string }
+                            | undefined;
+                          const command = args?.command || "";
+                          if (command && e.toolCallId) {
+                            commandToToolCallId.set(command, e.toolCallId);
+                          }
+                        }
 
                         // Progress updates
                         if (e.toolName === "bashExecute") {
@@ -585,9 +661,11 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             const totalDuration = Date.now() - startTime;
             const finalExecutions = yield* Ref.get(executionsRef);
+            const completionState =
+              yield* completionDetector.getState(completionStateRef);
 
             yield* Effect.logDebug(
-              `[TestingAgent:${correlationId}] Steps used: ${awaitedSteps.length}/40`,
+              `[TestingAgent:${correlationId}] Steps used: ${awaitedSteps.length} (unlimited, stopped by ${completionState.isComplete ? "completion delimiter" : "other condition"})`,
             );
             yield* Effect.logDebug(
               `[TestingAgent:${correlationId}] Completed in ${totalDuration}ms. Executions: ${finalExecutions.length}`,
@@ -605,9 +683,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               },
             }).pipe(Effect.catchAll(() => Effect.succeed("")));
 
+            // Strip the completion delimiter from the response for display
+            const cleanResponse =
+              completionDetector.stripDelimiter(responseText);
+
             return {
               executions: finalExecutions,
-              response: responseText,
+              response: cleanResponse,
             };
           }),
       };

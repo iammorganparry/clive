@@ -1,9 +1,7 @@
 /**
  * Token counting utilities for managing prompt sizes
- * Uses @anthropic-ai/tokenizer for accurate token counting
+ * Uses fast estimation (~4 chars per token) for token counting
  */
-
-import { countTokens } from "@anthropic-ai/tokenizer";
 
 /**
  * Maximum tokens allowed per file before truncation
@@ -18,11 +16,12 @@ export const MAX_FILE_TOKENS = 50_000;
 export const MAX_TOTAL_TOKENS = 150_000;
 
 /**
- * Count the number of tokens in a text string using Anthropic's tokenizer
- * This provides accurate token counts for Claude models
+ * Count the number of tokens in a text string using fast estimation
+ * Fast estimation: ~4 characters per token (works well for code)
+ * This provides approximate token counts for Claude models
  */
 export function countTokensInText(text: string): number {
-  return countTokens(text);
+  return Math.ceil(text.length / 4);
 }
 
 /**

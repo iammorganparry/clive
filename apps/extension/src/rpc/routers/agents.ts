@@ -141,6 +141,7 @@ export const agentsRouter = {
                 status === "content_streamed" ||
                 status === "tool-call" ||
                 status === "tool-result" ||
+                status === "tool-output-streaming" ||
                 status === "usage" ||
                 status === "reasoning"
               ) {

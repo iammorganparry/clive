@@ -18,6 +18,8 @@ export default defineConfig({
     "src/input-otp.tsx",
     "src/badge.tsx",
     "src/toast.tsx",
+    "src/drawer.tsx",
+    "src/collapsible.tsx",
     "src/components/blocks/index.ts",
     "src/components/ai-elements/plan.tsx",
     "src/components/ai-elements/conversation.tsx",

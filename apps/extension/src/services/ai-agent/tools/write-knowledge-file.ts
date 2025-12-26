@@ -1,10 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { Effect, Runtime } from "effect";
+import { Effect, Layer, Runtime } from "effect";
 import {
   KnowledgeFileError,
   KnowledgeFileService,
 } from "../../knowledge-file-service.js";
+import { VSCodeService } from "../../vs-code.js";
 import {
   KnowledgeBaseCategorySchema,
   type KnowledgeBaseCategory,
@@ -98,7 +99,9 @@ export const createWriteKnowledgeFileTool = (
                   }),
                 ),
               ),
-              Effect.provide(KnowledgeFileService.Default),
+              Effect.provide(
+                Layer.merge(KnowledgeFileService.Default, VSCodeService.Default),
+              ),
             ),
         );
 

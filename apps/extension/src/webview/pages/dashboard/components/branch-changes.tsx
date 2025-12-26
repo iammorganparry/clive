@@ -1,13 +1,6 @@
 import type React from "react";
-import { useState, useCallback, useMemo } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../../../../components/ui/card.js";
-import { GitBranch, ChevronDown, ChevronRight } from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { GitBranch, RefreshCw } from "lucide-react";
 import FileTestRow from "./file-test-row.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
@@ -21,6 +14,7 @@ export interface EligibleFile {
   relativePath: string;
   status: "M" | "A" | "D" | "R";
   isEligible: boolean;
+  reason?: string;
 }
 
 export interface BranchChangesData {
@@ -45,165 +39,206 @@ interface BranchChangesProps {
   vscode: VSCodeAPI;
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: ProposedTest) => void;
+  onRefresh?: () => Promise<void>;
 }
 
-interface BranchHeaderProps {
-  branchName: string;
-  isExpanded: boolean;
-  onToggle: () => void;
-}
 
-const BranchHeader: React.FC<BranchHeaderProps> = ({
-  branchName,
-  isExpanded,
-  onToggle,
-}) => (
-  <CardHeader>
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex items-center gap-2 w-full text-left hover:opacity-80 transition-opacity"
-    >
-      {isExpanded ? (
-        <ChevronDown className="h-4 w-4" />
-      ) : (
-        <ChevronRight className="h-4 w-4" />
-      )}
-      <CardTitle className="flex items-center gap-2">
-        <GitBranch className="h-4 w-4" />
-        BRANCH
-      </CardTitle>
-    </button>
-    <CardDescription className="flex items-center gap-2 ml-6">
-      <span>{branchName}</span>
-    </CardDescription>
-  </CardHeader>
-);
 
-interface BranchContentProps {
-  files: EligibleFile[];
-  branchName: string;
-  onViewTest?: (testFilePath: string) => void;
-  onPreviewDiff?: (test: ProposedTest) => void;
-}
-
-const BranchContent: React.FC<BranchContentProps> = ({
-  files,
-  branchName,
-  onViewTest,
-  onPreviewDiff,
-}) => {
-  const rpc = useRpc();
-  const { navigate } = useRouter();
-  const filePaths = useMemo(() => files.map((f) => f.path), [files]);
-
-  const { data: conversationMap } =
-    rpc.conversations.hasConversationsBatch.useQuery({
-      input: { sourceFiles: filePaths },
-      enabled: filePaths.length > 0,
-    });
-
-  const handleGenerateTests = useCallback(() => {
-    const filesJson = JSON.stringify(filePaths);
-    navigate(Routes.changesetChat, {
-      files: filesJson,
-      branchName,
-    });
-  }, [filePaths, branchName, navigate]);
-
-  return (
-    <CardContent className="space-y-4">
-      <div className="space-y-2">
-        {files.map((file) => (
-          <FileTestRow
-            key={file.path}
-            file={file}
-            chatContext={conversationMap?.[file.path]}
-            onViewTest={onViewTest}
-            onPreviewDiff={
-              onPreviewDiff
-                ? (test) => onPreviewDiff(test as ProposedTest)
-                : undefined
-            }
-          />
-        ))}
-      </div>
-      <div className="pt-2 border-t">
-        <Button onClick={handleGenerateTests} className="w-full">
-          Generate Tests for All Changes ({files.length} file
-          {files.length !== 1 ? "s" : ""})
-        </Button>
-      </div>
-    </CardContent>
-  );
-};
-
-// Card State Components
-interface BranchChangesCardProps {
-  description: string;
-  isError?: boolean;
-}
-
-const BranchChangesCard: React.FC<BranchChangesCardProps> = ({
-  description,
-  isError = false,
-}) => (
-  <Card>
-    <CardHeader>
-      <CardTitle>Branch Changes</CardTitle>
-      <CardDescription className={isError ? "text-destructive" : ""}>
-        {description}
-      </CardDescription>
-    </CardHeader>
-  </Card>
-);
 
 // Main Component
 const BranchChanges: React.FC<BranchChangesProps> = (props) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const rpc = useRpc();
+  const { navigate } = useRouter();
 
-  const handleToggle = useCallback(() => {
-    setIsExpanded((prev) => !prev);
-  }, []);
+  // Get branch name from changes or use fallback
+  const branchName =
+    props.changes?.branchName ?? "Unknown Branch";
 
+  // Calculate eligible file count
+  const eligibleFiles = useMemo(() => {
+    return props.changes?.files.filter((f) => f.isEligible) ?? [];
+  }, [props.changes?.files]);
+
+  const totalFiles = props.changes?.files.length ?? 0;
+  const eligibleCount = eligibleFiles.length;
+
+  // Get file paths for eligible files only (for generating tests)
+  const eligibleFilePaths = useMemo(
+    () => eligibleFiles.map((f) => f.path),
+    [eligibleFiles],
+  );
+
+  const { data: conversationMap } =
+    rpc.conversations.hasConversationsBatch.useQuery({
+      input: { sourceFiles: props.changes?.files.map((f) => f.path) ?? [] },
+      enabled: (props.changes?.files.length ?? 0) > 0,
+    });
+
+  const handleGenerateTests = useCallback(() => {
+    if (eligibleFilePaths.length === 0) return;
+    const filesJson = JSON.stringify(eligibleFilePaths);
+    navigate(Routes.changesetChat, {
+      files: filesJson,
+      branchName: props.changes?.branchName ?? "",
+    });
+  }, [eligibleFilePaths, props.changes?.branchName, navigate]);
+
+  const handleRefresh = useCallback(async () => {
+    if (props.onRefresh) {
+      await props.onRefresh();
+    }
+  }, [props.onRefresh]);
+
+  // Loading state
   if (props.isLoading) {
-    return <BranchChangesCard description="Loading changed files..." />;
-  }
-
-  if (props.error) {
-    return <BranchChangesCard description={props.error} isError />;
-  }
-
-  if (!props.changes || props.changes.files.length === 0) {
     return (
-      <BranchChangesCard description="No eligible files changed on this branch" />
+      <div className="flex flex-col h-full">
+        <div className="px-4 py-2 border-b">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4" />
+              <span className="text-sm font-medium">{branchName}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={props.isLoading}
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${props.isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">
+            Loading changed files...
+          </div>
+        </div>
+      </div>
     );
   }
 
-  return (
-    <Card>
-      <BranchHeader
-        branchName={props.changes.branchName}
-        isExpanded={isExpanded}
-        onToggle={handleToggle}
-      />
-      {isExpanded && (
-        <BranchContent
-          files={props.changes.files}
-          branchName={props.changes.branchName}
-          onViewTest={props.onViewTest}
-          onPreviewDiff={props.onPreviewDiff}
-        />
-      )}
-      {isExpanded && (
-        <div className="px-6 pb-4">
-          <div className="text-xs text-muted-foreground">
-            Analyzing all files together helps identify integration test
-            opportunities
+  // Error state
+  if (props.error) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-4 py-2 border-b">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4" />
+              <span className="text-sm font-medium">{branchName}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={props.isLoading}
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${props.isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
           </div>
         </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-destructive">{props.error}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (!props.changes || totalFiles === 0) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-4 py-2 border-b">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4" />
+              <span className="text-sm font-medium">{branchName}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={props.isLoading}
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${props.isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">
+            No files changed on this branch
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main content
+  return (
+    <div className="flex flex-col h-full">
+      {/* Secondary Header */}
+      <div className="px-4 py-2 border-b">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-4 w-4" />
+            <span className="text-sm font-medium">{branchName}</span>
+            <span className="text-xs text-muted-foreground">
+              ({eligibleCount} of {totalFiles} file{totalFiles !== 1 ? "s" : ""})
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={props.isLoading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-1 ${props.isLoading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* File List */}
+      <div className="flex-1 overflow-auto">
+        <div className="space-y-2 p-4">
+          {props.changes.files.map((file) => (
+            <FileTestRow
+              key={file.path}
+              file={file}
+              chatContext={conversationMap?.[file.path]}
+              onViewTest={props.onViewTest}
+              onPreviewDiff={
+                props.onPreviewDiff
+                  ? (test) => props.onPreviewDiff?.(test as ProposedTest)
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Generate Tests Button */}
+      {eligibleCount > 0 && (
+        <div className="p-4 border-t">
+          <Button onClick={handleGenerateTests} className="w-full">
+            Generate Tests for All Changes ({eligibleCount} file
+            {eligibleCount !== 1 ? "s" : ""})
+          </Button>
+        </div>
       )}
-    </Card>
+    </div>
   );
 };
 

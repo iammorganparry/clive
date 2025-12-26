@@ -109,6 +109,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     data: branchChanges,
     isLoading: branchChangesLoading,
     error: branchChangesError,
+    refetch: refetchBranchChanges,
   } = rpc.status.branchChanges.useQuery();
 
   // Dashboard machine (for future use - currently just tracks data)
@@ -164,6 +165,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     [vscode],
   );
 
+  // Handler for refreshing branch changes
+  const handleRefreshBranchChanges = useCallback(async () => {
+    await refetchBranchChanges();
+  }, [refetchBranchChanges]);
+
   if (isLoading && !cypressStatus) {
     return <Welcome />;
   }
@@ -173,7 +179,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   }
 
   return (
-    <div className="w-full space-y-4 p-4">
+    <div className="w-full h-full">
       <BranchChanges
         changes={branchChanges ?? null}
         isLoading={branchChangesLoading}
@@ -181,6 +187,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         vscode={vscode}
         onViewTest={handleViewTest}
         onPreviewDiff={handlePreviewTestDiff}
+        onRefresh={handleRefreshBranchChanges}
       />
     </div>
   );

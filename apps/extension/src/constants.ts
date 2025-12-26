@@ -82,6 +82,8 @@ export const IndexingConfig = {
 export const GlobalStateKeys = {
   /** Whether the user has completed onboarding */
   onboardingComplete: "clive.onboardingComplete",
+  /** Whether .gitignore has been updated with Clive patterns */
+  gitignoreUpdated: "clive.gitignoreUpdated",
 } as const;
 
 /**
