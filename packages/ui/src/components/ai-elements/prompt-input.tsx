@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from "../../select";
 import { cn } from "../../lib/utils";
-import type { ChatStatus, FileUIPart } from "ai";
+import type { ChatStatus, FileUIPart, LanguageModelUsage } from "ai";
 import {
   CornerDownLeftIcon,
   ImageIcon,
@@ -46,6 +46,18 @@ import {
   SquareIcon,
   XIcon,
 } from "lucide-react";
+import {
+  Context,
+  ContextTrigger,
+  ContextContent,
+  ContextContentHeader,
+  ContextContentBody,
+  ContextContentFooter,
+  ContextInputUsage,
+  ContextOutputUsage,
+  ContextReasoningUsage,
+  ContextCacheUsage,
+} from "./context";
 import { nanoid } from "nanoid";
 import {
   type ChangeEvent,
@@ -727,7 +739,7 @@ export const PromptInput = ({
     // Convert blob URLs to data URLs asynchronously
     Promise.all(
       files.map(async ({ id, ...item }) => {
-        if (item.url && item.url.startsWith("blob:")) {
+        if (item.url?.startsWith("blob:")) {
           const dataUrl = await convertBlobUrlToDataUrl(item.url);
           // If conversion failed, keep the original blob URL
           return {
@@ -1410,4 +1422,39 @@ export const PromptInputCommandSeparator = ({
   ...props
 }: PromptInputCommandSeparatorProps) => (
   <CommandSeparator className={cn(className)} {...props} />
+);
+
+export type PromptInputContextProps = {
+  maxTokens: number;
+  usedTokens: number;
+  usage?: LanguageModelUsage;
+  modelId?: string;
+  className?: string;
+};
+
+export const PromptInputContext = ({
+  maxTokens,
+  usedTokens,
+  usage,
+  modelId,
+  className,
+}: PromptInputContextProps) => (
+  <Context
+    maxTokens={maxTokens}
+    usedTokens={usedTokens}
+    usage={usage}
+    modelId={modelId}
+  >
+    <ContextTrigger className={className} />
+    <ContextContent>
+      <ContextContentHeader />
+      <ContextContentBody>
+        <ContextInputUsage />
+        <ContextOutputUsage />
+        <ContextReasoningUsage />
+        <ContextCacheUsage />
+      </ContextContentBody>
+      <ContextContentFooter />
+    </ContextContent>
+  </Context>
 );

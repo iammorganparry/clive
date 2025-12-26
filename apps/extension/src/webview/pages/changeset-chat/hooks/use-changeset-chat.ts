@@ -5,6 +5,7 @@ import { useRpc } from "../../../rpc/provider.js";
 import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
 import type { ToolEvent } from "../../../types/chat.js";
 import { useConversationCache } from "./use-conversation-cache.js";
+import type { LanguageModelUsage } from "ai";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -61,6 +62,7 @@ export function useChangesetChat({
         output?: unknown;
         errorText?: string;
         state?: ToolEvent["state"];
+        usage?: LanguageModelUsage;
       };
 
       Match.value(event).pipe(
@@ -111,12 +113,22 @@ export function useChangesetChat({
             });
           }
         }),
+        Match.when({ type: "usage" }, (p) => {
+          if (p.usage) {
+            send({
+              type: "RESPONSE_CHUNK",
+              chunkType: "usage",
+              usage: p.usage,
+            });
+          }
+        }),
         Match.orElse(() => {
           // No-op for unknown types
         }),
       );
     },
     onComplete: () => {
+      console.log("[useChangesetChat] Subscription onComplete called");
       send({ type: "RESPONSE_COMPLETE" });
     },
     onError: (err) => {
@@ -189,5 +201,6 @@ export function useChangesetChat({
     isLoading: state.matches("analyzing") || state.matches("streaming"),
     hasCompletedAnalysis: state.context.hasCompletedAnalysis,
     scratchpadTodos: state.context.scratchpadTodos,
+    usage: state.context.usage,
   };
 }

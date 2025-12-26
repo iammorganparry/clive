@@ -2,13 +2,14 @@ import type React from "react";
 import { useMemo, type FormEvent } from "react";
 import { useRouter } from "../../router/router-context.js";
 import { Button } from "@clive/ui/button";
-import { AlertCircle, GitBranch } from "lucide-react";
+import { AlertCircle, GitBranch, RotateCcw } from "lucide-react";
 import {
   PromptInputProvider,
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
+  PromptInputContext,
 } from "@clive/ui/components/ai-elements/prompt-input";
 import {
   Conversation,
@@ -56,6 +57,7 @@ export const ChangesetChatPage: React.FC = () => {
     isLoading,
     hasCompletedAnalysis,
     scratchpadTodos,
+    usage,
     send,
   } = useChangesetChat({ files, branchName });
 
@@ -65,6 +67,12 @@ export const ChangesetChatPage: React.FC = () => {
       type: "SEND_MESSAGE",
       content: "Please write the tests as proposed in your analysis.",
     });
+  };
+
+  const handleNewChat = () => {
+    // Reset conversation state and start fresh analysis
+    send({ type: "RESET" });
+    send({ type: "START_ANALYSIS" });
   };
 
   const handleSubmit = (
@@ -96,12 +104,23 @@ export const ChangesetChatPage: React.FC = () => {
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="px-4 py-2 border-b">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4" />
-            <span className="text-sm font-medium">{branchName}</span>
-            <span className="text-xs text-muted-foreground">
-              ({files.length} file{files.length !== 1 ? "s" : ""})
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4" />
+              <span className="text-sm font-medium">{branchName}</span>
+              <span className="text-xs text-muted-foreground">
+                ({files.length} file{files.length !== 1 ? "s" : ""})
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNewChat}
+              disabled={isLoading}
+            >
+              <RotateCcw className="h-4 w-4 mr-1" />
+              New Chat
+            </Button>
           </div>
         </div>
 
@@ -114,9 +133,7 @@ export const ChangesetChatPage: React.FC = () => {
                 <div className="mb-4 p-3 bg-error-muted border border-destructive/50 rounded-lg flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-destructive" />
                   <div className="flex-1">
-                    <p className="text-sm text-destructive">
-                      {error.message}
-                    </p>
+                    <p className="text-sm text-destructive">{error.message}</p>
                     {error.retryable && (
                       <Button
                         size="sm"
@@ -216,6 +233,18 @@ export const ChangesetChatPage: React.FC = () => {
                 disabled={!hasCompletedAnalysis || isLoading}
               />
               <PromptInputFooter>
+                <PromptInputContext
+                  maxTokens={200000}
+                  usedTokens={
+                    usage
+                      ? (usage.inputTokens ?? 0) +
+                        (usage.outputTokens ?? 0) +
+                        (usage.reasoningTokens ?? 0)
+                      : 0
+                  }
+                  usage={usage ?? undefined}
+                  modelId="anthropic:claude-haiku-4-5"
+                />
                 <PromptInputSubmit />
               </PromptInputFooter>
             </PromptInput>

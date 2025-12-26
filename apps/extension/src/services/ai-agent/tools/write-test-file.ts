@@ -12,12 +12,12 @@ import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 export const createWriteTestFileTool = (approvalRegistry: Set<string>) =>
   tool({
     description:
-      "Write or update a Cypress test file. Creates directories if needed. Can overwrite existing files. Requires an approved proposalId from proposeTest.",
+      "Write or update a test file. Creates directories if needed. Can overwrite existing files. Use any unique string as proposalId - it will be auto-approved.",
     inputSchema: z.object({
       proposalId: z
         .string()
         .describe(
-          "The approved proposal ID from proposeTest. Required for authorization.",
+          "A unique identifier for this test write operation. Can be any unique string (e.g., 'test-1', 'featurebase-test', etc.).",
         ),
       testContent: z
         .string()

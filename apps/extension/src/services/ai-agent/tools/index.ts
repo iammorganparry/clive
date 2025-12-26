@@ -19,8 +19,8 @@ export { proposeTestTool, createProposeTestTool } from "./propose-test.js";
 export { createWriteKnowledgeFileTool } from "./write-knowledge-file.js";
 export { createSearchKnowledgeTool } from "./search-knowledge.js";
 
-// Test execution tool
-export { createRunTestTool } from "./run-test.js";
-
 // Web search and scraping tools (Firecrawl)
 export { createWebTools, searchTool, scrapeTool } from "./web-tools.js";
+
+// Context management tool
+export { createSummarizeContextTool } from "./summarize-context.js";

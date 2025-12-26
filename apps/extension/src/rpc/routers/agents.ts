@@ -140,7 +140,9 @@ export const agentsRouter = {
                 status === "plan_file_created" ||
                 status === "content_streamed" ||
                 status === "tool-call" ||
-                status === "tool-result"
+                status === "tool-result" ||
+                status === "usage" ||
+                status === "reasoning"
               ) {
                 try {
                   const eventData = JSON.parse(message);
