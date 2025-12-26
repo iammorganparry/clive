@@ -1,8 +1,8 @@
 import type React from "react";
-import { useMemo, type FormEvent } from "react";
+import { useMemo, useCallback, type FormEvent } from "react";
 import { useRouter } from "../../router/router-context.js";
 import { Button } from "@clive/ui/button";
-import { AlertCircle, GitBranch, RotateCcw } from "lucide-react";
+import { GitBranch, RotateCcw } from "lucide-react";
 import {
   PromptInputProvider,
   PromptInput,
@@ -31,6 +31,10 @@ import { useChangesetChat } from "./hooks/use-changeset-chat.js";
 import { ToolTask } from "./components/tool-task.js";
 import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
 import { ScratchpadQueue } from "./components/scratchpad-queue.js";
+import { TestPlanPreview } from "./components/test-plan-preview.js";
+import { ErrorBanner } from "./components/error-banner.js";
+import { parsePlan } from "./utils/parse-plan.js";
+import type { MessagePart } from "../../types/chat.js";
 
 export const ChangesetChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -55,11 +59,106 @@ export const ChangesetChatPage: React.FC = () => {
     isReasoningStreaming,
     error,
     isLoading,
+    isLoadingHistory,
     hasCompletedAnalysis,
     scratchpadTodos,
     usage,
+    planContent,
     send,
   } = useChangesetChat({ files, branchName });
+
+  // Parse plan content if available
+  const parsedPlan = planContent ? parsePlan(planContent) : null;
+
+  // Render conversation content based on loading states
+  const renderConversationContent = useCallback((): React.ReactNode => {
+    if (isLoadingHistory) {
+      return (
+        <ConversationEmptyState
+          title="Loading conversation..."
+          description="Retrieving previous conversation history"
+          icon={
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          }
+        />
+      );
+    }
+
+    if (isLoading && messages.length === 0) {
+      return (
+        <ConversationEmptyState
+          title="Analyzing changes..."
+          description="The AI agent is analyzing all changed files together to propose comprehensive tests"
+          icon={
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          }
+        />
+      );
+    }
+
+    if (messages.length === 0) {
+      return (
+        <ConversationEmptyState
+          title="Ready to analyze"
+          description={`Analyze ${files.length} changed file${files.length !== 1 ? "s" : ""} for test opportunities`}
+          icon={<GitBranch className="h-8 w-8" />}
+        />
+      );
+    }
+
+    // Render messages with parts
+    return messages.map((message) => {
+      const isStreaming =
+        message.isStreaming ||
+        (isLoading && message.id === messages[messages.length - 1]?.id);
+
+      return (
+        <Message key={message.id} from={message.role}>
+          <MessageContent>
+            {message.parts.map((part: MessagePart, index: number) => {
+              if (part.type === "text") {
+                // Check if this text part contains a plan
+                const plan = parsePlan(part.text);
+                if (plan) {
+                  return (
+                    <TestPlanPreview
+                      key={`${message.id}-plan-${index}`}
+                      plan={plan}
+                      isStreaming={isStreaming}
+                    />
+                  );
+                }
+
+                // Default to MessageResponse for non-plan text
+                return (
+                  <MessageResponse key={`${message.id}-text-${index}`}>
+                    {part.text}
+                  </MessageResponse>
+                );
+              }
+
+              // All tools use ToolTask
+              if (part.type.startsWith("tool-")) {
+                return (
+                  <ToolTask
+                    key={`${message.id}-tool-${part.toolCallId}`}
+                    toolName={part.toolName}
+                    toolCallId={part.toolCallId}
+                    state={part.state}
+                    input={part.input}
+                    output={part.output}
+                    errorText={part.errorText}
+                  />
+                );
+              }
+
+              return null;
+            })}
+          </MessageContent>
+        </Message>
+      );
+    });
+  }, [isLoadingHistory, isLoading, messages, files.length]);
 
   const handleApprove = () => {
     // Send message to agent requesting test writes
@@ -130,22 +229,15 @@ export const ChangesetChatPage: React.FC = () => {
             <ConversationContent>
               {/* Error banner */}
               {error && (
-                <div className="mb-4 p-3 bg-error-muted border border-destructive/50 rounded-lg flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <div className="flex-1">
-                    <p className="text-sm text-destructive">{error.message}</p>
-                    {error.retryable && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-2"
-                        onClick={() => send({ type: "CLEAR_ERROR" })}
-                      >
-                        Dismiss
-                      </Button>
-                    )}
-                  </div>
-                </div>
+                <ErrorBanner
+                  error={error}
+                  onRetry={() => {
+                    send({ type: "CLEAR_ERROR" });
+                    send({ type: "RESET" });
+                    send({ type: "START_ANALYSIS" });
+                  }}
+                  onDismiss={() => send({ type: "CLEAR_ERROR" })}
+                />
               )}
 
               {/* Reasoning output - shown separately above timeline */}
@@ -159,58 +251,13 @@ export const ChangesetChatPage: React.FC = () => {
               {/* Scratchpad Queue - shows agent's TODO list */}
               <ScratchpadQueue todos={scratchpadTodos} />
 
-              {/* Empty state */}
-              {isLoading && messages.length === 0 ? (
-                <ConversationEmptyState
-                  title="Analyzing changes..."
-                  description="The AI agent is analyzing all changed files together to propose comprehensive tests"
-                  icon={
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                  }
-                />
-              ) : messages.length === 0 ? (
-                <ConversationEmptyState
-                  title="Ready to analyze"
-                  description={`Analyze ${files.length} changed file${files.length !== 1 ? "s" : ""} for test opportunities`}
-                  icon={<GitBranch className="h-8 w-8" />}
-                />
-              ) : (
-                /* Render messages with parts */
-                messages.map((message) => (
-                  <Message key={message.id} from={message.role}>
-                    <MessageContent>
-                      {message.parts.map((part, index) => {
-                        if (part.type === "text") {
-                          return (
-                            <MessageResponse
-                              key={`${message.id}-text-${index}`}
-                            >
-                              {part.text}
-                            </MessageResponse>
-                          );
-                        }
-
-                        // All tools use ToolTask
-                        if (part.type.startsWith("tool-")) {
-                          return (
-                            <ToolTask
-                              key={`${message.id}-tool-${part.toolCallId}`}
-                              toolName={part.toolName}
-                              toolCallId={part.toolCallId}
-                              state={part.state}
-                              input={part.input}
-                              output={part.output}
-                              errorText={part.errorText}
-                            />
-                          );
-                        }
-
-                        return null;
-                      })}
-                    </MessageContent>
-                  </Message>
-                ))
+              {/* Plan Preview - shown when agent creates plan in scratchpad */}
+              {parsedPlan && (
+                <TestPlanPreview plan={parsedPlan} isStreaming={isLoading} />
               )}
+
+              {/* Empty state or messages */}
+              {renderConversationContent()}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

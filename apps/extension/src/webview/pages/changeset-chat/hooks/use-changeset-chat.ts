@@ -122,6 +122,16 @@ export function useChangesetChat({
             });
           }
         }),
+        Match.when({ type: "error" }, (p) => {
+          const errorMessage =
+            typeof p === "object" &&
+            p !== null &&
+            "message" in p &&
+            typeof p.message === "string"
+              ? p.message
+              : "An error occurred";
+          send({ type: "RESPONSE_ERROR", error: errorMessage });
+        }),
         Match.orElse(() => {
           // No-op for unknown types
         }),
@@ -199,8 +209,11 @@ export function useChangesetChat({
     isReasoningStreaming: state.context.isReasoningStreaming,
     error: state.context.error,
     isLoading: state.matches("analyzing") || state.matches("streaming"),
+    isLoadingHistory:
+      !state.context.cacheLoaded || !state.context.historyLoaded,
     hasCompletedAnalysis: state.context.hasCompletedAnalysis,
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,
+    planContent: state.context.planContent,
   };
 }

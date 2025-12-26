@@ -13,6 +13,7 @@ export const AIModels = {
   xai: {
     /** Fast code generation model from xAI */
     codeFast: "grok-code-fast-1",
+    fastNonReasoning: "grok-4-fast-non-reasoning",
   },
 
   // OpenAI models

@@ -1,21 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { generateText, type LanguageModel } from "ai";
+import type { LanguageModel } from "ai";
 import { Effect, Runtime } from "effect";
-import { AIModels } from "../../ai-models.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import { getMessagesToKeep, type Message } from "../context-tracker.js";
-
-const SUMMARY_PROMPT = `Summarize this conversation history concisely, preserving:
-1. Key decisions made and their rationale
-2. Important findings from tool executions
-3. Current task state and next steps
-4. Any file paths, code snippets, or test names that are critical
-
-Keep the summary under 2000 tokens while retaining all actionable information.
-
-Conversation to summarize:
-`;
+import type { SummaryService } from "../summary-service.js";
 
 /**
  * Create a summarizeContext tool that the AI can call during execution
@@ -30,9 +19,10 @@ interface SummarizeResult {
 }
 
 export const createSummarizeContextTool = (
-  anthropic: (modelName: string) => LanguageModel,
-  getMessages: () => Message[],
-  updateMessages: (messages: Message[]) => void,
+  summaryService: SummaryService,
+  model: LanguageModel,
+  getMessages: Effect.Effect<Message[]>,
+  updateMessages: (messages: Message[]) => Effect.Effect<void>,
   progressCallback?: (status: string, message: string) => void,
 ) => {
   const runtime = Runtime.defaultRuntime;
@@ -67,7 +57,7 @@ export const createSummarizeContextTool = (
             "Summarizing conversation history...",
           );
 
-          const allMessages = yield* Effect.sync(() => getMessages());
+          const allMessages = yield* getMessages;
           const messagesToKeep = getMessagesToKeep();
 
           // Validation check
@@ -93,25 +83,16 @@ export const createSummarizeContextTool = (
             ),
           );
 
-          // Build prompt
-          const prompt = yield* Effect.sync(() =>
-            focus
-              ? `${SUMMARY_PROMPT}\n\nFocus on: ${focus}\n\n${messagesToSummarize.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n")}`
-              : `${SUMMARY_PROMPT}\n\n${messagesToSummarize.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n")}`,
-          );
-
-          // Generate summary using AI
-          const result = yield* Effect.tryPromise({
-            try: () =>
-              generateText({
-                model: anthropic(AIModels.anthropic.testing),
-                prompt,
-              }),
-            catch: (error) =>
-              error instanceof Error ? error : new Error(String(error)),
-          });
-
-          const summary = result.text;
+          // Generate summary using SummaryService
+          const summary = yield* summaryService
+            .summarizeMessages(messagesToSummarize, model, focus)
+            .pipe(
+              Effect.catchAll((error) =>
+                Effect.fail(
+                  error instanceof Error ? error : new Error(String(error)),
+                ),
+              ),
+            );
           const tokensAfter = countTokensInText(summary);
           const tokensFreed = tokensBefore - tokensAfter;
 
@@ -121,13 +102,15 @@ export const createSummarizeContextTool = (
             content: `Previous conversation summary (${messagesToSummarize.length} messages summarized):\n\n${summary}`,
           };
 
-          yield* Effect.sync(() =>
-            updateMessages([summarizedMessage, ...messagesToKeepArray]),
-          );
+          yield* updateMessages([summarizedMessage, ...messagesToKeepArray]);
 
           progressCallback?.(
             "summarized",
-            `Summarized ${messagesToSummarize.length} messages, freed ${tokensFreed} tokens`,
+            "Summarized " +
+              messagesToSummarize.length +
+              " messages, freed " +
+              tokensFreed +
+              " tokens",
           );
 
           return {

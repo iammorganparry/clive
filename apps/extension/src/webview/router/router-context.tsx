@@ -33,6 +33,26 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
       enabled: isAuthenticated && state.matches("checkingOnboarding"),
     });
 
+  // Fetch branch changes when checking for conversation
+  const { data: branchChanges, isLoading: branchChangesLoading } =
+    rpc.status.branchChanges.useQuery({
+      enabled: isAuthenticated && state.matches("checkingConversation"),
+    });
+
+  // Check for existing branch conversation
+  const { data: branchConversation, isLoading: conversationLoading } =
+    rpc.conversations.hasBranchConversation.useQuery({
+      input: {
+        branchName: branchChanges?.branchName || "",
+        baseBranch: branchChanges?.baseBranch || "main",
+      },
+      enabled:
+        isAuthenticated &&
+        state.matches("checkingConversation") &&
+        !!branchChanges &&
+        branchChanges.branchName.length > 0,
+    });
+
   // Send AUTH_RESULT when auth loading completes
   useEffect(() => {
     if (!authLoading && state.matches("initializing")) {
@@ -54,9 +74,62 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     }
   }, [prefLoading, indexingPreference, state, send]);
 
+  // Send CONVERSATION_RESULT when conversation check completes
+  useEffect(() => {
+    if (
+      state.matches("checkingConversation") &&
+      !branchChangesLoading &&
+      branchChanges !== undefined
+    ) {
+      // If branch changes exist but no branch name, go to dashboard
+      if (!branchChanges || branchChanges.branchName.length === 0) {
+        send({
+          type: "CONVERSATION_RESULT",
+          route: Routes.dashboard,
+        });
+        return;
+      }
+
+      // Wait for conversation check to complete if we have branch changes
+      if (conversationLoading) {
+        return;
+      }
+
+      // If we have branch changes with files and a conversation exists, navigate to chat
+      if (branchChanges.files.length > 0 && branchConversation?.exists) {
+        const filesJson = JSON.stringify(
+          branchChanges.files.map((f) => f.path),
+        );
+        send({
+          type: "CONVERSATION_RESULT",
+          route: Routes.changesetChat,
+          params: {
+            files: filesJson,
+            branchName: branchChanges.branchName,
+          },
+        });
+      } else {
+        // Otherwise, go to dashboard
+        send({
+          type: "CONVERSATION_RESULT",
+          route: Routes.dashboard,
+        });
+      }
+    }
+  }, [
+    state,
+    branchChangesLoading,
+    branchChanges,
+    conversationLoading,
+    branchConversation,
+    send,
+  ]);
+
   // Derive initialization state from machine state
   const isInitializing =
-    state.matches("initializing") || state.matches("checkingOnboarding");
+    state.matches("initializing") ||
+    state.matches("checkingOnboarding") ||
+    state.matches("checkingConversation");
 
   // Get current route and params from machine context
   const route = state.context.route;

@@ -9,6 +9,7 @@ import {
   parseScratchpad,
   type ScratchpadTodo,
 } from "../utils/parse-scratchpad.js";
+import { parsePlan } from "../utils/parse-plan.js";
 import type { LanguageModelUsage } from "ai";
 
 // Type guards for bash execute operations
@@ -114,6 +115,7 @@ export interface ChangesetChatContext {
   historyLoaded: boolean;
   cachedAt?: number; // Timestamp of when cache was loaded
   usage: LanguageModelUsage | null;
+  planContent: string | null; // Plan content extracted from scratchpad file
 }
 
 interface CachedConversation {
@@ -322,15 +324,34 @@ export const changesetChatMachine = setup({
 
             // Only parse if we have meaningful content (not just empty string or whitespace)
             if (content.trim().length > 0) {
+              const updates: Partial<ChangesetChatContext> = {};
+
+              // Parse for scratchpad TODOs
               try {
                 const todos = parseScratchpad(content);
                 // Only update if we found actual TODOs
                 if (todos.length > 0) {
-                  return { scratchpadTodos: todos };
+                  updates.scratchpadTodos = todos;
                 }
               } catch (error) {
                 // Log parsing errors for debugging but don't crash
                 console.warn("Failed to parse scratchpad content:", error);
+              }
+
+              // Parse for plan content (test proposal)
+              try {
+                const plan = parsePlan(content);
+                if (plan) {
+                  updates.planContent = plan.fullContent;
+                }
+              } catch (error) {
+                // Log parsing errors for debugging but don't crash
+                console.warn("Failed to parse plan content:", error);
+              }
+
+              // Return updates if we found anything
+              if (Object.keys(updates).length > 0) {
+                return updates;
               }
             }
           }
@@ -579,10 +600,11 @@ export const changesetChatMachine = setup({
       isReasoningStreaming: () => false,
       hasCompletedAnalysis: () => false,
       scratchpadTodos: () => [],
-      cacheLoaded: () => false,
-      historyLoaded: () => false,
+      cacheLoaded: () => true, // Mark as loaded (intentionally skipping cache)
+      historyLoaded: () => true, // Mark as loaded (intentionally skipping history)
       cachedAt: () => undefined,
       usage: () => null,
+      planContent: () => null,
     }),
   },
 }).createMachine({
@@ -603,6 +625,7 @@ export const changesetChatMachine = setup({
     historyLoaded: false,
     cachedAt: undefined,
     usage: null,
+    planContent: null,
   }),
   states: {
     idle: {
