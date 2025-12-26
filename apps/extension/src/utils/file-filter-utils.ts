@@ -1,5 +1,26 @@
 import * as vscode from "vscode";
-import { INDEXING_EXCLUDE_PATTERNS } from "../services/codebase-indexing-service.js";
+
+/**
+ * Patterns to exclude from indexing
+ * These match common build artifacts, dependencies, and generated files
+ */
+const INDEXING_EXCLUDE_PATTERNS = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/.next/**",
+  "**/out/**",
+  "**/.cache/**",
+  "**/coverage/**",
+  "**/.turbo/**",
+  "**/.vercel/**",
+  "**/__tests__/**",
+  "**/__mocks__/**",
+  "**/*.test.*",
+  "**/*.spec.*",
+  "**/*.d.ts",
+  "**/.clive/**",
+] as const;
 
 /**
  * Check if file should be excluded based on exclude patterns

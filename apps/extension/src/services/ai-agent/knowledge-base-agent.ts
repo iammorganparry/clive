@@ -54,6 +54,16 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
 
           const categoryEntryCounts: Record<string, number> = {};
 
+          // Track current phase based on step count
+          let currentPhase = 1;
+          const phaseNames = [
+            "System Architecture",
+            "Core Components",
+            "Testing Infrastructure",
+            "Integration Points",
+            "Deep Analysis",
+          ];
+
           // Check configuration
           const configStartTime = Date.now();
           const configured = yield* configService.isConfigured();
@@ -163,12 +173,29 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                 model: xai(AIModels.knowledgeBase.analysis),
                 tools,
                 maxRetries: 0,
-                stopWhen: stepCountIs(60), // Higher limit for deep exploration
+                stopWhen: stepCountIs(150), // Comprehensive exploration with 5 phases
                 messages: [
                   {
                     role: "system",
-                    content:
-                      "You are a Knowledge Base Explorer. Deeply explore this codebase and document valuable insights that will help a testing agent write intelligent tests. Use writeKnowledgeFile to store your discoveries as you go.",
+                    content: `You are a Senior Software Architect performing a comprehensive codebase analysis.
+
+                      YOUR MISSION: Build a detailed knowledge base that will enable an AI testing agent to write intelligent, context-aware tests.
+
+                      APPROACH:
+                      1. Execute each exploration phase sequentially and thoroughly
+                      2. Create detailed knowledge articles (300-500 words each)
+                      3. Include substantial code examples from the actual codebase
+                      4. Focus on patterns that are actively used (check git history)
+                      5. Document testing implications for everything you discover
+
+                      QUALITY STANDARDS:
+                      - Every article must include real code examples
+                      - Explain WHY patterns exist, not just WHAT they are
+                      - Connect related concepts across articles
+                      - Identify testing gaps and opportunities
+                      - Be specific and actionable
+
+                      You have 150 steps - use them wisely to create comprehensive documentation.`,
                   },
                   {
                     role: "user",
@@ -184,8 +211,9 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
               }),
           });
 
-          // Process stream
+          // Process stream with phase tracking
           const eventStream = streamFromAI(streamResult);
+          let stepCount = 0;
           yield* eventStream.pipe(
             Stream.mapError(
               (error) =>
@@ -233,9 +261,22 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                     );
                   }),
                   Match.when("step-finish", () => {
-                    return Effect.logDebug(
-                      `[KnowledgeBaseAgent:${correlationId}] Step finished`,
-                    );
+                    return Effect.gen(function* () {
+                      stepCount += 1;
+                      const newPhase = Math.floor((stepCount - 1) / 30) + 1;
+
+                      if (newPhase !== currentPhase && newPhase <= 5) {
+                        currentPhase = newPhase;
+                        progressCallback?.({
+                          type: "progress",
+                          message: `Phase ${currentPhase}: ${phaseNames[currentPhase - 1]}`,
+                        });
+                      }
+
+                      yield* Effect.logDebug(
+                        `[KnowledgeBaseAgent:${correlationId}] Step ${stepCount}/150 - Phase ${currentPhase}: ${phaseNames[currentPhase - 1]}`,
+                      );
+                    });
                   }),
                   Match.when("finish", () => {
                     return Effect.logDebug(
@@ -260,7 +301,7 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
           const aiDuration = Date.now() - aiStartTime;
 
           yield* Effect.logDebug(
-            `[KnowledgeBaseAgent:${correlationId}] Steps used: ${awaitedSteps.length}/60`,
+            `[KnowledgeBaseAgent:${correlationId}] Steps used: ${awaitedSteps.length}/150`,
           );
           yield* Effect.logDebug(
             `[KnowledgeBaseAgent:${correlationId}] Exploration completed in ${aiDuration}ms`,
@@ -287,6 +328,23 @@ export class KnowledgeBaseAgent extends Effect.Service<KnowledgeBaseAgent>()(
                 return Effect.void;
               }),
             ),
+          );
+
+          // Log quality metrics
+          const qualityMetrics = yield* knowledgeFileService
+            .getQualityMetrics()
+            .pipe(
+              Effect.catchAll(() =>
+                Effect.succeed({
+                  articleCount: totalEntryCount,
+                  totalWordCount: 0,
+                  totalContentLength: 0,
+                  averageWordCount: 0,
+                }),
+              ),
+            );
+          yield* Effect.logInfo(
+            `[KnowledgeBase] Generated ${qualityMetrics.articleCount} articles, ~${qualityMetrics.totalWordCount} total words (avg: ${qualityMetrics.averageWordCount} words/article)`,
           );
 
           const totalDuration = Date.now() - startTime;
