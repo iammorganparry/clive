@@ -550,6 +550,44 @@ This file provides an overview of all knowledge documented for this repository.
           return stat.type === vscode.FileType.Directory;
         }).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
+      /**
+       * Delete the entire knowledge base directory
+       * Used when doing a full regeneration (not resume)
+       */
+      const deleteKnowledgeBase = () =>
+        Effect.gen(function* () {
+          const knowledgeDir = yield* getKnowledgeDir();
+
+          // Check if directory exists
+          const exists = yield* statFileEffect(knowledgeDir).pipe(
+            Effect.map((stat) => stat.type === vscode.FileType.Directory),
+            Effect.catchAll(() => Effect.succeed(false)),
+          );
+
+          if (!exists) {
+            yield* Effect.logDebug(
+              "[KnowledgeFileService] Knowledge directory does not exist, nothing to delete",
+            );
+            return { success: true };
+          }
+
+          // Delete the entire directory recursively
+          return yield* Effect.tryPromise({
+            try: async () => {
+              await vscode.workspace.fs.delete(knowledgeDir, {
+                recursive: true,
+                useTrash: false,
+              });
+              return { success: true };
+            },
+            catch: (error) =>
+              new KnowledgeFileError({
+                message: `Failed to delete knowledge directory: ${extractErrorMessage(error)}`,
+                cause: error,
+              }),
+          });
+        });
+
       return {
         writeKnowledgeFile,
         readKnowledgeFile,
@@ -558,6 +596,7 @@ This file provides an overview of all knowledge documented for this repository.
         generateIndex,
         knowledgeBaseExists,
         getKnowledgeDir,
+        deleteKnowledgeBase,
       };
     }),
   },

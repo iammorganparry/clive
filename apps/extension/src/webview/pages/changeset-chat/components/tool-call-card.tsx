@@ -26,10 +26,6 @@ const toolDisplayConfig: Record<string, { title: string; icon: LucideIcon }> = {
     title: "Running Command",
     icon: Terminal,
   },
-  semanticSearch: {
-    title: "Searching Codebase",
-    icon: Search,
-  },
   proposeTest: {
     title: "Proposing Test",
     icon: FileCode,
@@ -62,17 +58,6 @@ const isBashExecuteArgs = (input: unknown): input is BashExecuteArgs =>
   input !== null &&
   "command" in input &&
   typeof (input as BashExecuteArgs).command === "string";
-
-interface SemanticSearchArgs {
-  query: string;
-  limit?: number;
-}
-
-const isSemanticSearchArgs = (input: unknown): input is SemanticSearchArgs =>
-  typeof input === "object" &&
-  input !== null &&
-  "query" in input &&
-  typeof (input as SemanticSearchArgs).query === "string";
 
 interface ProposeTestArgs {
   sourceFile?: string;
@@ -148,13 +133,6 @@ const formatToolInput = (toolName: string, input: unknown): string | null => {
         }
         // Truncate long commands
         return command.length > 60 ? `${command.slice(0, 57)}...` : command;
-      }
-      break;
-    }
-
-    case "semanticSearch": {
-      if (isSemanticSearchArgs(input)) {
-        return input.query;
       }
       break;
     }

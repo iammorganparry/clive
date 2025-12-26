@@ -23,7 +23,6 @@ import { ConfigServiceLive } from "./config-service.js";
 import { ApiKeyServiceLive } from "./api-key-service.js";
 import { TrpcClientServiceLive } from "./trpc-client-service.js";
 import { RepositoryServiceLive } from "./repository-service.js";
-import { CodebaseIndexingServiceLive } from "./codebase-indexing-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
 import { ReactFileFilterLive } from "./react-file-filter.js";
 import { GitServiceLive } from "./git-service.js";
@@ -32,7 +31,6 @@ import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { SummaryServiceLive } from "./ai-agent/summary-service.js";
 import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
 import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
-import { FileWatcherServiceLive } from "./file-watcher-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
 import { PlanFileService } from "./plan-file-service.js";
 
@@ -115,53 +113,20 @@ export function createDomainLayer(
 export function createFeatureLayer(
   domainLayer: ReturnType<typeof createDomainLayer>,
 ) {
-  // CodebaseIndexingService depends on VSCodeService, ConfigService, RepositoryService
-  const indexingLayer = CodebaseIndexingServiceLive.pipe(
-    Layer.provide(domainLayer),
-  );
-
-  // TestingAgent depends on VSCodeService, ConfigService, CodebaseIndexingService
+  // TestingAgent depends on VSCodeService, ConfigService
   const testingLayer = TestingAgentLive.pipe(Layer.provide(domainLayer));
 
-  return Layer.mergeAll(domainLayer, indexingLayer, testingLayer);
+  return Layer.mergeAll(domainLayer, testingLayer);
 }
 
 /**
- * Create a layer with FileWatcherService and CodebaseIndexingService
- * For extension activation indexing
- */
-export function createIndexingLayer(ctx: LayerContext) {
-  const coreLayer = createCoreLayer(ctx);
-  const baseLayer = createBaseLayer(coreLayer);
-  const domainLayer = createDomainLayer(baseLayer);
-
-  // CodebaseIndexingService depends on domain services
-  const indexingLayer = CodebaseIndexingServiceLive.pipe(
-    Layer.provide(domainLayer),
-  );
-
-  // FileWatcherService depends on domain + indexing services
-  const domainWithIndexing = Layer.mergeAll(domainLayer, indexingLayer);
-  const fileWatcherLayer = FileWatcherServiceLive.pipe(
-    Layer.provide(domainWithIndexing),
-  );
-
-  return Layer.mergeAll(domainWithIndexing, fileWatcherLayer);
-}
-
-/**
- * Convenience: Config + Indexing layer
+ * Convenience: Config layer
  * For config router and similar handlers
  */
 export function createConfigServiceLayer(ctx: LayerContext) {
   const coreLayer = createCoreLayer(ctx);
   const baseLayer = createBaseLayer(coreLayer);
   const domainLayer = createDomainLayer(baseLayer);
-
-  // Add indexing layer
-  const indexingLayer = CodebaseIndexingServiceLive.pipe(
-    Layer.provide(domainLayer),
-  );
 
   // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
   const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
@@ -182,7 +147,6 @@ export function createConfigServiceLayer(ctx: LayerContext) {
 
   return Layer.mergeAll(
     domainLayer,
-    indexingLayer,
     knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
@@ -198,19 +162,11 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   const baseLayer = createBaseLayer(coreLayer);
   const domainLayer = createDomainLayer(baseLayer);
 
-  // CodebaseIndexingService depends on VSCodeService, ConfigService, RepositoryService
-  const indexingLayer = CodebaseIndexingServiceLive.pipe(
-    Layer.provide(domainLayer),
-  );
-
   // PlanFileService depends on VSCodeService (in baseLayer via coreLayer)
   const planFileLayer = PlanFileService.Default.pipe(Layer.provide(baseLayer));
 
-  // Domain layer with indexing service
-  const domainWithIndexing = Layer.mergeAll(domainLayer, indexingLayer);
-
-  // Domain layer with indexing and plan file service
-  const domainWithServices = Layer.mergeAll(domainWithIndexing, planFileLayer);
+  // Domain layer with plan file service
+  const domainWithServices = Layer.mergeAll(domainLayer, planFileLayer);
 
   // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
   const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
@@ -242,7 +198,7 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   );
 
   // Add agent layers
-  // TestingAgent depends on CodebaseIndexingService, PlanFileService, KnowledgeBaseService, and SummaryService
+  // TestingAgent depends on PlanFileService, KnowledgeBaseService, and SummaryService
   const testingLayer = TestingAgentLive.pipe(
     Layer.provide(domainWithAllServices),
   );

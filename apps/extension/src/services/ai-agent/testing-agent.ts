@@ -11,7 +11,6 @@ import {
   createAnthropicProvider,
   createXaiProvider,
 } from "../ai-provider-factory.js";
-import { CodebaseIndexingService } from "../codebase-indexing-service.js";
 import { ConfigService } from "../config-service.js";
 import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { SummaryService } from "./summary-service.js";
@@ -27,7 +26,6 @@ import { makeTokenBudget } from "./token-budget.js";
 import {
   createBashExecuteTool,
   createSearchKnowledgeTool,
-  createSemanticSearchTool,
   createSummarizeContextTool,
   createWebTools,
   createWriteKnowledgeFileTool,
@@ -59,7 +57,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
   {
     effect: Effect.gen(function* () {
       const configService = yield* ConfigService;
-      const indexingService = yield* CodebaseIndexingService;
       const knowledgeFileService = yield* KnowledgeFileService;
       const summaryService = yield* SummaryService;
 
@@ -196,7 +193,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             const tools = {
               bashExecute: createBashExecuteTool(budget),
-              semanticSearch: createSemanticSearchTool(indexingService),
               searchKnowledge: createSearchKnowledgeTool(knowledgeFileService),
               writeKnowledgeFile:
                 createWriteKnowledgeFileTool(knowledgeFileService),
@@ -386,12 +382,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                         );
 
                         // Progress updates
-                        if (e.toolName === "semanticSearch") {
-                          progressCallback?.(
-                            "searching",
-                            "Searching codebase for context...",
-                          );
-                        } else if (e.toolName === "bashExecute") {
+                        if (e.toolName === "bashExecute") {
                           const args = e.toolArgs as
                             | { command?: string }
                             | undefined;

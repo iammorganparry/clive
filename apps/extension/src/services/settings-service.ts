@@ -28,25 +28,6 @@ export class SettingsService extends Effect.Service<SettingsService>()(
         },
 
         /**
-         * Check if codebase indexing is enabled
-         * @returns true if indexing is enabled, false otherwise (default: false - opt-in)
-         */
-        isIndexingEnabled: () =>
-          Effect.sync(() => {
-            const state = ensureGlobalState();
-            return state.get<boolean>(GlobalStateKeys.indexingEnabled) ?? false;
-          }),
-
-        /**
-         * Set the indexing enabled preference
-         */
-        setIndexingEnabled: (enabled: boolean) =>
-          Effect.promise(async () => {
-            const state = ensureGlobalState();
-            await state.update(GlobalStateKeys.indexingEnabled, enabled);
-          }),
-
-        /**
          * Check if onboarding has been completed
          * @returns true if onboarding is complete, false otherwise
          */

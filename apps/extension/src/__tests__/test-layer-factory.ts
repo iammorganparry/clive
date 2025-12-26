@@ -8,7 +8,7 @@
  * - Tier 0 (Core): VSCodeService, SecretStorage, Logger
  * - Tier 1 (Base): ConfigService, ApiKeyService
  * - Tier 2 (Domain): RepositoryService, ConversationService, ReactFileFilter
- * - Tier 3 (Features): CodebaseIndexingService, Agents
+ * - Tier 3 (Features): Agents
  *
  * Usage:
  * ```typescript
@@ -31,7 +31,6 @@ import { ConfigService } from "../services/config-service.js";
 import { ApiKeyService } from "../services/api-key-service.js";
 import { TrpcClientService } from "../services/trpc-client-service.js";
 import { RepositoryService } from "../services/repository-service.js";
-import { CodebaseIndexingService } from "../services/codebase-indexing-service.js";
 import { ConversationService } from "../services/conversation-service.js";
 import { ReactFileFilter } from "../services/react-file-filter.js";
 import { GitServiceLive } from "../services/git-service.js";
@@ -230,33 +229,6 @@ export function createMockRepositoryServiceLayer(
     ...defaults,
     ...overrides,
   } as unknown as RepositoryService);
-}
-
-export interface IndexingServiceOverrides {
-  indexFile?: Mock;
-  indexWorkspace?: Mock;
-  semanticSearch?: Mock;
-  getStatus?: Mock;
-}
-
-/**
- * Create a mock CodebaseIndexingService layer
- */
-export function createMockIndexingServiceLayer(
-  overrides: IndexingServiceOverrides = {},
-): Layer.Layer<CodebaseIndexingService> {
-  const defaults = {
-    indexFile: vi.fn().mockReturnValue(Effect.succeed({})),
-    indexWorkspace: vi.fn().mockReturnValue(Effect.void),
-    semanticSearch: vi.fn().mockReturnValue(Effect.succeed([])),
-    getStatus: vi.fn().mockReturnValue(Effect.succeed("idle" as const)),
-  };
-
-  return Layer.succeed(CodebaseIndexingService, {
-    _tag: "CodebaseIndexingService",
-    ...defaults,
-    ...overrides,
-  } as unknown as CodebaseIndexingService);
 }
 
 export interface ConversationServiceOverrides {
@@ -533,7 +505,6 @@ function createDomainTestLayer(
 export function createConfigTestLayer(
   options?: Parameters<typeof createCoreTestLayer>[0] & {
     repositoryOverrides?: RepositoryServiceOverrides;
-    indexingOverrides?: IndexingServiceOverrides;
     conversationOverrides?: ConversationServiceOverrides;
     reactFileFilterOverrides?: ReactFileFilterOverrides;
     knowledgeBaseAgentOverrides?: KnowledgeBaseAgentOverrides;
@@ -549,11 +520,6 @@ export function createConfigTestLayer(
     conversationOverrides: options?.conversationOverrides,
     reactFileFilterOverrides: options?.reactFileFilterOverrides,
   });
-
-  // Add indexing layer
-  const indexingLayer = CodebaseIndexingService.Default.pipe(
-    Layer.provide(domainLayer),
-  );
 
   // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
   const knowledgeFileLayer = createMockKnowledgeFileServiceLayer(
@@ -576,43 +542,12 @@ export function createConfigTestLayer(
 
   const layer = Layer.mergeAll(
     domainLayer,
-    indexingLayer,
     knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
   );
 
   return { ...base, layer };
-}
-
-/**
- * Create a layer for testing the REAL CodebaseIndexingService implementation
- * (not a mock). Use this when testing the service's actual behavior.
- *
- * Includes: Base + RepositoryService (mocked)
- * Does NOT include IndexingService mock - uses real implementation
- */
-export function createRealIndexingTestLayer(
-  options?: Parameters<typeof createCoreTestLayer>[0] & {
-    repositoryOverrides?: RepositoryServiceOverrides;
-  },
-) {
-  const base = createBaseTestLayer(options);
-
-  // Create domain layer with GitService (includes base layer)
-  const domainLayer = createDomainTestLayer(base, {
-    repositoryOverrides: options?.repositoryOverrides,
-  });
-
-  // Provide all dependencies to the REAL CodebaseIndexingService.Default
-  const indexingLayer = CodebaseIndexingService.Default.pipe(
-    Layer.provide(domainLayer),
-  );
-
-  // Merge the indexing layer with dependencies so all services are available
-  const fullLayer = Layer.mergeAll(domainLayer, indexingLayer);
-
-  return { ...base, layer: fullLayer };
 }
 
 // =============================================================================
