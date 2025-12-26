@@ -8,9 +8,7 @@ import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
 import { createSecretStorageLayer } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
-import { FileWatcherDisposable } from "./services/file-watcher-service.js";
-import { createIndexingLayer } from "./services/layer-factory.js";
-import { GlobalStateKeys, Commands } from "./constants.js";
+import { Commands } from "./constants.js";
 import {
   PlanCodeLensProvider,
   handleApprovePlan,
@@ -167,42 +165,6 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
 
   // Register all commands via CommandCenter
   commandCenter.registerAll(context);
-
-  // Start codebase indexing in the background (non-blocking)
-  // Only runs if user is authenticated
-  // Use the layer factory to create a properly composed layer
-  const fullIndexingLayer = createIndexingLayer({
-    extensionContext: context,
-    outputChannel,
-    isDev: isDev,
-  });
-
-  // Create file watcher disposable for incremental indexing
-  const fileWatcherDisposable = new FileWatcherDisposable();
-  fileWatcherDisposable.setOutputChannel(outputChannel);
-  fileWatcherDisposable.setServiceLayer(fullIndexingLayer);
-  context.subscriptions.push(fileWatcherDisposable);
-
-  // Check if indexing is enabled (opt-in)
-  const isIndexingEnabled =
-    context.globalState.get<boolean>(GlobalStateKeys.indexingEnabled) ?? false;
-
-  if (!isIndexingEnabled) {
-    outputChannel.appendLine(
-      "Codebase indexing is disabled (opt-in required via Settings)",
-    );
-  }
-
-  // Indexing is now only triggered manually via Settings page
-  // File watcher will start when user enables indexing
-  if (isIndexingEnabled) {
-    // Start file watcher for incremental indexing when user enables it
-    fileWatcherDisposable.start().catch((error) => {
-      outputChannel.appendLine(
-        `File watcher failed to start: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
-  }
 
   // Return exports for testing
   return { context };

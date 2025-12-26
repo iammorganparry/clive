@@ -6,9 +6,6 @@
 // Budget-aware bash execution tool (callable from code execution)
 export { createBashExecuteTool } from "./bash-execute.js";
 
-// Semantic search tool for indexed codebase
-export { createSemanticSearchTool } from "./semantic-search.js";
-
 // Output tools (no budget needed)
 export {
   writeTestFileTool,

@@ -36,15 +36,37 @@ export class KnowledgeBaseService extends Effect.Service<KnowledgeBaseService>()
           let skipCategories: string[] = [];
 
           if (options?.resume) {
-            // Get current status to determine which categories are already complete
+            // Resume mode: keep existing files and skip completed categories
             const currentStatus = yield* getStatus();
             skipCategories = currentStatus.categories;
 
             yield* Effect.logDebug(
               `[KnowledgeBaseService] Resume mode: skipping ${skipCategories.length} completed categories: ${skipCategories.join(", ")}`,
             );
+          } else {
+            // Full regeneration: delete all existing knowledge base files
+            yield* Effect.logDebug(
+              "[KnowledgeBaseService] Full regeneration: deleting existing knowledge base",
+            );
+
+            progressCallback?.({
+              type: "progress",
+              message: "Clearing existing knowledge base...",
+            });
+
+            yield* knowledgeFileService.deleteKnowledgeBase().pipe(
+              Effect.tapError((error) =>
+                Effect.logWarning(
+                  `[KnowledgeBaseService] Failed to delete knowledge base: ${error.message}`,
+                ),
+              ),
+              Effect.catchAll(() => Effect.void),
+            );
+
+            yield* Effect.logDebug(
+              "[KnowledgeBaseService] Existing knowledge base cleared",
+            );
           }
-          // No need to delete existing files - they will be overwritten by the agent
 
           // Delegate to agent for discovery and analysis
           const result = yield* knowledgeBaseAgent.analyze(progressCallback, {

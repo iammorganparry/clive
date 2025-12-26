@@ -274,11 +274,6 @@ export const getToolProgressMessage = (
   args?: { command?: string },
 ): { status: ProgressStatus; message: string } | null => {
   switch (toolName) {
-    case "semanticSearch":
-      return {
-        status: "searching",
-        message: "Searching codebase for context...",
-      };
     case "proposeTest":
       return { status: "proposing", message: "Generating test proposal..." };
     case "writeTestFile":

@@ -80,8 +80,6 @@ export const IndexingConfig = {
  * GlobalState keys for persistent user preferences
  */
 export const GlobalStateKeys = {
-  /** Whether codebase indexing is enabled (opt-in) */
-  indexingEnabled: "clive.indexingEnabled",
   /** Whether the user has completed onboarding */
   onboardingComplete: "clive.onboardingComplete",
 } as const;
