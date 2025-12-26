@@ -13,8 +13,7 @@ export const Header: React.FC = () => {
   const handleLogout = useCallback(() => {
     logout();
     send({ type: "LOGOUT" });
-    navigate(Routes.login);
-  }, [logout, send, navigate]);
+  }, [logout, send]);
 
   return (
     <div className="flex items-center w-full justify-between border-b border-border px-4 py-2">

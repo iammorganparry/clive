@@ -17,18 +17,17 @@ import {
   IconUserCircle,
 } from "@tabler/icons-react";
 import { useAuth } from "../contexts/auth-context.js";
-import { useRouter, Routes } from "../router/index.js";
+import { useRouter } from "../router/index.js";
 
 export function UserDropdown() {
   const { user, logout } = useAuth();
-  const { navigate, send } = useRouter();
+  const { send } = useRouter();
 
   if (!user) return null;
 
   const handleLogout = () => {
     logout();
     send({ type: "LOGOUT" });
-    navigate(Routes.login);
   };
 
   const displayName = user.name || user.email || "User";

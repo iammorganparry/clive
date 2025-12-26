@@ -28,7 +28,7 @@ import {
   ReasoningContent,
 } from "@clive/ui/components/ai-elements/reasoning";
 import { useChangesetChat } from "./hooks/use-changeset-chat.js";
-import { ToolTask } from "./components/tool-task.js";
+import { ToolCallCard } from "./components/tool-call-card.js";
 import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
 import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
@@ -137,16 +137,14 @@ export const ChangesetChatPage: React.FC = () => {
                 );
               }
 
-              // All tools use ToolTask
+              // All tools use ToolCallCard
               if (part.type.startsWith("tool-")) {
                 return (
-                  <ToolTask
+                  <ToolCallCard
                     key={`${message.id}-tool-${part.toolCallId}`}
                     toolName={part.toolName}
-                    toolCallId={part.toolCallId}
                     state={part.state}
                     input={part.input}
-                    output={part.output}
                     errorText={part.errorText}
                   />
                 );
