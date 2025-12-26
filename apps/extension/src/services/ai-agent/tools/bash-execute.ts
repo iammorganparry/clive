@@ -7,49 +7,64 @@ import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import type { TokenBudgetService } from "../token-budget.js";
 import { getWorkspaceRoot } from "../../../lib/vscode-effects.js";
-import * as path from "node:path";
 
 const execAsync = promisify(exec);
 
 /**
- * Allowed commands for sandboxed execution
- * Read and write commands allowed within workspace (destructive commands blocked)
- */
-const ALLOWED_COMMANDS = [
-  "cat",
-  "head",
-  "tail",
-  "grep",
-  "find",
-  "ls",
-  "wc",
-  "git",
-  // Write commands
-  "mkdir",
-  "echo",
-  "touch",
-  "tee",
-  "sed",
-  "awk",
-  "printf",
-] as const;
-
-/**
  * Blocked patterns that indicate destructive or unsafe operations
+ * All commands are allowed except those matching these patterns
  */
 const BLOCKED_PATTERNS = [
-  /rm\s/, // Remove files
-  /mv\s/, // Move files
-  /cp\s/, // Copy files (could be used maliciously)
-  /chmod/, // Change permissions
-  /chown/, // Change ownership
-  /sudo/, // Elevate privileges
-  /\|.*rm/, // Piped remove
-  /;.*rm/, // Chained remove
-  /curl/, // Network requests
-  /wget/, // Network requests
-  /ssh/, // Remote access
-  /nc\b/, // Netcat
+  // Destructive file operations
+  /\brm\b/, // Remove files
+  /\bmv\b/, // Move files (could overwrite)
+  /\brmdir\b/, // Remove directories
+
+  // Permission/ownership changes
+  /\bchmod\b/,
+  /\bchown\b/,
+  /\bchgrp\b/,
+
+  // Privilege escalation
+  /\bsudo\b/,
+  /\bsu\b/,
+  /\bdoas\b/,
+
+  // Network operations
+  /\bcurl\b/,
+  /\bwget\b/,
+  /\bssh\b/,
+  /\bscp\b/,
+  /\brsync\b/,
+  /\bnc\b/,
+  /\bnetcat\b/,
+  /\btelnet\b/,
+
+  // System modification
+  /\bkill\b/,
+  /\bpkill\b/,
+  /\bkillall\b/,
+  /\bshutdown\b/,
+  /\breboot\b/,
+  /\bsystemctl\b/,
+  /\bservice\b/,
+
+  // Package installation (use existing packages only)
+  /\bapt\b/,
+  /\bapt-get\b/,
+  /\byum\b/,
+  /\bbrew\b/,
+  /\bpip install\b/,
+  /\bnpm install\b/,
+  /\bpnpm install\b/,
+  /\byarn add\b/,
+
+  // Disk operations
+  /\bmkfs\b/,
+  /\bdd\b/,
+  /\bfdisk\b/,
+  /\bmount\b/,
+  /\bumount\b/,
 ] as const;
 
 /**
@@ -70,15 +85,9 @@ class CommandNotAllowedError extends Data.TaggedError(
   reason: string;
 }> {}
 
-class PathOutsideWorkspaceError extends Data.TaggedError(
-  "PathOutsideWorkspaceError",
-)<{
-  path: string;
-  workspaceRoot: string;
-}> {}
-
 /**
  * Validate that a command is safe to execute
+ * Uses blocklist approach - all commands allowed except dangerous ones
  */
 function validateCommand(
   command: string,
@@ -86,7 +95,7 @@ function validateCommand(
   return Effect.gen(function* () {
     const trimmed = command.trim();
 
-    // Check for blocked patterns (destructive commands)
+    // Check for blocked patterns (destructive/unsafe commands)
     for (const pattern of BLOCKED_PATTERNS) {
       if (pattern.test(trimmed)) {
         return yield* Effect.fail(
@@ -95,54 +104,6 @@ function validateCommand(
             reason: `Command contains blocked pattern: ${pattern}`,
           }),
         );
-      }
-    }
-
-    // Extract the first command (before any pipes or semicolons)
-    const firstPart = trimmed.split(/[|;]/)[0]?.trim() || "";
-    const firstWord = firstPart.split(/\s+/)[0] || "";
-
-    // Check if first command is in allowlist
-    if (
-      !ALLOWED_COMMANDS.includes(firstWord as (typeof ALLOWED_COMMANDS)[number])
-    ) {
-      return yield* Effect.fail(
-        new CommandNotAllowedError({
-          command: trimmed,
-          reason: `Command '${firstWord}' is not in the allowlist. Allowed commands: ${ALLOWED_COMMANDS.join(", ")}`,
-        }),
-      );
-    }
-  });
-}
-
-/**
- * Validate that all file paths in the command are within the workspace
- */
-function validatePathsInWorkspace(
-  command: string,
-  workspaceRoot: string,
-): Effect.Effect<void, PathOutsideWorkspaceError> {
-  return Effect.gen(function* () {
-    // Extract potential file paths from the command
-    // This is a simple heuristic - look for paths that start with / or contain ..
-    const pathPattern = /([/][^\s|;]+|\.\.[/])/g;
-    const matches = command.match(pathPattern);
-
-    if (matches) {
-      for (const match of matches) {
-        const resolvedPath = path.resolve(workspaceRoot, match);
-        const workspacePath = path.resolve(workspaceRoot);
-
-        // Check if resolved path is within workspace
-        if (!resolvedPath.startsWith(workspacePath)) {
-          return yield* Effect.fail(
-            new PathOutsideWorkspaceError({
-              path: match,
-              workspaceRoot: workspacePath,
-            }),
-          );
-        }
       }
     }
   });
@@ -154,16 +115,29 @@ function validatePathsInWorkspace(
  */
 export const createBashExecuteTool = (budget: TokenBudgetService) =>
   tool({
-    description: `Execute bash commands in the workspace with full read and write access.
-Allowed commands: ${ALLOWED_COMMANDS.join(", ")}. 
-Use for: reading files (cat, head, tail), searching (grep, find), listing directories (ls), git operations (git diff, git log, git show), counting (wc), creating/modifying files (mkdir, echo, touch, tee, sed, awk, printf, >, >>).
-Destructive commands (rm, mv, chmod, chown, sudo) are blocked for safety.
-All commands are sandboxed to the workspace directory and have a 30-second timeout.`,
+    description: `Execute bash commands in the workspace.
+
+**PATH RESOLUTION:**
+- Commands execute from workspace root automatically
+- ALWAYS use relative paths: \`apps/nextjs/src/...\`
+- NEVER use \`cd\` - cwd is already set
+- NEVER use absolute paths starting with \`/\` or \`~\`
+
+**For tests:** \`npx vitest run path/to/test.tsx\`
+**For files:** \`printf 'content' > file.md\` (no heredoc)
+
+**For multi-line files:**
+- printf 'line1\\nline2\\nline3' > file.md
+- (echo "line1"; echo "line2") > file.md
+- echo -e "line1\\nline2" > file.md
+
+Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
+30-second timeout.`,
     inputSchema: z.object({
       command: z
         .string()
         .describe(
-          "The bash command to execute. Must use only allowed commands and operate within the workspace.",
+          "The bash command to execute. Use relative paths only. Commands execute from workspace root automatically.",
         ),
     }),
     execute: async ({
@@ -177,9 +151,6 @@ All commands are sandboxed to the workspace directory and have a 30-second timeo
 
           // Validate command safety
           yield* validateCommand(command);
-
-          // Validate paths are within workspace
-          yield* validatePathsInWorkspace(command, workspaceRoot);
 
           yield* Effect.logDebug(
             `[BashExecute] Executing command: ${command.substring(0, 100)}...`,
@@ -234,13 +205,6 @@ All commands are sandboxed to the workspace directory and have a 30-second timeo
             Effect.fail(
               new Error(
                 `Command not allowed: ${error.command}. ${error.reason}`,
-              ),
-            ),
-          ),
-          Effect.catchTag("PathOutsideWorkspaceError", (error) =>
-            Effect.fail(
-              new Error(
-                `Path outside workspace: ${error.path}. Workspace root: ${error.workspaceRoot}`,
               ),
             ),
           ),

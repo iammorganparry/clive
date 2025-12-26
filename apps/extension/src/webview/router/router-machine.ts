@@ -7,6 +7,7 @@ import { Routes, type Route } from "./routes.js";
  * States:
  * - initializing: Waiting for auth check to complete (shows loading)
  * - checkingOnboarding: Authenticated, fetching onboarding status (shows loading)
+ * - checkingConversation: Checking for existing branch conversation (shows loading)
  * - unauthenticated: User not logged in (shows login page)
  * - needsOnboarding: Authenticated but onboarding incomplete (shows onboarding)
  * - ready: Fully initialized, ready for navigation (shows dashboard/settings)
@@ -22,6 +23,11 @@ export const routerMachine = setup({
     events: {} as
       | { type: "AUTH_RESULT"; isAuthenticated: boolean; token: string | null }
       | { type: "ONBOARDING_RESULT"; onboardingComplete: boolean }
+      | {
+          type: "CONVERSATION_RESULT";
+          route: Route;
+          params?: Record<string, string>;
+        }
       | { type: "LOGIN_SUCCESS" }
       | { type: "ONBOARDING_COMPLETE" }
       | { type: "LOGOUT" }
@@ -61,13 +67,30 @@ export const routerMachine = setup({
             actions: assign({ onboardingComplete: false }),
           },
           {
-            target: "ready",
+            target: "checkingConversation",
             actions: assign({
               onboardingComplete: true,
-              route: Routes.dashboard,
             }),
           },
         ],
+        LOGOUT: {
+          target: "unauthenticated",
+          actions: assign({
+            isAuthenticated: false,
+            onboardingComplete: false,
+          }),
+        },
+      },
+    },
+    checkingConversation: {
+      on: {
+        CONVERSATION_RESULT: {
+          target: "ready",
+          actions: assign({
+            route: ({ event }) => event.route,
+            routeParams: ({ event }) => event.params || {},
+          }),
+        },
         LOGOUT: {
           target: "unauthenticated",
           actions: assign({
@@ -87,10 +110,9 @@ export const routerMachine = setup({
       entry: assign({ route: Routes.onboarding }),
       on: {
         ONBOARDING_COMPLETE: {
-          target: "ready",
+          target: "checkingConversation",
           actions: assign({
             onboardingComplete: true,
-            route: Routes.dashboard,
           }),
         },
         LOGOUT: {
@@ -135,7 +157,12 @@ export type RouterMachineState = ReturnType<
 export type RouterMachineEvent =
   | { type: "AUTH_RESULT"; isAuthenticated: boolean; token: string | null }
   | { type: "ONBOARDING_RESULT"; onboardingComplete: boolean }
+  | {
+      type: "CONVERSATION_RESULT";
+      route: Route;
+      params?: Record<string, string>;
+    }
   | { type: "LOGIN_SUCCESS" }
   | { type: "ONBOARDING_COMPLETE" }
   | { type: "LOGOUT" }
-  | { type: "NAVIGATE"; route: Route };
+  | { type: "NAVIGATE"; route: Route; params?: Record<string, string> };

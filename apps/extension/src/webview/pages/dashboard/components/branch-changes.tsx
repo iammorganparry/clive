@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -102,23 +102,6 @@ const BranchContent: React.FC<BranchContentProps> = ({
       input: { sourceFiles: filePaths },
       enabled: filePaths.length > 0,
     });
-
-  // Check if branch conversation exists and auto-redirect
-  const { data: branchConversation } =
-    rpc.conversations.hasBranchConversation.useQuery({
-      input: { branchName, baseBranch: "main" },
-      enabled: branchName.length > 0,
-    });
-
-  useEffect(() => {
-    if (branchConversation?.exists && filePaths.length > 0) {
-      const filesJson = JSON.stringify(filePaths);
-      navigate(Routes.changesetChat, {
-        files: filesJson,
-        branchName,
-      });
-    }
-  }, [branchConversation, filePaths, branchName, navigate]);
 
   const handleGenerateTests = useCallback(() => {
     const filesJson = JSON.stringify(filePaths);
