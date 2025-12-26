@@ -215,5 +215,9 @@ export function useChangesetChat({
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,
     planContent: state.context.planContent,
+    cancelStream: () => {
+      planTestsSubscription.unsubscribe();
+      send({ type: "CANCEL_STREAM" });
+    },
   };
 }

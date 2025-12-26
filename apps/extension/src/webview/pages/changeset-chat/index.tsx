@@ -2,7 +2,7 @@ import type React from "react";
 import { useMemo, useCallback, type FormEvent } from "react";
 import { useRouter } from "../../router/router-context.js";
 import { Button } from "@clive/ui/button";
-import { GitBranch, RotateCcw } from "lucide-react";
+import { GitBranch, RotateCcw, SquareIcon } from "lucide-react";
 import {
   PromptInputProvider,
   PromptInput,
@@ -10,6 +10,7 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputContext,
+  PromptInputButton,
 } from "@clive/ui/components/ai-elements/prompt-input";
 import {
   Conversation,
@@ -65,6 +66,7 @@ export const ChangesetChatPage: React.FC = () => {
     usage,
     planContent,
     send,
+    cancelStream,
   } = useChangesetChat({ files, branchName });
 
   // Parse plan content if available
@@ -290,7 +292,19 @@ export const ChangesetChatPage: React.FC = () => {
                   usage={usage ?? undefined}
                   modelId="anthropic:claude-haiku-4-5"
                 />
-                <PromptInputSubmit />
+                {isLoading ? (
+                  <PromptInputButton
+                    type="button"
+                    variant="default"
+                    size="icon-sm"
+                    onClick={cancelStream}
+                    aria-label="Stop"
+                  >
+                    <SquareIcon className="size-4" />
+                  </PromptInputButton>
+                ) : (
+                  <PromptInputSubmit />
+                )}
               </PromptInputFooter>
             </PromptInput>
           </div>

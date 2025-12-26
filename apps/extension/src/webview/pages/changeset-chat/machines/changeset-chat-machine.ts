@@ -160,7 +160,8 @@ export type ChangesetChatEvent =
   | { type: "RESPONSE_ERROR"; error: unknown }
   | { type: "CLEAR_ERROR" }
   | { type: "RESET" }
-  | { type: "SEND_MESSAGE"; content: string };
+  | { type: "SEND_MESSAGE"; content: string }
+  | { type: "CANCEL_STREAM" };
 
 export interface ChangesetChatInput {
   files: string[];
@@ -607,6 +608,10 @@ export const changesetChatMachine = setup({
       usage: () => null,
       planContent: () => null,
     }),
+    cancelStream: assign({
+      hasCompletedAnalysis: () => true, // Re-enable input
+      isReasoningStreaming: () => false,
+    }),
   },
 }).createMachine({
   id: "changesetChat",
@@ -701,6 +706,14 @@ export const changesetChatMachine = setup({
           target: "analyzing",
           actions: ["addUserMessage"],
         },
+        CANCEL_STREAM: {
+          target: "idle",
+          actions: [
+            "cancelStream",
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+          ],
+        },
       },
     },
     streaming: {
@@ -729,6 +742,14 @@ export const changesetChatMachine = setup({
         RESPONSE_ERROR: {
           target: "idle",
           actions: ["setResponseError"],
+        },
+        CANCEL_STREAM: {
+          target: "idle",
+          actions: [
+            "cancelStream",
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+          ],
         },
       },
     },

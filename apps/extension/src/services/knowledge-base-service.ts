@@ -1,10 +1,10 @@
 import { Effect } from "effect";
 import { KnowledgeBaseAgent } from "./ai-agent/knowledge-base-agent.js";
-import { KnowledgeFileService } from "./knowledge-file-service.js";
 import type {
-  KnowledgeBaseStatus,
   KnowledgeBaseProgressEvent,
+  KnowledgeBaseStatus,
 } from "./knowledge-base-types.js";
+import { KnowledgeFileService } from "./knowledge-file-service.js";
 
 /**
  * Service for analyzing repository testing patterns and building knowledge base

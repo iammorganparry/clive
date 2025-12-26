@@ -27,12 +27,6 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
 
   const [state, send] = useMachine(routerMachine);
 
-  // Fetch onboarding status only when authenticated and in checkingOnboarding state
-  const { data: indexingPreference, isLoading: prefLoading } =
-    rpc.config.getIndexingPreference.useQuery({
-      enabled: isAuthenticated && state.matches("checkingOnboarding"),
-    });
-
   // Fetch branch changes when checking for conversation
   const { data: branchChanges, isLoading: branchChangesLoading } =
     rpc.status.branchChanges.useQuery({
@@ -60,19 +54,15 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     }
   }, [authLoading, isAuthenticated, token, state, send]);
 
-  // Send ONBOARDING_RESULT when preference loading completes
+  // Skip onboarding check - send ONBOARDING_RESULT immediately after auth
   useEffect(() => {
-    if (
-      !prefLoading &&
-      indexingPreference !== undefined &&
-      state.matches("checkingOnboarding")
-    ) {
+    if (isAuthenticated && state.matches("checkingOnboarding")) {
       send({
         type: "ONBOARDING_RESULT",
-        onboardingComplete: indexingPreference?.onboardingComplete ?? false,
+        onboardingComplete: true,
       });
     }
-  }, [prefLoading, indexingPreference, state, send]);
+  }, [isAuthenticated, state, send]);
 
   // Send CONVERSATION_RESULT when conversation check completes
   useEffect(() => {

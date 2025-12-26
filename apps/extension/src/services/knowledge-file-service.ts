@@ -537,6 +537,61 @@ This file provides an overview of all knowledge documented for this repository.
         });
 
       /**
+       * Get quality metrics for the knowledge base
+       * Returns statistics about articles and content
+       */
+      const getQualityMetrics = () =>
+        Effect.gen(function* () {
+          const files = yield* listKnowledgeFiles();
+          const workspaceRoot = yield* getWorkspaceRoot();
+
+          // Read all files to calculate word count
+          const fileContents = yield* Effect.all(
+            files.map((file) =>
+              readFileAsStringEffect(
+                vscode.Uri.joinPath(workspaceRoot, file.relativePath),
+              ).pipe(
+                Effect.map((content) => {
+                  // Estimate word count: ~5 chars per word
+                  const wordCount = Math.floor(content.length / 5);
+                  return {
+                    path: file.path,
+                    wordCount,
+                    contentLength: content.length,
+                  };
+                }),
+                Effect.catchAll(() =>
+                  Effect.succeed({
+                    path: file.path,
+                    wordCount: 0,
+                    contentLength: 0,
+                  }),
+                ),
+              ),
+            ),
+            { concurrency: 10 },
+          );
+
+          const totalWordCount = fileContents.reduce(
+            (sum, file) => sum + file.wordCount,
+            0,
+          );
+          const totalContentLength = fileContents.reduce(
+            (sum, file) => sum + file.contentLength,
+            0,
+          );
+          const averageWordCount =
+            files.length > 0 ? Math.floor(totalWordCount / files.length) : 0;
+
+          return {
+            articleCount: files.length,
+            totalWordCount,
+            totalContentLength,
+            averageWordCount,
+          };
+        });
+
+      /**
        * Check if knowledge base exists
        */
       const knowledgeBaseExists = () =>
@@ -594,6 +649,7 @@ This file provides an overview of all knowledge documented for this repository.
         listKnowledgeFiles,
         grepKnowledge,
         generateIndex,
+        getQualityMetrics,
         knowledgeBaseExists,
         getKnowledgeDir,
         deleteKnowledgeBase,

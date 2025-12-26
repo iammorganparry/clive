@@ -499,55 +499,104 @@ knowledge base that will help a testing agent write intelligent, high-value test
 **CRITICAL: Focus on HOT CODE - actively used, recently modified code. Skip stale 
 technical debt, deprecated patterns, and unused testing frameworks.**
 
-Areas you might explore (not exhaustive - follow what you discover):
-- How the application is architected and organized
-- Critical user journeys and flows
-- Key components and how they work together
-- External services, APIs, and integrations
-- Data models, state management, and data flow
-- Testing patterns already in place (only if actively used)
-- Security and error handling patterns
-- Environment configuration and feature flags
-- Infrastructure requirements for testing (databases, services, env vars)
+## Exploration Phases (execute sequentially)
 
-Create knowledge articles for whatever you discover that would be valuable. 
-Use descriptive category names that make sense for this specific codebase.
-Each article should include concrete examples and file references.
+### Phase 1: System Architecture (Steps 1-30)
+- Map the overall system architecture
+- Identify module boundaries and responsibilities
+- Document data flow between major components
+- Trace request/response cycles
+- Map state management patterns
+
+### Phase 2: Core Components (Steps 31-60)
+- Deep dive into key components and services
+- Document component interfaces and contracts
+- Identify critical business logic
+- Map component dependencies
+- Include concrete code examples
+
+### Phase 3: Testing Infrastructure (Steps 61-90)
+- Analyze existing test patterns and frameworks
+- Document test utilities, fixtures, and mocks
+- Identify test setup and teardown patterns
+- Map test data generation strategies
+- Document environment requirements
+
+### Phase 4: Integration Points (Steps 91-120)
+- Document external service integrations
+- Identify API contracts and data models
+- Map database interactions and queries
+- Document authentication/authorization flows
+- Identify configuration requirements
+
+### Phase 5: Deep Analysis (Steps 121-150)
+- Identify testing gaps and opportunities
+- Document edge cases and error handling
+- Map security patterns
+- Document performance considerations
+- Create comprehensive test recommendations
+
+## Documentation Standards
+
+For EACH knowledge file you create:
+
+1. **Context**: Why this is important for testing
+2. **Overview**: Clear explanation of the concept/pattern
+3. **Code Examples**: Minimum 2-3 real code examples from the codebase
+4. **Usage Patterns**: How it's used across the codebase
+5. **Test Implications**: What tests need to cover this
+6. **Edge Cases**: Known edge cases or error scenarios
+7. **Related Patterns**: Links to related knowledge articles
+
+Aim for 300-500 words per article with substantial code examples.
 
 Use writeKnowledgeFile to store your discoveries as you go. Don't wait until 
 the end - document incrementally so knowledge is preserved even if exploration 
 is interrupted.
 </your_task>
 
-<phase_0_hot_code_discovery>
-**MANDATORY FIRST PHASE: Discover Hot Code**
+<phase_0_enhanced_discovery>
+**MANDATORY FIRST PHASE: Comprehensive Hot Code Discovery**
 
 Before deep exploration, identify what code is actively used vs stale technical debt:
 
-1. **Find recently modified files** (hot code):
-   - Run: git log --name-only --since="3 months ago" --pretty=format: | sort | uniq -c | sort -rn | head -30
-   - These 30 most frequently modified files = hot code to prioritize
+1. **Find recently modified files** (prioritize by modification frequency):
+   - Run: git log --name-only --since="3 months ago" --pretty=format: | sort | uniq -c | sort -rn | head -50
+   - Run: git log --name-only --since="1 month ago" --pretty=format: | sort | uniq -c | sort -rn | head -30
+   - Document: Top 50 most active files with modification counts
    - Run: git log --format='%H' --since="6 months ago" -- <directory> | head -1
    - If no commits found, this area is stale - skip it
 
-2. **Identify active contributors and their focus areas**:
-   - Run: git shortlog -sn --since="6 months ago" -- .
-   - Files touched by active contributors are likely hot code
-
-3. **Analyze import graph** (core code):
-   - Find entry points: cat package.json | grep -E "(main|exports|bin)"
-   - Follow import chains from entry points using: grep -r "import.*from" --include="*.ts" --include="*.tsx" --include="*.js" | grep -E "from ['"]./"
+2. **Analyze import dependencies** (find critical modules):
+   - Find TypeScript/JavaScript entry points: cat package.json | grep -E "(main|exports|bin)"
+   - Map import graph: grep -rh "^import.*from" --include="*.ts" --include="*.tsx" | sort | uniq -c | sort -rn | head -100
+   - Document: Top 30 most imported modules (core infrastructure)
    - Files imported by 3+ other files are core code (prioritize)
    - Files with zero imports may be orphaned (deprioritize)
 
-4. **Check test activity**:
-   - If you find test files, check: git log --since="6 months ago" -- <test-file>
-   - Test frameworks with no recent commits are likely unused (skip documenting them)
+3. **Identify API routes and endpoints**:
+   - Find route definitions: grep -r "router|app.(get|post|put|delete)" --include="*.ts" --include="*.js"
+   - Find tRPC procedures: grep -r "procedure|router" --include="*.ts" | grep -E "(query|mutation|subscription)"
+   - Document: All public API endpoints with their handlers
 
-5. **Document code activity patterns**:
+4. **Map data models and schemas**:
+   - Find database schemas: find . -name "schema.ts" -o -name "models.ts" -o -name "*.model.ts"
+   - Find validation schemas: grep -r "z.object|yup|joi" --include="*.ts"
+   - Document: All data models with their fields and validations
+
+5. **Analyze test coverage**:
+   - Find test files: find . -name "*.test.ts" -o -name "*.spec.ts" | wc -l
+   - Find coverage for hot files: for each top file, check if test exists
+   - Document: Coverage gaps in hot code areas
+
+6. **Identify active contributors and their focus areas**:
+   - Run: git shortlog -sn --since="6 months ago" -- .
+   - Files touched by active contributors are likely hot code
+
+7. **Document code activity patterns**:
    - Use writeKnowledgeFile with category "code-activity" or "active-development-areas"
    - Document which areas are hot vs cold to help testing agent focus
-</phase_0_hot_code_discovery>
+</phase_0_enhanced_discovery>
 
 <hot_code_signals>
 **HOT CODE (prioritize and document):**
@@ -567,15 +616,52 @@ Before deep exploration, identify what code is actively used vs stale technical 
 - Files in directories marked as deprecated or legacy
 </hot_code_signals>
 
+<knowledge_categories>
+## Knowledge Categories (create articles in these categories)
+
+**Architecture**:
+- system-architecture: Overall architecture patterns
+- module-boundaries: Module responsibilities and boundaries
+- data-flow: Data flow and state management
+- service-layers: Service layer patterns
+
+**Components**:
+- core-components: Critical UI/business components
+- component-patterns: Reusable component patterns
+- component-lifecycle: Lifecycle and state patterns
+
+**Testing**:
+- test-frameworks: Framework configurations
+- test-patterns: Testing patterns and conventions
+- fixtures: Test fixtures and data builders
+- mocks: Mock strategies and utilities
+- test-utilities: Helper functions and utilities
+
+**Integration**:
+- api-contracts: API endpoints and contracts
+- external-services: Third-party integrations
+- database-patterns: Database access patterns
+- auth-patterns: Authentication/authorization
+
+**Infrastructure**:
+- environment-config: Environment variables and configuration
+- build-deployment: Build and deployment patterns
+- error-handling: Error handling strategies
+- logging-monitoring: Logging and monitoring
+</knowledge_categories>
+
 <guidance>
 **Exploration Strategy:**
 
 1. **Start with Phase 0** - Use git commands to identify hot code areas
-2. **Focus exploration on hot code** - These are the patterns and architectures actually in use
-3. **Skip cold code** - Don't document deprecated frameworks, unused patterns, or stale technical debt
-4. **Document activity patterns** - Help future agents understand what's actively maintained
+2. **Execute phases sequentially** - Follow the 5-phase structure (Architecture → Components → Testing → Integration → Analysis)
+3. **Focus exploration on hot code** - These are the patterns and architectures actually in use
+4. **Skip cold code** - Don't document deprecated frameworks, unused patterns, or stale technical debt
+5. **Document activity patterns** - Help future agents understand what's actively maintained
+6. **Create detailed articles** - Each article should be 300-500 words with code examples
+7. **Connect related concepts** - Link articles together to build comprehensive understanding
 
-Explore organically within hot code areas - follow interesting leads, dig deeper when you find 
+Explore systematically within each phase - follow interesting leads, dig deeper when you find 
 something important. Use your judgment about what knowledge would be most valuable for 
 understanding this codebase and writing effective tests.
 

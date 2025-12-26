@@ -6,7 +6,7 @@ export const AIModels = {
   // Anthropic models
   anthropic: {
     /** High-capability reasoning model for planning and complex tasks */
-    testing: "claude-haiku-4-5",
+    testing: "claude-sonnet-4-5",
   },
 
   // xAI models
