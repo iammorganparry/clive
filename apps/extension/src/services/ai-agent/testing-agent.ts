@@ -726,6 +726,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                           appendPlanStreamingContentEffect(toolCallId, planContentChunk),
                                           Effect.tap(() =>
                                             Effect.sync(() => {
+                                              const targetPath = planToToolCallId.get(toolCallId) || "";
                                               progressCallback?.(
                                                 "plan-content-streaming",
                                                 JSON.stringify({
@@ -733,6 +734,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                                   toolCallId,
                                                   content: planContentChunk,
                                                   isComplete: false,
+                                                  filePath: targetPath,
                                                 }),
                                               );
                                             }),
@@ -982,7 +984,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                   planContent?: string;
                                 };
                                 if (parsedArgs.planContent) {
-                                  // Emit final plan content as complete
+                                  const targetPath = planToToolCallId.get(toolCallId) || "";
+                                  // Emit final plan content as complete with file path
                                   progressCallback?.(
                                     "plan-content-streaming",
                                     JSON.stringify({
@@ -990,6 +993,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                       toolCallId: e.toolCallId,
                                       content: parsedArgs.planContent,
                                       isComplete: true,
+                                      filePath: targetPath,
                                     }),
                                   );
                                 }
@@ -1004,6 +1008,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                     .replace(/\\t/g, "\t")
                                     .replace(/\\"/g, '"')
                                     .replace(/\\\\/g, "\\");
+                                  const targetPath = planToToolCallId.get(toolCallId) || "";
                                   progressCallback?.(
                                     "plan-content-streaming",
                                     JSON.stringify({
@@ -1011,6 +1016,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                       toolCallId: e.toolCallId,
                                       content: planContent,
                                       isComplete: true,
+                                      filePath: targetPath,
                                     }),
                                   );
                                 }
@@ -1026,6 +1032,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                   .replace(/\\t/g, "\t")
                                   .replace(/\\"/g, '"')
                                   .replace(/\\\\/g, "\\");
+                                const targetPath = planToToolCallId.get(toolCallId) || "";
                                 progressCallback?.(
                                   "plan-content-streaming",
                                   JSON.stringify({
@@ -1033,6 +1040,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                     toolCallId: e.toolCallId,
                                     content: planContent,
                                     isComplete: true,
+                                    filePath: targetPath,
                                   }),
                                 );
                               }

@@ -30,6 +30,14 @@ const BUILT_IN_RULES = `<rules>
 - **CRITICAL**: ALWAYS match exact function signatures from source code
 - **CRITICAL**: NEVER fabricate arguments - read source before writing test calls
 - **CRITICAL COMPLETION**: When ALL test cases have been written and verified passing (one at a time), use the completeTask tool to signal completion. The tool validates that all tests pass before allowing completion. You may also output "[COMPLETE]" as a fallback delimiter.
+- **HIGH-VALUE TEST FOCUS**: Always prioritize tests that provide the highest value:
+  - Critical business logic and edge cases
+  - Code paths that handle errors or failures
+  - Recently modified or frequently changing code
+  - Code without existing test coverage
+  - Integration points between modules
+  - Avoid low-value tests like simple getters/setters or trivial pass-through functions
+- **VALUE vs EFFORT**: When proposing tests, consider the safety-to-effort ratio. A test that catches critical bugs is more valuable than comprehensive tests of stable utilities.
 </rules>`;
 
 /**

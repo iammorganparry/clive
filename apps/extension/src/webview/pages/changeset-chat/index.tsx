@@ -2,7 +2,7 @@ import type React from "react";
 import { useMemo, useCallback, type FormEvent } from "react";
 import { useRouter } from "../../router/router-context.js";
 import { Button } from "@clive/ui/button";
-import { GitBranch, RotateCcw, SquareIcon } from "lucide-react";
+import { GitBranch, Plus, SquareIcon } from "lucide-react";
 import {
   PromptInputProvider,
   PromptInput,
@@ -263,7 +263,7 @@ export const ChangesetChatPage: React.FC = () => {
               onClick={handleNewChat}
               disabled={isLoading}
             >
-              <RotateCcw className="h-4 w-4 mr-1" />
+              <Plus className="size-2" />
             </Button>
           </div>
         </div>

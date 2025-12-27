@@ -12,6 +12,24 @@ overview: Tests for auth
       expect(hasPlanContent(text)).toBe(true);
     });
 
+    it('should detect YAML frontmatter with any name (not just "Test Plan")', () => {
+      const text = `---
+name: Authentication Tests
+overview: Tests for auth
+---`;
+      
+      expect(hasPlanContent(text)).toBe(true);
+    });
+
+    it('should detect YAML frontmatter with short name', () => {
+      const text = `---
+name: Auth Tests
+overview: Testing authentication
+---`;
+      
+      expect(hasPlanContent(text)).toBe(true);
+    });
+
     it('should detect H1 header format', () => {
       const text = `# Test Plan for API Routes
 
@@ -63,6 +81,43 @@ Content here`;
       if (result) {
         expect(result.title).toBe('Test Plan for Authentication');
         expect(result.description).toBe('Comprehensive tests for auth flow');
+      }
+    });
+
+    it('should extract title from YAML frontmatter without "Test Plan" prefix', () => {
+      const markdown = `---
+name: Authentication Tests
+overview: Comprehensive tests for auth flow
+---
+
+Content here`;
+
+      const result = parsePlan(markdown);
+      
+      expect(result).not.toBeNull();
+      if (result) {
+        expect(result.title).toBe('Authentication Tests');
+        expect(result.description).toBe('Comprehensive tests for auth flow');
+      }
+    });
+
+    it('should parse plan with simple name field', () => {
+      const markdown = `---
+name: API Tests
+overview: Testing API endpoints
+---
+
+## Problem Summary
+
+Issues identified`;
+
+      const result = parsePlan(markdown);
+      
+      expect(result).not.toBeNull();
+      if (result) {
+        expect(result.title).toBe('API Tests');
+        expect(result.description).toBe('Testing API endpoints');
+        expect(result.body).toContain('## Problem Summary');
       }
     });
 

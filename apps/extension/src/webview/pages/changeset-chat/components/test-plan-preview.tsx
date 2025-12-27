@@ -50,21 +50,19 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             <PlanDescription>{plan.description}</PlanDescription>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {filePath && (
-            <PlanAction>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReadMore}
-                disabled={openFileMutation.isPending}
-              >
-                Read More
-              </Button>
-            </PlanAction>
-          )}
-          <PlanTrigger />
-        </div>
+        {filePath && (
+          <PlanAction>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReadMore}
+              disabled={openFileMutation.isPending}
+            >
+              Read More
+            </Button>
+          </PlanAction>
+        )}
+        <PlanTrigger />
       </PlanHeader>
       <PlanContent>
         <Streamdown

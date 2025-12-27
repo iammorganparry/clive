@@ -32,10 +32,11 @@ describe("writeKnowledgeFileTool", () => {
           title: "Test Title",
           content: "Test content",
         },
-        { success: false },
+        { success: false, error: "default" },
       );
 
       expect(result.success).toBe(true);
+      // @ts-expect-error - result.relativePath is not typed
       expect(result.relativePath).toBe(".clive/knowledge/test-category.md");
       expect(mockKnowledgeFileService.writeKnowledgeFile).toHaveBeenCalledWith(
         "test-category",
@@ -52,7 +53,7 @@ describe("writeKnowledgeFileTool", () => {
     it("should include examples when provided", async () => {
       const tool = createWriteKnowledgeFileTool(mockKnowledgeFileService);
 
-      await executeTool(
+      const result = await executeTool(
         tool,
         {
           category: "test-category",
@@ -60,9 +61,10 @@ describe("writeKnowledgeFileTool", () => {
           content: "Test content",
           examples: ["example1", "example2"],
         },
-        { success: false },
+        { success: false as const, error: "default" },
       );
 
+      expect(result.success).toBe(true);
       expect(mockKnowledgeFileService.writeKnowledgeFile).toHaveBeenCalledWith(
         "test-category",
         "Test Title",
@@ -78,7 +80,7 @@ describe("writeKnowledgeFileTool", () => {
     it("should include sourceFiles when provided", async () => {
       const tool = createWriteKnowledgeFileTool(mockKnowledgeFileService);
 
-      await executeTool(
+      const result = await executeTool(
         tool,
         {
           category: "test-category",
@@ -86,9 +88,10 @@ describe("writeKnowledgeFileTool", () => {
           content: "Test content",
           sourceFiles: ["src/file1.ts", "src/file2.ts"],
         },
-        { success: false },
+        { success: false as const, error: "default" },
       );
 
+      expect(result.success).toBe(true);
       expect(mockKnowledgeFileService.writeKnowledgeFile).toHaveBeenCalledWith(
         "test-category",
         "Test Title",
@@ -186,7 +189,7 @@ describe("writeKnowledgeFileTool", () => {
           title: "Test Title",
           content: "Test content",
         },
-        { success: false },
+        { success: false, error: "default" },
       );
 
       expect(result.success).toBe(false);
@@ -208,7 +211,7 @@ describe("writeKnowledgeFileTool", () => {
           title: "Test Title",
           content: "Test content",
         },
-        { success: false },
+        { success: false, error: "default" },
       );
 
       expect(result.success).toBe(false);

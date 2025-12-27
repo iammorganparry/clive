@@ -34,6 +34,8 @@ import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
 import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
 import { PlanFileService } from "./plan-file-service.js";
+import { PromptServiceLive } from "./ai-agent/prompts/prompt-service.js";
+import { RulesServiceLive } from "./ai-agent/prompts/rules-service.js";
 
 /**
  * Context required to create the core layer
@@ -192,6 +194,14 @@ export function createAgentServiceLayer(ctx: LayerContext) {
   // CompletionDetector has no dependencies - can be added directly
   const completionDetectorLayer = CompletionDetectorLive;
 
+  // RulesService has no dependencies - can be added directly
+  const rulesServiceLayer = RulesServiceLive;
+
+  // PromptService depends on RulesService
+  const promptServiceLayer = PromptServiceLive.pipe(
+    Layer.provide(rulesServiceLayer),
+  );
+
   // Domain layer with all services including knowledge base and summary service
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
@@ -200,6 +210,8 @@ export function createAgentServiceLayer(ctx: LayerContext) {
     knowledgeBaseServiceLayer,
     summaryServiceLayer,
     completionDetectorLayer,
+    rulesServiceLayer,
+    promptServiceLayer,
   );
 
   // Add agent layers
