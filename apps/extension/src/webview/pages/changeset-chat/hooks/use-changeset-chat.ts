@@ -1,8 +1,7 @@
 import { useMachine } from "@xstate/react";
 import type { LanguageModelUsage } from "ai";
 import { Match } from "effect";
-import { nanoid } from "nanoid";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ToolEvent } from "../../../types/chat.js";
 import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
@@ -23,9 +22,6 @@ export function useChangesetChat({
 }: UseChangesetChatOptions) {
   const rpc = useRpc();
   const cache = useConversationCache(branchName, mode);
-  const [planFilePath, setPlanFilePath] = useState<string | null>(null);
-  const lastWrittenPlanContent = useRef<string | null>(null);
-  const planFilenameId = useRef<string | null>(null);
 
   const [state, send] = useMachine(changesetChatMachine, {
     input: {
@@ -163,6 +159,7 @@ export function useChangesetChat({
               toolCallId: p.toolCallId || "",
               content: typeof p.content === "string" ? p.content : "",
               isComplete: p.isComplete === true,
+              filePath: typeof p.filePath === "string" ? p.filePath : undefined,
             },
           });
         }),
@@ -266,38 +263,6 @@ export function useChangesetChat({
     cache,
   ]);
 
-  // Auto-write plan file when planContent is detected
-  const writePlanFileMutation = rpc.system.writePlanFile.useMutation({
-    onSuccess: (result) => {
-      if (result?.filePath) {
-        setPlanFilePath(result.filePath);
-      }
-    },
-    onError: (error) => {
-      console.error("Failed to write plan file:", error);
-    },
-  });
-
-  useEffect(() => {
-    const planContent = state.context.planContent;
-    if (
-      planContent &&
-      planContent !== lastWrittenPlanContent.current &&
-      !writePlanFileMutation.isPending
-    ) {
-      // Generate stable ID once when plan is first detected
-      if (!planFilenameId.current) {
-        planFilenameId.current = nanoid();
-      }
-
-      lastWrittenPlanContent.current = planContent;
-      writePlanFileMutation.mutate({
-        content: planContent,
-        filename: `test-plan-${planFilenameId.current}.md`,
-      });
-    }
-  }, [state.context.planContent, writePlanFileMutation]);
-
   // Auto-send focused message when starting next suite in act mode
   const previousSuiteId = useRef<string | null>(null);
   useEffect(() => {
@@ -335,7 +300,7 @@ export function useChangesetChat({
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,
     planContent: state.context.planContent,
-    planFilePath,
+    planFilePath: state.context.planFilePath,
     testExecutions: state.context.testExecutions,
     testSuiteQueue: state.context.testSuiteQueue,
     currentSuiteId: state.context.currentSuiteId,

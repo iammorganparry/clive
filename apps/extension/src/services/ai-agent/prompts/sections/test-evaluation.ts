@@ -32,6 +32,36 @@ Evaluate the file and recommend the BEST testing approach:
    - **If user journey is critical** → E2E tests for complete flows
    - **Always explain tradeoffs** - why this approach provides better safety/effort ratio
 
+**Mocking Difficulty Strategy:**
+When mocking would be difficult or complex:
+
+1. **Identify hard-to-mock patterns:**
+   - Deeply nested dependencies
+   - Global state or singletons
+   - Direct file system or network calls
+   - Tightly coupled modules
+   - Complex class hierarchies
+
+2. **Recommend alternatives:**
+   - **Suggest dependency injection refactors**: If a function directly imports dependencies, recommend refactoring to accept dependencies as parameters
+   - **Prefer integration tests**: When unit tests require 5+ complex mocks, integration tests often provide better value
+   - **Recommend e2e tests**: For user flows with many dependencies, e2e tests verify real behavior without mock complexity
+
+3. **Refactor suggestions format:**
+   If suggesting a refactor for testability, provide a concrete example:
+   \\\`\\\`\\\`
+   // Current (hard to test):
+   function processOrder() {
+     const db = new Database(); // direct instantiation
+     return db.save(order);
+   }
+   
+   // Suggested (testable):
+   function processOrder(db: Database) { // dependency injection
+     return db.save(order);
+   }
+   \\\`\\\`\\\`
+
 **Framework Detection Priority:**
 1. **FIRST**: Search knowledge base for "test-execution" category to find documented test frameworks and commands
 2. Search knowledge base for framework-specific patterns (vitest, jest, playwright, cypress)

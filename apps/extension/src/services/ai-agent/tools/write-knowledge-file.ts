@@ -72,12 +72,10 @@ export const createWriteKnowledgeFileTool = (
       examples?: string[];
       sourceFiles?: string[];
       append?: boolean;
-    }): Promise<{
-      success: boolean;
-      path?: string;
-      relativePath?: string;
-      error?: string;
-    }> => {
+    }): Promise<
+      | { success: true; path: string; relativePath: string }
+      | { success: false; error: string }
+    > => {
       console.log(
         `[WriteKnowledgeFile] Starting for category: ${category}, title: ${title.substring(0, 50)}...`,
       );

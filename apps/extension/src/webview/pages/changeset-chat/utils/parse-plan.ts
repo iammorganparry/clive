@@ -56,7 +56,7 @@ export function hasPlanContent(text: string): boolean {
     /^##\s+Test Plan:/m, // ## Test Plan: (existing H2 format)
     /^##\s+Recommendation:/m, // ## Recommendation: (existing)
     /^##\s+Test Plan\s*$/m, // ## Test Plan (existing)
-    /^name:\s*Test Plan/m, // name: Test Plan... (YAML frontmatter)
+    /^name:\s*.+/m, // name: ... (any YAML frontmatter name field)
     /^#\s+Test Plan/m, // # Test Plan... (H1 header)
   ];
 

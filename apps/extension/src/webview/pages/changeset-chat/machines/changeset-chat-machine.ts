@@ -134,6 +134,7 @@ export interface ChangesetChatContext {
   cachedAt?: number; // Timestamp of when cache was loaded
   usage: LanguageModelUsage | null;
   planContent: string | null; // Plan content extracted from scratchpad file
+  planFilePath: string | null; // Path to the plan file created by the agent
   testExecutions: TestFileExecution[]; // Accumulated test execution results
   accumulatedTestOutput: Map<string, string>; // Map of toolCallId -> accumulated output for streaming
   accumulatedFileContent: Map<string, string>; // Map of toolCallId -> accumulated file content for streaming
@@ -196,6 +197,7 @@ export type ChangesetChatEvent =
         toolCallId: string;
         content: string;
         isComplete: boolean;
+        filePath?: string;
       };
       usage?: LanguageModelUsage;
     }
@@ -874,11 +876,13 @@ export const changesetChatMachine = setup({
       )
         return {};
       if (!event.streamingPlanContent) return {};
-      const { content } = event.streamingPlanContent;
+      const { content, filePath } = event.streamingPlanContent;
       // Update planContent with the streamed content
       // When isComplete is true, this is the final content
+      // Also capture the file path if provided
       return {
         planContent: content || null,
+        ...(filePath && { planFilePath: filePath }),
       };
     }),
     updateFileStreamingContent: assign(({ context, event }) => {
@@ -942,6 +946,7 @@ export const changesetChatMachine = setup({
       cachedAt: () => undefined,
       usage: () => null,
       planContent: () => null,
+      planFilePath: () => null,
       testExecutions: () => [],
       accumulatedFileContent: () => new Map(),
       testSuiteQueue: () => [],
@@ -1041,6 +1046,7 @@ export const changesetChatMachine = setup({
     cachedAt: undefined,
     usage: null,
     planContent: null,
+    planFilePath: null,
     testExecutions: [],
     accumulatedTestOutput: new Map(),
     accumulatedFileContent: new Map(),

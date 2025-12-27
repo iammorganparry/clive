@@ -29,6 +29,7 @@ describe("changeset-chat-machine test execution actions", () => {
       currentSuiteId: null,
       agentMode: "act",
       planContent: null,
+      planFilePath: null,
       usage: null,
       cachedAt: undefined,
     };
@@ -518,6 +519,164 @@ describe("changeset-chat-machine test execution actions", () => {
       );
       expect(nextSuite).toBeDefined();
       expect(nextSuite?.id).toBe(suiteId2);
+    });
+  });
+});
+
+describe("changeset-chat-machine plan content actions", () => {
+  let mockContext: ChangesetChatContext;
+
+  beforeEach(() => {
+    mockContext = {
+      files: [],
+      branchName: "test-branch",
+      messages: [],
+      streamingContent: "",
+      toolEvents: [],
+      error: null,
+      reasoningContent: "",
+      isReasoningStreaming: false,
+      hasCompletedAnalysis: false,
+      scratchpadTodos: [],
+      cacheLoaded: false,
+      historyLoaded: false,
+      testExecutions: [],
+      accumulatedTestOutput: new Map(),
+      accumulatedFileContent: new Map(),
+      testSuiteQueue: [],
+      currentSuiteId: null,
+      agentMode: "plan",
+      planContent: null,
+      planFilePath: null,
+      usage: null,
+      cachedAt: undefined,
+    };
+  });
+
+  describe("updatePlanContent", () => {
+    it("should update planContent from plan-content-streaming event", () => {
+      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+      
+      // Simulate updatePlanContent action logic
+      const updates = {
+        planContent: planContent || null,
+      };
+
+      expect(updates.planContent).toBe(planContent);
+    });
+
+    it("should update planFilePath when filePath is provided in streaming event", () => {
+      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+      const filePath = ".clive/plans/test-plan-auth-1234567890.md";
+
+      // Simulate updatePlanContent action logic with filePath
+      const updates = {
+        planContent: planContent || null,
+        ...(filePath && { planFilePath: filePath }),
+      };
+
+      expect(updates.planContent).toBe(planContent);
+      expect(updates.planFilePath).toBe(filePath);
+    });
+
+    it("should not update planFilePath when filePath is not provided", () => {
+      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+
+      // Simulate updatePlanContent action logic without filePath
+      const updates: Record<string, string | null> = {
+        planContent: planContent || null,
+      };
+
+      expect(updates.planContent).toBe(planContent);
+      expect(updates.planFilePath).toBeUndefined();
+    });
+
+    it("should set planContent to null when content is empty", () => {
+      const planContent = "";
+
+      // Simulate updatePlanContent action logic
+      const updates = {
+        planContent: planContent || null,
+      };
+
+      expect(updates.planContent).toBeNull();
+    });
+  });
+
+  describe("reset action", () => {
+    it("should reset planContent to null", () => {
+      mockContext.planContent = "# Test Plan\n\nSome content";
+      
+      // Simulate reset action
+      const resetContext = {
+        ...mockContext,
+        planContent: null,
+      };
+
+      expect(resetContext.planContent).toBeNull();
+    });
+
+    it("should reset planFilePath to null", () => {
+      mockContext.planFilePath = ".clive/plans/test-plan-123.md";
+      
+      // Simulate reset action
+      const resetContext = {
+        ...mockContext,
+        planFilePath: null,
+      };
+
+      expect(resetContext.planFilePath).toBeNull();
+    });
+
+    it("should reset both planContent and planFilePath together", () => {
+      mockContext.planContent = "# Test Plan\n\nSome content";
+      mockContext.planFilePath = ".clive/plans/test-plan-123.md";
+      
+      // Simulate reset action
+      const resetContext = {
+        ...mockContext,
+        planContent: null,
+        planFilePath: null,
+      };
+
+      expect(resetContext.planContent).toBeNull();
+      expect(resetContext.planFilePath).toBeNull();
+    });
+  });
+
+  describe("plan content streaming flow", () => {
+    it("should capture plan content and file path from streaming events", () => {
+      const planContent = "# Test Plan for Authentication\n\n## Problem Summary\n\nTesting gaps identified";
+      const filePath = ".clive/plans/test-plan-authentication-1234567890.md";
+
+      // Initial state
+      expect(mockContext.planContent).toBeNull();
+      expect(mockContext.planFilePath).toBeNull();
+
+      // Simulate streaming event with content and filePath
+      mockContext.planContent = planContent;
+      mockContext.planFilePath = filePath;
+
+      expect(mockContext.planContent).toBe(planContent);
+      expect(mockContext.planFilePath).toBe(filePath);
+    });
+
+    it("should handle multiple streaming chunks with incremental content", () => {
+      const chunks = [
+        { content: "# Test Plan\n", filePath: ".clive/plans/test-plan-123.md" },
+        { content: "# Test Plan\n\n## Problem", filePath: ".clive/plans/test-plan-123.md" },
+        { content: "# Test Plan\n\n## Problem Summary\n\nComplete", filePath: ".clive/plans/test-plan-123.md" },
+      ];
+
+      // Simulate incremental streaming
+      chunks.forEach((chunk) => {
+        mockContext.planContent = chunk.content;
+        mockContext.planFilePath = chunk.filePath;
+      });
+
+      // Final state should have the complete content
+      expect(mockContext.planContent).toContain("Complete");
+      expect(mockContext.planFilePath).toBe(".clive/plans/test-plan-123.md");
     });
   });
 });

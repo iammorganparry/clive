@@ -124,4 +124,52 @@ describe('TestPlanPreview', () => {
     expect(screen.getByText('Test Plan for Authentication')).toBeDefined();
     expect(screen.getByText('Comprehensive testing for auth flow')).toBeDefined();
   });
+
+  describe('DOM structure', () => {
+    it('should render Read More button as direct child of PlanHeader for CSS grid', () => {
+      const { container } = render(
+        <TestPlanPreview plan={mockPlan} filePath="/path/to/file.ts" />
+      );
+      
+      // Find the card header element
+      const header = container.querySelector('[data-slot="card-header"]');
+      expect(header).toBeDefined();
+      
+      // Find the Read More button's parent (PlanAction)
+      const planAction = container.querySelector('[data-slot="plan-action"]');
+      expect(planAction).toBeDefined();
+      
+      // Verify PlanAction is a direct child of header (not nested in flex wrapper)
+      expect(planAction?.parentElement).toBe(header);
+    });
+
+    it('should have correct data-slot attributes for CSS grid layout', () => {
+      const { container } = render(
+        <TestPlanPreview plan={mockPlan} filePath="/path/to/file.ts" />
+      );
+      
+      // Verify all required data-slot attributes exist
+      expect(container.querySelector('[data-slot="plan"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="card-header"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="card-title"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="card-description"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="plan-action"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="plan-trigger"]')).toBeDefined();
+    });
+
+    it('should render PlanTrigger separately from PlanAction', () => {
+      const { container } = render(
+        <TestPlanPreview plan={mockPlan} filePath="/path/to/file.ts" />
+      );
+      
+      const planAction = container.querySelector('[data-slot="plan-action"]');
+      const planTrigger = container.querySelector('[data-slot="plan-trigger"]');
+      
+      expect(planAction).toBeDefined();
+      expect(planTrigger).toBeDefined();
+      
+      // They should be siblings, not nested
+      expect(planAction?.parentElement).toBe(planTrigger?.parentElement);
+    });
+  });
 });
