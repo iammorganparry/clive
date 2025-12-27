@@ -17,17 +17,18 @@ This is a conversational workflow where you analyze, propose, and write tests:
 - Consider the parameters required for the tool
 - Plan your approach before executing
 
-PHASE 0: RAPID CONTEXT (2-3 commands max)
+PHASE 0: RAPID CONTEXT (3-4 commands max)
   **Be efficient - don't over-explore. Get to your proposal quickly.**
   
   REQUIRED (do these FIRST, in parallel if possible):
   1. Read the target file(s): cat the files you need to test
   2. Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
+  3. Find similar tests AND mock factories:
+     - Similar tests: find . -path "*/__tests__/*" -name "*.spec.ts" | head -3
+     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  4. Read ONE similar test file to understand project patterns
   
-  OPTIONAL (only if needed):
-  3. Find ONE existing test as pattern reference: find . -name "*.spec.ts" -o -name "*.test.ts" | head -3
-  
-  **STOP exploring after 3 commands.** You have enough context. Move to Phase 1.
+  **STOP exploring after 4 commands.** You have enough context. Move to Phase 1.
   
   Skip scratchpad for changesets with 1-5 files. Only use scratchpad for 6+ files.
 

@@ -1,39 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expect, vi, beforeEach, describe } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import * as vscode from "vscode";
 import { createWriteTestFileTool } from "../write-test-file";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../../types";
+import { executeTool } from "./test-helpers";
+import { createMockDiagnosticWithRange } from "../../../../__tests__/mock-factories/diagnostics-mock";
 
-/**
- * Helper function to execute tool and handle async results
- */
-async function executeTool(
-  tool: ReturnType<typeof createWriteTestFileTool>,
-  input: WriteTestFileInput,
-): Promise<WriteTestFileOutput> {
-  if (!tool.execute) {
-    throw new Error("Tool execute function is undefined");
-  }
-
-  const result = await tool.execute(input, {
-    toolCallId: "test-call-id",
-    messages: [],
-  });
-
-  // Handle AsyncIterable if needed
-  if (result && typeof result === "object" && Symbol.asyncIterator in result) {
-    const results: WriteTestFileOutput[] = [];
-    for await (const value of result as AsyncIterable<WriteTestFileOutput>) {
-      results.push(value);
-    }
-    return results[results.length - 1] ?? {
-      success: false,
-      filePath: input.targetPath,
-      message: "No result returned",
-    };
-  }
-
-  return result as WriteTestFileOutput;
-}
+// Mock Effect to make sleep instant in tests
+vi.mock("effect", async () => {
+  const actual = await vi.importActual<typeof import("effect")>("effect");
+  return {
+    ...actual,
+    Effect: {
+      ...actual.Effect,
+      sleep: () => actual.Effect.void, // Make sleep instant
+    },
+  };
+});
 
 // Mock vscode module using shared factory
 vi.mock("vscode", async () => {
@@ -65,302 +49,589 @@ describe("writeTestFileTool", () => {
     mockFs.writeFile.mockResolvedValue(undefined);
     // Default: createDirectory succeeds
     mockFs.createDirectory.mockResolvedValue(undefined);
-    // Default: openTextDocument succeeds
-    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ uri: "file://test" } as unknown as vscode.TextDocument);
   });
 
   describe("Happy Path", () => {
-    it("should write test file when proposalId is approved", async () => {
-      approvalRegistry.add("test-1");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should write test file when proposalId is approved", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-1"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-1",
-        testContent: 'describe("test", () => { it("works", () => {}); });',
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-1",
+          testContent: 'describe("test", () => { it("works", () => {}); });',
+          targetPath: "src/test.spec.ts",
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(true);
-      expect(result.filePath).toBe("src/test.spec.ts");
-      expect(result.message).toContain("created");
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+          expect(result.filePath).toBe("src/test.spec.ts");
+          expect(result.message).toContain("successfully saved");
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should create parent directories if they don't exist", async () => {
-      approvalRegistry.add("test-2");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should create parent directories if they don't exist", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-2"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      // Parent directory doesn't exist
-      mockFs.stat.mockRejectedValue(new Error("Directory not found"));
+        // Parent directory doesn't exist
+        yield* Effect.sync(() => mockFs.stat.mockRejectedValue(new Error("Directory not found")));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-2",
-        testContent: "test content",
-        targetPath: "src/deep/nested/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-2",
+          testContent: "test content",
+          targetPath: "src/deep/nested/test.spec.ts",
+        };
 
-      await executeTool(tool, input);
+        yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(mockFs.createDirectory).toHaveBeenCalled();
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(mockFs.createDirectory).toHaveBeenCalled();
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should overwrite existing file when overwrite=true", async () => {
-      approvalRegistry.add("test-3");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should overwrite existing file when overwrite=true", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-3"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      // File already exists
-      mockFs.stat.mockResolvedValue({
-        type: 1,
-        ctime: Date.now(),
-        mtime: Date.now(),
-        size: 100,
-      });
+        // File already exists
+        yield* Effect.sync(() => mockFs.stat.mockResolvedValue({
+          type: 1,
+          ctime: Date.now(),
+          mtime: Date.now(),
+          size: 100,
+        }));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-3",
-        testContent: "updated content",
-        targetPath: "src/existing.spec.ts",
-        overwrite: true,
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-3",
+          testContent: "updated content",
+          targetPath: "src/existing.spec.ts",
+          overwrite: true,
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("updated");
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+          expect(result.message).toContain("successfully saved");
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should normalize escaped characters in test content", async () => {
-      approvalRegistry.add("test-4");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should normalize escaped characters in test content", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-4"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-4",
-        testContent: "line1\nline2\ttab",
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-4",
+          testContent: "line1\nline2\ttab",
+          targetPath: "src/test.spec.ts",
+        };
 
-      await executeTool(tool, input);
+        yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      // writeFile is called twice: once with empty content, then with actual content
-      // Check the last call which contains the actual content
-      const writeCalls = mockFs.writeFile.mock.calls;
-      const writeCall = writeCalls[writeCalls.length - 1];
-      const writtenContent = writeCall[1].toString();
-      expect(writtenContent).toContain("line1");
-      expect(writtenContent).toContain("line2");
-      expect(writtenContent).toContain("tab");
-    });
+        yield* Effect.sync(() => {
+          // writeFile is called twice: once with empty content, then with actual content
+          // Check the last call which contains the actual content
+          const writeCalls = mockFs.writeFile.mock.calls;
+          const writeCall = writeCalls[writeCalls.length - 1];
+          const writtenContent = writeCall[1].toString();
+          expect(writtenContent).toContain("line1");
+          expect(writtenContent).toContain("line2");
+          expect(writtenContent).toContain("tab");
+        });
+      }),
+    );
 
-    it("should handle absolute paths", async () => {
-      approvalRegistry.add("test-5");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should handle absolute paths", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-5"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-5",
-        testContent: "test",
-        targetPath: "/absolute/path/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-5",
+          testContent: "test",
+          targetPath: "/absolute/path/test.spec.ts",
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(true);
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should open created file in editor", async () => {
-      approvalRegistry.add("test-6");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should open created file in editor", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-6"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-6",
-        testContent: "test",
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-6",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
 
-      await executeTool(tool, input);
+        yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
-      expect(vscode.window.showTextDocument).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+          expect(vscode.window.showTextDocument).toHaveBeenCalled();
+        });
+      }),
+    );
   });
 
   describe("Error Handling", () => {
-    it("should reject unapproved proposalId", async () => {
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should reject unapproved proposalId", () =>
+      Effect.gen(function* () {
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      const input: WriteTestFileInput = {
-        proposalId: "unapproved",
-        testContent: "test",
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "unapproved",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Invalid or unapproved proposalId");
-      expect(mockFs.writeFile).not.toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(false);
+          expect(result.message).toContain("Invalid or unapproved proposalId");
+          expect(mockFs.writeFile).not.toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should return error when file exists and overwrite=false", async () => {
-      approvalRegistry.add("test-7");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should return error when file exists and overwrite=false", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-7"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      // File exists
-      mockFs.stat.mockResolvedValue({
-        type: 1,
-        ctime: Date.now(),
-        mtime: Date.now(),
-        size: 100,
-      });
+        // File exists
+        yield* Effect.sync(() => mockFs.stat.mockResolvedValue({
+          type: 1,
+          ctime: Date.now(),
+          mtime: Date.now(),
+          size: 100,
+        }));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-7",
-        testContent: "test",
-        targetPath: "src/existing.spec.ts",
-        overwrite: false,
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-7",
+          testContent: "test",
+          targetPath: "src/existing.spec.ts",
+          overwrite: false,
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("already exists");
-      expect(mockFs.writeFile).not.toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(false);
+          expect(result.message).toContain("already exists");
+          expect(mockFs.writeFile).not.toHaveBeenCalled();
+        });
+      }),
+    );
 
-    it("should handle write errors gracefully", async () => {
-      approvalRegistry.add("test-8");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should handle write errors gracefully", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-8"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      mockFs.writeFile.mockRejectedValue(new Error("Permission denied"));
+        yield* Effect.sync(() => mockFs.writeFile.mockRejectedValue(new Error("Permission denied")));
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-8",
-        testContent: "test",
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-8",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Failed to write test file");
-      expect(result.message).toContain("Permission denied");
-    });
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(false);
+          expect(result.message).toContain("file edit operation failed");
+          expect(result.message).toContain("Permission denied");
+        });
+      }),
+    );
 
-    it("should continue if opening file in editor fails", async () => {
-      approvalRegistry.add("test-9");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should continue if opening file in editor fails", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-9"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-      (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error("Editor error"),
-      );
+        yield* Effect.sync(() => {
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+            new Error("Editor error"),
+          );
+        });
 
-      const input: WriteTestFileInput = {
-        proposalId: "test-9",
-        testContent: "test",
-        targetPath: "src/test.spec.ts",
-      };
+        const input: WriteTestFileInput = {
+          proposalId: "test-9",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
 
-      const result = await executeTool(tool, input);
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      // Should still succeed even if editor opening fails
-      expect(result.success).toBe(true);
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
+        yield* Effect.sync(() => {
+          // Should still succeed even if editor opening fails
+          expect(result.success).toBe(true);
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
   });
 
   describe("Edge Cases", () => {
-    it("should handle empty test content", async () => {
-      approvalRegistry.add("test-10");
-      const tool = createWriteTestFileTool(approvalRegistry);
+    it.effect("should handle empty test content", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-10"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-10",
+          testContent: "",
+          targetPath: "src/empty.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+          expect(mockFs.writeFile).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.any(Buffer),
+          );
+        });
+      }),
+    );
+
+    it.effect("should handle special characters in file path", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-11"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-11",
+          testContent: "test",
+          targetPath: "src/test (copy).spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+        });
+      }),
+    );
+
+    it.effect("should handle very large test content", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-12"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const largeContent = "x".repeat(100000);
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-12",
+          testContent: largeContent,
+          targetPath: "src/large.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+          // writeFile is called twice: once with empty content, then with actual content
+          // Check the last call which contains the actual content
+          const writeCalls = mockFs.writeFile.mock.calls;
+          const writeCall = writeCalls[writeCalls.length - 1];
+          const writtenContent = writeCall[1].toString();
+          expect(writtenContent.length).toBe(largeContent.length);
+        });
+      }),
+    );
+
+    it.effect("should handle multiple proposalIds in registry", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => {
+          approvalRegistry.add("test-13");
+          approvalRegistry.add("test-14");
+          approvalRegistry.add("test-15");
+        });
+        
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-14",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+        });
+      }),
+    );
+
+    it.effect("should handle relative paths with ..", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-16"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-16",
+          testContent: "test",
+          targetPath: "../outside/test.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(true);
+        });
+      }),
+    );
+  });
+});
+
+describe("Diagnostics Integration", () => {
+  let approvalRegistry: Set<string>;
+  let mockFs: {
+    stat: ReturnType<typeof vi.fn>;
+    writeFile: ReturnType<typeof vi.fn>;
+    createDirectory: ReturnType<typeof vi.fn>;
+  };
+  let mockLanguages: {
+    getDiagnostics: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    approvalRegistry = new Set<string>();
+    mockFs = vscode.workspace.fs as unknown as {
+      stat: ReturnType<typeof vi.fn>;
+      writeFile: ReturnType<typeof vi.fn>;
+      createDirectory: ReturnType<typeof vi.fn>;
+    };
+    mockLanguages = vscode.languages as unknown as {
+      getDiagnostics: ReturnType<typeof vi.fn>;
+    };
+
+    vi.clearAllMocks();
+
+    // Default: file doesn't exist
+    mockFs.stat.mockRejectedValue(new Error("File not found"));
+    // Default: writeFile succeeds
+    mockFs.writeFile.mockResolvedValue(undefined);
+    // Default: createDirectory succeeds
+    mockFs.createDirectory.mockResolvedValue(undefined);
+    // Default: openTextDocument succeeds
+    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      uri: "file://test",
+      getText: () => "test content",
+    } as unknown as vscode.TextDocument);
+    // Default: no diagnostics
+    mockLanguages.getDiagnostics.mockReturnValue([]);
+  });
+
+  it.effect("should capture pre-edit diagnostics before writing", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-1"));
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
       const input: WriteTestFileInput = {
-        proposalId: "test-10",
-        testContent: "",
-        targetPath: "src/empty.spec.ts",
-      };
-
-      const result = await executeTool(tool, input);
-
-      expect(result.success).toBe(true);
-      expect(mockFs.writeFile).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.any(Buffer),
-      );
-    });
-
-    it("should handle special characters in file path", async () => {
-      approvalRegistry.add("test-11");
-      const tool = createWriteTestFileTool(approvalRegistry);
-
-      const input: WriteTestFileInput = {
-        proposalId: "test-11",
-        testContent: "test",
-        targetPath: "src/test (copy).spec.ts",
-      };
-
-      const result = await executeTool(tool, input);
-
-      expect(result.success).toBe(true);
-    });
-
-    it("should handle very large test content", async () => {
-      approvalRegistry.add("test-12");
-      const tool = createWriteTestFileTool(approvalRegistry);
-
-      const largeContent = "x".repeat(100000);
-
-      const input: WriteTestFileInput = {
-        proposalId: "test-12",
-        testContent: largeContent,
-        targetPath: "src/large.spec.ts",
-      };
-
-      const result = await executeTool(tool, input);
-
-      expect(result.success).toBe(true);
-      // writeFile is called twice: once with empty content, then with actual content
-      // Check the last call which contains the actual content
-      const writeCalls = mockFs.writeFile.mock.calls;
-      const writeCall = writeCalls[writeCalls.length - 1];
-      const writtenContent = writeCall[1].toString();
-      expect(writtenContent.length).toBe(largeContent.length);
-    });
-
-    it("should handle multiple proposalIds in registry", async () => {
-      approvalRegistry.add("test-13");
-      approvalRegistry.add("test-14");
-      approvalRegistry.add("test-15");
-      
-      const tool = createWriteTestFileTool(approvalRegistry);
-
-      const input: WriteTestFileInput = {
-        proposalId: "test-14",
-        testContent: "test",
+        proposalId: "test-diag-1",
+        testContent: "test content",
         targetPath: "src/test.spec.ts",
       };
 
-      const result = await executeTool(tool, input);
+      yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(true);
-    });
+      yield* Effect.sync(() => {
+        // getDiagnostics should be called at least once (before edit)
+        expect(mockLanguages.getDiagnostics).toHaveBeenCalled();
+      });
+    }),
+  );
 
-    it("should handle relative paths with ..", async () => {
-      approvalRegistry.add("test-16");
-      const tool = createWriteTestFileTool(approvalRegistry);
+  it.effect("should capture post-edit diagnostics after save", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-2"));
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
       const input: WriteTestFileInput = {
-        proposalId: "test-16",
-        testContent: "test",
-        targetPath: "../outside/test.spec.ts",
+        proposalId: "test-diag-2",
+        testContent: "test content",
+        targetPath: "src/test.spec.ts",
       };
 
-      const result = await executeTool(tool, input);
+      yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
-      expect(result.success).toBe(true);
-    });
-  });
+      yield* Effect.sync(() => {
+        // getDiagnostics should be called at least twice (before and after)
+        expect(mockLanguages.getDiagnostics).toHaveBeenCalledTimes(2);
+      });
+    }),
+  );
+
+  it.effect("should include newProblemsMessage in response when errors introduced", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-3"));
+
+      // Mock diagnostics: no errors before, error after
+      let callCount = 0;
+      yield* Effect.sync(() => {
+        mockLanguages.getDiagnostics.mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return []; // Pre-edit: no errors
+          }
+          // Post-edit: new error using mock factory
+          return [
+            createMockDiagnosticWithRange(5, "Variable not defined", 0),
+          ];
+        });
+      });
+
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-diag-3",
+        testContent: "test content with error",
+        targetPath: "src/test.spec.ts",
+      };
+
+      const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+      yield* Effect.sync(() => {
+        expect(result.success).toBe(true);
+        expect(result.message).toContain("New diagnostic problems introduced");
+        expect(result.message).toContain("Variable not defined");
+      });
+    }),
+  );
+
+  it.effect("should include finalContent in response for AI reference", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-4"));
+      
+      // Mock openTextDocument to return the expected content
+      yield* Effect.sync(() => {
+        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+          uri: "file://test",
+          getText: () => "final test content",
+        } as unknown as vscode.TextDocument);
+      });
+      
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-diag-4",
+        testContent: "final test content",
+        targetPath: "src/test.spec.ts",
+      };
+
+      const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+      yield* Effect.sync(() => {
+        expect(result.success).toBe(true);
+        expect(result.message).toContain("<final_file_content");
+        expect(result.message).toContain("final test content");
+      });
+    }),
+  );
+
+  it.effect("should detect auto-formatting changes", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-5"));
+
+      // Mock document.getText to return formatted content
+      yield* Effect.sync(() => {
+        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+          uri: "file://test",
+          getText: () => "formatted content", // Different from input
+        } as unknown as vscode.TextDocument);
+      });
+
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-diag-5",
+        testContent: "original content",
+        targetPath: "src/test.spec.ts",
+      };
+
+      const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+      yield* Effect.sync(() => {
+        expect(result.success).toBe(true);
+        expect(result.message).toContain("Auto-formatting was applied");
+      });
+    }),
+  );
+
+  it.effect("should format response using formatFileEditResponse", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-6"));
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-diag-6",
+        testContent: "test content",
+        targetPath: "src/test.spec.ts",
+      };
+
+      const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+      yield* Effect.sync(() => {
+        expect(result.success).toBe(true);
+        expect(result.message).toContain("successfully saved");
+        expect(result.message).toContain("IMPORTANT");
+      });
+    }),
+  );
+
+  it.effect("should not report diagnostics when no new errors", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-diag-7"));
+
+      // Mock diagnostics: same error before and after using mock factory
+      const existingError = createMockDiagnosticWithRange(5, "Existing error", 0);
+      yield* Effect.sync(() => {
+        mockLanguages.getDiagnostics.mockReturnValue([existingError]);
+      });
+
+      const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-diag-7",
+        testContent: "test content",
+        targetPath: "src/test.spec.ts",
+      };
+
+      const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+      yield* Effect.sync(() => {
+        expect(result.success).toBe(true);
+        expect(result.message).not.toContain("New diagnostic problems introduced");
+      });
+    }),
+  );
 });
+

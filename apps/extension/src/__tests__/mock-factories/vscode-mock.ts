@@ -29,6 +29,12 @@ export interface VSCodeMockOverrides {
     visibleTextEditors?: vscode.TextEditor[];
   };
   WorkspaceEdit?: typeof vscode.WorkspaceEdit;
+  languages?: {
+    getDiagnostics?: Mock;
+  };
+  DiagnosticSeverity?: typeof vscode.DiagnosticSeverity;
+  Range?: typeof vscode.Range;
+  Position?: typeof vscode.Position;
 }
 
 /**
@@ -98,7 +104,11 @@ export function createVSCodeMock(
       },
       asRelativePath: overrides.asRelativePath ?? defaultAsRelativePath,
       openTextDocument:
-        overrides.openTextDocument ?? vi.fn(),
+        overrides.openTextDocument ?? vi.fn().mockResolvedValue({
+          uri: { fsPath: "/test-workspace/test.ts", toString: () => "file:///test-workspace/test.ts" },
+          getText: () => "",
+          positionAt: (offset: number) => ({ line: 0, character: offset }),
+        } as unknown as vscode.TextDocument),
       applyEdit: overrides.applyEdit ?? vi.fn().mockResolvedValue(true),
       findFiles: overrides.findFiles ?? vi.fn(),
     },
@@ -117,7 +127,7 @@ export function createVSCodeMock(
         overrides.window?.showInformationMessage ?? vi.fn(),
       showErrorMessage: overrides.window?.showErrorMessage ?? vi.fn(),
       showTextDocument:
-        overrides.window?.showTextDocument ?? vi.fn(),
+        overrides.window?.showTextDocument ?? vi.fn().mockResolvedValue({}),
       visibleTextEditors:
         overrides.window?.visibleTextEditors ?? [],
     },
@@ -126,6 +136,35 @@ export function createVSCodeMock(
       class MockWorkspaceEdit {
         insert = vi.fn();
       },
+    languages: {
+      getDiagnostics: overrides.languages?.getDiagnostics ?? vi.fn(() => []),
+    },
+    DiagnosticSeverity: overrides.DiagnosticSeverity ?? {
+      Error: 0,
+      Warning: 1,
+      Information: 2,
+      Hint: 3,
+    },
+    Range: overrides.Range ?? class MockRange {
+      constructor(
+        public start: vscode.Position,
+        public end: vscode.Position,
+      ) {}
+      isEqual(other: vscode.Range): boolean {
+        return (
+          this.start.line === other.start.line &&
+          this.start.character === other.start.character &&
+          this.end.line === other.end.line &&
+          this.end.character === other.end.character
+        );
+      }
+    },
+    Position: overrides.Position ?? class MockPosition {
+      constructor(
+        public line: number,
+        public character: number,
+      ) {}
+    },
   } as unknown as typeof vscode;
 }
 

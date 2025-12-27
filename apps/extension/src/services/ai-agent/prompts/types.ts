@@ -9,6 +9,7 @@ export const SectionId = {
   KnowledgeBase: "KNOWLEDGE_BASE",
   Scratchpad: "SCRATCHPAD",
   Workflow: "WORKFLOW",
+  PatternDiscovery: "PATTERN_DISCOVERY",
   IterativeTesting: "ITERATIVE_TESTING",
   TaskInstructions: "TASK_INSTRUCTIONS",
   AgentRules: "AGENT_RULES",
