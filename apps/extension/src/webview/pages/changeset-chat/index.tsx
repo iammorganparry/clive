@@ -155,6 +155,7 @@ export const ChangesetChatPage: React.FC = () => {
                     input={part.input}
                     output={part.output}
                     errorText={part.errorText}
+                    streamingContent={part.streamingContent}
                   />
                 );
               }

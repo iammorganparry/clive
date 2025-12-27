@@ -197,6 +197,9 @@ Focus on providing maximum value with minimal complexity. Your chat output is th
 - **CRITICAL**: After EVERY writeTestFile call, IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT write the next test file until the current one passes
 - **CRITICAL**: Create test files in appropriate locations based on project structure
+- **CRITICAL**: NEVER write placeholder tests - every assertion must verify real behavior
+- **CRITICAL**: ALWAYS match exact function signatures from source code
+- **CRITICAL**: NEVER fabricate arguments - read source before writing test calls
 - **CRITICAL COMPLETION**: When ALL tests have been written and verified passing, you MUST output exactly "[COMPLETE]" as the final line of your response to signal task completion
 </rules>
 
@@ -297,6 +300,73 @@ Use natural conversation - no need for explicit keywords. The conversation histo
 - Mock APIs when necessary for isolation
 - Group related tests appropriately
 </framework_guidelines>
+
+<test_quality_rules>
+**MANDATORY Test Quality Requirements**
+
+1. **NO PLACEHOLDER TESTS**:
+   - NEVER write tests that assert trivial truths: \`expect(true).toBe(true)\`
+   - NEVER write empty test bodies: \`it('should work', () => {})\`
+   - NEVER skip tests with \`.todo()\` or \`.skip()\` unless explicitly requested
+   - Every test MUST verify actual behavior from the source code
+   - If you cannot determine what to assert, READ the source code again
+
+2. **TYPE SAFETY (TypeScript/Typed Languages)**:
+   - ALWAYS match function signatures exactly as they appear in source code
+   - NEVER guess parameter types - read the function definition first
+   - Use proper typing for mocks: \`vi.fn<Parameters, ReturnType>()\`
+   - Ensure mock return values match expected types
+   - If a function returns \`Promise<T>\`, mock must return \`Promise<T>\`
+   - Import types from source files when needed
+
+3. **NO FABRICATED ARGUMENTS**:
+   - ALWAYS read the function signature before writing test calls
+   - NEVER invent parameter names or types that don't exist
+   - Copy exact parameter structures from source code
+   - For objects, use only documented/typed properties
+   - If unsure about an argument, use \`cat\` to read the source file
+
+4. **VERIFY BEFORE WRITING**:
+   - Read the function/component source code BEFORE writing tests
+   - Check existing test files for patterns and type usage
+   - Confirm imports and module paths exist in the codebase
+   - Match exact export names (default vs named exports)
+
+**Examples of FORBIDDEN patterns:**
+
+\`\`\`typescript
+// BAD: Placeholder test
+it('should work', () => {
+  expect(true).toBe(true);
+});
+
+// BAD: Fabricated arguments
+myFunction({ unknownProp: 'value' }); // unknownProp doesn't exist
+
+// BAD: Wrong types
+const result = await myAsyncFn(); // forgot to handle Promise
+expect(result.data).toBe('x'); // result might be undefined
+\`\`\`
+
+**Examples of REQUIRED patterns:**
+
+\`\`\`typescript
+// GOOD: Tests actual behavior
+it('should return user data when valid ID provided', () => {
+  const result = getUserById('123');
+  expect(result).toEqual({ id: '123', name: 'Test User' });
+});
+
+// GOOD: Type-safe mocks
+vi.mock('./api', () => ({
+  fetchUser: vi.fn<[string], Promise<User>>(),
+}));
+
+// GOOD: Exact signature match
+// Source: function createUser(name: string, email: string): User
+createUser('John', 'john@example.com'); // matches signature exactly
+\`\`\`
+</test_quality_rules>
 
 <workspace_context>
 **Path Resolution**

@@ -77,6 +77,8 @@ export function useChangesetChat({
         state?: ToolEvent["state"];
         usage?: LanguageModelUsage;
         command?: string;
+        filePath?: string;
+        isComplete?: boolean;
       };
 
       Match.value(event).pipe(
@@ -126,6 +128,30 @@ export function useChangesetChat({
               toolCallId: p.toolCallId || "",
               command: p.command || "",
               output: typeof p.output === "string" ? p.output : "",
+            },
+          });
+        }),
+        Match.when({ type: "file-created" }, (p) => {
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "file-output-streaming",
+            streamingFileOutput: {
+              toolCallId: p.toolCallId || "",
+              filePath: p.filePath || "",
+              content: "",
+              isComplete: false,
+            },
+          });
+        }),
+        Match.when({ type: "file-output-streaming" }, (p) => {
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "file-output-streaming",
+            streamingFileOutput: {
+              toolCallId: p.toolCallId || "",
+              filePath: p.filePath || "",
+              content: typeof p.content === "string" ? p.content : "",
+              isComplete: p.isComplete === true,
             },
           });
         }),

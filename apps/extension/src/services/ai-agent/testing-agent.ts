@@ -129,6 +129,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Maps command to toolCallId (command may not be unique, but we'll use the most recent)
             const commandToToolCallId = new Map<string, string>();
 
+            // Track toolCallIds for file writes to enable streaming
+            // Maps filePath to toolCallId
+            const fileToToolCallId = new Map<string, string>();
+
             // Knowledge context for persistent storage across summarization
             const knowledgeContext = new KnowledgeContext();
 
@@ -184,8 +188,43 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               delete: (id: string) => autoApproveRegistry.delete(id),
             } as Set<string>;
 
+            // Create streaming callback for file writes
+            const fileStreamingCallback = (chunk: {
+              filePath: string;
+              content: string;
+              isComplete: boolean;
+            }) => {
+              // Look up toolCallId from filePath
+              const toolCallId = fileToToolCallId.get(chunk.filePath) || "";
+
+              if (chunk.content === "" && !chunk.isComplete) {
+                // File was just created/opened
+                progressCallback?.(
+                  "file-created",
+                  JSON.stringify({
+                    type: "file-created",
+                    toolCallId,
+                    filePath: chunk.filePath,
+                  }),
+                );
+              } else {
+                // Content chunk
+                progressCallback?.(
+                  "file-output-streaming",
+                  JSON.stringify({
+                    type: "file-output-streaming",
+                    toolCallId,
+                    filePath: chunk.filePath,
+                    content: chunk.content,
+                    isComplete: chunk.isComplete,
+                  }),
+                );
+              }
+            };
+
             const writeTestFile = createWriteTestFileTool(
               selfApprovingRegistry,
+              fileStreamingCallback,
             );
 
             const webTools = firecrawlApiKey
@@ -454,6 +493,17 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                           const command = args?.command || "";
                           if (command && e.toolCallId) {
                             commandToToolCallId.set(command, e.toolCallId);
+                          }
+                        }
+
+                        // Track toolCallId for file writes
+                        if (e.toolName === "writeTestFile") {
+                          const args = e.toolArgs as
+                            | { targetPath?: string }
+                            | undefined;
+                          const targetPath = args?.targetPath || "";
+                          if (targetPath && e.toolCallId) {
+                            fileToToolCallId.set(targetPath, e.toolCallId);
                           }
                         }
 

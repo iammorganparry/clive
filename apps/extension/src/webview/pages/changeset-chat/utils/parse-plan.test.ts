@@ -60,8 +60,10 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for Authentication');
-      expect(result!.description).toBe('Comprehensive tests for auth flow');
+      if (result) {
+        expect(result.title).toBe('Test Plan for Authentication');
+        expect(result.description).toBe('Comprehensive tests for auth flow');
+      }
     });
 
     it('should extract body content after frontmatter', () => {
@@ -77,8 +79,10 @@ Issues here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.body).toContain('## Problem Summary');
-      expect(result!.body).toContain('Issues here');
+      if (result) {
+        expect(result.body).toContain('## Problem Summary');
+        expect(result.body).toContain('Issues here');
+      }
     });
 
     it('should handle frontmatter without overview', () => {
@@ -91,8 +95,10 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for API');
-      expect(result!.description).toBe('Test proposal for review');
+      if (result) {
+        expect(result.title).toBe('Test Plan for API');
+        expect(result.description).toBe('Test proposal for review');
+      }
     });
 
     it('should use full content as body when body is empty', () => {
@@ -104,8 +110,10 @@ overview: Overview
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.body).toBe(markdown.trim());
-      expect(result!.fullContent).toBe(markdown.trim());
+      if (result) {
+        expect(result.body).toBe(markdown.trim());
+        expect(result.fullContent).toBe(markdown.trim());
+      }
     });
   });
 
@@ -120,7 +128,9 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for Authentication');
+      if (result) {
+        expect(result.title).toBe('Test Plan for Authentication');
+      }
     });
 
     it('should handle H1 without "for" clause', () => {
@@ -131,7 +141,9 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan');
+      if (result) {
+        expect(result.title).toBe('Test Plan');
+      }
     });
 
     it('should extract description from first paragraph after H1', () => {
@@ -144,7 +156,9 @@ This is the description of the test plan.
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.description).toContain('This is the description');
+      if (result) {
+        expect(result.description).toContain('This is the description');
+      }
     });
 
     it('should extract body up to next major H2 section', () => {
@@ -159,10 +173,12 @@ Problems here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.body).toContain('# Test Plan for Authentication');
-      expect(result!.body).toContain('Some intro text here');
-      // Body stops at first H2 section
-      expect(result!.body).not.toContain('## Problem Summary');
+      if (result) {
+        expect(result.body).toContain('# Test Plan for Authentication');
+        expect(result.body).toContain('Some intro text here');
+        // Body stops at first H2 section
+        expect(result.body).not.toContain('## Problem Summary');
+      }
     });
   });
 
@@ -175,7 +191,9 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Authentication Flow');
+      if (result) {
+        expect(result.title).toBe('Authentication Flow');
+      }
     });
 
     it('should extract title from H2 Recommendation: header', () => {
@@ -186,7 +204,9 @@ Content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Integration Tests');
+      if (result) {
+        expect(result.title).toBe('Integration Tests');
+      }
     });
 
     it('should handle empty title after colon', () => {
@@ -198,7 +218,9 @@ Content here`;
       
       expect(result).not.toBeNull();
       // When no title after colon, the implementation uses the first line as title
-      expect(result!.title).toBeDefined();
+      if (result) {
+        expect(result.title).toBeDefined();
+      }
     });
 
     it('should extract description from first line after header', () => {
@@ -211,7 +233,9 @@ More content here`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.description).toContain('This is a description');
+      if (result) {
+        expect(result.description).toContain('This is a description');
+      }
     });
   });
 
@@ -229,8 +253,10 @@ This is the second paragraph.`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.summary).toContain('first paragraph');
-      expect(result!.summary).toContain('summary information');
+      if (result) {
+        expect(result.summary).toContain('first paragraph');
+        expect(result.summary).toContain('summary information');
+      }
     });
 
     it('should truncate long summaries at 300 characters', () => {
@@ -245,8 +271,10 @@ ${longText}`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.summary.length).toBeLessThan(310); // 300 + "..."
-      expect(result!.summary).toContain('...');
+      if (result) {
+        expect(result.summary.length).toBeLessThan(310); // 300 + "..."
+        expect(result.summary).toContain('...');
+      }
     });
 
     it('should extract summary including all lines in body', () => {
@@ -266,9 +294,11 @@ Line 7`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.summary).toContain('Line 1');
-      // Summary includes all lines since they form one continuous paragraph
-      expect(result!.summary).toContain('Line 7');
+      if (result) {
+        expect(result.summary).toContain('Line 1');
+        // Summary includes all lines since they form one continuous paragraph
+        expect(result.summary).toContain('Line 7');
+      }
     });
 
     it('should handle empty body gracefully', () => {
@@ -281,7 +311,9 @@ overview: Overview
       
       expect(result).not.toBeNull();
       // Summary should be extracted from fullContent since body is empty
-      expect(result!.summary).toBeDefined();
+      if (result) {
+        expect(result.summary).toBeDefined();
+      }
     });
   });
 
@@ -310,9 +342,11 @@ Content with <tags> and special @characters!`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toContain('Auth & Security');
-      expect(result!.body).toContain('<tags>');
-      expect(result!.body).toContain('@characters');
+      if (result) {
+        expect(result.title).toContain('Auth & Security');
+        expect(result.body).toContain('<tags>');
+        expect(result.body).toContain('@characters');
+      }
     });
 
     it('should handle multiline overview in YAML frontmatter', () => {
@@ -326,7 +360,9 @@ Content`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.description).toContain('long overview');
+      if (result) {
+        expect(result.description).toContain('long overview');
+      }
     });
 
     it('should preserve full content', () => {
@@ -346,9 +382,11 @@ Content 2`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.fullContent).toBe(markdown.trim());
-      expect(result!.fullContent).toContain('Section 1');
-      expect(result!.fullContent).toContain('Section 2');
+      if (result) {
+        expect(result.fullContent).toBe(markdown.trim());
+        expect(result.fullContent).toContain('Section 1');
+        expect(result.fullContent).toContain('Section 2');
+      }
     });
   });
 
@@ -366,8 +404,10 @@ Content`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('YAML Title');
-      expect(result!.description).toBe('YAML description');
+      if (result) {
+        expect(result.title).toBe('YAML Title');
+        expect(result.description).toBe('YAML description');
+      }
     });
 
     it('should prioritize H1 headers over H2 headers', () => {
@@ -382,7 +422,9 @@ More content`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for H1 Title');
+      if (result) {
+        expect(result.title).toBe('Test Plan for H1 Title');
+      }
     });
   });
 
@@ -424,14 +466,16 @@ Lines to cover:
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for RPC Routers');
-      expect(result!.description).toBe('Comprehensive testing strategy covering RPC layer');
-      expect(result!.body).toContain('# Test Plan for RPC Routers');
-      expect(result!.body).toContain('## Problem Summary');
-      expect(result!.body).toContain('## Implementation Plan');
-      expect(result!.body).toContain('## Changes Summary');
-      expect(result!.summary).toContain('# Test Plan for RPC Routers');
-      expect(result!.fullContent).toContain('name: Test Plan for RPC Routers');
+      if (result) {
+        expect(result.title).toBe('Test Plan for RPC Routers');
+        expect(result.description).toBe('Comprehensive testing strategy covering RPC layer');
+        expect(result.body).toContain('# Test Plan for RPC Routers');
+        expect(result.body).toContain('## Problem Summary');
+        expect(result.body).toContain('## Implementation Plan');
+        expect(result.body).toContain('## Changes Summary');
+        expect(result.summary).toContain('# Test Plan for RPC Routers');
+        expect(result.fullContent).toContain('name: Test Plan for RPC Routers');
+      }
     });
 
     it('should parse H1 format test plan', () => {
@@ -446,12 +490,14 @@ Authentication flow needs comprehensive testing.`;
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Test Plan for Authentication');
-      expect(result!.body).toContain('# Test Plan for Authentication');
-      expect(result!.body).toContain('This is an overview paragraph');
-      // Body stops at first H2
-      expect(result!.body).not.toContain('## Problem Summary');
-      expect(result!.fullContent).toContain('## Problem Summary');
+      if (result) {
+        expect(result.title).toBe('Test Plan for Authentication');
+        expect(result.body).toContain('# Test Plan for Authentication');
+        expect(result.body).toContain('This is an overview paragraph');
+        // Body stops at first H2
+        expect(result.body).not.toContain('## Problem Summary');
+        expect(result.fullContent).toContain('## Problem Summary');
+      }
     });
 
     it('should parse H2 format test plan (backward compatible)', () => {
@@ -469,9 +515,11 @@ Testing database queries and transactions.
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
-      expect(result!.title).toBe('Database Layer');
-      expect(result!.body).toContain('### Overview');
-      expect(result!.body).toContain('### Tests to Add');
+      if (result) {
+        expect(result.title).toBe('Database Layer');
+        expect(result.body).toContain('### Overview');
+        expect(result.body).toContain('### Tests to Add');
+      }
     });
   });
 });
