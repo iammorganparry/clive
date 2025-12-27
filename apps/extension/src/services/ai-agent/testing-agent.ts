@@ -42,6 +42,7 @@ import {
 } from "./tools/write-test-file.js";
 import type { WriteTestFileOutput } from "./types.js";
 import { KnowledgeContext } from "./knowledge-context.js";
+import type { DiffContentProvider } from "../diff-content-provider.js";
 
 class TestingAgentError extends Data.TaggedError("TestingAgentError")<{
   message: string;
@@ -100,6 +101,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             outputChannel?: vscode.OutputChannel;
             progressCallback?: (status: string, message: string) => void;
             signal?: AbortSignal;
+            diffProvider?: DiffContentProvider;
           },
         ) =>
           Effect.gen(function* () {
@@ -311,8 +313,12 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               ...webTools,
             };
 
-            // Create replaceInFile tool with streaming callback
-            const replaceInFile = createReplaceInFileTool(fileStreamingCallback);
+            // Create replaceInFile tool with streaming callback and diff provider
+            const replaceInFile = createReplaceInFileTool(
+              options?.diffProvider,
+              fileStreamingCallback,
+              false, // Don't auto-approve
+            );
 
             // Add write tools only in act mode
             const tools =
@@ -530,6 +536,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             // Initialize streaming args tracking
                             streamingArgsText.set(e.toolCallId, "");
                           }
+                          if (e.toolName === "proposeTestPlan" && e.toolCallId) {
+                            yield* Effect.logDebug(
+                              `[TestingAgent:${correlationId}] Streaming proposeTestPlan started: ${e.toolCallId}`,
+                            );
+                            // Initialize streaming args tracking for plan content
+                            streamingArgsText.set(e.toolCallId, "");
+                          }
                         }),
                     ),
                     Match.when(
@@ -602,6 +615,47 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                                     appendStreamingContent(e.toolCallId || "", contentChunk),
                                   );
                                 }
+                              }
+                            } catch {
+                              // JSON parsing failed, continue accumulating
+                            }
+                          }
+                          if (
+                            e.toolName === "proposeTestPlan" &&
+                            e.toolCallId &&
+                            e.argsTextDelta
+                          ) {
+                            // Accumulate args text for proposeTestPlan
+                            const current = streamingArgsText.get(e.toolCallId) || "";
+                            const accumulated = current + e.argsTextDelta;
+                            streamingArgsText.set(e.toolCallId, accumulated);
+
+                            // Try to extract planContent from accumulated JSON
+                            // This is a best-effort extraction as JSON may be incomplete
+                            try {
+                              // Look for planContent field in the JSON string
+                              // The planContent is a multi-line string, so we need to handle escaped content
+                              const planContentMatch = accumulated.match(
+                                /"planContent"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+                              );
+                              if (planContentMatch?.[1]) {
+                                // Extract and unescape the content
+                                const planContentChunk = planContentMatch[1]
+                                  .replace(/\\n/g, "\n")
+                                  .replace(/\\t/g, "\t")
+                                  .replace(/\\"/g, '"')
+                                  .replace(/\\\\/g, "\\");
+
+                                // Emit plan content streaming event
+                                progressCallback?.(
+                                  "plan-content-streaming",
+                                  JSON.stringify({
+                                    type: "plan-content-streaming",
+                                    toolCallId: e.toolCallId,
+                                    content: planContentChunk,
+                                    isComplete: false,
+                                  }),
+                                );
                               }
                             } catch {
                               // JSON parsing failed, continue accumulating
@@ -809,6 +863,78 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             yield* Effect.logDebug(
                               `[TestingAgent:${correlationId}] Task marked as complete via completeTask tool`,
                             );
+                          }
+                        }
+
+                        // Extract planContent from proposeTestPlan tool args
+                        if (e.toolName === "proposeTestPlan" && e.toolCallId) {
+                          const accumulated = streamingArgsText.get(e.toolCallId) || "";
+                          if (accumulated) {
+                            try {
+                              // Try to parse the complete JSON args
+                              const argsMatch = accumulated.match(/\{[\s\S]*\}/);
+                              if (argsMatch) {
+                                const parsedArgs = JSON.parse(argsMatch[0]) as {
+                                  planContent?: string;
+                                };
+                                if (parsedArgs.planContent) {
+                                  // Emit final plan content as complete
+                                  progressCallback?.(
+                                    "plan-content-streaming",
+                                    JSON.stringify({
+                                      type: "plan-content-streaming",
+                                      toolCallId: e.toolCallId,
+                                      content: parsedArgs.planContent,
+                                      isComplete: true,
+                                    }),
+                                  );
+                                }
+                              } else {
+                                // Fallback: try regex extraction
+                                const planContentMatch = accumulated.match(
+                                  /"planContent"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+                                );
+                                if (planContentMatch?.[1]) {
+                                  const planContent = planContentMatch[1]
+                                    .replace(/\\n/g, "\n")
+                                    .replace(/\\t/g, "\t")
+                                    .replace(/\\"/g, '"')
+                                    .replace(/\\\\/g, "\\");
+                                  progressCallback?.(
+                                    "plan-content-streaming",
+                                    JSON.stringify({
+                                      type: "plan-content-streaming",
+                                      toolCallId: e.toolCallId,
+                                      content: planContent,
+                                      isComplete: true,
+                                    }),
+                                  );
+                                }
+                              }
+                            } catch {
+                              // JSON parsing failed, try regex fallback
+                              const planContentMatch = accumulated.match(
+                                /"planContent"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+                              );
+                              if (planContentMatch?.[1]) {
+                                const planContent = planContentMatch[1]
+                                  .replace(/\\n/g, "\n")
+                                  .replace(/\\t/g, "\t")
+                                  .replace(/\\"/g, '"')
+                                  .replace(/\\\\/g, "\\");
+                                progressCallback?.(
+                                  "plan-content-streaming",
+                                  JSON.stringify({
+                                    type: "plan-content-streaming",
+                                    toolCallId: e.toolCallId,
+                                    content: planContent,
+                                    isComplete: true,
+                                  }),
+                                );
+                              }
+                            }
+                            // Clean up accumulated args after extraction
+                            streamingArgsText.delete(e.toolCallId);
                           }
                         }
 

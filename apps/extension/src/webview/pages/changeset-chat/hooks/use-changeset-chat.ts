@@ -1,12 +1,12 @@
-import { useEffect, useState, useRef } from "react";
 import { useMachine } from "@xstate/react";
+import type { LanguageModelUsage } from "ai";
 import { Match } from "effect";
 import { nanoid } from "nanoid";
+import { useEffect, useRef, useState } from "react";
 import { useRpc } from "../../../rpc/provider.js";
-import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
 import type { ToolEvent } from "../../../types/chat.js";
+import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
 import { useConversationCache } from "./use-conversation-cache.js";
-import type { LanguageModelUsage } from "ai";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -150,6 +150,17 @@ export function useChangesetChat({
             streamingFileOutput: {
               toolCallId: p.toolCallId || "",
               filePath: p.filePath || "",
+              content: typeof p.content === "string" ? p.content : "",
+              isComplete: p.isComplete === true,
+            },
+          });
+        }),
+        Match.when({ type: "plan-content-streaming" }, (p) => {
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "plan-content-streaming",
+            streamingPlanContent: {
+              toolCallId: p.toolCallId || "",
               content: typeof p.content === "string" ? p.content : "",
               isComplete: p.isComplete === true,
             },

@@ -57,11 +57,11 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
   }
 
   return (
-    <Queue className="mt-4">
+    <Queue className="border-none py-1 px-0 m-0">
       {/* Completed Section */}
       {completedItems.length > 0 && (
         <QueueSection defaultOpen={false}>
-          <QueueSectionTrigger>
+          <QueueSectionTrigger className="px-0">
             <QueueSectionLabel
               icon={<CheckCircle className="h-4 w-4" />}
               count={completedItems.length}
@@ -73,12 +73,17 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
               {completedItems.map((item) => (
                 <Collapsible key={item.id} defaultOpen={false}>
                   <CollapsibleTrigger asChild>
-                    <QueueItem className="cursor-pointer">
+                    <QueueItem className="cursor-pointer flex-col items-start px-0">
+                      <div className="flex items-center flex-row w-full gap-2">
                       <QueueItemIndicator completed={item.status === "completed"} />
-                      <div className="flex-1">
                         <QueueItemContent completed={item.status === "completed"}>
                           {item.name}
                         </QueueItemContent>
+                        {item.testResults && item.testResults.tests.length > 0 && (
+                          <ChevronDownIcon className="ml-auto size-3 text-muted-foreground shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+                        )}
+                      </div>
+                      <div className="flex flex-col ml-6 w-full">
                         {item.targetFilePath && (
                           <QueueItemDescription completed={item.status === "completed"}>
                             {item.targetFilePath}
@@ -91,9 +96,6 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
                           />
                         )}
                       </div>
-                      {item.testResults && item.testResults.tests.length > 0 && (
-                        <ChevronDownIcon className="size-3 text-muted-foreground shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                      )}
                     </QueueItem>
                   </CollapsibleTrigger>
                   {item.testResults && item.testResults.tests.length > 0 && (
@@ -116,7 +118,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
       {/* In Progress Section */}
       {inProgressItem && (
         <QueueSection defaultOpen={true}>
-          <QueueSectionTrigger>
+          <QueueSectionTrigger className="px-0">
             <QueueSectionLabel
               icon={<Loader2 className="h-4 w-4 animate-spin" />}
               count={1}
@@ -125,10 +127,12 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
           </QueueSectionTrigger>
           <QueueSectionContent>
             <div className="space-y-2">
-              <QueueItem>
+              <QueueItem className="flex-col items-start px-0">
+                <div className="flex items-center flex-row w-full gap-2">
                 <QueueItemIndicator />
-                <div className="flex-1">
                   <QueueItemContent>{inProgressItem.name}</QueueItemContent>
+                </div>
+                <div className="flex flex-col ml-6 w-full">
                   {inProgressItem.targetFilePath && (
                     <QueueItemDescription>
                       {inProgressItem.targetFilePath}
@@ -151,7 +155,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
       {/* Todo Section */}
       {pendingItems.length > 0 && (
         <QueueSection defaultOpen={true}>
-          <QueueSectionTrigger>
+          <QueueSectionTrigger className="px-0">
             <QueueSectionLabel
               icon={<Circle className="h-4 w-4" />}
               count={pendingItems.length}
@@ -161,10 +165,12 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
           <QueueSectionContent>
             <QueueList>
               {pendingItems.map((item) => (
-                <QueueItem key={item.id}>
+                <QueueItem key={item.id} className="flex-col items-start px-0">
+                  <div className="flex items-center flex-row w-full gap-2">
                   <QueueItemIndicator />
-                  <div className="flex-1">
                     <QueueItemContent>{item.name}</QueueItemContent>
+                  </div>
+                  <div className="flex flex-col ml-6 w-full">
                     {item.targetFilePath && (
                       <QueueItemDescription>
                         {item.targetFilePath}

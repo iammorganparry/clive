@@ -174,6 +174,7 @@ export const agentsRouter = {
             mode: input.mode || "plan",
             conversationHistory: input.conversationHistory,
             outputChannel: ctx.outputChannel,
+            diffProvider: ctx.diffProvider,
             progressCallback,
             signal,
           });

@@ -176,7 +176,8 @@ export type ChangesetChatEvent =
         | "tool-output-streaming"
         | "file-output-streaming"
         | "reasoning"
-        | "usage";
+        | "usage"
+        | "plan-content-streaming";
       content?: string;
       toolEvent?: ToolEvent;
       toolResult?: { toolCallId: string; updates: Partial<ToolEvent> };
@@ -188,6 +189,11 @@ export type ChangesetChatEvent =
       streamingFileOutput?: {
         toolCallId: string;
         filePath: string;
+        content: string;
+        isComplete: boolean;
+      };
+      streamingPlanContent?: {
+        toolCallId: string;
         content: string;
         isComplete: boolean;
       };
@@ -203,7 +209,11 @@ export type ChangesetChatEvent =
   | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
   | { type: "START_NEXT_SUITE" }
   | { type: "MARK_SUITE_COMPLETED"; suiteId: string; results: TestFileExecution }
-  | { type: "MARK_SUITE_FAILED"; suiteId: string; error: string };
+  | { type: "MARK_SUITE_FAILED"; suiteId: string; error: string }
+  | {
+      type: "DEV_INJECT_STATE";
+      updates: Partial<ChangesetChatContext>;
+    };
 
 export interface ChangesetChatInput {
   files: string[];
@@ -429,22 +439,13 @@ export const changesetChatMachine = setup({
       if (textToCheck.trim().length > 0) {
         const updates: Partial<ChangesetChatContext> = {};
 
-        // Parse for scratchpad TODOs
+        // Parse for scratchpad TODOs only (checkboxes in markdown)
+        // Plan content is now extracted exclusively from proposeTestPlan tool via updatePlanContent action
         try {
           const todos = parseScratchpad(textToCheck);
           // Only update if we found actual TODOs
           if (todos.length > 0) {
             updates.scratchpadTodos = todos;
-          }
-        } catch (_error) {
-          // Silently ignore parsing errors for message content
-        }
-
-        // Parse for plan content (test proposal)
-        try {
-          const plan = parsePlan(textToCheck);
-          if (plan) {
-            updates.planContent = plan.fullContent;
           }
         } catch (_error) {
           // Silently ignore parsing errors for message content
@@ -843,6 +844,20 @@ export const changesetChatMachine = setup({
         usage: event.usage ?? null,
       };
     }),
+    updatePlanContent: assign(({ event }) => {
+      if (
+        event.type !== "RESPONSE_CHUNK" ||
+        event.chunkType !== "plan-content-streaming"
+      )
+        return {};
+      if (!event.streamingPlanContent) return {};
+      const { content } = event.streamingPlanContent;
+      // Update planContent with the streamed content
+      // When isComplete is true, this is the final content
+      return {
+        planContent: content || null,
+      };
+    }),
     updateFileStreamingContent: assign(({ context, event }) => {
       if (
         event.type !== "RESPONSE_CHUNK" ||
@@ -971,6 +986,14 @@ export const changesetChatMachine = setup({
       hasCompletedAnalysis: () => true, // Re-enable input
       isReasoningStreaming: () => false,
     }),
+    devInjectState: assign(({ context, event }) => {
+      if (event.type !== "DEV_INJECT_STATE") return {};
+      // Merge the updates into the context
+      return {
+        ...context,
+        ...event.updates,
+      };
+    }),
   },
 }).createMachine({
   id: "changesetChat",
@@ -1041,6 +1064,9 @@ export const changesetChatMachine = setup({
           actions: ["approvePlan"],
           target: "analyzing",
         },
+        DEV_INJECT_STATE: {
+          actions: ["devInjectState"],
+        },
       },
     },
     analyzing: {
@@ -1058,6 +1084,7 @@ export const changesetChatMachine = setup({
             "updateScratchpadTodos",
             "updateTestExecution",
             "updateUsage",
+            "updatePlanContent",
           ],
         },
         RESPONSE_COMPLETE: {
@@ -1084,6 +1111,9 @@ export const changesetChatMachine = setup({
             "stopReasoningStreaming",
           ],
         },
+        DEV_INJECT_STATE: {
+          actions: ["devInjectState"],
+        },
       },
     },
     streaming: {
@@ -1102,6 +1132,7 @@ export const changesetChatMachine = setup({
             "updateTestExecution",
             "updateFileStreamingContent",
             "updateUsage",
+            "updatePlanContent",
           ],
         },
         RESPONSE_COMPLETE: [
@@ -1148,6 +1179,9 @@ export const changesetChatMachine = setup({
         },
         MARK_SUITE_FAILED: {
           actions: ["markSuiteFailed"],
+        },
+        DEV_INJECT_STATE: {
+          actions: ["devInjectState"],
         },
       },
     },
