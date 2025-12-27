@@ -22,7 +22,7 @@ import {
   shouldSummarize,
   type Message,
 } from "./context-tracker.js";
-import { PromptFactory, TEST_AGENT_SYSTEM_PROMPT } from "./prompts.js";
+import { PromptFactory, PromptService } from "./prompts/index.js";
 import { makeTokenBudget } from "./token-budget.js";
 import {
   createBashExecuteTool,
@@ -76,6 +76,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const knowledgeFileService = yield* KnowledgeFileService;
       const summaryService = yield* SummaryService;
       const completionDetector = yield* CompletionDetector;
+      const promptService = yield* PromptService;
 
       return {
         /**
@@ -375,12 +376,19 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               `Analyzing ${files.length} file(s)...`,
             );
 
+            // Build system prompt early for context estimation
+            const baseSystemPrompt = yield* promptService.buildTestAgentPrompt({
+              workspaceRoot,
+              mode,
+              includeUserRules: true,
+            });
+
             // Context Management Effect
             const manageContext = Effect.gen(function* () {
               const currentMessages = yield* Ref.get(messagesRef);
               const contextEstimate = estimateContextSize(
                 currentMessages,
-                TEST_AGENT_SYSTEM_PROMPT,
+                baseSystemPrompt,
               );
 
               yield* Effect.logDebug(
@@ -450,8 +458,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               ? `\n\n${knowledgeContextPrompt}`
               : "";
 
-            // System prompt
-            const systemPromptWithWorkspace = `${TEST_AGENT_SYSTEM_PROMPT}
+            // Add workspace context to base system prompt
+            const systemPromptWithWorkspace = `${baseSystemPrompt}
 
               <workspace_root>
               The workspace root is: ${workspaceRoot}

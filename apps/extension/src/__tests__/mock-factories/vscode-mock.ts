@@ -17,6 +17,7 @@ export interface VSCodeMockOverrides {
   asRelativePath?: Mock;
   openTextDocument?: Mock;
   applyEdit?: Mock;
+  findFiles?: Mock;
   Uri?: {
     file?: Mock;
     joinPath?: Mock;
@@ -99,10 +100,17 @@ export function createVSCodeMock(
       openTextDocument:
         overrides.openTextDocument ?? vi.fn(),
       applyEdit: overrides.applyEdit ?? vi.fn().mockResolvedValue(true),
+      findFiles: overrides.findFiles ?? vi.fn(),
     },
     Uri: {
       file: overrides.Uri?.file ?? defaultUriFile,
       joinPath: overrides.Uri?.joinPath ?? defaultUriJoinPath,
+    },
+    RelativePattern: class {
+      constructor(
+        public base: unknown,
+        public pattern: string,
+      ) {}
     },
     window: {
       showInformationMessage:
