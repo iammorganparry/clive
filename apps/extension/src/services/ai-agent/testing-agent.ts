@@ -1,7 +1,7 @@
 import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import type { ToolResult } from "@ai-sdk/provider-utils";
 import { streamText } from "ai";
-import { Data, Effect, Match, Ref, Stream } from "effect";
+import { Data, Effect, Match, pipe, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
 import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
 import { createUsageEvent, stringifyEvent } from "../../utils/json-utils.js";
@@ -40,6 +40,11 @@ import {
   appendStreamingContent,
   finalizeStreamingWrite,
 } from "./tools/write-test-file.js";
+import {
+  initializePlanStreamingWriteEffect,
+  appendPlanStreamingContentEffect,
+  finalizePlanStreamingWriteEffect,
+} from "./tools/propose-test-plan.js";
 import type { WriteTestFileOutput } from "./types.js";
 import { KnowledgeContext } from "./knowledge-context.js";
 import type { DiffContentProvider } from "../diff-content-provider.js";
@@ -150,6 +155,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Track toolCallIds for file writes to enable streaming
             // Maps filePath to toolCallId
             const fileToToolCallId = new Map<string, string>();
+
+            // Track toolCallIds for plan files to enable streaming
+            // Maps toolCallId to filePath
+            const planToToolCallId = new Map<string, string>();
 
             // Track streaming tool call arguments for writeTestFile
             // Maps toolCallId to accumulated args text
@@ -625,41 +634,108 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             e.toolCallId &&
                             e.argsTextDelta
                           ) {
+                            const toolCallId = e.toolCallId;
+
                             // Accumulate args text for proposeTestPlan
-                            const current = streamingArgsText.get(e.toolCallId) || "";
+                            const current = streamingArgsText.get(toolCallId) || "";
                             const accumulated = current + e.argsTextDelta;
-                            streamingArgsText.set(e.toolCallId, accumulated);
+                            streamingArgsText.set(toolCallId, accumulated);
 
-                            // Try to extract planContent from accumulated JSON
-                            // This is a best-effort extraction as JSON may be incomplete
-                            try {
-                              // Look for planContent field in the JSON string
-                              // The planContent is a multi-line string, so we need to handle escaped content
-                              const planContentMatch = accumulated.match(
-                                /"planContent"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+                            // Helper: Sanitize plan name for file path
+                            const sanitizePlanName = (name: string): string =>
+                              name
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]+/g, "-")
+                                .replace(/^-+|-+$/g, "")
+                                .substring(0, 50);
+
+                            // Helper: Unescape JSON string content
+                            const unescapeJsonString = (str: string): string =>
+                              str
+                                .replace(/\\n/g, "\n")
+                                .replace(/\\t/g, "\t")
+                                .replace(/\\"/g, '"')
+                                .replace(/\\\\/g, "\\");
+
+                            // Helper: Extract field from JSON string using regex
+                            const extractJsonField = (
+                              json: string,
+                              field: string,
+                            ): string | null => {
+                              const match = json.match(
+                                new RegExp(`"${field}"\\s*:\\s*"([^"]*(?:\\\\.[^"]*)*)"`)
                               );
-                              if (planContentMatch?.[1]) {
-                                // Extract and unescape the content
-                                const planContentChunk = planContentMatch[1]
-                                  .replace(/\\n/g, "\n")
-                                  .replace(/\\t/g, "\t")
-                                  .replace(/\\"/g, '"')
-                                  .replace(/\\\\/g, "\\");
+                              return match?.[1] ?? null;
+                            };
 
-                                // Emit plan content streaming event
-                                progressCallback?.(
-                                  "plan-content-streaming",
-                                  JSON.stringify({
-                                    type: "plan-content-streaming",
-                                    toolCallId: e.toolCallId,
-                                    content: planContentChunk,
-                                    isComplete: false,
-                                  }),
-                                );
-                              }
-                            } catch {
-                              // JSON parsing failed, continue accumulating
-                            }
+                            // Initialize plan file if name is available and not yet initialized
+                            yield* pipe(
+                              Effect.Do,
+                              Effect.bind("nameValue", () =>
+                                Effect.succeed(extractJsonField(accumulated, "name")),
+                              ),
+                              Effect.flatMap(({ nameValue }) =>
+                                nameValue && !planToToolCallId.has(toolCallId)
+                                  ? pipe(
+                                      Effect.sync(() => {
+                                        const targetPath = `.clive/plans/test-plan-${sanitizePlanName(nameValue)}-${Date.now()}.md`;
+                                        return targetPath;
+                                      }),
+                                      Effect.flatMap((targetPath) =>
+                                        pipe(
+                                          initializePlanStreamingWriteEffect(targetPath, toolCallId),
+                                          Effect.tap(() =>
+                                            Effect.sync(() => {
+                                              planToToolCallId.set(toolCallId, targetPath);
+                                              fileToToolCallId.set(targetPath, toolCallId);
+                                              progressCallback?.(
+                                                "file-created",
+                                                JSON.stringify({
+                                                  type: "file-created",
+                                                  toolCallId,
+                                                  filePath: targetPath,
+                                                }),
+                                              );
+                                            }),
+                                          ),
+                                          Effect.catchAll(() => Effect.void),
+                                        ),
+                                      ),
+                                    )
+                                  : Effect.void,
+                              ),
+                            );
+
+                            // Extract and stream planContent to file
+                            yield* pipe(
+                              Effect.sync(() => extractJsonField(accumulated, "planContent")),
+                              Effect.flatMap((planContentValue) =>
+                                planContentValue && planToToolCallId.has(toolCallId)
+                                  ? pipe(
+                                      Effect.sync(() => unescapeJsonString(planContentValue)),
+                                      Effect.flatMap((planContentChunk) =>
+                                        pipe(
+                                          appendPlanStreamingContentEffect(toolCallId, planContentChunk),
+                                          Effect.tap(() =>
+                                            Effect.sync(() => {
+                                              progressCallback?.(
+                                                "plan-content-streaming",
+                                                JSON.stringify({
+                                                  type: "plan-content-streaming",
+                                                  toolCallId,
+                                                  content: planContentChunk,
+                                                  isComplete: false,
+                                                }),
+                                              );
+                                            }),
+                                          ),
+                                          Effect.catchAll(() => Effect.void),
+                                        ),
+                                      ),
+                                    )
+                                  : Effect.void,
+                              ),
+                            );
                           }
                         }),
                     ),
@@ -866,9 +942,29 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                           }
                         }
 
-                        // Extract planContent from proposeTestPlan tool args
+                        // Extract planContent from proposeTestPlan tool args and finalize file
                         if (e.toolName === "proposeTestPlan" && e.toolCallId) {
-                          const accumulated = streamingArgsText.get(e.toolCallId) || "";
+                          const toolCallId = e.toolCallId;
+                          const accumulated = streamingArgsText.get(toolCallId) || "";
+                          
+                          // Finalize streaming write if file was initialized
+                          yield* pipe(
+                            planToToolCallId.has(toolCallId)
+                              ? pipe(
+                                  finalizePlanStreamingWriteEffect(toolCallId),
+                                  Effect.tap((filePath) =>
+                                    Effect.logDebug(
+                                      `[TestingAgent:${correlationId}] Plan file finalized: ${filePath}`,
+                                    ),
+                                  ),
+                                  Effect.tap(() =>
+                                    Effect.sync(() => planToToolCallId.delete(toolCallId)),
+                                  ),
+                                  Effect.catchAll(() => Effect.void),
+                                )
+                              : Effect.void,
+                          );
+                          
                           if (accumulated) {
                             try {
                               // Try to parse the complete JSON args
