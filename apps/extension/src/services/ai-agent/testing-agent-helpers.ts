@@ -306,3 +306,81 @@ export const getToolProgressMessage = (
 
 export const generateCorrelationId = (prefix: string): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+// ============================================================
+// JSON Parsing Utilities
+// ============================================================
+
+/**
+ * Sanitize a plan name for use in file paths
+ * Converts to lowercase, replaces non-alphanumeric with hyphens
+ */
+export const sanitizePlanName = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 50);
+
+/**
+ * Unescape JSON string escapes
+ * Converts \\n, \\t, \\", \\\\ to actual characters
+ * Note: Order matters - backslash must be replaced first to avoid
+ * false matches like \\t being interpreted as tab
+ */
+export const unescapeJsonString = (str: string): string =>
+  str
+    .replace(/\\\\/g, "\0BACKSLASH\0") // Temporarily replace escaped backslashes
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\0BACKSLASH\0/g, "\\"); // Restore backslashes
+
+/**
+ * Extract a JSON field value from partial/incomplete JSON string
+ * Handles streaming JSON where the string may not be complete
+ * Returns the field value (still escaped) or null if not found/incomplete
+ */
+export const extractJsonField = (
+  json: string,
+  field: string,
+): string | null => {
+  // Find the field key in the JSON
+  const fieldPattern = `"${field}"\\s*:\\s*"`;
+  const fieldIndex = json.search(new RegExp(fieldPattern));
+  if (fieldIndex === -1) return null;
+
+  // Find where the value string starts (after the opening quote)
+  const valueStartIndex = json.indexOf('"', fieldIndex + field.length + 2) + 1;
+  if (valueStartIndex === 0) return null;
+
+  // Extract the string value by tracking escape sequences
+  let extracted = "";
+  let i = valueStartIndex;
+  let inEscape = false;
+
+  while (i < json.length) {
+    const char = json[i];
+
+    if (inEscape) {
+      // Add escaped character as-is (we'll unescape later)
+      extracted += char;
+      inEscape = false;
+    } else if (char === "\\") {
+      // Start escape sequence
+      extracted += char;
+      inEscape = true;
+    } else if (char === '"') {
+      // Found unescaped closing quote - end of string
+      return extracted;
+    } else {
+      // Regular character
+      extracted += char;
+    }
+    i++;
+  }
+
+  // If we reach here, the string is incomplete (no closing quote yet)
+  // Return what we have so far for streaming display
+  return extracted || null;
+};

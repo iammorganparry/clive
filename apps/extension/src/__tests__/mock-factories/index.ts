@@ -22,6 +22,10 @@ export {
   createMockSummaryService,
   createMockKnowledgeFileService,
   createMockDiffContentProvider,
+  createMockStreamingWrite,
+  createMockPlanStreaming,
+  type StreamingWriteMockOverrides,
+  type PlanStreamingMockOverrides,
 } from "./service-mocks.js";
 
 export {

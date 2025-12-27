@@ -259,11 +259,12 @@ export const ChangesetChatPage: React.FC = () => {
             </div>
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="sm"
               onClick={handleNewChat}
               disabled={isLoading}
             >
-              <Plus className="size-2" />
+              <Plus className="size-3" />
+              New Chat
             </Button>
           </div>
         </div>
