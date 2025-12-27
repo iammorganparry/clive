@@ -39,12 +39,12 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
    * Store content for a test ID and return the URI
    * @param testId The test ID
    * @param content The content to store
-   * @param type The URI type: "proposed", "existing", or "empty"
+   * @param type The URI type: "proposed", "existing", "empty", or "original"
    */
   storeContent(
     testId: string,
     content: string,
-    type: "proposed" | "existing" | "empty" = "proposed",
+    type: "proposed" | "existing" | "empty" | "original" = "proposed",
   ): Uri {
     const uri = Uri.parse(`${DiffContentProvider.SCHEME}://${type}/${testId}`);
     // Map to content key based on type
@@ -53,7 +53,9 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
         ? testId
         : type === "existing"
           ? `existing-${testId}`
-          : `empty-${testId}`;
+          : type === "original"
+            ? `original-${testId}`
+            : `empty-${testId}`;
     this.contentMap.set(contentKey, content);
     // Notify VS Code that the document has changed
     this.onDidChangeEmitter.fire(uri);
@@ -74,9 +76,10 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
     // Handle different URI patterns:
     // clive-diff://proposed/{testId} - proposed content
     // clive-diff://existing/{testId} - existing content
+    // clive-diff://original/{testId} - original content
     // clive-diff://empty/{testId} - empty content
     const pathParts = uri.path.split("/");
-    const type = pathParts[0]; // "proposed", "existing", or "empty"
+    const type = pathParts[0]; // "proposed", "existing", "original", or "empty"
     const testId = pathParts[1];
 
     if (!testId) {
@@ -89,7 +92,9 @@ export class DiffContentProvider implements vscode.TextDocumentContentProvider {
         ? testId
         : type === "existing"
           ? `existing-${testId}`
-          : `empty-${testId}`;
+          : type === "original"
+            ? `original-${testId}`
+            : `empty-${testId}`;
 
     return this.contentMap.get(contentKey) || "";
   }

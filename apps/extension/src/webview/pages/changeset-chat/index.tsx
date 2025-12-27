@@ -35,6 +35,7 @@ import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
 import { TestSuiteQueue } from "./components/test-suite-queue.js";
+import { DevTestingToolbar } from "./components/dev-testing-toolbar.js";
 import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
 import type { MessagePart } from "../../types/chat.js";
 import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
@@ -365,6 +366,8 @@ export const ChangesetChatPage: React.FC = () => {
           </div>
         </div>
       </div>
+      {/* Dev Testing Toolbar - only in development */}
+      <DevTestingToolbar send={send} />
     </PromptInputProvider>
   );
 };

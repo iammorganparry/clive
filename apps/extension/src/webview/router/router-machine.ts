@@ -78,6 +78,8 @@ export const routerMachine = setup({
           actions: assign({
             isAuthenticated: false,
             onboardingComplete: false,
+            route: Routes.login,
+            routeParams: {},
           }),
         },
       },
@@ -96,12 +98,17 @@ export const routerMachine = setup({
           actions: assign({
             isAuthenticated: false,
             onboardingComplete: false,
+            route: Routes.login,
+            routeParams: {},
           }),
         },
       },
     },
     unauthenticated: {
-      entry: assign({ route: Routes.login }),
+      entry: assign({
+        route: Routes.login,
+        routeParams: {},
+      }),
       on: {
         LOGIN_SUCCESS: "checkingOnboarding",
       },
@@ -120,6 +127,8 @@ export const routerMachine = setup({
           actions: assign({
             isAuthenticated: false,
             onboardingComplete: false,
+            route: Routes.login,
+            routeParams: {},
           }),
         },
       },
@@ -137,6 +146,8 @@ export const routerMachine = setup({
           actions: assign({
             isAuthenticated: false,
             onboardingComplete: false,
+            route: Routes.login,
+            routeParams: {},
           }),
         },
       },

@@ -148,7 +148,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   const commitHash = currentCommit?.commitHash;
 
   // Check if conversation exists for current mode
-  const { data: branchConversation } =
+  const { data: branchConversation, isLoading: isLoadingConversation } =
     rpc.conversations.hasBranchConversation.useQuery({
       input: {
         branchName: props.changes?.branchName ?? "",
@@ -270,9 +270,25 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       {/* Generate Tests Button */}
       {eligibleCount > 0 && (
         <div className="p-4 border-t">
-          <Button onClick={handleGenerateTests} className="w-full">
-            {branchConversation?.exists ? "Continue Conversation" : "Generate Tests"} for {mode === "branch" ? "All Changes" : "Uncommitted Changes"} ({eligibleCount} file
-            {eligibleCount !== 1 ? "s" : ""})
+          <Button
+            onClick={handleGenerateTests}
+            className="w-full"
+            disabled={isLoadingConversation}
+          >
+            {isLoadingConversation ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                {branchConversation?.exists
+                  ? "Continue Conversation"
+                  : "Generate Tests"}{" "}
+                for {mode === "branch" ? "All Changes" : "Uncommitted Changes"}{" "}
+                ({eligibleCount} file{eligibleCount !== 1 ? "s" : ""})
+              </>
+            )}
           </Button>
         </div>
       )}

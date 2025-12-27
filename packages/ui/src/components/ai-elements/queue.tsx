@@ -54,7 +54,7 @@ export const QueueItemIndicator = ({
 }: QueueItemIndicatorProps) => (
   <span
     className={cn(
-      "mt-0.5 inline-block size-2.5 rounded-full border",
+      "mt-0.5 inline-block size-2.5",
       completed
         ? "border-muted-foreground/20 bg-muted-foreground/10"
         : "border-muted-foreground/50",
@@ -169,7 +169,7 @@ export const QueueItemFile = ({
 }: QueueItemFileProps) => (
   <span
     className={cn(
-      "flex items-center gap-1 rounded border bg-muted px-2 py-1 text-xs",
+      "flex items-center gap-1 bg-muted px-2 py-1 text-xs",
       className,
     )}
     {...props}
