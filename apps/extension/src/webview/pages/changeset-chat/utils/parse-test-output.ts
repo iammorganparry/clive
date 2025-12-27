@@ -312,7 +312,34 @@ function parseGoTestOutput(output: string): TestResult[] {
       const duration = durationStr
         ? parseDuration(`(${durationStr})`)
         : undefined;
-      const error = status === "fail" ? extractError(lines, i) : undefined;
+      
+      // Extract error message for failed tests
+      let error: string | undefined ;
+      if (status === "fail") {
+        // Go test error messages appear on lines following the FAIL line
+        // They typically start with whitespace and contain file:line: format
+        const errorLines: string[] = [];
+        for (let j = i + 1; j < lines.length; j++) {
+          const nextLine = lines[j];
+          // Stop if we hit another test result line
+          if (nextLine.match(/---\s+(PASS|FAIL|SKIP):/)) {
+            break;
+          }
+          // Collect error lines (typically indented with file:line: format)
+          if (nextLine.trim()) {
+            errorLines.push(nextLine.trim());
+            // Stop after collecting a reasonable amount of error context
+            // Usually Go test errors are 1-3 lines
+            if (errorLines.length >= 5) {
+              break;
+            }
+          } else if (errorLines.length > 0) {
+            // Empty line after error lines means we're done
+            break;
+          }
+        }
+        error = errorLines.length > 0 ? errorLines.join("\n") : undefined;
+      }
 
       results.push({
         testName,
@@ -1076,20 +1103,76 @@ export function parseTestOutput(
 }
 
 /**
+ * Check if test output indicates completion (e.g., summary lines)
+ */
+function isTestOutputComplete(
+  output: string,
+  command: string,
+  parsedResults?: TestResult[],
+): boolean {
+  const outputLower = output.toLowerCase();
+  
+  // If we have parsed results, check if all tests have durations
+  // This indicates they completed (durations are only shown after completion)
+  if (parsedResults && parsedResults.length > 0) {
+    const allHaveDurations = parsedResults.every((r) => r.duration !== undefined);
+    if (allHaveDurations) {
+      return true;
+    }
+  }
+  
+  // Check for vitest/jest completion markers
+  if (/vitest|jest/i.test(command)) {
+    // Vitest completion markers: "Test Files", "Tests", summary lines
+    return /Test Files\s+\d+/.test(output) || 
+           /Tests\s+\d+/.test(output) ||
+           /Test Files\s+\d+\s+(passed|failed)/.test(output);
+  }
+  
+  // Check for pytest completion markers
+  if (/pytest/i.test(command)) {
+    return /passed|failed|error/.test(outputLower) && 
+           /\d+\s+(passed|failed|error)/.test(output);
+  }
+  
+  // Check for go test completion markers
+  if (/go\s+test/i.test(command)) {
+    return /^ok\s+/.test(output.trim()) || /^FAIL\s+/.test(output.trim());
+  }
+  
+  // For other frameworks, assume incomplete during streaming
+  // The caller can mark as complete when the process actually finishes
+  return false;
+}
+
+/**
  * Update test execution from streaming output chunks
  * Accumulates output and parses incrementally as new chunks arrive
  */
 export function updateTestExecutionFromStream(
   current: TestFileExecution | null,
   command: string,
-  outputChunk: string,
+  _outputChunk: string, // Unused - accumulatedOutput already contains this chunk
   accumulatedOutput: string,
 ): TestFileExecution | null {
-  // Combine accumulated output with new chunk
-  const fullOutput = accumulatedOutput + outputChunk;
+  // accumulatedOutput already contains the chunk, so use it directly
+  // The caller accumulates before calling: accumulated += chunk
+  const fullOutput = accumulatedOutput;
 
   // Use the existing updateTestExecution function with the accumulated output
-  return updateTestExecution(current, command, fullOutput);
+  const result = updateTestExecution(current, command, fullOutput);
+  
+  // During streaming, keep status as "running" unless we detect completion markers
+  // Pass parsed results to help detect completion (e.g., all tests have durations)
+  if (result && !isTestOutputComplete(fullOutput, command, result.tests)) {
+    return {
+      ...result,
+      status: "running",
+      completedAt: undefined,
+    };
+  }
+  
+  return result;
 }
 
 /**

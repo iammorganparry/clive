@@ -35,55 +35,11 @@ async function executeTool(
   return result as WriteTestFileOutput;
 }
 
-// Mock vscode module
-vi.mock("vscode", () => ({
-  workspace: {
-    workspaceFolders: [
-      {
-        uri: {
-          fsPath: "/test-workspace",
-          scheme: "file",
-        },
-        name: "test-workspace",
-        index: 0,
-      },
-    ],
-    fs: {
-      stat: vi.fn(),
-      writeFile: vi.fn(),
-      createDirectory: vi.fn(),
-    },
-    asRelativePath: vi.fn((uri: vscode.Uri | string) => {
-      if (typeof uri === "string") return uri;
-      return uri.fsPath?.replace("/test-workspace/", "") || uri.path;
-    }),
-    openTextDocument: vi.fn(),
-  },
-  Uri: {
-    file: vi.fn((path: string) => ({
-      fsPath: path,
-      scheme: "file",
-      path: path,
-    })),
-    joinPath: vi.fn((base: vscode.Uri | string, ...paths: string[]) => {
-      const basePath =
-        typeof base === "string"
-          ? base
-          : (base as { fsPath?: string; path?: string }).fsPath ||
-            (base as { fsPath?: string; path?: string }).path ||
-            "";
-      const joined = paths.join("/").replace(/^\.\./, "");
-      return {
-        fsPath: `${basePath}/${joined}`.replace(/\/+/g, "/"),
-        scheme: "file",
-        path: `${basePath}/${joined}`.replace(/\/+/g, "/"),
-      };
-    }),
-  },
-  window: {
-    showTextDocument: vi.fn(),
-  },
-}));
+// Mock vscode module using shared factory
+vi.mock("vscode", async () => {
+  const { createVSCodeMock } = await import("../../../../__tests__/mock-factories");
+  return createVSCodeMock();
+});
 
 describe("writeTestFileTool", () => {
   let approvalRegistry: Set<string>;
@@ -189,7 +145,10 @@ describe("writeTestFileTool", () => {
 
       await executeTool(tool, input);
 
-      const writeCall = mockFs.writeFile.mock.calls[0];
+      // writeFile is called twice: once with empty content, then with actual content
+      // Check the last call which contains the actual content
+      const writeCalls = mockFs.writeFile.mock.calls;
+      const writeCall = writeCalls[writeCalls.length - 1];
       const writtenContent = writeCall[1].toString();
       expect(writtenContent).toContain("line1");
       expect(writtenContent).toContain("line2");
@@ -363,7 +322,10 @@ describe("writeTestFileTool", () => {
       const result = await executeTool(tool, input);
 
       expect(result.success).toBe(true);
-      const writeCall = mockFs.writeFile.mock.calls[0];
+      // writeFile is called twice: once with empty content, then with actual content
+      // Check the last call which contains the actual content
+      const writeCalls = mockFs.writeFile.mock.calls;
+      const writeCall = writeCalls[writeCalls.length - 1];
       const writtenContent = writeCall[1].toString();
       expect(writtenContent.length).toBe(largeContent.length);
     });

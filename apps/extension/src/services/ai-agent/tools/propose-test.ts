@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { Effect, Runtime } from "effect";
 import type { ProposeTestInput } from "../types.js";
 import { processProposeTestApproval } from "../hitl-utils.js";
 
@@ -114,31 +115,51 @@ export const createProposeTestTool = (
         .describe("Paths to existing test files that may be impacted"),
     }),
     execute: async (input) => {
-      // If no approval callback, auto-approve (for backward compatibility)
-      if (!waitForApproval) {
-        const result = processProposeTestApproval(input, true);
-        // Register approved ID in registry if auto-approved
-        if (approvalRegistry && result.success) {
-          approvalRegistry.add(result.id);
-        }
-        return result;
-      }
+      return Runtime.runPromise(Runtime.defaultRuntime)(
+        Effect.gen(function* () {
+          // If no approval callback, auto-approve (for backward compatibility)
+          if (!waitForApproval) {
+            const result = processProposeTestApproval(input, true);
+            // Register approved ID in registry if auto-approved
+            if (approvalRegistry && result.success) {
+              yield* Effect.sync(() => {
+                approvalRegistry.add(result.id);
+              });
+            }
+            return yield* Effect.succeed(result);
+          }
 
-      // Generate tool call ID
-      const toolCallId = `propose-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+          // Generate tool call ID
+          const toolCallId = yield* Effect.sync(
+            () => `propose-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          );
 
-      // Wait for approval
-      const approved = await waitForApproval(toolCallId, input);
+          // Wait for approval
+          const approved = yield* Effect.promise(() =>
+            waitForApproval(toolCallId, input),
+          );
 
-      // Process approval and return result
-      const result = processProposeTestApproval(input, approved);
+          // Process approval and return result
+          const result = processProposeTestApproval(input, approved);
 
-      // Register approved ID in registry if approved
-      if (approved && approvalRegistry && result.success) {
-        approvalRegistry.add(result.id);
-      }
+          // Register approved ID in registry if approved
+          if (approved && approvalRegistry && result.success) {
+            yield* Effect.sync(() => {
+              approvalRegistry.add(result.id);
+            });
+          }
 
-      return result;
+          return yield* Effect.succeed(result);
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.succeed({
+              success: false,
+              id: "",
+              message: "Unexpected error during proposal processing",
+            }),
+          ),
+        ),
+      );
     },
   });
 

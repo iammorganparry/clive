@@ -1,11 +1,19 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { spawn } from "node:child_process";
+import { spawn as nodeSpawn, type SpawnOptions, type ChildProcess } from "node:child_process";
 import { Effect, Runtime, Data } from "effect";
 import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import type { TokenBudgetService } from "../token-budget.js";
 import { getWorkspaceRoot } from "../../../lib/vscode-effects.js";
+
+/**
+ * Type for spawn function - allows dependency injection for testing
+ */
+export type SpawnFn = (
+  command: string,
+  options: SpawnOptions,
+) => ChildProcess;
 
 /**
  * Blocked patterns that indicate destructive or unsafe operations
@@ -116,6 +124,18 @@ export type StreamingOutputCallback = (chunk: {
 }) => void;
 
 /**
+ * Options for creating the bash execute tool
+ */
+export interface BashExecuteToolOptions {
+  /** Token budget service for output truncation */
+  budget: TokenBudgetService;
+  /** Optional callback for streaming output */
+  onStreamingOutput?: StreamingOutputCallback;
+  /** Optional spawn function for dependency injection (defaults to node:child_process spawn) */
+  spawnFn?: SpawnFn;
+}
+
+/**
  * Factory function to create bashExecuteTool with token budget awareness
  * Uses MEDIUM priority - up to 25% of remaining budget
  * Supports streaming output via onStreamingOutput callback
@@ -123,6 +143,7 @@ export type StreamingOutputCallback = (chunk: {
 export const createBashExecuteTool = (
   budget: TokenBudgetService,
   onStreamingOutput?: StreamingOutputCallback,
+  spawnFn: SpawnFn = nodeSpawn,
 ) =>
   tool({
     description: `Execute bash commands in the workspace.
@@ -174,7 +195,7 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
                 stderr: string;
                 exitCode: number;
               }>((resolve, reject) => {
-                const child = spawn(command, {
+                const child = spawnFn(command, {
                   shell: true,
                   cwd: workspaceRoot,
                   stdio: ["ignore", "pipe", "pipe"],
