@@ -3,7 +3,7 @@ import { Data, Effect, Match, Stream } from "effect";
 import { ConfigService } from "../config-service.js";
 import { AIModels } from "../ai-models.js";
 import { createXaiProvider } from "../ai-provider-factory.js";
-import { KnowledgeBasePromptFactory } from "./prompts.js";
+import { KnowledgeBasePromptFactory } from "./prompts/index.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
 import {
   createBashExecuteTool,

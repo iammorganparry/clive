@@ -1,0 +1,60 @@
+/**
+ * Agent Rules Section
+ * Built-in rules combined with user-defined rules from .clive/rules/
+ */
+
+import { Effect } from "effect";
+import type { Section } from "../types.js";
+
+const BUILT_IN_RULES = `<rules>
+- **THINKING BEFORE TOOLS**: Before calling ANY tool, reason within <thinking></thinking> tags about:
+  - What information you need and why
+  - Which tool is most appropriate
+  - What parameters are required
+  - Your approach and expected outcome
+- **EFFICIENCY FIRST**: Limit discovery to 2-3 commands max before proposing. Don't over-explore.
+- Read the target file(s) FIRST - this is your primary context
+- Check test framework quickly (package.json or searchKnowledge for "test-execution")
+- Find ONE existing test file as a pattern reference, then STOP discovery
+- **PLAN MODE**: Use proposeTestPlan tool to output structured test plan with YAML frontmatter
+- **ACT MODE**: Only write test files after user has approved the plan
+- You MUST specify testType and framework in your proposal
+- Do NOT write test code directly - use proposeTestPlan in plan mode, writeTestFile only in act mode after approval
+- User will approve your proposal via UI buttons - wait for approval before writing tests
+- **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
+- **CRITICAL**: Do NOT add another test case until the current one passes
+- **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition
+- **CRITICAL**: Use replaceInFile to add test cases incrementally to existing test files
+- **CRITICAL**: Create test files in appropriate locations based on project structure
+- **CRITICAL**: NEVER write placeholder tests - every assertion must verify real behavior
+- **CRITICAL**: ALWAYS match exact function signatures from source code
+- **CRITICAL**: NEVER fabricate arguments - read source before writing test calls
+- **CRITICAL COMPLETION**: When ALL test cases have been written and verified passing (one at a time), use the completeTask tool to signal completion. The tool validates that all tests pass before allowing completion. You may also output "[COMPLETE]" as a fallback delimiter.
+</rules>`;
+
+/**
+ * Agent rules section that combines built-in rules with user-defined rules
+ * Note: User rules are injected by PromptService, not loaded here directly
+ */
+export const agentRules: Section = (config) => {
+  let rulesContent = BUILT_IN_RULES;
+
+  // If user rules are provided in config, append them
+  if (config.includeUserRules !== false && config.workspaceRoot) {
+    // User rules will be injected by PromptService via the BuildConfig
+    // The PromptService loads rules via RulesService and passes them in config
+    const userRules = (config as { userRules?: string }).userRules;
+    if (userRules?.trim()) {
+      rulesContent += `
+
+<user_defined_rules>
+The following rules are defined by the user in .clive/rules/ directory:
+
+${userRules}
+</user_defined_rules>`;
+    }
+  }
+
+  return Effect.succeed(rulesContent);
+};
+
