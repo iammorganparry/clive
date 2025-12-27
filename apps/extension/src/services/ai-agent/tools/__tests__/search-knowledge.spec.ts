@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { createSearchKnowledgeTool } from "../search-knowledge";
 import type { KnowledgeFileService } from "../../../knowledge-file-service";
 import { VSCodeFileFindError } from "../../../../lib/vscode-effects.js";
+import { createMockKnowledgeFileService } from "../../../../__tests__/mock-factories";
 
 type SearchResult = {
   results: Array<{
@@ -58,9 +59,8 @@ describe("searchKnowledgeTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Create mock knowledge file service
-    mockKnowledgeFileService = {
-      _tag: "KnowledgeFileService",
+    // Create mock knowledge file service with custom overrides
+    mockKnowledgeFileService = createMockKnowledgeFileService({
       listKnowledgeFiles: vi.fn(() =>
         Effect.succeed([
           { relativePath: ".clive/knowledge/test-execution.md", path: "/test/test-execution.md" },
@@ -91,10 +91,7 @@ describe("searchKnowledgeTool", () => {
           content: "The system uses Effect-TS for dependency injection and layer composition. This is a longer content that would normally be truncated for non-critical categories. The architecture follows a layered approach with clear separation of concerns. Services are organized into tiers based on their dependencies, with core services at the bottom and feature services at the top. This design makes testing easier and promotes modularity.",
         });
       }),
-      writeKnowledgeFile: vi.fn(() => Effect.succeed({ path: "", relativePath: "" })),
-      grepKnowledgeFiles: vi.fn(() => Effect.succeed([])),
-      knowledgeBaseExists: vi.fn(() => Effect.succeed(true)),
-    } as unknown as KnowledgeFileService;
+    });
 
     onKnowledgeRetrievedCallback = vi.fn();
   });

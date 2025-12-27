@@ -209,7 +209,12 @@ export type ChangesetChatEvent =
   | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
   | { type: "START_NEXT_SUITE" }
   | { type: "MARK_SUITE_COMPLETED"; suiteId: string; results: TestFileExecution }
-  | { type: "MARK_SUITE_FAILED"; suiteId: string; error: string }
+  | {
+      type: "MARK_SUITE_FAILED";
+      suiteId: string;
+      error: string;
+      results?: TestFileExecution;
+    }
   | {
       type: "DEV_INJECT_STATE";
       updates: Partial<ChangesetChatContext>;
@@ -515,10 +520,27 @@ export const changesetChatMachine = setup({
               updatedExecutions.push(updated);
             }
 
-            return {
+            // Link testExecutions to testSuiteQueue during streaming
+            const updates: Partial<ChangesetChatContext> = {
               testExecutions: updatedExecutions,
               accumulatedTestOutput: updatedAccumulated,
             };
+
+            // Update testSuiteQueue if current suite matches
+            if (context.currentSuiteId) {
+              const currentSuite = context.testSuiteQueue.find(
+                (s) => s.id === context.currentSuiteId,
+              );
+              if (currentSuite && currentSuite.targetFilePath === filePath) {
+                updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
+                  suite.id === context.currentSuiteId
+                    ? { ...suite, testResults: updated }
+                    : suite,
+                );
+              }
+            }
+
+            return updates;
           }
         }
       }
@@ -591,15 +613,16 @@ export const changesetChatMachine = setup({
               if (
                 currentSuite &&
                 currentSuite.targetFilePath === filePath &&
-                updated.summary &&
-                updated.summary.failed === 0
+                updated.summary
               ) {
-                // Mark suite as completed and update with results
+                // Mark suite as completed and update with results (including failures)
+                const suiteStatus: "completed" | "failed" =
+                  updated.summary.failed === 0 ? "completed" : "failed";
                 let updatedQueue = context.testSuiteQueue.map((suite) =>
                   suite.id === context.currentSuiteId
                     ? {
                         ...suite,
-                        status: "completed" as const,
+                        status: suiteStatus,
                         testResults: updated,
                       }
                     : suite,
@@ -972,11 +995,15 @@ export const changesetChatMachine = setup({
     }),
     markSuiteFailed: assign(({ context, event }) => {
       if (event.type !== "MARK_SUITE_FAILED") return {};
-      const { suiteId } = event;
+      const { suiteId, results } = event;
       return {
         testSuiteQueue: context.testSuiteQueue.map((suite) =>
           suite.id === suiteId
-            ? { ...suite, status: "failed" as const }
+            ? {
+                ...suite,
+                status: "failed" as const,
+                ...(results && { testResults: results }),
+              }
             : suite,
         ),
         currentSuiteId: null,

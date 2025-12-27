@@ -4,6 +4,7 @@ import {
   extractTestFilePath,
   parseTestOutput,
   updateTestExecution,
+  updateTestExecutionFromStream,
 } from "./parse-test-output.js";
 
 describe("parse-test-output", () => {
@@ -636,6 +637,195 @@ ok 3 - API response
       const output = "✓ test (1500ms)";
       const results = parseTestOutput(output, "vitest");
       expect(results[0].duration).toBe(1500);
+    });
+  });
+
+  describe("Error Message Extraction", () => {
+    it("extracts error messages for failed vitest tests", () => {
+      const output = `
+✗ test invalid password (45ms)
+  Error: Expected true but got false
+    at Object.<anonymous> (test.spec.ts:42:5)
+      `.trim();
+
+      const results = parseTestOutput(output, "vitest run");
+      expect(results[0].status).toBe("fail");
+      expect(results[0].error).toContain("Error");
+      expect(results[0].error).toContain("Expected true but got false");
+    });
+
+    it("extracts multi-line error messages", () => {
+      const output = `
+✗ test complex failure (100ms)
+  AssertionError: Expected value to be greater than 10
+    at Object.<anonymous> (test.spec.ts:50:10)
+    at Promise.then (test.spec.ts:45:5)
+  Expected: 15
+  Received: 5
+      `.trim();
+
+      const results = parseTestOutput(output, "vitest run");
+      expect(results[0].error).toContain("AssertionError");
+      expect(results[0].error).toContain("Expected value");
+    });
+
+    it("extracts pytest error messages with stack traces", () => {
+      const output = `
+tests/test_auth.py::TestLogin::test_invalid_password FAILED
+AssertionError: Expected True but got False
+  File "test_auth.py", line 42, in test_invalid_password
+    assert result == True
+AssertionError: Expected True but got False
+      `.trim();
+
+      const results = parseTestOutput(output, "pytest");
+      expect(results[0].error).toContain("AssertionError");
+      expect(results[0].error).toContain("test_auth.py");
+    });
+
+    it("extracts go test error messages", () => {
+      const output = `
+--- FAIL: TestSubtract (0.01s)
+    subtract_test.go:15: Expected 5, got 3
+      `.trim();
+
+      const results = parseTestOutput(output, "go test");
+      expect(results[0].status).toBe("fail");
+      expect(results[0].error).toContain("Expected 5");
+    });
+  });
+
+  describe("updateTestExecutionFromStream", () => {
+    it("accumulates streaming output correctly", () => {
+      const command = "vitest run test.spec.ts";
+      let current: ReturnType<typeof updateTestExecution> = null;
+      let accumulated = "";
+
+      // First chunk
+      const chunk1 = "✓ test1";
+      accumulated += chunk1;
+      current = updateTestExecutionFromStream(
+        current,
+        command,
+        chunk1,
+        accumulated,
+      );
+
+      expect(current?.tests.length).toBeGreaterThan(0);
+      expect(current?.status).toBe("running");
+
+      // Second chunk
+      const chunk2 = " (100ms)\n✓ test2 (200ms)";
+      accumulated += chunk2;
+      current = updateTestExecutionFromStream(
+        current,
+        command,
+        chunk2,
+        accumulated,
+      );
+
+      expect(current?.tests.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("handles incremental test result updates", () => {
+      const command = "vitest run test.spec.ts";
+      let current: ReturnType<typeof updateTestExecution> = null;
+      let accumulated = "";
+
+      // Stream test results incrementally
+      const chunks = [
+        "✓ test1",
+        " (100ms)\n",
+        "✓ test2",
+        " (200ms)\n",
+        "✗ test3",
+        " (50ms)\n",
+      ];
+
+      for (const chunk of chunks) {
+        accumulated += chunk;
+        current = updateTestExecutionFromStream(
+          current,
+          command,
+          chunk,
+          accumulated,
+        );
+      }
+
+      expect(current?.tests.length).toBeGreaterThanOrEqual(3);
+      expect(current?.summary?.passed).toBeGreaterThanOrEqual(2);
+      expect(current?.summary?.failed).toBeGreaterThanOrEqual(1);
+    });
+
+    it("updates status from running to completed", () => {
+      const command = "vitest run test.spec.ts";
+      let current: ReturnType<typeof updateTestExecution> = null;
+      let accumulated = "";
+
+      // Start with running tests
+      accumulated = "running tests...";
+      current = updateTestExecutionFromStream(
+        current,
+        command,
+        "running tests...",
+        accumulated,
+      );
+
+      // Complete with results
+      accumulated = "✓ test1 (100ms)\n✓ test2 (200ms)";
+      current = updateTestExecutionFromStream(
+        current,
+        command,
+        "✓ test1 (100ms)\n✓ test2 (200ms)",
+        accumulated,
+      );
+
+      expect(current?.status).toBe("completed");
+      expect(current?.completedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe("Test Result Summary Calculation", () => {
+    it("calculates correct summary for all passing tests", () => {
+      const output = "✓ test1 (100ms)\n✓ test2 (200ms)\n✓ test3 (150ms)";
+      const execution = updateTestExecution(
+        null,
+        "vitest run test.spec.ts",
+        output,
+      );
+
+      expect(execution?.summary?.total).toBe(3);
+      expect(execution?.summary?.passed).toBe(3);
+      expect(execution?.summary?.failed).toBe(0);
+      expect(execution?.status).toBe("completed");
+    });
+
+    it("calculates correct summary for all failing tests", () => {
+      const output = "✗ test1\n✗ test2\n✗ test3";
+      const execution = updateTestExecution(
+        null,
+        "vitest run test.spec.ts",
+        output,
+      );
+
+      expect(execution?.summary?.total).toBe(3);
+      expect(execution?.summary?.passed).toBe(0);
+      expect(execution?.summary?.failed).toBe(3);
+      expect(execution?.status).toBe("failed");
+    });
+
+    it("calculates correct summary for mixed results", () => {
+      const output = "✓ test1\n✗ test2\n✓ test3\n✗ test4";
+      const execution = updateTestExecution(
+        null,
+        "vitest run test.spec.ts",
+        output,
+      );
+
+      expect(execution?.summary?.total).toBe(4);
+      expect(execution?.summary?.passed).toBe(2);
+      expect(execution?.summary?.failed).toBe(2);
+      expect(execution?.status).toBe("failed");
     });
   });
 });

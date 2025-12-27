@@ -1,4 +1,5 @@
 import { tool } from "ai";
+import { Effect, Runtime } from "effect";
 import { z } from "zod";
 
 /**
@@ -32,6 +33,51 @@ export interface CompleteTaskOutput {
   completed: boolean;
 }
 
+
+/**
+ * Validate completion input using Effect
+ */
+function validateCompletion(
+  input: CompleteTaskInput,
+): Effect.Effect<CompleteTaskOutput> {
+  return Effect.gen(function* () {
+    // Validate that confirmation is true
+    if (!input.confirmation) {
+      return yield* Effect.succeed({
+        success: false,
+        message:
+          "Cannot complete task without confirmation that all tests pass. Set confirmation=true.",
+        completed: false,
+      });
+    }
+
+    // Validate that tests written matches tests passed
+    if (input.testsWritten !== input.testsPassed) {
+      return yield* Effect.succeed({
+        success: false,
+        message: `Cannot complete task: ${input.testsWritten} tests written but only ${input.testsPassed} passed. All tests must pass before completion.`,
+        completed: false,
+      });
+    }
+
+    // Validate that at least one test was written
+    if (input.testsWritten === 0) {
+      return yield* Effect.succeed({
+        success: false,
+        message:
+          "Cannot complete task: No tests were written. Complete the task by writing at least one test file.",
+        completed: false,
+      });
+    }
+
+    return yield* Effect.succeed({
+      success: true,
+      message: `Task completed successfully: ${input.summary}`,
+      completed: true,
+    });
+  });
+}
+
 /**
  * Factory function to create completeTaskTool
  * Validates that all tests have passed before allowing completion
@@ -46,40 +92,17 @@ export const createCompleteTaskTool = () =>
       "This tool replaces the [COMPLETE] delimiter with structured validation.",
     inputSchema: CompleteTaskInputSchema,
     execute: async (input): Promise<CompleteTaskOutput> => {
-      // Validate that confirmation is true
-      if (!input.confirmation) {
-        return {
-          success: false,
-          message:
-            "Cannot complete task without confirmation that all tests pass. Set confirmation=true.",
-          completed: false,
-        };
-      }
-
-      // Validate that tests written matches tests passed
-      if (input.testsWritten !== input.testsPassed) {
-        return {
-          success: false,
-          message: `Cannot complete task: ${input.testsWritten} tests written but only ${input.testsPassed} passed. All tests must pass before completion.`,
-          completed: false,
-        };
-      }
-
-      // Validate that at least one test was written
-      if (input.testsWritten === 0) {
-        return {
-          success: false,
-          message:
-            "Cannot complete task: No tests were written. Complete the task by writing at least one test file.",
-          completed: false,
-        };
-      }
-
-      return {
-        success: true,
-        message: `Task completed successfully: ${input.summary}`,
-        completed: true,
-      };
+      return Runtime.runPromise(Runtime.defaultRuntime)(
+        validateCompletion(input).pipe(
+          Effect.catchAll(() =>
+            Effect.succeed({
+              success: false,
+              message: "Unexpected error during validation",
+              completed: false,
+            }),
+          ),
+        ),
+      );
     },
   });
 
