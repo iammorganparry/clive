@@ -162,6 +162,12 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
   "completed",
 ]);
 
+export const conversationTypeEnum = pgEnum("conversation_type", [
+  "branch",
+  "uncommitted",
+  "file",
+]);
+
 export const messageRoleEnum = pgEnum("message_role", [
   "user",
   "assistant",
@@ -192,6 +198,10 @@ export const conversation = pgTable("conversation", {
   branchName: text("branch_name"),
   baseBranch: text("base_branch").default("main"),
   sourceFiles: text("source_files"), // JSON array of file paths
+  conversationType: conversationTypeEnum("conversation_type")
+    .notNull()
+    .default("file"),
+  commitHash: text("commit_hash"), // HEAD commit hash for uncommitted conversations
   status: conversationStatusEnum("status").notNull().default("planning"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")

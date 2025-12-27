@@ -33,20 +33,6 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
       enabled: isAuthenticated && state.matches("checkingConversation"),
     });
 
-  // Check for existing branch conversation
-  const { data: branchConversation, isLoading: conversationLoading } =
-    rpc.conversations.hasBranchConversation.useQuery({
-      input: {
-        branchName: branchChanges?.branchName || "",
-        baseBranch: branchChanges?.baseBranch || "main",
-      },
-      enabled:
-        isAuthenticated &&
-        state.matches("checkingConversation") &&
-        !!branchChanges &&
-        branchChanges.branchName.length > 0,
-    });
-
   // Send AUTH_RESULT when auth loading completes
   useEffect(() => {
     if (!authLoading && state.matches("initializing")) {
@@ -71,47 +57,16 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
       !branchChangesLoading &&
       branchChanges !== undefined
     ) {
-      // If branch changes exist but no branch name, go to dashboard
-      if (!branchChanges || branchChanges.branchName.length === 0) {
-        send({
-          type: "CONVERSATION_RESULT",
-          route: Routes.dashboard,
-        });
-        return;
-      }
-
-      // Wait for conversation check to complete if we have branch changes
-      if (conversationLoading) {
-        return;
-      }
-
-      // If we have branch changes with files and a conversation exists, navigate to chat
-      if (branchChanges.files.length > 0 && branchConversation?.exists) {
-        const filesJson = JSON.stringify(
-          branchChanges.files.map((f) => f.path),
-        );
-        send({
-          type: "CONVERSATION_RESULT",
-          route: Routes.changesetChat,
-          params: {
-            files: filesJson,
-            branchName: branchChanges.branchName,
-          },
-        });
-      } else {
-        // Otherwise, go to dashboard
-        send({
-          type: "CONVERSATION_RESULT",
-          route: Routes.dashboard,
-        });
-      }
+      // Always go to dashboard - user decides when to navigate to chat
+      send({
+        type: "CONVERSATION_RESULT",
+        route: Routes.dashboard,
+      });
     }
   }, [
     state,
     branchChangesLoading,
     branchChanges,
-    conversationLoading,
-    branchConversation,
     send,
   ]);
 

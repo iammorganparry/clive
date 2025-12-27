@@ -66,16 +66,18 @@ export function streamFromAI<TOOLS extends ToolSet>(
         }),
         Match.when("tool-result", () => {
           // TypeScript narrows: chunk is ({ type: 'tool-result' } & TypedToolResult<TOOLS>)
-          // Both StaticToolResult and DynamicToolResult have toolName: string and output: unknown
+          // Both StaticToolResult and DynamicToolResult have toolName: string, output: unknown, and toolCallId: string
           const toolResult = chunk as {
             type: "tool-result";
             toolName: string;
             output: unknown;
+            toolCallId: string;
           };
           return {
             type: "tool-result" as const,
             toolName: toolResult.toolName,
             toolResult: toolResult.output,
+            toolCallId: toolResult.toolCallId,
           } satisfies AgentStreamEvent;
         }),
         Match.when("finish", () => {

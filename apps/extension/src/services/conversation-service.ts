@@ -15,6 +15,8 @@ export interface Conversation {
   branchName: string | null;
   baseBranch: string | null;
   sourceFiles: string | null; // JSON array of file paths
+  conversationType: "branch" | "uncommitted" | "file";
+  commitHash: string | null; // HEAD commit hash for uncommitted conversations
   status: "planning" | "confirmed" | "completed";
   createdAt: Date;
   updatedAt: Date;
@@ -170,6 +172,8 @@ export class ConversationService extends Effect.Service<ConversationService>()(
           branchName: string,
           baseBranch: string,
           sourceFiles: string[],
+          conversationType: "branch" | "uncommitted",
+          commitHash?: string, // For uncommitted
         ) =>
           Effect.gen(function* () {
             const client = yield* trpcClientService.getClient();
@@ -179,6 +183,8 @@ export class ConversationService extends Effect.Service<ConversationService>()(
               c.conversation.getByBranch.query({
                 branchName,
                 baseBranch,
+                conversationType,
+                commitHash,
               }),
             )(client).pipe(
               Effect.catchTag("ApiError", (error) => {
@@ -199,6 +205,8 @@ export class ConversationService extends Effect.Service<ConversationService>()(
                 branchName,
                 baseBranch,
                 sourceFiles,
+                conversationType,
+                commitHash,
               }),
             )(client);
           }),
@@ -206,13 +214,20 @@ export class ConversationService extends Effect.Service<ConversationService>()(
         /**
          * Get existing conversation for a branch (returns null if not found)
          */
-        getConversationByBranch: (branchName: string, baseBranch: string) =>
+        getConversationByBranch: (
+          branchName: string,
+          baseBranch: string,
+          conversationType: "branch" | "uncommitted",
+          commitHash?: string,
+        ) =>
           Effect.gen(function* () {
             const client = yield* trpcClientService.getClient();
             return yield* wrapTrpcCall((c) =>
               c.conversation.getByBranch.query({
                 branchName,
                 baseBranch,
+                conversationType,
+                commitHash,
               }),
             )(client);
           }),

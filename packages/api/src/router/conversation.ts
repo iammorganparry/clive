@@ -109,6 +109,8 @@ export const conversationRouter = {
       z.object({
         branchName: z.string(),
         baseBranch: z.string().default("main"),
+        conversationType: z.enum(["branch", "uncommitted"]),
+        commitHash: z.string().optional(), // For uncommitted conversations
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -118,6 +120,8 @@ export const conversationRouter = {
           ctx.userId,
           input.branchName,
           input.baseBranch,
+          input.conversationType,
+          input.commitHash,
         );
       }).pipe(
         Effect.catchTag("ConversationError", (error) =>
@@ -143,6 +147,8 @@ export const conversationRouter = {
         branchName: z.string(),
         baseBranch: z.string().default("main"),
         sourceFiles: z.array(z.string()),
+        conversationType: z.enum(["branch", "uncommitted"]),
+        commitHash: z.string().optional(), // For uncommitted conversations
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -153,6 +159,8 @@ export const conversationRouter = {
           input.branchName,
           input.baseBranch,
           input.sourceFiles,
+          input.conversationType,
+          input.commitHash,
         );
       }).pipe(
         Effect.catchTag("ConversationError", (error) =>

@@ -207,6 +207,24 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
             Layer.merge(GitServiceEffect.Default, VSCodeService.Default),
           ),
         ),
+      getUncommittedChanges: () =>
+        Effect.gen(function* () {
+          const gitService = yield* GitServiceEffect;
+          return yield* gitService.getUncommittedChanges();
+        }).pipe(
+          Effect.provide(
+            Layer.merge(GitServiceEffect.Default, VSCodeService.Default),
+          ),
+        ),
+      getCurrentCommitHash: () =>
+        Effect.gen(function* () {
+          const gitService = yield* GitServiceEffect;
+          return yield* gitService.getCurrentCommitHash();
+        }).pipe(
+          Effect.provide(
+            Layer.merge(GitServiceEffect.Default, VSCodeService.Default),
+          ),
+        ),
     };
 
     return {

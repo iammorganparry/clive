@@ -31,6 +31,8 @@ export const routerShape: RouterRecord = {
   status: {
     cypress: createProcedureShape("query"),
     branchChanges: createProcedureShape("query"),
+    uncommittedChanges: createProcedureShape("query"),
+    currentCommit: createProcedureShape("query"),
   },
   agents: {
     planTests: createProcedureShape("subscription"),
@@ -72,5 +74,7 @@ export const routerShape: RouterRecord = {
     ready: createProcedureShape("query"),
     log: createProcedureShape("mutation"),
     getTheme: createProcedureShape("query"),
+    writePlanFile: createProcedureShape("mutation"),
+    openFile: createProcedureShape("mutation"),
   },
 };
