@@ -107,6 +107,17 @@ export interface ChangesetChatError {
   originalError?: unknown;
 }
 
+export interface TestSuiteQueueItem {
+  id: string;
+  name: string; // "Unit Tests for Authentication Logic"
+  testType: "unit" | "integration" | "e2e";
+  targetFilePath: string; // "src/auth/__tests__/auth.test.ts"
+  sourceFiles: string[]; // Files being tested
+  status: "pending" | "in_progress" | "completed" | "failed";
+  testResults?: TestFileExecution;
+  description?: string; // From plan section
+}
+
 export interface ChangesetChatContext {
   files: string[];
   branchName: string;
@@ -126,6 +137,9 @@ export interface ChangesetChatContext {
   testExecutions: TestFileExecution[]; // Accumulated test execution results
   accumulatedTestOutput: Map<string, string>; // Map of toolCallId -> accumulated output for streaming
   accumulatedFileContent: Map<string, string>; // Map of toolCallId -> accumulated file content for streaming
+  testSuiteQueue: TestSuiteQueueItem[]; // Queue of test suites to process
+  currentSuiteId: string | null; // ID of currently processing suite
+  agentMode: "plan" | "act"; // Current agent mode
 }
 
 interface CachedConversation {
@@ -185,7 +199,11 @@ export type ChangesetChatEvent =
   | { type: "RESET" }
   | { type: "SEND_MESSAGE"; content: string }
   | { type: "CANCEL_STREAM" }
-  | { type: "CLOSE_TEST_DRAWER" };
+  | { type: "CLOSE_TEST_DRAWER" }
+  | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
+  | { type: "START_NEXT_SUITE" }
+  | { type: "MARK_SUITE_COMPLETED"; suiteId: string; results: TestFileExecution }
+  | { type: "MARK_SUITE_FAILED"; suiteId: string; error: string };
 
 export interface ChangesetChatInput {
   files: string[];
@@ -559,10 +577,59 @@ export const changesetChatMachine = setup({
             const updatedAccumulated = new Map(context.accumulatedTestOutput);
             updatedAccumulated.delete(toolCallId);
 
-            return {
+            // Check if current suite's test file matches and tests passed
+            const updates: Partial<ChangesetChatContext> = {
               testExecutions: updatedExecutions,
               accumulatedTestOutput: updatedAccumulated,
             };
+
+            if (context.currentSuiteId && updated.status === "completed") {
+              const currentSuite = context.testSuiteQueue.find(
+                (s) => s.id === context.currentSuiteId,
+              );
+              if (
+                currentSuite &&
+                currentSuite.targetFilePath === filePath &&
+                updated.summary &&
+                updated.summary.failed === 0
+              ) {
+                // Mark suite as completed and update with results
+                let updatedQueue = context.testSuiteQueue.map((suite) =>
+                  suite.id === context.currentSuiteId
+                    ? {
+                        ...suite,
+                        status: "completed" as const,
+                        testResults: updated,
+                      }
+                    : suite,
+                );
+
+                // Check if there are more pending suites to process
+                const hasPendingSuites = updatedQueue.some(
+                  (s) => s.status === "pending",
+                );
+                let nextSuiteId: string | null = null;
+                if (hasPendingSuites) {
+                  // Find next pending suite and mark as in_progress
+                  const nextSuite = updatedQueue.find(
+                    (s) => s.status === "pending",
+                  );
+                  if (nextSuite) {
+                    nextSuiteId = nextSuite.id;
+                    updatedQueue = updatedQueue.map((suite) =>
+                      suite.id === nextSuite.id
+                        ? { ...suite, status: "in_progress" as const }
+                        : suite,
+                    );
+                  }
+                }
+
+                updates.testSuiteQueue = updatedQueue;
+                updates.currentSuiteId = nextSuiteId;
+              }
+            }
+
+            return updates;
           }
         }
       }
@@ -839,6 +906,66 @@ export const changesetChatMachine = setup({
       planContent: () => null,
       testExecutions: () => [],
       accumulatedFileContent: () => new Map(),
+      testSuiteQueue: () => [],
+      currentSuiteId: () => null,
+      agentMode: () => "plan",
+    }),
+    approvePlan: assign(({ event }) => {
+      if (event.type !== "APPROVE_PLAN") return {};
+      const suites = event.suites;
+      const firstSuite = suites.length > 0 ? suites[0] : null;
+      return {
+        currentSuiteId: firstSuite?.id || null,
+        agentMode: "act" as const,
+        // Mark first suite as in_progress
+        testSuiteQueue: suites.map((suite, index) =>
+          index === 0 ? { ...suite, status: "in_progress" as const } : suite,
+        ),
+      };
+    }),
+    startNextSuite: assign(({ context }) => {
+      const nextSuite = context.testSuiteQueue.find(
+        (suite) => suite.status === "pending",
+      );
+      if (!nextSuite) {
+        return {};
+      }
+      return {
+        currentSuiteId: nextSuite.id,
+        testSuiteQueue: context.testSuiteQueue.map((suite) =>
+          suite.id === nextSuite.id
+            ? { ...suite, status: "in_progress" as const }
+            : suite,
+        ),
+      };
+    }),
+    markSuiteCompleted: assign(({ context, event }) => {
+      if (event.type !== "MARK_SUITE_COMPLETED") return {};
+      const { suiteId, results } = event;
+      return {
+        testSuiteQueue: context.testSuiteQueue.map((suite) =>
+          suite.id === suiteId
+            ? {
+                ...suite,
+                status: "completed" as const,
+                testResults: results,
+              }
+            : suite,
+        ),
+        currentSuiteId: null,
+      };
+    }),
+    markSuiteFailed: assign(({ context, event }) => {
+      if (event.type !== "MARK_SUITE_FAILED") return {};
+      const { suiteId } = event;
+      return {
+        testSuiteQueue: context.testSuiteQueue.map((suite) =>
+          suite.id === suiteId
+            ? { ...suite, status: "failed" as const }
+            : suite,
+        ),
+        currentSuiteId: null,
+      };
     }),
     cancelStream: assign({
       hasCompletedAnalysis: () => true, // Re-enable input
@@ -867,6 +994,9 @@ export const changesetChatMachine = setup({
     testExecutions: [],
     accumulatedTestOutput: new Map(),
     accumulatedFileContent: new Map(),
+    testSuiteQueue: [],
+    currentSuiteId: null,
+    agentMode: "plan" as const,
   }),
   states: {
     idle: {
@@ -906,6 +1036,10 @@ export const changesetChatMachine = setup({
         RESET: {
           target: "idle",
           actions: ["reset"],
+        },
+        APPROVE_PLAN: {
+          actions: ["approvePlan"],
+          target: "analyzing",
         },
       },
     },
@@ -970,14 +1104,30 @@ export const changesetChatMachine = setup({
             "updateUsage",
           ],
         },
-        RESPONSE_COMPLETE: {
-          target: "idle",
-          actions: [
-            "clearStreamingContent",
-            "stopReasoningStreaming",
-            "markAnalysisComplete",
-          ],
-        },
+        RESPONSE_COMPLETE: [
+          {
+            guard: ({ context }) => {
+              // If in act mode and current suite completed, start next suite
+              if (context.agentMode === "act" && context.currentSuiteId === null) {
+                const hasPendingSuites = context.testSuiteQueue.some(
+                  (s) => s.status === "pending",
+                );
+                return hasPendingSuites;
+              }
+              return false;
+            },
+            actions: ["startNextSuite"],
+            target: "analyzing",
+          },
+          {
+            target: "idle",
+            actions: [
+              "clearStreamingContent",
+              "stopReasoningStreaming",
+              "markAnalysisComplete",
+            ],
+          },
+        ],
         RESPONSE_ERROR: {
           target: "idle",
           actions: ["setResponseError"],
@@ -989,6 +1139,15 @@ export const changesetChatMachine = setup({
             "clearStreamingContent",
             "stopReasoningStreaming",
           ],
+        },
+        START_NEXT_SUITE: {
+          actions: ["startNextSuite"],
+        },
+        MARK_SUITE_COMPLETED: {
+          actions: ["markSuiteCompleted"],
+        },
+        MARK_SUITE_FAILED: {
+          actions: ["markSuiteFailed"],
         },
       },
     },

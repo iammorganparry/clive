@@ -42,6 +42,7 @@ export const agentsRouter = {
         baseBranch: z.string().default("main"),
         conversationType: z.enum(["branch", "uncommitted"]).default("branch"),
         commitHash: z.string().optional(), // For uncommitted conversations
+        mode: z.enum(["plan", "act"]).optional().default("plan"), // Agent mode: plan or act
         conversationHistory: z
           .array(
             z.object({
@@ -65,6 +66,7 @@ export const agentsRouter = {
         baseBranch: string;
         conversationType: "branch" | "uncommitted";
         commitHash?: string;
+        mode?: "plan" | "act";
         conversationHistory?: Array<{
           role: "user" | "assistant" | "system";
           content: string;
@@ -169,6 +171,7 @@ export const agentsRouter = {
 
           // Use planAndExecuteTests - proposals auto-approve
           const result = yield* testingAgent.planAndExecuteTests(input.files, {
+            mode: input.mode || "plan",
             conversationHistory: input.conversationHistory,
             outputChannel: ctx.outputChannel,
             progressCallback,

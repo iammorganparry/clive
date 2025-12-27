@@ -34,9 +34,10 @@ import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
 import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
-import { TestResultsPanel } from "./components/test-results-panel.js";
-import { parsePlan } from "./utils/parse-plan.js";
+import { TestSuiteQueue } from "./components/test-suite-queue.js";
+import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
 import type { MessagePart } from "../../types/chat.js";
+import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
 
 export const ChangesetChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -69,7 +70,9 @@ export const ChangesetChatPage: React.FC = () => {
     usage,
     planContent,
     planFilePath,
-    testExecutions,
+    testSuiteQueue,
+    currentSuiteId,
+    agentMode,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName, mode, commitHash });
@@ -169,11 +172,42 @@ export const ChangesetChatPage: React.FC = () => {
   }, [isLoadingHistory, isLoading, messages, files.length, planFilePath]);
 
   const handleApprove = () => {
-    // Send message to agent requesting test writes
-    send({
-      type: "SEND_MESSAGE",
-      content: "Please write the tests as proposed in your analysis.",
-    });
+    if (!planContent) return;
+
+    // Parse Implementation Plan sections from plan content
+    const sections = parsePlanSections(planContent);
+
+    if (sections.length === 0) {
+      // Fallback: send message if parsing fails
+      send({
+        type: "SEND_MESSAGE",
+        content: "Please write the tests as proposed in your analysis.",
+      });
+      return;
+    }
+
+    // Convert to queue items
+    const suites: TestSuiteQueueItem[] = sections.map((section) => ({
+      id: `suite-${section.sectionNumber}`,
+      name: section.name,
+      testType: section.testType,
+      targetFilePath: section.targetFilePath,
+      sourceFiles: [], // TODO: parse from section if needed
+      status: "pending",
+      description: section.description,
+    }));
+
+    // Dispatch APPROVE_PLAN event to populate queue and switch to act mode
+    send({ type: "APPROVE_PLAN", suites });
+
+    // Send focused message for first suite
+    const firstSuite = suites[0];
+    if (firstSuite) {
+      send({
+        type: "SEND_MESSAGE",
+        content: `Write tests for: ${firstSuite.name}\nTarget file: ${firstSuite.targetFilePath}\nTest type: ${firstSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.`,
+      });
+    }
   };
 
   const handleNewChat = () => {
@@ -276,14 +310,18 @@ export const ChangesetChatPage: React.FC = () => {
             <ConversationScrollButton />
           </Conversation>
 
+          {/* Test Suite Queue - shows progress when in act mode */}
+          {agentMode === "act" && testSuiteQueue.length > 0 && (
+            <div className="border-t bg-background px-4 py-2">
+              <TestSuiteQueue queue={testSuiteQueue} currentSuiteId={currentSuiteId} />
+            </div>
+          )}
+
           {/* Floating Approval Bar - only show when there's a test proposal */}
           <FloatingApprovalBar
-            isVisible={hasCompletedAnalysis && !isLoading && parsedPlan !== null}
+            isVisible={hasCompletedAnalysis && !isLoading && parsedPlan !== null && agentMode === "plan"}
             onApprove={handleApprove}
           />
-
-          {/* Test Results Panel - persistent panel below chat */}
-          <TestResultsPanel testExecutions={testExecutions} />
 
           {/* Input Area */}
           <div className="border-t bg-background">

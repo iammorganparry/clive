@@ -227,6 +227,7 @@ export function useChangesetChat({
         baseBranch: "main",
         conversationType: mode,
         commitHash,
+        mode: state.context.agentMode, // Pass agent mode (plan or act)
         conversationHistory:
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
@@ -286,6 +287,29 @@ export function useChangesetChat({
     }
   }, [state.context.planContent, writePlanFileMutation]);
 
+  // Auto-send focused message when starting next suite in act mode
+  const previousSuiteId = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      state.context.agentMode === "act" &&
+      state.context.currentSuiteId &&
+      state.context.currentSuiteId !== previousSuiteId.current &&
+      previousSuiteId.current !== null // Only auto-send if we had a previous suite (not initial)
+    ) {
+      const currentSuite = state.context.testSuiteQueue.find(
+        (s) => s.id === state.context.currentSuiteId,
+      );
+      if (currentSuite && currentSuite.status === "in_progress") {
+        // Send focused message for next suite
+        send({
+          type: "SEND_MESSAGE",
+          content: `Write tests for: ${currentSuite.name}\nTarget file: ${currentSuite.targetFilePath}\nTest type: ${currentSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.`,
+        });
+      }
+    }
+    previousSuiteId.current = state.context.currentSuiteId;
+  }, [state.context.currentSuiteId, state.context.agentMode, state.context.testSuiteQueue, send]);
+
   return {
     state,
     send,
@@ -302,6 +326,9 @@ export function useChangesetChat({
     planContent: state.context.planContent,
     planFilePath,
     testExecutions: state.context.testExecutions,
+    testSuiteQueue: state.context.testSuiteQueue,
+    currentSuiteId: state.context.currentSuiteId,
+    agentMode: state.context.agentMode,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });

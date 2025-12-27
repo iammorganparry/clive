@@ -92,12 +92,13 @@ describe("writeTestFileTool", () => {
     writeFile: ReturnType<typeof vi.fn>;
     createDirectory: ReturnType<typeof vi.fn>;
   };
-  let mockWorkspace: typeof vscode.workspace;
-
   beforeEach(() => {
     approvalRegistry = new Set<string>();
-    mockFs = vscode.workspace.fs;
-    mockWorkspace = vscode.workspace;
+    mockFs = vscode.workspace.fs as unknown as {
+      stat: ReturnType<typeof vi.fn>;
+      writeFile: ReturnType<typeof vi.fn>;
+      createDirectory: ReturnType<typeof vi.fn>;
+    };
     
     // Reset all mocks
     vi.clearAllMocks();
@@ -109,7 +110,7 @@ describe("writeTestFileTool", () => {
     // Default: createDirectory succeeds
     mockFs.createDirectory.mockResolvedValue(undefined);
     // Default: openTextDocument succeeds
-    mockWorkspace.openTextDocument.mockResolvedValue({ uri: "file://test" });
+    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ uri: "file://test" } as unknown as vscode.TextDocument);
   });
 
   describe("Happy Path", () => {
@@ -223,7 +224,7 @@ describe("writeTestFileTool", () => {
 
       await executeTool(tool, input);
 
-      expect(mockWorkspace.openTextDocument).toHaveBeenCalled();
+      expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
       expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
   });
@@ -294,7 +295,7 @@ describe("writeTestFileTool", () => {
       approvalRegistry.add("test-9");
       const tool = createWriteTestFileTool(approvalRegistry);
 
-      mockWorkspace.openTextDocument.mockRejectedValue(
+      (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error("Editor error"),
       );
 
