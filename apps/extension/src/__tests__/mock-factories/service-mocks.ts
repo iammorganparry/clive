@@ -150,3 +150,55 @@ export function createMockDiffContentProvider(
   } as unknown as DiffContentProvider;
 }
 
+/**
+ * Streaming write tool mock overrides
+ */
+export interface StreamingWriteMockOverrides {
+  initializeStreamingWrite?: () => Promise<{ success: boolean; error?: string }>;
+  appendStreamingContent?: () => Promise<{ success: boolean; error?: string }>;
+  finalizeStreamingWrite?: () => Promise<{ success: boolean; filePath: string; error?: string }>;
+}
+
+/**
+ * Create mock streaming write functions for writeTestFile tool
+ */
+export function createMockStreamingWrite(overrides?: StreamingWriteMockOverrides) {
+  return {
+    initializeStreamingWrite:
+      overrides?.initializeStreamingWrite ??
+      vi.fn().mockResolvedValue({ success: true }),
+    appendStreamingContent:
+      overrides?.appendStreamingContent ??
+      vi.fn().mockResolvedValue({ success: true }),
+    finalizeStreamingWrite:
+      overrides?.finalizeStreamingWrite ??
+      vi.fn().mockResolvedValue({ success: true, filePath: "/test.ts" }),
+  };
+}
+
+/**
+ * Plan streaming mock overrides
+ */
+export interface PlanStreamingMockOverrides {
+  initializePlanStreamingWriteEffect?: () => Effect.Effect<void>;
+  appendPlanStreamingContentEffect?: () => Effect.Effect<void>;
+  finalizePlanStreamingWriteEffect?: () => Effect.Effect<string>;
+}
+
+/**
+ * Create mock plan streaming functions for proposeTestPlan tool
+ */
+export function createMockPlanStreaming(overrides?: PlanStreamingMockOverrides) {
+  return {
+    initializePlanStreamingWriteEffect:
+      overrides?.initializePlanStreamingWriteEffect ??
+      vi.fn(() => Effect.void),
+    appendPlanStreamingContentEffect:
+      overrides?.appendPlanStreamingContentEffect ??
+      vi.fn(() => Effect.void),
+    finalizePlanStreamingWriteEffect:
+      overrides?.finalizePlanStreamingWriteEffect ??
+      vi.fn(() => Effect.succeed("/test-plan.md")),
+  };
+}
+

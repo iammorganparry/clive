@@ -876,14 +876,29 @@ export const changesetChatMachine = setup({
       )
         return {};
       if (!event.streamingPlanContent) return {};
-      const { content, filePath } = event.streamingPlanContent;
-      // Update planContent with the streamed content
-      // When isComplete is true, this is the final content
-      // Also capture the file path if provided
-      return {
-        planContent: content || null,
-        ...(filePath && { planFilePath: filePath }),
-      };
+      const { content, isComplete, filePath } = event.streamingPlanContent;
+      
+      // Accumulate content during streaming, replace only when complete
+      const updates: Partial<ChangesetChatContext> = {};
+      
+      if (isComplete) {
+        // Final content - use it as-is
+        updates.planContent = content || null;
+      } else {
+        // Streaming - the content contains the full accumulated content so far
+        // (extracted from the full accumulated JSON args text in testing-agent.ts)
+        // Only update if we have new content
+        if (content) {
+          updates.planContent = content;
+        }
+      }
+      
+      // Capture file path if provided
+      if (filePath) {
+        updates.planFilePath = filePath;
+      }
+      
+      return updates;
     }),
     updateFileStreamingContent: assign(({ context, event }) => {
       if (
