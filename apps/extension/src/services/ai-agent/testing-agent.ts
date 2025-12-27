@@ -31,6 +31,8 @@ import {
   createWebTools,
   createWriteKnowledgeFileTool,
   createWriteTestFileTool,
+  createProposeTestPlanTool,
+  createCompleteTaskTool,
 } from "./tools/index.js";
 import type { WriteTestFileOutput } from "./types.js";
 import { KnowledgeContext } from "./knowledge-context.js";
@@ -76,10 +78,15 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
          * Conversational agent for planning and executing tests
          * Uses a single streamText call with all tools available
          * Agent iterates on proposals until user approves, then writes tests
+         * 
+         * Mode behavior:
+         * - "plan": Only read-only tools available (searchKnowledge, webSearch, bashExecute for reading)
+         * - "act": All tools available including writeTestFile
          */
         planAndExecuteTests: (
           filePaths: string | string[],
           options?: {
+            mode?: "plan" | "act";
             conversationHistory?: Array<{
               role: "user" | "assistant" | "system";
               content: string;
@@ -91,6 +98,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
         ) =>
           Effect.gen(function* () {
             const files = Array.isArray(filePaths) ? filePaths : [filePaths];
+            const mode = options?.mode ?? "plan"; // Default to plan mode for safety
             const conversationHistory = options?.conversationHistory ?? [];
             const progressCallback = options?.progressCallback;
             const signal = options?.signal;
@@ -124,6 +132,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // State management with Refs
             const messagesRef = yield* Ref.make<Message[]>([]);
             const executionsRef = yield* Ref.make<Execution[]>([]);
+            const didRejectToolRef = yield* Ref.make<boolean>(false);
+            const taskCompletedRef = yield* Ref.make<boolean>(false);
 
             // Track toolCallIds for bash commands to enable streaming
             // Maps command to toolCallId (command may not be unique, but we'll use the most recent)
@@ -273,18 +283,34 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               );
             };
 
-            const tools = {
+            // Build tools based on mode
+            // Plan mode: Only read-only tools + proposeTestPlan (no file writes)
+            // Act mode: All tools available
+            const baseTools = {
               bashExecute: createBashExecuteTool(budget, bashStreamingCallback),
               searchKnowledge: createSearchKnowledgeTool(
                 knowledgeFileService,
                 onKnowledgeRetrieved,
               ),
-              writeKnowledgeFile:
-                createWriteKnowledgeFileTool(knowledgeFileService),
-              writeTestFile,
               summarizeContext,
+              proposeTestPlan: createProposeTestPlanTool(
+                undefined, // No approval callback for now
+                autoApproveRegistry,
+              ),
+              completeTask: createCompleteTaskTool(),
               ...webTools,
             };
+
+            // Add write tools only in act mode
+            const tools =
+              mode === "act"
+                ? {
+                    ...baseTools,
+                    writeKnowledgeFile:
+                      createWriteKnowledgeFileTool(knowledgeFileService),
+                    writeTestFile,
+                  }
+                : baseTools;
 
             // Setup initial context
             const workspaceRootUri = yield* getWorkspaceRoot();
@@ -481,6 +507,25 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   yield* Match.value(event).pipe(
                     Match.when({ type: "tool-call" }, (e) =>
                       Effect.gen(function* () {
+                        // Check if a previous tool was rejected (rejection cascade)
+                        const didReject = yield* Ref.get(didRejectToolRef);
+                        if (didReject) {
+                          // Skip this tool due to rejection cascade
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Skipping tool ${e.toolName} due to rejection cascade`,
+                          );
+                          progressCallback?.(
+                            "tool-skipped",
+                            JSON.stringify({
+                              type: "tool-skipped",
+                              toolCallId: e.toolCallId,
+                              toolName: e.toolName,
+                              reason: "Previous tool was rejected",
+                            }),
+                          );
+                          return;
+                        }
+
                         yield* Effect.logDebug(
                           `[TestingAgent:${correlationId}] Tool call: ${e.toolName}`,
                         );
@@ -612,6 +657,37 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             ? e.toolResult.output
                             : e.toolResult;
 
+                        // Check if tool was rejected (user rejected via UI)
+                        const outputObj =
+                          actualOutput && typeof actualOutput === "object"
+                            ? actualOutput
+                            : {};
+                        const wasRejected =
+                          "rejected" in outputObj && outputObj.rejected === true;
+
+                        if (wasRejected) {
+                          // Set rejection flag for cascade
+                          yield* Ref.set(didRejectToolRef, true);
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Tool ${e.toolName} was rejected - enabling rejection cascade`,
+                          );
+                        }
+
+                        // Check for completion via completeTask tool
+                        if (e.toolName === "completeTask" && e.toolResult) {
+                          const toolResult = e.toolResult as ToolResult<
+                            string,
+                            unknown,
+                            { success: boolean; completed: boolean; message: string }
+                          >;
+                          if (toolResult.output?.completed) {
+                            yield* Ref.set(taskCompletedRef, true);
+                            yield* Effect.logDebug(
+                              `[TestingAgent:${correlationId}] Task marked as complete via completeTask tool`,
+                            );
+                          }
+                        }
+
                         progressCallback?.(
                           "tool-result",
                           JSON.stringify({
@@ -619,7 +695,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                             toolCallId: e.toolCallId,
                             toolName: e.toolName,
                             output: actualOutput,
-                            state: "output-available",
+                            state: wasRejected
+                              ? "output-rejected"
+                              : "output-available",
                           }),
                         );
 
@@ -713,12 +791,14 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const finalExecutions = yield* Ref.get(executionsRef);
             const completionState =
               yield* completionDetector.getState(completionStateRef);
+            const taskCompleted = yield* Ref.get(taskCompletedRef);
+            const didReject = yield* Ref.get(didRejectToolRef);
 
             yield* Effect.logDebug(
-              `[TestingAgent:${correlationId}] Steps used: ${awaitedSteps.length} (unlimited, stopped by ${completionState.isComplete ? "completion delimiter" : "other condition"})`,
+              `[TestingAgent:${correlationId}] Steps used: ${awaitedSteps.length} (unlimited, stopped by ${taskCompleted ? "completeTask tool" : completionState.isComplete ? "completion delimiter" : "other condition"})`,
             );
             yield* Effect.logDebug(
-              `[TestingAgent:${correlationId}] Completed in ${totalDuration}ms. Executions: ${finalExecutions.length}`,
+              `[TestingAgent:${correlationId}] Completed in ${totalDuration}ms. Executions: ${finalExecutions.length}, Task completed: ${taskCompleted}, Tool rejected: ${didReject}`,
             );
 
             const responseText = yield* Effect.tryPromise({
@@ -740,6 +820,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             return {
               executions: finalExecutions,
               response: cleanResponse,
+              taskCompleted,
+              toolRejected: didReject,
             };
           }),
       };
