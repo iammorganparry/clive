@@ -33,7 +33,13 @@ import {
   createWriteTestFileTool,
   createProposeTestPlanTool,
   createCompleteTaskTool,
+  createReplaceInFileTool,
 } from "./tools/index.js";
+import {
+  initializeStreamingWrite,
+  appendStreamingContent,
+  finalizeStreamingWrite,
+} from "./tools/write-test-file.js";
 import type { WriteTestFileOutput } from "./types.js";
 import { KnowledgeContext } from "./knowledge-context.js";
 
@@ -142,6 +148,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Track toolCallIds for file writes to enable streaming
             // Maps filePath to toolCallId
             const fileToToolCallId = new Map<string, string>();
+
+            // Track streaming tool call arguments for writeTestFile
+            // Maps toolCallId to accumulated args text
+            const streamingArgsText = new Map<string, string>();
 
             // Knowledge context for persistent storage across summarization
             const knowledgeContext = new KnowledgeContext();
@@ -301,6 +311,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               ...webTools,
             };
 
+            // Create replaceInFile tool with streaming callback
+            const replaceInFile = createReplaceInFileTool(fileStreamingCallback);
+
             // Add write tools only in act mode
             const tools =
               mode === "act"
@@ -309,6 +322,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                     writeKnowledgeFile:
                       createWriteKnowledgeFileTool(knowledgeFileService),
                     writeTestFile,
+                    replaceInFile,
                   }
                 : baseTools;
 
@@ -505,6 +519,96 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
                   // Use Match for event processing
                   yield* Match.value(event).pipe(
+                    Match.when(
+                      { type: "tool-call-streaming-start" },
+                      (e) =>
+                        Effect.gen(function* () {
+                          if (e.toolName === "writeTestFile" && e.toolCallId) {
+                            yield* Effect.logDebug(
+                              `[TestingAgent:${correlationId}] Streaming writeTestFile started: ${e.toolCallId}`,
+                            );
+                            // Initialize streaming args tracking
+                            streamingArgsText.set(e.toolCallId, "");
+                          }
+                        }),
+                    ),
+                    Match.when(
+                      { type: "tool-call-delta" },
+                      (e) =>
+                        Effect.gen(function* () {
+                          if (
+                            e.toolName === "writeTestFile" &&
+                            e.toolCallId &&
+                            e.argsTextDelta
+                          ) {
+                            // Accumulate args text
+                            const current = streamingArgsText.get(e.toolCallId) || "";
+                            streamingArgsText.set(
+                              e.toolCallId,
+                              current + e.argsTextDelta,
+                            );
+
+                            // Try to extract testContent from accumulated JSON
+                            // This is a best-effort extraction as JSON may be incomplete
+                            const accumulated = streamingArgsText.get(e.toolCallId) || "";
+                            try {
+                              // Try to find testContent field in the JSON string
+                              // Look for patterns like "testContent":"... or "testContent": "..."
+                              const testContentMatch = accumulated.match(
+                                /"testContent"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+                              );
+                              if (testContentMatch?.[1]) {
+                                // Extract and unescape the content
+                                const contentChunk = testContentMatch[1]
+                                  .replace(/\\n/g, "\n")
+                                  .replace(/\\t/g, "\t")
+                                  .replace(/\\"/g, '"')
+                                  .replace(/\\\\/g, "\\");
+
+                                // If we have a targetPath, initialize streaming write
+                                const targetPathMatch = accumulated.match(
+                                  /"targetPath"\s*:\s*"([^"]+)"/,
+                                );
+                                if (targetPathMatch?.[1]) {
+                                  const targetPath = targetPathMatch[1];
+                                  if (!targetPath) {
+                                    yield* Effect.logDebug(
+                                      `[TestingAgent:${correlationId}] Skipping streaming write due to missing targetPath`,
+                                    );
+                                    return;
+                                  }
+                                  // Check if streaming write is initialized
+                                  const stateKey = `${e.toolCallId}-${targetPath}`;
+
+                                  if (!e.toolCallId) {
+                                    yield* Effect.logDebug(
+                                      `[TestingAgent:${correlationId}] Skipping streaming write due to missing toolCallId`,
+                                    );
+                                    return;
+                                  }
+                                  if (!streamingArgsText.has(stateKey)) {
+                                    // Initialize streaming write
+                                    const initResult = yield* Effect.promise(() =>
+                                      initializeStreamingWrite(targetPath, e.toolCallId || ""),
+                                    );  
+                                    if (initResult.success) {
+                                      streamingArgsText.set(stateKey, "initialized");
+                                      fileToToolCallId.set(targetPath, e.toolCallId);
+                                    }
+                                  }
+
+                                  // Append content chunk
+                                  yield* Effect.promise(() =>
+                                    appendStreamingContent(e.toolCallId || "", contentChunk),
+                                  );
+                                }
+                              }
+                            } catch {
+                              // JSON parsing failed, continue accumulating
+                            }
+                          }
+                        }),
+                    ),
                     Match.when({ type: "tool-call" }, (e) =>
                       Effect.gen(function* () {
                         // Check if a previous tool was rejected (rejection cascade)
@@ -549,7 +653,27 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                           const targetPath = args?.targetPath || "";
                           if (targetPath && e.toolCallId) {
                             fileToToolCallId.set(targetPath, e.toolCallId);
+                            
+                            // Finalize streaming write if it was active
+                            if (streamingArgsText.has(e.toolCallId)) {
+                              const finalizeResult = yield* Effect.promise(() =>
+                                finalizeStreamingWrite(e.toolCallId || ""),
+                              );
+                              if (finalizeResult.success) {
+                                yield* Effect.logDebug(
+                                  `[TestingAgent:${correlationId}] Streaming write finalized: ${finalizeResult.filePath}`,
+                                );
+                              }
+                              streamingArgsText.delete(e.toolCallId);
+                            }
                           }
+                        }
+
+                        if (!e.toolCallId) {
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Skipping tool call due to missing toolCallId`,
+                          );
+                          return;
                         }
 
                         // Progress updates

@@ -223,6 +223,150 @@ export const createWriteTestFileTool = (
   });
 
 /**
+ * Streaming helper for writing partial content to files as it arrives
+ * Used by the agent to stream content as AI generates it
+ */
+export interface StreamingWriteState {
+  fileUri: vscode.Uri;
+  document?: vscode.TextDocument;
+  editor?: vscode.TextEditor;
+  accumulatedContent: string;
+  isInitialized: boolean;
+}
+
+const streamingStates = new Map<string, StreamingWriteState>();
+
+/**
+ * Initialize streaming write for a file
+ */
+export async function initializeStreamingWrite(
+  targetPath: string,
+  toolCallId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    return { success: false, error: "No workspace folder found" };
+  }
+
+  const workspaceRoot = workspaceFolders[0].uri;
+
+  // Resolve path
+  let fileUri: vscode.Uri;
+  if (path.isAbsolute(targetPath)) {
+    fileUri = vscode.Uri.file(targetPath);
+  } else {
+    fileUri = vscode.Uri.joinPath(workspaceRoot, targetPath);
+  }
+
+  try {
+    // Ensure parent directory exists
+    const parentDir = vscode.Uri.joinPath(fileUri, "..");
+    try {
+      await vscode.workspace.fs.stat(parentDir);
+    } catch {
+      await vscode.workspace.fs.createDirectory(parentDir);
+    }
+
+    // Create empty file
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+
+    // Open file in editor
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    const editor = await vscode.window.showTextDocument(document, {
+      preview: false,
+      preserveFocus: false,
+    });
+
+    streamingStates.set(toolCallId, {
+      fileUri,
+      document,
+      editor,
+      accumulatedContent: "",
+      isInitialized: true,
+    });
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Append content chunk to streaming write
+ */
+export async function appendStreamingContent(
+  toolCallId: string,
+  contentChunk: string,
+): Promise<{ success: boolean; error?: string }> {
+  const state = streamingStates.get(toolCallId);
+  if (!state || !state.isInitialized) {
+    return { success: false, error: "Streaming write not initialized" };
+  }
+
+  try {
+    state.accumulatedContent += contentChunk;
+
+    if (state.editor && state.document) {
+      const edit = new vscode.WorkspaceEdit();
+      const endPosition = state.document.positionAt(
+        state.accumulatedContent.length - contentChunk.length,
+      );
+      edit.insert(state.fileUri, endPosition, contentChunk);
+      await vscode.workspace.applyEdit(edit);
+
+      // Reload document
+      state.document = await vscode.workspace.openTextDocument(state.fileUri);
+    } else {
+      // Fallback: write accumulated content
+      const buffer = Buffer.from(state.accumulatedContent, "utf-8");
+      await vscode.workspace.fs.writeFile(state.fileUri, buffer);
+    }
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Finalize streaming write and clean up state
+ */
+export async function finalizeStreamingWrite(
+  toolCallId: string,
+): Promise<{ success: boolean; filePath: string; error?: string }> {
+  const state = streamingStates.get(toolCallId);
+  if (!state) {
+    return { success: false, filePath: "", error: "Streaming write not found" };
+  }
+
+  try {
+    // Ensure final content is written
+    const buffer = Buffer.from(state.accumulatedContent, "utf-8");
+    await vscode.workspace.fs.writeFile(state.fileUri, buffer);
+
+    const relativePath = vscode.workspace.asRelativePath(state.fileUri, false);
+
+    // Clean up
+    streamingStates.delete(toolCallId);
+
+    return { success: true, filePath: relativePath };
+  } catch (error) {
+    streamingStates.delete(toolCallId);
+    return {
+      success: false,
+      filePath: vscode.workspace.asRelativePath(state.fileUri, false),
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
  * Default writeTestFileTool without approval registry (for backward compatibility)
  * Use createWriteTestFileTool with approvalRegistry for HITL
  */
