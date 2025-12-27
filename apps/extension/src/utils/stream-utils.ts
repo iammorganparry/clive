@@ -24,8 +24,12 @@ export interface AgentStreamEvent {
  * Convert AI SDK streamText result to Effect Stream
  * Consumes the fullStream async iterable and maps chunks to AgentStreamEvent
  * Uses proper AI SDK types for type safety
+ * 
+ * Note: The second generic parameter of StreamTextResult has a constraint,
+ * but we only use fullStream which doesn't depend on it, so we use a type assertion.
  */
 export function streamFromAI<TOOLS extends ToolSet>(
+  // biome-ignore lint/suspicious/noExplicitAny: AI SDK StreamTextResult requires Output type constraint, but we only use fullStream
   result: StreamTextResult<TOOLS, any>,
 ): Stream.Stream<AgentStreamEvent, Error, never> {
   return Stream.fromAsyncIterable(

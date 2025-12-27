@@ -10,6 +10,16 @@ export interface ParsedPlan {
   fullContent: string;
 }
 
+export interface ParsedPlanSection {
+  sectionNumber: number;
+  name: string; // Section heading (e.g., "Unit Tests for Authentication Logic")
+  testType: "unit" | "integration" | "e2e";
+  targetFilePath: string; // From **File**: link
+  issue?: string;
+  solution?: string;
+  description?: string;
+}
+
 /**
  * Extract summary from body content - first paragraph or first 5 lines
  */
@@ -186,4 +196,77 @@ export function parsePlan(text: string): ParsedPlan | null {
     body,
     fullContent,
   };
+}
+
+/**
+ * Parse Implementation Plan sections from plan content
+ * Extracts individual test suites from numbered sections in the Implementation Plan
+ * Each section becomes a queue item
+ */
+export function parsePlanSections(planContent: string): ParsedPlanSection[] {
+  const sections: ParsedPlanSection[] = [];
+
+  // Find the Implementation Plan section
+  const implementationPlanMatch = planContent.match(/##\s+Implementation Plan\s*\n([\s\S]*?)(?=\n##\s+|$)/i);
+  if (!implementationPlanMatch) {
+    return sections;
+  }
+
+  const implementationPlanContent = implementationPlanMatch[1];
+
+  // Match numbered sections: ### 1. Section Name
+  // Pattern: ### N. Section Name followed by content until next ### or end
+  const sectionPattern = /###\s+(\d+)\.\s+(.+?)(?=\n###\s+\d+\.|$)/gs;
+  let match: RegExpExecArray | null = null;
+
+  while (true) {
+    match = sectionPattern.exec(implementationPlanContent);
+    if (match === null) {
+      break;
+    }
+    const sectionNumber = parseInt(match[1], 10);
+    const sectionHeader = match[2].trim();
+    const sectionContent = match[0];
+
+    // Extract test type from section name (case-insensitive)
+    let testType: "unit" | "integration" | "e2e" = "unit";
+    const lowerHeader = sectionHeader.toLowerCase();
+    if (lowerHeader.includes("integration")) {
+      testType = "integration";
+    } else if (lowerHeader.includes("e2e") || lowerHeader.includes("end-to-end") || lowerHeader.includes("e2e")) {
+      testType = "e2e";
+    } else if (lowerHeader.includes("unit")) {
+      testType = "unit";
+    }
+
+    // Extract file path from **File**: [`path`](link) pattern
+    const fileMatch = sectionContent.match(/\*\*File\*\*:\s*\[`([^`]+)`\]/);
+    const targetFilePath = fileMatch ? fileMatch[1] : "";
+
+    // Extract issue from **Issue**: line
+    const issueMatch = sectionContent.match(/\*\*Issue\*\*:\s*(.+?)(?=\n\*\*|$)/s);
+    const issue = issueMatch ? issueMatch[1].trim() : undefined;
+
+    // Extract solution from **Solution**: line
+    const solutionMatch = sectionContent.match(/\*\*Solution\*\*:\s*(.+?)(?=\n\*\*|$)/s);
+    const solution = solutionMatch ? solutionMatch[1].trim() : undefined;
+
+    // Extract description (lines to cover section or other content)
+    const linesToCoverMatch = sectionContent.match(/Lines to cover:\s*\n((?:- .+\n?)+)/);
+    const description = linesToCoverMatch ? linesToCoverMatch[1].trim() : undefined;
+
+    if (targetFilePath) {
+      sections.push({
+        sectionNumber,
+        name: sectionHeader,
+        testType,
+        targetFilePath,
+        issue,
+        solution,
+        description,
+      });
+    }
+  }
+
+  return sections;
 }
