@@ -125,6 +125,7 @@ export interface ChangesetChatContext {
   planContent: string | null; // Plan content extracted from scratchpad file
   testExecutions: TestFileExecution[]; // Accumulated test execution results
   accumulatedTestOutput: Map<string, string>; // Map of toolCallId -> accumulated output for streaming
+  accumulatedFileContent: Map<string, string>; // Map of toolCallId -> accumulated file content for streaming
 }
 
 interface CachedConversation {
@@ -159,6 +160,7 @@ export type ChangesetChatEvent =
         | "tool-call"
         | "tool-result"
         | "tool-output-streaming"
+        | "file-output-streaming"
         | "reasoning"
         | "usage";
       content?: string;
@@ -168,6 +170,12 @@ export type ChangesetChatEvent =
         toolCallId: string;
         command: string;
         output: string;
+      };
+      streamingFileOutput?: {
+        toolCallId: string;
+        filePath: string;
+        content: string;
+        isComplete: boolean;
       };
       usage?: LanguageModelUsage;
     }
@@ -768,6 +776,53 @@ export const changesetChatMachine = setup({
         usage: event.usage ?? null,
       };
     }),
+    updateFileStreamingContent: assign(({ context, event }) => {
+      if (
+        event.type !== "RESPONSE_CHUNK" ||
+        event.chunkType !== "file-output-streaming"
+      )
+        return {};
+      if (!event.streamingFileOutput) return {};
+      const { toolCallId, content } = event.streamingFileOutput;
+      const updatedAccumulated = new Map(context.accumulatedFileContent);
+      updatedAccumulated.set(toolCallId, content);
+
+      // Update tool event with streaming content
+      const updatedToolEvents = context.toolEvents.map((t) => {
+        if (t.toolCallId === toolCallId && t.toolName === "writeTestFile") {
+          return {
+            ...t,
+            // Store streaming content in a custom field for UI access
+            streamingContent: content,
+          };
+        }
+        return t;
+      });
+
+      // Update MessagePart with streaming content
+      const updatedMessages = context.messages.map((msg) => {
+        const updatedParts = msg.parts.map((part) => {
+          if (
+            part.type.startsWith("tool-") &&
+            "toolCallId" in part &&
+            part.toolCallId === toolCallId
+          ) {
+            return {
+              ...part,
+              streamingContent: content,
+            };
+          }
+          return part;
+        });
+        return { ...msg, parts: updatedParts };
+      });
+
+      return {
+        accumulatedFileContent: updatedAccumulated,
+        toolEvents: updatedToolEvents,
+        messages: updatedMessages,
+      };
+    }),
     reset: assign({
       messages: () => [],
       streamingContent: () => "",
@@ -783,6 +838,7 @@ export const changesetChatMachine = setup({
       usage: () => null,
       planContent: () => null,
       testExecutions: () => [],
+      accumulatedFileContent: () => new Map(),
     }),
     cancelStream: assign({
       hasCompletedAnalysis: () => true, // Re-enable input
@@ -810,6 +866,7 @@ export const changesetChatMachine = setup({
     planContent: null,
     testExecutions: [],
     accumulatedTestOutput: new Map(),
+    accumulatedFileContent: new Map(),
   }),
   states: {
     idle: {
@@ -909,6 +966,7 @@ export const changesetChatMachine = setup({
             "updateScratchpadTodos",
             "updateTestExecutionFromStream",
             "updateTestExecution",
+            "updateFileStreamingContent",
             "updateUsage",
           ],
         },

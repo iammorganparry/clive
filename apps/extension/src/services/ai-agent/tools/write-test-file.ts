@@ -6,10 +6,24 @@ import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 
 /**
+ * Streaming file output callback type
+ * Receives file path and content chunks as they're written
+ */
+export type StreamingFileOutputCallback = (chunk: {
+  filePath: string;
+  content: string;
+  isComplete: boolean;
+}) => void;
+
+/**
  * Factory function to create writeTestFileTool with approval registry
  * The tool requires a valid proposalId from an approved proposeTest call
+ * Supports streaming file content as it's written
  */
-export const createWriteTestFileTool = (approvalRegistry: Set<string>) =>
+export const createWriteTestFileTool = (
+  approvalRegistry: Set<string>,
+  onStreamingOutput?: StreamingFileOutputCallback,
+) =>
   tool({
     description:
       "Write or update a test file. Creates directories if needed. Can overwrite existing files. Use any unique string as proposalId - it will be auto-approved.",
@@ -94,21 +108,98 @@ export const createWriteTestFileTool = (approvalRegistry: Set<string>) =>
         // Normalize escaped characters - convert literal escape sequences to actual characters
         const normalizedContent = normalizeEscapedChars(testContent);
 
-        // Write file
-        const content = Buffer.from(normalizedContent, "utf-8");
-        await vscode.workspace.fs.writeFile(fileUri, content);
-
+        // Use targetPath for consistency with tool args (for streaming callback lookup)
+        // Convert to relative path for return value
         const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+        const callbackPath = path.isAbsolute(targetPath)
+          ? relativePath
+          : targetPath; // Use original targetPath if relative, otherwise use computed relativePath
 
-        // Open the file in the editor so the user can see what was created
+        // Create empty file and open it immediately for streaming
+        let document: vscode.TextDocument;
         try {
-          const document = await vscode.workspace.openTextDocument(fileUri);
+          // Create empty file first
+          await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+          
+          // Open the file in the editor immediately
+          document = await vscode.workspace.openTextDocument(fileUri);
           await vscode.window.showTextDocument(document, {
             preview: false, // Keep the tab open (not preview mode)
             preserveFocus: false, // Focus the new editor tab
           });
-        } catch {
-          // If opening fails, don't fail the whole operation - file was still written
+
+          // Emit file-created event
+          if (onStreamingOutput) {
+            onStreamingOutput({
+              filePath: callbackPath,
+              content: "",
+              isComplete: false,
+            });
+          }
+        } catch (_error) {
+          // If opening fails, fall back to regular write
+          const content = Buffer.from(normalizedContent, "utf-8");
+          await vscode.workspace.fs.writeFile(fileUri, content);
+          
+          return {
+            success: true,
+            filePath: relativePath,
+            message: fileExists
+              ? `Test file updated: ${relativePath}`
+              : `Test file created: ${relativePath}`,
+          };
+        }
+
+        // Stream content incrementally using TextEditor API
+        // Chunk size: approximately 200 characters per chunk for smooth streaming
+        const chunkSize = 200;
+        let accumulatedContent = "";
+        
+        // Get the active text editor for this document
+        const editor = vscode.window.visibleTextEditors.find(
+          (e) => e.document.uri.toString() === fileUri.toString(),
+        );
+        
+        if (editor) {
+          // Use TextEditor for incremental writes
+          for (let i = 0; i < normalizedContent.length; i += chunkSize) {
+            const chunk = normalizedContent.slice(i, i + chunkSize);
+            accumulatedContent += chunk;
+            
+            // Append chunk to document
+            const edit = new vscode.WorkspaceEdit();
+            const currentLength = accumulatedContent.length - chunk.length;
+            const endPosition = document.positionAt(currentLength);
+            edit.insert(fileUri, endPosition, chunk);
+            await vscode.workspace.applyEdit(edit);
+            
+            // Reload document to get updated content
+            document = await vscode.workspace.openTextDocument(fileUri);
+            
+          // Emit streaming chunk
+          if (onStreamingOutput) {
+            onStreamingOutput({
+              filePath: callbackPath,
+              content: accumulatedContent,
+              isComplete: i + chunkSize >= normalizedContent.length,
+            });
+          }
+            
+            // Small delay to make streaming visible
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+        } else {
+          // Fallback: write entire file at once if editor not available
+          const content = Buffer.from(normalizedContent, "utf-8");
+          await vscode.workspace.fs.writeFile(fileUri, content);
+          
+          if (onStreamingOutput) {
+            onStreamingOutput({
+              filePath: relativePath,
+              content: normalizedContent,
+              isComplete: true,
+            });
+          }
         }
 
         return {
@@ -135,4 +226,7 @@ export const createWriteTestFileTool = (approvalRegistry: Set<string>) =>
  * Default writeTestFileTool without approval registry (for backward compatibility)
  * Use createWriteTestFileTool with approvalRegistry for HITL
  */
-export const writeTestFileTool = createWriteTestFileTool(new Set<string>());
+export const writeTestFileTool = createWriteTestFileTool(
+  new Set<string>(),
+  undefined,
+);

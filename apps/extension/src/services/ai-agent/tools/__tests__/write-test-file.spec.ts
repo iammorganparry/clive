@@ -53,7 +53,7 @@ vi.mock("vscode", () => ({
       writeFile: vi.fn(),
       createDirectory: vi.fn(),
     },
-    asRelativePath: vi.fn((uri: any) => {
+    asRelativePath: vi.fn((uri: vscode.Uri | string) => {
       if (typeof uri === "string") return uri;
       return uri.fsPath?.replace("/test-workspace/", "") || uri.path;
     }),
@@ -65,8 +65,13 @@ vi.mock("vscode", () => ({
       scheme: "file",
       path: path,
     })),
-    joinPath: vi.fn((base: any, ...paths: string[]) => {
-      const basePath = base.fsPath || base.path || base;
+    joinPath: vi.fn((base: vscode.Uri | string, ...paths: string[]) => {
+      const basePath =
+        typeof base === "string"
+          ? base
+          : (base as { fsPath?: string; path?: string }).fsPath ||
+            (base as { fsPath?: string; path?: string }).path ||
+            "";
       const joined = paths.join("/").replace(/^\.\./, "");
       return {
         fsPath: `${basePath}/${joined}`.replace(/\/+/g, "/"),
@@ -82,8 +87,12 @@ vi.mock("vscode", () => ({
 
 describe("writeTestFileTool", () => {
   let approvalRegistry: Set<string>;
-  let mockFs: any;
-  let mockWorkspace: any;
+  let mockFs: {
+    stat: ReturnType<typeof vi.fn>;
+    writeFile: ReturnType<typeof vi.fn>;
+    createDirectory: ReturnType<typeof vi.fn>;
+  };
+  let mockWorkspace: typeof vscode.workspace;
 
   beforeEach(() => {
     approvalRegistry = new Set<string>();

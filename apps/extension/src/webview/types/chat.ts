@@ -31,6 +31,7 @@ export type MessagePart =
       input?: unknown;
       output?: unknown;
       errorText?: string;
+      streamingContent?: string; // For file-writing tools that stream content
     };
 
 export interface ChatMessage {

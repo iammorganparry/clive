@@ -36,6 +36,7 @@ interface ToolCallCardProps {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  streamingContent?: string; // For file-writing tools that stream content
 }
 
 // Tool display config removed - using natural language summaries instead
@@ -367,12 +368,44 @@ const extractFileInfo = (
   toolName: string,
   input?: unknown,
   output?: unknown,
+  streamingContent?: string,
 ): { filePath: string; content: string; language: BundledLanguage } | null => {
   if (!isFileWritingTool(toolName)) {
     return null;
   }
 
-  // Try output first
+  // Prefer streaming content if available (for real-time preview)
+  if (streamingContent) {
+    let filePath: string | undefined;
+
+    if (toolName === "writeTestFile") {
+      if (output && typeof output === "object") {
+        const out = output as WriteTestFileOutput;
+        filePath = out.filePath || out.path;
+      }
+      if (!filePath && input && typeof input === "object" && isWriteTestFileArgs(input)) {
+        filePath = input.targetPath || input.filePath;
+      }
+    } else if (toolName === "writeKnowledgeFile") {
+      if (output && typeof output === "object") {
+        const out = output as WriteKnowledgeFileOutput;
+        filePath = out.path || out.relativePath;
+      }
+      if (!filePath && input && typeof input === "object" && isWriteKnowledgeFileArgs(input)) {
+        filePath = input.filePath;
+      }
+    }
+
+    if (filePath) {
+      return {
+        filePath,
+        content: streamingContent,
+        language: detectLanguageFromPath(filePath),
+      };
+    }
+  }
+
+  // Fallback to output/input content
   if (output && typeof output === "object") {
     let filePath: string | undefined;
     let content: string | undefined;
@@ -762,17 +795,20 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   input,
   output,
   errorText,
+  streamingContent,
 }) => {
   const summary = generateToolSummary(toolName, input, output);
   const hasError = state === "output-error" || !!errorText;
   const filePaths = extractFilePaths(toolName, input, output);
 
   // Check if this is a file-writing tool with code content
-  const fileInfo = extractFileInfo(toolName, input, output);
+  // Use streaming content if available, otherwise fall back to output/input
+  const fileInfo = extractFileInfo(toolName, input, output, streamingContent);
+  const isStreaming = !!streamingContent && state !== "output-available";
   const isCodeWritingTool =
     isFileWritingTool(toolName) &&
     fileInfo &&
-    state === "output-available" &&
+    (state === "output-available" || isStreaming) &&
     !errorText;
 
   // Handler to open file
@@ -979,6 +1015,12 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
         {/* Code Writing Tools - Show code prominently */}
         {isCodeWritingTool && fileInfo ? (
           <div className="mt-2">
+            {isStreaming && (
+              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+                <span>Streaming file content...</span>
+              </div>
+            )}
             <CodeBlock
               code={fileInfo.content}
               language={fileInfo.language}
