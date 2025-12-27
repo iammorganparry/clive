@@ -15,6 +15,14 @@ export { proposeTestTool, createProposeTestTool } from "./propose-test.js";
 
 export { createWriteKnowledgeFileTool } from "./write-knowledge-file.js";
 export { createSearchKnowledgeTool } from "./search-knowledge.js";
+export {
+  createProposeTestPlanTool,
+  proposeTestPlanTool,
+} from "./propose-test-plan.js";
+export {
+  createCompleteTaskTool,
+  completeTaskTool,
+} from "./complete-task.js";
 
 // Web search and scraping tools (Firecrawl)
 export { createWebTools, searchTool, scrapeTool } from "./web-tools.js";
