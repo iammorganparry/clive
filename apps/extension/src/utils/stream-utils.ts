@@ -11,13 +11,16 @@ export interface AgentStreamEvent {
     | "tool-result"
     | "step-finish"
     | "finish"
-    | "thinking";
+    | "thinking"
+    | "tool-call-streaming-start"
+    | "tool-call-delta";
   content?: string;
   toolName?: string;
   toolArgs?: unknown;
   toolResult?: unknown;
   toolCallId?: string;
   stepIndex?: number;
+  argsTextDelta?: string; // For streaming partial tool arguments
 }
 
 /**
@@ -98,6 +101,34 @@ export function streamFromAI<TOOLS extends ToolSet>(
           return {
             type: "thinking" as const,
             content: thinkingChunk.text,
+          } satisfies AgentStreamEvent;
+        }),
+        Match.when("tool-input-start", () => {
+          // Handle streaming tool call start event
+          const streamingStart = chunk as unknown as {
+            type: "tool-input-start";
+            toolCallId: string;
+            toolName: string;
+          };
+          return {
+            type: "tool-call-streaming-start" as const,
+            toolName: streamingStart.toolName,
+            toolCallId: streamingStart.toolCallId,
+          } satisfies AgentStreamEvent;
+        }),
+        Match.when("tool-input-delta", () => {
+          // Handle streaming tool call argument deltas
+          const delta = chunk as unknown as {
+            type: "tool-input-delta";
+            toolCallId: string;
+            toolName: string;
+            argsTextDelta: string;
+          };
+          return {
+            type: "tool-call-delta" as const,
+            toolName: delta.toolName,
+            toolCallId: delta.toolCallId,
+            argsTextDelta: delta.argsTextDelta,
           } satisfies AgentStreamEvent;
         }),
         Match.orElse(() => ({

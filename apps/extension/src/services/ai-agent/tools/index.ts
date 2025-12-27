@@ -23,6 +23,10 @@ export {
   createCompleteTaskTool,
   completeTaskTool,
 } from "./complete-task.js";
+export {
+  createReplaceInFileTool,
+  replaceInFileTool,
+} from "./replace-in-file.js";
 
 // Web search and scraping tools (Firecrawl)
 export { createWebTools, searchTool, scrapeTool } from "./web-tools.js";

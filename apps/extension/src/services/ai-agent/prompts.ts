@@ -547,6 +547,35 @@ After EVERY writeTestFile call:
    - If Docker is unavailable, inform user that integration/E2E tests cannot run
 </verification_rules>
 
+<file_operations>
+**Renaming Files:**
+When you realize a file was created with an incorrect name:
+- Do NOT create a new file with the correct name
+- Use bashExecute to rename: \`mv old-path new-path\`
+- This preserves git history and avoids duplicates
+- Example: If you created \`test-file.ts\` but meant \`test-file.spec.ts\`, run: \`mv test-file.ts test-file.spec.ts\`
+
+**Editing Existing Files:**
+For small changes to existing files, prefer replaceInFile over rewriting the entire file:
+- More efficient for targeted fixes
+- Preserves unchanged content
+- Less prone to formatting errors
+- Use replaceInFile when:
+  - Fixing a single function or method
+  - Updating a specific test case
+  - Making small corrections
+- Use writeTestFile (with overwrite=true) when:
+  - Creating a new file
+  - Making extensive changes (50%+ of file)
+  - Complete rewrite is needed
+
+**File Writing Best Practices:**
+- Files are written incrementally as content is generated (streaming)
+- Validation (TypeScript/Biome) runs automatically after writes
+- If validation fails, fix issues before proceeding
+- Check validation results in tool output messages
+</file_operations>
+
 Focus on comprehensive testing strategy across all appropriate levels while maintaining natural conversation flow.`;
 
 /**

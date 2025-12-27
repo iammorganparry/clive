@@ -36,7 +36,7 @@ export type QueueItemProps = ComponentProps<"li">;
 export const QueueItem = ({ className, ...props }: QueueItemProps) => (
   <li
     className={cn(
-      "group flex flex-row items-center gap-2 rounded-md px-2 py-0.5 text-sm transition-colors hover:bg-muted",
+      "group flex flex-row items-center gap-2 px-2 py-0.5 text-sm",
       className,
     )}
     {...props}
@@ -188,7 +188,7 @@ export const QueueList = ({
 }: QueueListProps) => (
   <ScrollArea className={cn("mt-1", className)} {...props}>
     <div className="max-h-40 pr-4">
-      <ul>{children}</ul>
+      <ul className="divide-y divide-border">{children}</ul>
     </div>
   </ScrollArea>
 );
@@ -215,7 +215,7 @@ export const QueueSectionTrigger = ({
   <CollapsibleTrigger asChild>
     <button
       className={cn(
-        "group flex w-full items-center justify-between rounded-md bg-muted/40 px-2 py-1 text-left font-medium text-muted-foreground text-sm transition-colors hover:bg-muted",
+        "group flex w-full items-center justify-between px-2 py-1 text-left font-medium text-muted-foreground text-sm",
         className,
       )}
       type="button"
@@ -258,7 +258,7 @@ export const QueueSectionContent = ({
   className,
   ...props
 }: QueueSectionContentProps) => (
-  <CollapsibleContent className={cn(className)} {...props} />
+  <CollapsibleContent className={cn("divide-y divide-border", className)} {...props} />
 );
 
 export type QueueProps = ComponentProps<"div">;
@@ -266,7 +266,7 @@ export type QueueProps = ComponentProps<"div">;
 export const Queue = ({ className, ...props }: QueueProps) => (
   <div
     className={cn(
-      "flex flex-col gap-1 bg-background px-1 py-1",
+      "flex flex-col divide-y divide-border",
       className,
     )}
     {...props}
