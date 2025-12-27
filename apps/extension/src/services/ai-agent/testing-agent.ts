@@ -148,6 +148,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const executionsRef = yield* Ref.make<Execution[]>([]);
             const didRejectToolRef = yield* Ref.make<boolean>(false);
             const taskCompletedRef = yield* Ref.make<boolean>(false);
+            const consecutiveMistakeRef = yield* Ref.make<number>(0);
+
+            // Maximum consecutive mistakes before emitting warning
+            const MAX_CONSECUTIVE_MISTAKES = 5;
 
             // Track toolCallIds for bash commands to enable streaming
             // Maps command to toolCallId (command may not be unique, but we'll use the most recent)
@@ -1062,6 +1066,67 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                               : "output-available",
                           }),
                         );
+
+                        // Track consecutive mistakes for error detection
+                        const toolFailed =
+                          actualOutput &&
+                          typeof actualOutput === "object" &&
+                          "success" in actualOutput &&
+                          actualOutput.success === false;
+
+                        // Check for new diagnostic problems in the response message
+                        const hasNewProblems =
+                          actualOutput &&
+                          typeof actualOutput === "object" &&
+                          "message" in actualOutput &&
+                          typeof actualOutput.message === "string" &&
+                          actualOutput.message.includes("New diagnostic problems introduced");
+
+                        // Increment mistake count if tool failed or has new problems
+                        if (toolFailed || hasNewProblems || wasRejected) {
+                          yield* Ref.update(consecutiveMistakeRef, (n) => n + 1);
+                          const mistakeCount = yield* Ref.get(consecutiveMistakeRef);
+
+                          yield* Effect.logDebug(
+                            `[TestingAgent:${correlationId}] Consecutive mistakes: ${mistakeCount}`,
+                          );
+
+                          // Emit diagnostic problems event if detected
+                          if (hasNewProblems) {
+                            progressCallback?.(
+                              "diagnostic-problems",
+                              JSON.stringify({
+                                type: "diagnostic-problems",
+                                toolCallId: e.toolCallId,
+                                toolName: e.toolName,
+                              }),
+                            );
+                          }
+
+                          // Check if mistake limit reached
+                          if (mistakeCount >= MAX_CONSECUTIVE_MISTAKES) {
+                            progressCallback?.(
+                              "mistake-limit",
+                              JSON.stringify({
+                                type: "mistake-limit",
+                                count: mistakeCount,
+                                message: `Too many consecutive errors (${mistakeCount}). The model may need guidance or a different approach.`,
+                              }),
+                            );
+
+                            yield* Effect.logWarning(
+                              `[TestingAgent:${correlationId}] Mistake limit reached: ${mistakeCount}`,
+                            );
+                          }
+                        } else if (
+                          actualOutput &&
+                          typeof actualOutput === "object" &&
+                          "success" in actualOutput &&
+                          actualOutput.success === true
+                        ) {
+                          // Reset mistake count on successful tool execution
+                          yield* Ref.set(consecutiveMistakeRef, 0);
+                        }
 
                         // Update executions ref
                         if (e.toolName === "writeTestFile" && e.toolResult) {

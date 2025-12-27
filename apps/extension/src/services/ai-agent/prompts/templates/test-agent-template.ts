@@ -11,6 +11,8 @@ export const testAgentTemplate = `{{AGENT_ROLE}}
 
 {{WORKFLOW}}
 
+{{PATTERN_DISCOVERY}}
+
 {{ITERATIVE_TESTING}}
 
 {{TASK_INSTRUCTIONS}}

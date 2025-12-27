@@ -2,8 +2,18 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
+import { Runtime } from "effect";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 import { normalizeEscapedChars } from "../../../utils/string-utils.js";
+import {
+  getDiagnostics,
+  getNewProblems,
+  formatDiagnosticsMessage,
+} from "../../diagnostics-service.js";
+import {
+  formatFileEditWithoutUserChanges,
+  formatFileEditError,
+} from "../response-formatter.js";
 
 /**
  * Streaming file output callback type
@@ -78,6 +88,11 @@ export const createWriteTestFileTool = (
       }
 
       try {
+        // Capture pre-edit diagnostics
+        const preEditDiagnostics = await Runtime.runPromise(
+          Runtime.defaultRuntime,
+        )(getDiagnostics(fileUri));
+
         // Check if file exists
         let fileExists = false;
         try {
@@ -202,21 +217,79 @@ export const createWriteTestFileTool = (
           }
         }
 
+        // Capture post-edit diagnostics and detect auto-formatting
+        const preSaveContent = normalizedContent;
+        
+        // Read the actual file content after save (to detect auto-formatting)
+        const savedDoc = await vscode.workspace.openTextDocument(fileUri);
+        const postSaveContent = savedDoc.getText();
+
+        // Get post-edit diagnostics
+        const postEditDiagnostics = await Runtime.runPromise(
+          Runtime.defaultRuntime,
+        )(getDiagnostics(fileUri));
+
+        const newProblems = getNewProblems(
+          preEditDiagnostics,
+          postEditDiagnostics,
+        );
+
+        const newProblemsMessage =
+          newProblems.length > 0
+            ? formatDiagnosticsMessage(newProblems)
+            : undefined;
+
+        // Normalize EOL for comparison
+        const normalizeEOL = (content: string): string => {
+          return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        };
+
+        const normalizedPreSave = normalizeEOL(preSaveContent);
+        const normalizedPostSave = normalizeEOL(postSaveContent);
+
+        // Detect auto-formatting changes
+        const autoFormattingEdits =
+          normalizedPreSave !== normalizedPostSave
+            ? `Auto-formatting was applied by the editor`
+            : undefined;
+
+        // Format response for AI
+        const message = formatFileEditWithoutUserChanges(
+          relativePath,
+          postSaveContent,
+          autoFormattingEdits,
+          newProblemsMessage,
+        );
+
         return {
           success: true,
           filePath: relativePath,
-          message: fileExists
-            ? `Test file updated: ${relativePath}`
-            : `Test file created: ${relativePath}`,
+          message,
         };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+
+        // Try to read current file content for error context
+        let originalContent: string | undefined;
+        try {
+          const doc = await vscode.workspace.openTextDocument(fileUri);
+          originalContent = doc.getText();
+        } catch {
+          // Ignore errors reading file
+        }
+
+        const errorResponse = formatFileEditError(
+          relativePath,
+          errorMessage,
+          originalContent,
+        );
+
         return {
           success: false,
           filePath: relativePath,
-          message: `Failed to write test file: ${errorMessage}`,
+          message: errorResponse,
         };
       }
     },

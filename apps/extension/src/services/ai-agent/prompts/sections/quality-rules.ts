@@ -73,6 +73,29 @@ vi.mock('./api', () => ({
 // Source: function createUser(name: string, email: string): User
 createUser('John', 'john@example.com'); // matches signature exactly
 \\\`\\\`\\\`
+
+5. **DRY TEST CODE**:
+   - ALWAYS check for existing mock factories before creating mocks
+   - NEVER duplicate mock code - import from centralized factories
+   - If a mock doesn't exist, add it to the factory (don't create inline)
+   - Follow existing naming conventions for mocks (e.g., \\\`createMockXXX\\\`)
+   - Use existing test helpers and utilities
+
+**Mock Factory Examples:**
+
+\\\`\\\`\\\`typescript
+// GOOD: Using centralized mock factory
+import { createVSCodeMock } from "../__tests__/mock-factories";
+const vscode = createVSCodeMock({
+  workspaceFolders: [{ uri: { fsPath: "/test" } }],
+});
+
+// BAD: Inline mock duplication
+const vscode = {
+  workspace: { workspaceFolders: [{ uri: { fsPath: "/test" } }] },
+  // ... duplicating factory code
+};
+\\\`\\\`\\\`
 </test_quality_rules>`,
   );
 

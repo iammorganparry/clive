@@ -12,6 +12,7 @@ import { fileOperations } from "./file-operations.js";
 import { frameworkGuides } from "./framework-guides.js";
 import { iterativeTesting } from "./iterative-testing.js";
 import { knowledgeBase } from "./knowledge-base.js";
+import { patternDiscovery } from "./pattern-discovery.js";
 import { qualityRules } from "./quality-rules.js";
 import { sandbox } from "./sandbox.js";
 import { scratchpad } from "./scratchpad.js";
@@ -30,6 +31,7 @@ export const sectionRegistry: SectionRegistry = {
   [SectionId.KnowledgeBase]: knowledgeBase,
   [SectionId.Scratchpad]: scratchpad,
   [SectionId.Workflow]: workflow,
+  [SectionId.PatternDiscovery]: patternDiscovery,
   [SectionId.IterativeTesting]: iterativeTesting,
   [SectionId.TaskInstructions]: taskInstructions,
   [SectionId.AgentRules]: agentRules,
@@ -54,6 +56,7 @@ export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
     SectionId.KnowledgeBase,
     SectionId.Scratchpad,
     SectionId.Workflow,
+    SectionId.PatternDiscovery,
     SectionId.IterativeTesting,
     SectionId.TaskInstructions,
     SectionId.AgentRules,

@@ -24,3 +24,9 @@ export {
   createMockDiffContentProvider,
 } from "./service-mocks.js";
 
+export {
+  createMockDiagnostic,
+  createMockDiagnosticWithRange,
+  createPrePostDiagnosticScenario,
+} from "./diagnostics-mock.js";
+

@@ -77,17 +77,38 @@ After edits, the tool returns:
 - User edits (if user modified before approving) - incorporate these
 - New diagnostic problems (if any) - fix these in next edit
 
+**Error Handling After File Edits:**
+After each file write tool (writeTestFile, replaceInFile), you will receive:
+1. Final file content - USE THIS as baseline for any future edits
+2. Auto-formatting changes - Learn from these for accurate SEARCH blocks
+3. New diagnostic errors - YOU MUST FIX THESE before proceeding
+
+When new diagnostic errors are reported:
+- STOP and analyze the error messages
+- Fix the errors using replaceInFile with targeted SEARCH/REPLACE
+- Verify the fix by checking the next tool response
+- Do NOT proceed to new tests until errors are resolved
+
+The system tracks consecutive mistakes:
+- Failing to fix errors or repeated tool failures count as mistakes
+- After 5 consecutive mistakes, the system will warn that guidance may be needed
+- Successful tool execution resets the mistake counter
+- Always address diagnostic errors immediately to avoid accumulating mistakes
+
 **Best Practices:**
 - Default to replaceInFile with 'diff' parameter for most changes
 - Batch related changes in a single replaceInFile call with multiple blocks
 - Always use the final_file_content from responses as the baseline for future edits
 - Pay attention to auto-formatting changes to improve future SEARCH blocks
+- Address diagnostic errors immediately before continuing
 
 **File Writing Best Practices:**
 - Files are written incrementally as content is generated (streaming)
 - Validation (TypeScript/Biome) runs automatically after writes
 - If validation fails, fix issues before proceeding
 - Check validation results in tool output messages
+- New diagnostic problems will be reported in the tool response
+- You MUST fix all reported diagnostic problems before proceeding
 </file_operations>`,
   );
 
