@@ -375,11 +375,13 @@ export const changesetChatMachine = setup({
         }
       }
 
-      // Also check assistant message text content for checkboxes
-      // This handles cases where the agent includes TODOs in markdown responses
+      // Also check assistant message text content and streaming content for checkboxes and plans
+      // This handles cases where the agent includes TODOs or plans in markdown responses
       const lastMessage = context.messages[context.messages.length - 1];
+      let textToCheck = "";
+
+      // Collect text from last assistant message
       if (lastMessage && lastMessage.role === "assistant") {
-        // Collect all text parts from the assistant message
         const textParts = lastMessage.parts
           .filter(
             (part): part is { type: "text"; text: string } =>
@@ -387,17 +389,44 @@ export const changesetChatMachine = setup({
           )
           .map((part) => part.text)
           .join("\n");
+        textToCheck = textParts;
+      }
 
-        if (textParts.trim().length > 0) {
-          try {
-            const todos = parseScratchpad(textParts);
-            // Only update if we found actual TODOs
-            if (todos.length > 0) {
-              return { scratchpadTodos: todos };
-            }
-          } catch (_error) {
-            // Silently ignore parsing errors for message content
+      // Also check streaming content if we're currently streaming
+      // This catches plans that are being streamed but not yet in message parts
+      if (context.streamingContent.trim().length > 0) {
+        textToCheck = textToCheck
+          ? `${textToCheck}\n${context.streamingContent}`
+          : context.streamingContent;
+      }
+
+      if (textToCheck.trim().length > 0) {
+        const updates: Partial<ChangesetChatContext> = {};
+
+        // Parse for scratchpad TODOs
+        try {
+          const todos = parseScratchpad(textToCheck);
+          // Only update if we found actual TODOs
+          if (todos.length > 0) {
+            updates.scratchpadTodos = todos;
           }
+        } catch (_error) {
+          // Silently ignore parsing errors for message content
+        }
+
+        // Parse for plan content (test proposal)
+        try {
+          const plan = parsePlan(textToCheck);
+          if (plan) {
+            updates.planContent = plan.fullContent;
+          }
+        } catch (_error) {
+          // Silently ignore parsing errors for message content
+        }
+
+        // Return updates if we found anything
+        if (Object.keys(updates).length > 0) {
+          return updates;
         }
       }
 
@@ -796,7 +825,7 @@ export const changesetChatMachine = setup({
           {
             guard: "shouldStartFreshAnalysis",
             target: "analyzing",
-            actions: ["addInitialMessage"],
+            actions: ["addInitialMessage", "markHistoryLoaded"],
           },
           {
             // Backend history received but cache is newer or already loaded

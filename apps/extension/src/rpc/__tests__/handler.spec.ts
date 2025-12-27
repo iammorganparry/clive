@@ -98,6 +98,7 @@ describe("handleRpcMessage", () => {
       } as unknown as RpcContext["cypressDetector"],
       gitService: {
         getBranchChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
+        getUncommittedChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
       },
       diffProvider: {} as unknown as RpcContext["diffProvider"],
     } as unknown as RpcContext;

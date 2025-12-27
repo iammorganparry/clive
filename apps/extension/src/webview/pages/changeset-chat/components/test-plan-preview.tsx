@@ -1,4 +1,5 @@
 import type React from "react";
+import { useCallback } from "react";
 import {
   Plan,
   PlanHeader,
@@ -6,22 +7,36 @@ import {
   PlanDescription,
   PlanContent,
   PlanTrigger,
+  PlanAction,
 } from "@clive/ui/components/ai-elements/plan";
+import { Button } from "@clive/ui/button";
 import { Streamdown } from "streamdown";
 import { cn } from "@clive/ui/lib/utils";
+import { useRpc } from "../../../rpc/provider.js";
 import type { ParsedPlan } from "../utils/parse-plan.js";
 
 export interface TestPlanPreviewProps {
   plan: ParsedPlan;
   isStreaming?: boolean;
   className?: string;
+  filePath?: string | null;
 }
 
 export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
   plan,
   isStreaming = false,
   className,
+  filePath,
 }) => {
+  const rpc = useRpc();
+  const openFileMutation = rpc.system.openFile.useMutation();
+
+  const handleReadMore = useCallback(() => {
+    if (filePath) {
+      openFileMutation.mutate({ filePath });
+    }
+  }, [filePath, openFileMutation]);
+
   return (
     <Plan
       defaultOpen={true}
@@ -35,7 +50,21 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             <PlanDescription>{plan.description}</PlanDescription>
           )}
         </div>
-        <PlanTrigger />
+        <div className="flex items-center gap-2">
+          {filePath && (
+            <PlanAction>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReadMore}
+                disabled={openFileMutation.isPending}
+              >
+                Read More
+              </Button>
+            </PlanAction>
+          )}
+          <PlanTrigger />
+        </div>
       </PlanHeader>
       <PlanContent>
         <Streamdown
@@ -43,7 +72,7 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           )}
         >
-          {plan.body}
+          {plan.summary || plan.description}
         </Streamdown>
       </PlanContent>
     </Plan>

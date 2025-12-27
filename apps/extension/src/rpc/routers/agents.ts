@@ -40,6 +40,8 @@ export const agentsRouter = {
         files: z.array(z.string()),
         branchName: z.string(),
         baseBranch: z.string().default("main"),
+        conversationType: z.enum(["branch", "uncommitted"]).default("branch"),
+        commitHash: z.string().optional(), // For uncommitted conversations
         conversationHistory: z
           .array(
             z.object({
@@ -61,6 +63,8 @@ export const agentsRouter = {
         files: string[];
         branchName: string;
         baseBranch: string;
+        conversationType: "branch" | "uncommitted";
+        commitHash?: string;
         conversationHistory?: Array<{
           role: "user" | "assistant" | "system";
           content: string;
@@ -126,6 +130,8 @@ export const agentsRouter = {
               input.branchName,
               input.baseBranch,
               input.files,
+              input.conversationType,
+              input.commitHash,
             )
             .pipe(Effect.catchAll(() => Effect.succeed(null)));
 

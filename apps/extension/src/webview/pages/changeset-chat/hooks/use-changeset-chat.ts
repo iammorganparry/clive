@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useMachine } from "@xstate/react";
 import { Match } from "effect";
+import { nanoid } from "nanoid";
 import { useRpc } from "../../../rpc/provider.js";
 import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
 import type { ToolEvent } from "../../../types/chat.js";
@@ -10,14 +11,21 @@ import type { LanguageModelUsage } from "ai";
 interface UseChangesetChatOptions {
   files: string[];
   branchName: string;
+  mode?: "branch" | "uncommitted";
+  commitHash?: string;
 }
 
 export function useChangesetChat({
   files,
   branchName,
+  mode = "branch",
+  commitHash,
 }: UseChangesetChatOptions) {
   const rpc = useRpc();
-  const cache = useConversationCache(branchName);
+  const cache = useConversationCache(branchName, mode);
+  const [planFilePath, setPlanFilePath] = useState<string | null>(null);
+  const lastWrittenPlanContent = useRef<string | null>(null);
+  const planFilenameId = useRef<string | null>(null);
 
   const [state, send] = useMachine(changesetChatMachine, {
     input: {
@@ -28,7 +36,12 @@ export function useChangesetChat({
 
   // Load conversation history from backend
   const { data: historyData } = rpc.conversations.getBranchHistory.useQuery({
-    input: { branchName, baseBranch: "main" },
+    input: {
+      branchName,
+      baseBranch: "main",
+      conversationType: mode,
+      commitHash,
+    },
     enabled: branchName.length > 0,
   });
 
@@ -186,11 +199,13 @@ export function useChangesetChat({
         files,
         branchName: state.context.branchName,
         baseBranch: "main",
+        conversationType: mode,
+        commitHash,
         conversationHistory:
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
     }
-  }, [files, state, planTestsSubscription]);
+  }, [files, state, planTestsSubscription, mode, commitHash]);
 
   // Save to cache when conversation state changes
   useEffect(() => {
@@ -213,6 +228,38 @@ export function useChangesetChat({
     cache,
   ]);
 
+  // Auto-write plan file when planContent is detected
+  const writePlanFileMutation = rpc.system.writePlanFile.useMutation({
+    onSuccess: (result) => {
+      if (result?.filePath) {
+        setPlanFilePath(result.filePath);
+      }
+    },
+    onError: (error) => {
+      console.error("Failed to write plan file:", error);
+    },
+  });
+
+  useEffect(() => {
+    const planContent = state.context.planContent;
+    if (
+      planContent &&
+      planContent !== lastWrittenPlanContent.current &&
+      !writePlanFileMutation.isPending
+    ) {
+      // Generate stable ID once when plan is first detected
+      if (!planFilenameId.current) {
+        planFilenameId.current = nanoid();
+      }
+
+      lastWrittenPlanContent.current = planContent;
+      writePlanFileMutation.mutate({
+        content: planContent,
+        filename: `test-plan-${planFilenameId.current}.md`,
+      });
+    }
+  }, [state.context.planContent, writePlanFileMutation]);
+
   return {
     state,
     send,
@@ -227,6 +274,7 @@ export function useChangesetChat({
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,
     planContent: state.context.planContent,
+    planFilePath,
     testExecutions: state.context.testExecutions,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();

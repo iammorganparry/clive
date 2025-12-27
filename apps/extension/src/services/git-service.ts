@@ -283,6 +283,53 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         return files;
       });
 
+    /**
+     * Helper to get only uncommitted changes (staged + unstaged, no committed branch changes)
+     */
+    const getUncommittedFilesHelper = (workspaceRoot: string) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[GitService] Getting uncommitted changes in ${workspaceRoot}`,
+        );
+        const vscode = yield* VSCodeService;
+
+        // Get uncommitted changes (unstaged)
+        const unstagedStdout = yield* executeGitCommand(
+          "git diff --name-status",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        // Get staged changes
+        const stagedStdout = yield* executeGitCommand(
+          "git diff --name-status --cached",
+          workspaceRoot,
+        ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+        // Parse outputs
+        const unstagedFiles = parseGitDiffOutput(unstagedStdout, workspaceRoot, vscode.workspace);
+        const stagedFiles = parseGitDiffOutput(stagedStdout, workspaceRoot, vscode.workspace);
+
+        // Merge and deduplicate (unstaged changes take precedence)
+        const fileMap = new Map<string, ChangedFile>();
+        
+        // Add staged files first
+        for (const file of stagedFiles) {
+          fileMap.set(file.path, file);
+        }
+        
+        // Add unstaged files (overwrite if exists)
+        for (const file of unstagedFiles) {
+          fileMap.set(file.path, file);
+        }
+
+        const files = Array.from(fileMap.values());
+
+        yield* Effect.logDebug(
+          `[GitService] Found ${files.length} uncommitted file(s) (${stagedFiles.length} staged, ${unstagedFiles.length} unstaged)`,
+        );
+        return files;
+      });
+
     return {
       /**
        * Get the current branch name
@@ -337,6 +384,42 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         }),
 
       /**
+       * Get uncommitted changes (staged + unstaged files only)
+       */
+      getUncommittedChanges: () =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug("[GitService] Getting uncommitted changes");
+          const vscode = yield* VSCodeService;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            yield* Effect.logDebug("[GitService] No workspace folders found");
+            return null;
+          }
+
+          const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+          const branchName = yield* getCurrentBranchHelper(workspaceRoot);
+          if (!branchName) {
+            yield* Effect.logDebug("[GitService] No current branch found");
+            return null;
+          }
+
+          const baseBranch = yield* getBaseBranchHelper(workspaceRoot);
+          const files = yield* getUncommittedFilesHelper(workspaceRoot);
+
+          yield* Effect.logDebug(
+            `[GitService] Uncommitted changes: ${files.length} file(s)`,
+          );
+          return {
+            branchName,
+            baseBranch,
+            files,
+            workspaceRoot,
+          };
+        }),
+
+      /**
        * Get git diff for a specific file compared to base branch
        */
       getFileDiff: (filePath: string) =>
@@ -359,6 +442,38 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
           );
 
           return diff;
+        }),
+
+      /**
+       * Get current HEAD commit hash
+       */
+      getCurrentCommitHash: () =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug("[GitService] Getting current HEAD commit hash");
+          const vscode = yield* VSCodeService;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            yield* Effect.logDebug("[GitService] No workspace folders found");
+            return yield* Effect.fail(
+              new GitCommandError({
+                message: "No workspace folder",
+                command: "git rev-parse HEAD",
+                workspaceRoot: "",
+              }),
+            );
+          }
+
+          const workspaceRoot = workspaceFolders[0].uri.fsPath;
+          const commitHash = yield* executeGitCommand(
+            "git rev-parse HEAD",
+            workspaceRoot,
+          );
+
+          yield* Effect.logDebug(
+            `[GitService] Current commit hash: ${commitHash.substring(0, 7)}...`,
+          );
+          return commitHash;
         }),
 
       /**

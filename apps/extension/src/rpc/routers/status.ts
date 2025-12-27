@@ -68,4 +68,39 @@ export const statusRouter = {
       };
     }).pipe(provideSystemLayer(ctx));
   }),
+
+  /**
+   * Get uncommitted changes (staged + unstaged files only)
+   */
+  uncommittedChanges: procedure.input(z.void()).query(({ ctx }) => {
+    return Effect.gen(function* () {
+      const uncommittedChanges = yield* ctx.gitService.getUncommittedChanges();
+
+      if (!uncommittedChanges) {
+        return null;
+      }
+
+      const sourceFileFilter = yield* SourceFileFilterService;
+      const eligibleFiles = yield* sourceFileFilter.filterEligibleFiles(
+        uncommittedChanges.files,
+      );
+
+      return {
+        branchName: uncommittedChanges.branchName,
+        baseBranch: uncommittedChanges.baseBranch,
+        files: eligibleFiles,
+        workspaceRoot: uncommittedChanges.workspaceRoot,
+      };
+    }).pipe(provideSystemLayer(ctx));
+  }),
+
+  /**
+   * Get current HEAD commit hash
+   */
+  currentCommit: procedure.input(z.void()).query(({ ctx }) => {
+    return Effect.gen(function* () {
+      const commitHash = yield* ctx.gitService.getCurrentCommitHash();
+      return { commitHash };
+    }).pipe(provideSystemLayer(ctx));
+  }),
 };

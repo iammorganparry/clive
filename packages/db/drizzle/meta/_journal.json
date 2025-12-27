@@ -64,6 +64,13 @@
       "when": 1766496595094,
       "tag": "0008_naive_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1766820050316,
+      "tag": "0009_easy_thunderball",
+      "breakpoints": true
     }
   ]
 }

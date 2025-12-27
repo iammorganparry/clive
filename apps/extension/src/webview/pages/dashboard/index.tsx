@@ -7,9 +7,9 @@ import { logger } from "../../services/logger.js";
 import { useRpc } from "../../rpc/provider.js";
 import type { BranchChangesData } from "./components/branch-changes.js";
 import BranchChanges from "./components/branch-changes.js";
-import Welcome from "./components/welcome.js";
 import { dashboardMachine } from "./machines/dashboard-machine.js";
 import type { ProposedTest } from "../../../services/ai-agent/types.js";
+import { useComparisonMode } from "../../contexts/comparison-mode-context.js";
 
 interface DashboardPageProps {
   vscode: VSCodeAPI;
@@ -101,6 +101,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Get RPC client
   const rpc = useRpc();
 
+  // Get comparison mode from context
+  const { mode: comparisonMode } = useComparisonMode();
+
   // Query for Cypress status using new RPC API
   const { data: cypressStatus, isLoading } = rpc.status.cypress.useQuery();
 
@@ -111,6 +114,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     error: branchChangesError,
     refetch: refetchBranchChanges,
   } = rpc.status.branchChanges.useQuery();
+
+  // Query for uncommitted changes using new RPC API
+  const {
+    data: uncommittedChanges,
+    isLoading: uncommittedChangesLoading,
+    error: uncommittedChangesError,
+    refetch: refetchUncommittedChanges,
+  } = rpc.status.uncommittedChanges.useQuery();
+
+  // Select the appropriate data based on comparison mode
+  const changesData =
+    comparisonMode === "branch" ? branchChanges : uncommittedChanges;
+  const changesLoading =
+    comparisonMode === "branch"
+      ? branchChangesLoading
+      : uncommittedChangesLoading;
+  const changesError =
+    comparisonMode === "branch"
+      ? branchChangesError
+      : uncommittedChangesError;
 
   // Dashboard machine (for future use - currently just tracks data)
   const [, send] = useMachine(dashboardMachine, {
@@ -167,23 +190,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Handler for refreshing branch changes
   const handleRefreshBranchChanges = useCallback(async () => {
-    await refetchBranchChanges();
-  }, [refetchBranchChanges]);
-
-  if (isLoading && !cypressStatus) {
-    return <Welcome />;
-  }
-
-  if (!cypressStatus) {
-    return <Welcome />;
-  }
+    if (comparisonMode === "branch") {
+      await refetchBranchChanges();
+    } else {
+      await refetchUncommittedChanges();
+    }
+  }, [comparisonMode, refetchBranchChanges, refetchUncommittedChanges]);
 
   return (
     <div className="w-full h-full">
       <BranchChanges
-        changes={branchChanges ?? null}
-        isLoading={branchChangesLoading}
-        error={branchChangesError?.message}
+        changes={changesData ?? null}
+        isLoading={changesLoading}
+        error={changesError?.message}
         vscode={vscode}
         onViewTest={handleViewTest}
         onPreviewDiff={handlePreviewTestDiff}

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, } from "effect";
 import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
@@ -6,6 +6,8 @@ import { ConfigService as ConfigServiceEffect } from "../../services/config-serv
 import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
+import { getWorkspaceRoot, resolveFileUri } from "../../lib/vscode-effects.js";
+import { ensureDirectoryExists } from "../../utils/fs-effects.js";
 
 const { procedure } = createRouter<RpcContext>();
 
@@ -118,4 +120,98 @@ export const systemRouter = {
       return { colorScheme };
     }),
   ),
+
+  /**
+   * Write plan file to .clive/plans/ and open it in editor
+   */
+  writePlanFile: procedure
+    .input(
+      z.object({
+        content: z.string(),
+        filename: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.gen(function* () {
+        const workspaceRoot = yield* getWorkspaceRoot();
+        const plansDir = vscode.Uri.joinPath(workspaceRoot, ".clive", "plans");
+
+        // Ensure .clive/plans directory exists
+        yield* ensureDirectoryExists(plansDir);
+
+        // Generate filename if not provided
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const filename = input.filename || `test-plan-${timestamp}.md`;
+        const fileUri = vscode.Uri.joinPath(plansDir, filename);
+
+        // Write file
+        yield* Effect.tryPromise({
+          try: () => {
+            const contentBuffer = Buffer.from(input.content, "utf-8");
+            return vscode.workspace.fs.writeFile(fileUri, contentBuffer);
+          },
+          catch: (error) =>
+            new Error(
+              error instanceof Error ? error.message : "Failed to write plan file",
+            ),
+        });
+
+        // Open file in markdown preview mode
+        yield* Effect.tryPromise({
+          try: () =>
+            vscode.commands.executeCommand("markdown.showPreview", fileUri),
+          catch: (error) =>
+            new Error(
+              error instanceof Error ? error.message : "Failed to open preview",
+            ),
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.sync(() => {
+              // If opening fails, don't fail the whole operation - file was still written
+              console.warn("Failed to open plan file in preview");
+            }),
+          ),
+        );
+
+        // Return relative path
+        const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+        return { filePath: relativePath };
+      }),
+    ),
+
+  /**
+   * Open an existing file in markdown preview mode
+   */
+  openFile: procedure
+    .input(
+      z.object({
+        filePath: z.string(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.gen(function* () {
+        const fileUri = yield* resolveFileUri(input.filePath);
+        yield* Effect.tryPromise({
+          try: () =>
+            vscode.commands.executeCommand("markdown.showPreview", fileUri),
+          catch: (error) =>
+            new Error(
+              error instanceof Error
+                ? error.message
+                : "Failed to open file in preview",
+            ),
+        });
+        return { success: true };
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.fail(
+            new Error(
+              error instanceof Error
+                ? error.message
+                : "Failed to open file in preview",
+            ),
+          ),
+        ),
+      ),
+    ),
 };

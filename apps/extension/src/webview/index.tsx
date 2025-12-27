@@ -8,8 +8,14 @@ import { WebviewMessages } from "../constants.js";
 import { initLogger } from "./services/logger.js";
 import { getVSCodeAPI } from "./services/vscode.js";
 import { AuthProvider } from "./contexts/auth-context.js";
+import { ComparisonModeProvider } from "./contexts/comparison-mode-context.js";
 import { RouterProvider } from "./router/index.js";
 import { RpcProvider } from "./rpc/provider.js";
+
+// Only load react-grab in development
+if (import.meta.env.DEV) {
+  import("react-grab");
+}
 
 const vscode = getVSCodeAPI();
 
@@ -60,9 +66,11 @@ root.render(
     <QueryClientProvider client={queryClient}>
       <RpcProvider vscode={vscode}>
         <AuthProvider>
-          <RouterProvider>
-            <App vscode={vscode} />
-          </RouterProvider>
+          <ComparisonModeProvider>
+            <RouterProvider>
+              <App vscode={vscode} />
+            </RouterProvider>
+          </ComparisonModeProvider>
         </AuthProvider>
       </RpcProvider>
     </QueryClientProvider>

@@ -61,7 +61,7 @@ export const conversationsRouter = {
         const conversationService = yield* ConversationServiceEffect;
 
         // Get or create conversation
-        const conversation: Conversation = yield* conversationService
+        const conversation = yield* conversationService
           .getOrCreateConversation(input.sourceFile)
           .pipe(
             Effect.catchTag("ApiError", (error) =>
@@ -449,12 +449,14 @@ export const conversationsRouter = {
         branchName: z.string(),
         baseBranch: z.string().default("main"),
         sourceFiles: z.array(z.string()),
+        conversationType: z.enum(["branch", "uncommitted"]).default("branch"),
+        commitHash: z.string().optional(), // For uncommitted conversations
       }),
     )
     .mutation(({ input, ctx }) =>
       Effect.gen(function* () {
         yield* Effect.logDebug(
-          `[ConversationsRouter] Starting branch conversation: ${input.branchName}`,
+          `[ConversationsRouter] Starting branch conversation: ${input.branchName}, type: ${input.conversationType}`,
         );
         const conversationService = yield* ConversationServiceEffect;
 
@@ -464,6 +466,8 @@ export const conversationsRouter = {
             input.branchName,
             input.baseBranch,
             input.sourceFiles,
+            input.conversationType,
+            input.commitHash,
           )
           .pipe(
             Effect.catchTag("ApiError", (error) =>
@@ -518,12 +522,14 @@ export const conversationsRouter = {
       z.object({
         branchName: z.string(),
         baseBranch: z.string().default("main"),
+        conversationType: z.enum(["branch", "uncommitted"]),
+        commitHash: z.string().optional(), // For uncommitted
       }),
     )
     .query(({ input, ctx }) =>
       Effect.gen(function* () {
         yield* Effect.logDebug(
-          `[ConversationsRouter] Checking branch conversation: ${input.branchName}`,
+          `[ConversationsRouter] Checking branch conversation: ${input.branchName}, type: ${input.conversationType}`,
         );
         const conversationService = yield* ConversationServiceEffect;
 
@@ -531,6 +537,8 @@ export const conversationsRouter = {
         const conversation = yield* conversationService.getConversationByBranch(
           input.branchName,
           input.baseBranch,
+          input.conversationType,
+          input.commitHash,
         );
 
         if (!conversation) {
@@ -558,18 +566,22 @@ export const conversationsRouter = {
       z.object({
         branchName: z.string(),
         baseBranch: z.string().default("main"),
+        conversationType: z.enum(["branch", "uncommitted"]).default("branch"),
+        commitHash: z.string().optional(), // For uncommitted conversations
       }),
     )
     .query(({ input, ctx }) =>
       Effect.gen(function* () {
         yield* Effect.logDebug(
-          `[ConversationsRouter] Loading branch conversation: ${input.branchName}`,
+          `[ConversationsRouter] Loading branch conversation: ${input.branchName}, type: ${input.conversationType}`,
         );
         const conversationService = yield* ConversationServiceEffect;
 
         const conversation = yield* conversationService.getConversationByBranch(
           input.branchName,
           input.baseBranch,
+          input.conversationType,
+          input.commitHash,
         );
 
         if (!conversation) {

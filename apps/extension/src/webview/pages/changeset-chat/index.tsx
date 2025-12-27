@@ -53,6 +53,8 @@ export const ChangesetChatPage: React.FC = () => {
   }, [routeParams.files]);
 
   const branchName = routeParams.branchName || "";
+  const mode = (routeParams.mode as "branch" | "uncommitted") || "branch";
+  const commitHash = routeParams.commitHash;
 
   // Use the changeset chat hook with state machine
   const {
@@ -66,10 +68,11 @@ export const ChangesetChatPage: React.FC = () => {
     scratchpadTodos,
     usage,
     planContent,
+    planFilePath,
     testExecutions,
     send,
     cancelStream,
-  } = useChangesetChat({ files, branchName });
+  } = useChangesetChat({ files, branchName, mode, commitHash });
 
   // Parse plan content if available
   const parsedPlan = planContent ? parsePlan(planContent) : null;
@@ -129,6 +132,7 @@ export const ChangesetChatPage: React.FC = () => {
                       key={`${message.id}-plan-${index}`}
                       plan={plan}
                       isStreaming={isStreaming}
+                      filePath={planFilePath}
                     />
                   );
                 }
@@ -161,7 +165,7 @@ export const ChangesetChatPage: React.FC = () => {
         </Message>
       );
     });
-  }, [isLoadingHistory, isLoading, messages, files.length]);
+  }, [isLoadingHistory, isLoading, messages, files.length, planFilePath]);
 
   const handleApprove = () => {
     // Send message to agent requesting test writes
@@ -213,15 +217,17 @@ export const ChangesetChatPage: React.FC = () => {
               <span className="text-xs text-muted-foreground">
                 ({files.length} file{files.length !== 1 ? "s" : ""})
               </span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                {mode === "branch" ? "All Changes" : "Uncommitted"}
+              </span>
             </div>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               onClick={handleNewChat}
               disabled={isLoading}
             >
               <RotateCcw className="h-4 w-4 mr-1" />
-              New Chat
             </Button>
           </div>
         </div>
@@ -256,7 +262,11 @@ export const ChangesetChatPage: React.FC = () => {
 
               {/* Plan Preview - shown when agent creates plan in scratchpad */}
               {parsedPlan && (
-                <TestPlanPreview plan={parsedPlan} isStreaming={isLoading} />
+                <TestPlanPreview
+                  plan={parsedPlan}
+                  isStreaming={isLoading}
+                  filePath={planFilePath}
+                />
               )}
 
               {/* Empty state or messages */}

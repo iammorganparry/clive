@@ -1,14 +1,15 @@
-import type { Effect } from "effect";
+
+import type { Context } from "effect";
 import type * as vscode from "vscode";
 import type { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
-import type { BranchChanges } from "../services/git-service.js";
+import type { GitService } from "../services/git-service.js";
 import type {
-  LayerContext,
-  createConfigServiceLayer,
   createAgentServiceLayer,
   createAuthServiceLayer,
+  createConfigServiceLayer,
   createSystemServiceLayer,
+  LayerContext,
 } from "../services/layer-factory.js";
 
 /**
@@ -19,9 +20,16 @@ export type AgentLayerType = ReturnType<typeof createAgentServiceLayer>;
 export type AuthLayerType = ReturnType<typeof createAuthServiceLayer>;
 export type SystemLayerType = ReturnType<typeof createSystemServiceLayer>;
 
-export interface GitServiceContext {
-  getBranchChanges: () => Effect.Effect<BranchChanges | null>;
-}
+/**
+ * GitServiceContext - inferred from GitService using Effect's Context.Tag.Service
+ * Only includes the methods needed for RPC context
+ */
+type GitServiceInstance = Context.Tag.Service<typeof GitService>;
+
+export type GitServiceContext = Pick<
+  GitServiceInstance,
+  "getBranchChanges" | "getUncommittedChanges" | "getCurrentCommitHash"
+>;
 
 /**
  * RPC request context - provides access to extension services

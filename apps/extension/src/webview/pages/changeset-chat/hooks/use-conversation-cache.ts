@@ -14,17 +14,18 @@ const CACHE_KEY_PREFIX = "changeset-chat:";
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
- * Get cache key for a branch
+ * Get cache key for a branch and mode
  */
-function getCacheKey(branchName: string): string {
-  return `${CACHE_KEY_PREFIX}${branchName}`;
+function getCacheKey(branchName: string, mode: "branch" | "uncommitted"): string {
+  return `${CACHE_KEY_PREFIX}${branchName}:${mode}`;
 }
 
 /**
- * Load cached conversation for a branch
+ * Load cached conversation for a branch and mode
  */
 export function loadCachedConversation(
   branchName: string,
+  mode: "branch" | "uncommitted",
 ): CachedConversation | null {
   if (!branchName) return null;
 
@@ -34,7 +35,7 @@ export function loadCachedConversation(
 
     if (!cached) return null;
 
-    const cacheKey = getCacheKey(branchName);
+    const cacheKey = getCacheKey(branchName, mode);
     const branchCache = cached[cacheKey];
 
     if (!branchCache || typeof branchCache !== "object") return null;
@@ -74,6 +75,7 @@ export function loadCachedConversation(
  */
 export function saveCachedConversation(
   branchName: string,
+  mode: "branch" | "uncommitted",
   conversation: CachedConversation,
 ): void {
   if (!branchName) return;
@@ -81,7 +83,7 @@ export function saveCachedConversation(
   try {
     const vscode = getVSCodeAPI();
     const currentState = (vscode.getState() as Record<string, unknown>) || {};
-    const cacheKey = getCacheKey(branchName);
+    const cacheKey = getCacheKey(branchName, mode);
 
     vscode.setState({
       ...currentState,
@@ -96,15 +98,18 @@ export function saveCachedConversation(
 }
 
 /**
- * Clear cached conversation for a branch
+ * Clear cached conversation for a branch and mode
  */
-export function clearCachedConversation(branchName: string): void {
+export function clearCachedConversation(
+  branchName: string,
+  mode: "branch" | "uncommitted",
+): void {
   if (!branchName) return;
 
   try {
     const vscode = getVSCodeAPI();
     const currentState = (vscode.getState() as Record<string, unknown>) || {};
-    const cacheKey = getCacheKey(branchName);
+    const cacheKey = getCacheKey(branchName, mode);
 
     const { [cacheKey]: _removed, ...rest } = currentState;
     vscode.setState(rest);
@@ -116,7 +121,10 @@ export function clearCachedConversation(branchName: string): void {
 /**
  * Hook for managing conversation cache with debounced writes
  */
-export function useConversationCache(branchName: string) {
+export function useConversationCache(
+  branchName: string,
+  mode: "branch" | "uncommitted",
+) {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<CachedConversation | null>(null);
 
@@ -130,12 +138,12 @@ export function useConversationCache(branchName: string) {
 
       // Set new timeout
       saveTimeoutRef.current = setTimeout(() => {
-        saveCachedConversation(branchName, conversation);
+        saveCachedConversation(branchName, mode, conversation);
         lastSavedRef.current = conversation;
         saveTimeoutRef.current = null;
       }, 500); // 500ms debounce
     },
-    [branchName],
+    [branchName, mode],
   );
 
   // Cleanup on unmount
@@ -146,14 +154,20 @@ export function useConversationCache(branchName: string) {
       }
       // Save immediately on unmount if there's pending data
       if (lastSavedRef.current) {
-        saveCachedConversation(branchName, lastSavedRef.current);
+        saveCachedConversation(branchName, mode, lastSavedRef.current);
       }
     };
-  }, [branchName]);
+  }, [branchName, mode]);
 
   return {
-    load: useCallback(() => loadCachedConversation(branchName), [branchName]),
+    load: useCallback(
+      () => loadCachedConversation(branchName, mode),
+      [branchName, mode],
+    ),
     save: debouncedSave,
-    clear: useCallback(() => clearCachedConversation(branchName), [branchName]),
+    clear: useCallback(
+      () => clearCachedConversation(branchName, mode),
+      [branchName, mode],
+    ),
   };
 }

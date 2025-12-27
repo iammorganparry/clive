@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { conversation } from "@clive/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { conversation, type conversationTypeEnum } from "@clive/db/schema";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import { DrizzleDB, DrizzleDBLive } from "./drizzle-db.js";
+
+type ConversationType = (typeof conversationTypeEnum.enumValues)[number];
 
 class ConversationError extends Data.TaggedError("ConversationError")<{
   message: string;
@@ -22,6 +24,8 @@ export interface Conversation {
   branchName: string | null;
   baseBranch: string | null;
   sourceFiles: string | null; // JSON array of file paths
+  conversationType: "branch" | "uncommitted" | "file";
+  commitHash: string | null; // HEAD commit hash for uncommitted conversations
   status: "planning" | "confirmed" | "completed";
   createdAt: Date;
   updatedAt: Date;
@@ -47,6 +51,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
                 id,
                 userId,
                 sourceFile,
+                conversationType: "file",
+                commitHash: null,
                 status: "planning",
                 createdAt: now,
                 updatedAt: now,
@@ -66,6 +72,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             branchName: null,
             baseBranch: null,
             sourceFiles: null,
+            conversationType: "file",
+            commitHash: null,
             status: "planning" as const,
             createdAt: now,
             updatedAt: now,
@@ -103,6 +111,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             branchName: result.branchName ?? null,
             baseBranch: result.baseBranch ?? null,
             sourceFiles: result.sourceFiles ?? null,
+            conversationType: result.conversationType as ConversationType,
+            commitHash: result.commitHash ?? null,
             status: result.status as "planning" | "confirmed" | "completed",
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
@@ -142,6 +152,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             branchName: result.branchName ?? null,
             baseBranch: result.baseBranch ?? null,
             sourceFiles: result.sourceFiles ?? null,
+            conversationType: result.conversationType as ConversationType,
+            commitHash: result.commitHash ?? null,
             status: result.status as "planning" | "confirmed" | "completed",
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
@@ -155,16 +167,32 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
         userId: string,
         branchName: string,
         baseBranch: string,
+        conversationType: "branch" | "uncommitted",
+        commitHash?: string, // Optional - only for uncommitted
       ) =>
         Effect.gen(function* () {
+          // Build WHERE conditions
+          const conditions = [
+            eq(conversation.userId, userId),
+            eq(conversation.branchName, branchName),
+            eq(conversation.baseBranch, baseBranch),
+            eq(conversation.conversationType, conversationType),
+          ];
+
+          // For uncommitted, must match commit hash
+          if (conversationType === "uncommitted" && commitHash) {
+            conditions.push(eq(conversation.commitHash, commitHash));
+          }
+
+          // For branch, commit hash must be null
+          if (conversationType === "branch") {
+            conditions.push(isNull(conversation.commitHash));
+          }
+
           const result = yield* Effect.tryPromise({
             try: () =>
               db.query.conversation.findFirst({
-                where: and(
-                  eq(conversation.userId, userId),
-                  eq(conversation.branchName, branchName),
-                  eq(conversation.baseBranch, baseBranch),
-                ),
+                where: and(...conditions),
                 orderBy: desc(conversation.createdAt),
               }),
             catch: (error) =>
@@ -186,6 +214,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             branchName: result.branchName ?? null,
             baseBranch: result.baseBranch ?? null,
             sourceFiles: result.sourceFiles ?? null,
+            conversationType: result.conversationType as ConversationType,
+            commitHash: result.commitHash ?? null,
             status: result.status as "planning" | "confirmed" | "completed",
             createdAt: result.createdAt,
             updatedAt: result.updatedAt,
@@ -200,6 +230,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
         branchName: string,
         baseBranch: string,
         sourceFiles: string[], // Array of file paths
+        conversationType: "branch" | "uncommitted",
+        commitHash?: string, // Optional - only for uncommitted
       ) =>
         Effect.gen(function* () {
           const id = randomUUID();
@@ -213,6 +245,9 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
                 branchName,
                 baseBranch,
                 sourceFiles: JSON.stringify(sourceFiles),
+                conversationType,
+                commitHash:
+                  conversationType === "uncommitted" ? commitHash : null,
                 status: "planning",
                 createdAt: now,
                 updatedAt: now,
@@ -232,6 +267,9 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             branchName,
             baseBranch,
             sourceFiles: JSON.stringify(sourceFiles),
+            conversationType,
+            commitHash:
+              conversationType === "uncommitted" ? commitHash ?? null : null,
             status: "planning" as const,
             createdAt: now,
             updatedAt: now,
@@ -292,6 +330,8 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
                 branchName: result.branchName ?? null,
                 baseBranch: result.baseBranch ?? null,
                 sourceFiles: result.sourceFiles ?? null,
+                conversationType: result.conversationType as ConversationType,
+                commitHash: result.commitHash ?? null,
                 status: result.status as "planning" | "confirmed" | "completed",
                 createdAt: result.createdAt,
                 updatedAt: result.updatedAt,

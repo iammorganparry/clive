@@ -5,18 +5,12 @@ import { truncateMiddle } from "../../../utils/path-utils.js";
 
 interface FileTestRowProps {
   file: EligibleFile;
-  chatContext?: {
-    exists: boolean;
-    messageCount: number;
-    status: string | null;
-  };
   onViewTest?: (testFilePath: string) => void;
   onPreviewDiff?: (test: unknown) => void;
 }
 
 const FileTestRow: React.FC<FileTestRowProps> = ({
   file,
-  chatContext: _chatContext,
   onViewTest: _onViewTest,
   onPreviewDiff: _onPreviewDiff,
 }) => {
