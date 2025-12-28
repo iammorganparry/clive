@@ -1,34 +1,40 @@
-import type React from "react";
-import { useCallback } from "react";
-import {
-  CheckCircleIcon,
-  CircleIcon,
-  ClockIcon,
-  XCircleIcon,
-  FileTextIcon,
-  TerminalIcon,
-  SearchIcon,
-  BookOpenIcon,
-  FileCheckIcon,
-  GlobeIcon,
-  CodeIcon,
-  ChevronDownIcon,
-} from "lucide-react";
-import {
-  Task,
-  TaskTrigger,
-  TaskContent,
-  TaskItem,
-  TaskItemFile,
-} from "@clive/ui/task";
 import {
   CodeBlock,
   CodeBlockCopyButton,
 } from "@clive/ui/components/ai-elements/code-block";
-import type { BundledLanguage } from "shiki";
 import { cn } from "@clive/ui/lib/utils";
-import type { ToolState } from "../../../types/chat.js";
+import {
+  Task,
+  TaskContent,
+  TaskItem,
+  TaskItemFile,
+  TaskTrigger,
+} from "@clive/ui/task";
+import { Icon, addCollection } from "@iconify/react";
+// Import vscode-icons for offline use (required for VS Code webview CSP)
+import vscodeIconsData from "@iconify-json/vscode-icons/icons.json";
+import {
+  BookOpenIcon,
+  CheckCircleIcon,
+  ChevronDownIcon,
+  CircleIcon,
+  ClockIcon,
+  CodeIcon,
+  FileCheckIcon,
+  FileTextIcon,
+  GlobeIcon,
+  SearchIcon,
+  TerminalIcon,
+  XCircleIcon,
+} from "lucide-react";
+import type React from "react";
+import { useCallback } from "react";
+import type { BundledLanguage } from "shiki";
 import { getVSCodeAPI } from "../../../services/vscode.js";
+import type { ToolState } from "../../../types/chat.js";
+
+// Add vscode-icons collection for offline use (works with VS Code webview CSP)
+addCollection(vscodeIconsData);
 
 interface ToolCallCardProps {
   toolName: string;
@@ -117,6 +123,17 @@ interface ReadFileArgs {
 }
 
 const isReadFileArgs = (input: unknown): input is ReadFileArgs =>
+  typeof input === "object" && input !== null;
+
+interface ReplaceInFileArgs {
+  targetPath?: string;
+  filePath?: string;
+  searchContent?: string;
+  replaceContent?: string;
+  diff?: string;
+}
+
+const isReplaceInFileArgs = (input: unknown): input is ReplaceInFileArgs =>
   typeof input === "object" && input !== null;
 
 /**
@@ -266,6 +283,18 @@ const generateToolSummary = (
     return "Searching web";
   }
 
+  // replaceInFile: Show "Edit <filename>"
+  if (toolName === "replaceInFile") {
+    if (isReplaceInFileArgs(input)) {
+      const path = input.targetPath || input.filePath;
+      if (path) {
+        const filename = extractFilename(path);
+        return `Edit ${filename}`;
+      }
+    }
+    return "Edit file";
+  }
+
   // Default: return tool name as-is
   return toolName;
 };
@@ -293,6 +322,8 @@ const getToolIcon = (toolName: string): React.ReactNode => {
       return <FileCheckIcon className={iconClass} />;
     case "webSearch":
       return <GlobeIcon className={iconClass} />;
+    case "replaceInFile":
+      return <FileTextIcon className={iconClass} />;
     default:
       return <CodeIcon className={iconClass} />;
   }
@@ -302,12 +333,29 @@ const getStatusBadge = (state: ToolState): React.ReactNode | null => {
   const icons: Record<ToolState, React.ReactNode> = {
     "input-streaming": <CircleIcon className="size-3" />,
     "input-available": <ClockIcon className="size-3 animate-pulse" />,
+    "approval-requested": (
+      <div className="flex items-center gap-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5">
+        <ClockIcon className="size-3 text-yellow-600 dark:text-yellow-400" />
+        <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">Awaiting Approval</span>
+      </div>
+    ),
     "output-available": <CheckCircleIcon className="size-3 text-green-600" />,
     "output-error": <XCircleIcon className="size-3 text-red-600" />,
+    "output-denied": (
+      <div className="flex items-center gap-1 rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5">
+        <XCircleIcon className="size-3 text-red-600 dark:text-red-400" />
+        <span className="text-xs font-medium text-red-700 dark:text-red-300">Rejected</span>
+      </div>
+    ),
   };
 
-  // Only show badge for completed/error states, not for running states
-  if (state === "output-available" || state === "output-error") {
+  // Show badge for completed, error, and approval states
+  if (
+    state === "output-available" ||
+    state === "output-error" ||
+    state === "approval-requested" ||
+    state === "output-denied"
+  ) {
     return (
       <div className="flex items-center">
         {icons[state]}
@@ -469,6 +517,10 @@ const extractFilePaths = (
     }
     if (isWriteKnowledgeFileArgs(input) && input.filePath) {
       paths.push(input.filePath);
+    }
+    if (isReplaceInFileArgs(input)) {
+      const path = input.targetPath || input.filePath;
+      if (path) paths.push(path);
     }
   }
 
@@ -725,28 +777,79 @@ const parseFindOutput = (stdout: string): string[] => {
 };
 
 /**
- * Get file type icon/label for display
+ * Get VSCode icon name for file type using Iconify's vscode-icons set
+ * This matches exactly what users see in VS Code file explorer
  */
-const getFileTypeDisplay = (filePath: string): { icon: string; label: string } => {
+const getFileIcon = (filePath: string): string => {
   const ext = filePath.split(".").pop()?.toLowerCase() || "";
+  const filename = extractFilename(filePath).toLowerCase();
   
-  // React/JSX files
-  if (ext === "tsx" || ext === "jsx") {
-    return { icon: "⚛", label: "" };
-  }
+  // Special filenames first
+  if (filename === "package.json") return "vscode-icons:file-type-node";
+  if (filename === "tsconfig.json") return "vscode-icons:file-type-tsconfig";
+  if (filename === ".gitignore") return "vscode-icons:file-type-git";
+  if (filename === "dockerfile") return "vscode-icons:file-type-docker";
+  if (filename.startsWith("readme")) return "vscode-icons:file-type-readme";
   
-  // TypeScript
-  if (ext === "ts") {
-    return { icon: "", label: "TS" };
-  }
+  // Map extensions to vscode-icons
+  const iconMap: Record<string, string> = {
+    // TypeScript/JavaScript
+    ts: "vscode-icons:file-type-typescript-official",
+    tsx: "vscode-icons:file-type-reactts",
+    js: "vscode-icons:file-type-js-official",
+    jsx: "vscode-icons:file-type-reactjs",
+    mjs: "vscode-icons:file-type-js-official",
+    cjs: "vscode-icons:file-type-js-official",
+    
+    // Web
+    html: "vscode-icons:file-type-html",
+    css: "vscode-icons:file-type-css",
+    scss: "vscode-icons:file-type-scss",
+    sass: "vscode-icons:file-type-sass",
+    less: "vscode-icons:file-type-less",
+    
+    // Data/Config
+    json: "vscode-icons:file-type-json",
+    yaml: "vscode-icons:file-type-light-yaml",
+    yml: "vscode-icons:file-type-light-yaml",
+    toml: "vscode-icons:file-type-toml",
+    xml: "vscode-icons:file-type-xml",
+    
+    // Documentation
+    md: "vscode-icons:file-type-markdown",
+    mdx: "vscode-icons:file-type-mdx",
+    txt: "vscode-icons:file-type-text",
+    
+    // Programming Languages
+    py: "vscode-icons:file-type-python",
+    rb: "vscode-icons:file-type-ruby",
+    php: "vscode-icons:file-type-php",
+    java: "vscode-icons:file-type-java",
+    go: "vscode-icons:file-type-go",
+    rs: "vscode-icons:file-type-rust",
+    c: "vscode-icons:file-type-c",
+    cpp: "vscode-icons:file-type-cpp",
+    cs: "vscode-icons:file-type-csharp",
+    swift: "vscode-icons:file-type-swift",
+    kt: "vscode-icons:file-type-kotlin",
+    
+    // Shell
+    sh: "vscode-icons:file-type-shell",
+    bash: "vscode-icons:file-type-shell",
+    zsh: "vscode-icons:file-type-shell",
+    
+    // Images
+    png: "vscode-icons:file-type-image",
+    jpg: "vscode-icons:file-type-image",
+    jpeg: "vscode-icons:file-type-image",
+    gif: "vscode-icons:file-type-image",
+    svg: "vscode-icons:file-type-svg",
+    webp: "vscode-icons:file-type-image",
+    ico: "vscode-icons:file-type-image",
+  };
   
-  // JavaScript
-  if (ext === "js") {
-    return { icon: "", label: "JS" };
-  }
   
-  // Default
-  return { icon: "", label: ext.toUpperCase() || "FILE" };
+  return iconMap[ext] || "vscode-icons:default-file";
 };
 
 /**
@@ -850,28 +953,19 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
           return (
             <>
               {fileMatches.map((match: FileMatch) => {
-                const { icon, label } = getFileTypeDisplay(match.filePath);
                 const filename = extractFilename(match.filePath);
                 const truncatedPath = truncatePath(match.filePath);
                 return (
                   <TaskItem key={match.filePath}>
                     <div className="flex items-center gap-2 w-full">
-                      {icon ? (
-                        <span className="text-base leading-none">{icon}</span>
-                      ) : (
-                        <span className="flex items-center justify-center rounded bg-blue-500/80 px-1 py-0.5 min-w-[1.75rem] h-4">
-                          <span className="text-[10px] font-medium text-white leading-none">
-                            {label}
-                          </span>
-                        </span>
-                      )}
                       <TaskItemFile
                         onClick={(e) => {
                           e.stopPropagation();
                           handleOpenFile(match.filePath);
                         }}
-                        className="cursor-pointer flex-1"
+                        className="cursor-pointer flex-1 items-center gap-2"
                       >
+                        <Icon icon={getFileIcon(match.filePath)} className="text-base shrink-0" />
                         <span className="truncate">{filename}</span>
                         <span className="text-muted-foreground text-xs ml-2">
                           {truncatedPath}
@@ -896,28 +990,19 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
           return (
             <>
               {files.slice(0, 50).map((filePath: string) => {
-                const { icon, label } = getFileTypeDisplay(filePath);
                 const filename = extractFilename(filePath);
                 const truncatedPath = truncatePath(filePath);
                 return (
                   <TaskItem key={filePath}>
                     <div className="flex items-center gap-2 w-full">
-                      {icon ? (
-                        <span className="text-base leading-none">{icon}</span>
-                      ) : (
-                        <span className="flex items-center justify-center rounded bg-blue-500/80 px-1 py-0.5 min-w-[1.75rem] h-4">
-                          <span className="text-[10px] font-medium text-white leading-none">
-                            {label}
-                          </span>
-                        </span>
-                      )}
                       <TaskItemFile
                         onClick={(e) => {
                           e.stopPropagation();
                           handleOpenFile(filePath);
                         }}
-                        className="cursor-pointer flex-1"
+                        className="cursor-pointer flex-1 items-center gap-2"
                       >
+                        <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
                         <span className="truncate">{filename}</span>
                         <span className="text-muted-foreground text-xs ml-2">
                           {truncatedPath}
@@ -988,17 +1073,20 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
           {toolIcon}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {isCodeWritingTool && fileInfo ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenFile(fileInfo.filePath);
-                }}
-                className="font-medium text-sm hover:underline text-left"
-                title={`Open ${fileInfo.filePath}`}
-              >
-                {extractFilename(fileInfo.filePath)}
-              </button>
+              <>
+                <Icon icon={getFileIcon(fileInfo.filePath)} className="text-base shrink-0" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenFile(fileInfo.filePath);
+                  }}
+                  className="font-medium text-sm hover:underline text-left"
+                  title={`Open ${fileInfo.filePath}`}
+                >
+                  {extractFilename(fileInfo.filePath)}
+                </button>
+              </>
             ) : (
               <span className="text-sm">{summary}</span>
             )}
@@ -1044,15 +1132,18 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
             {filePaths.length > 0 && (
               filePaths.map((filePath) => (
                   <TaskItem key={filePath}>
-                    <TaskItemFile
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenFile(filePath);
-                      }}
-                      className="cursor-pointer"
-                    >
-                      {extractFilename(filePath)}
-                    </TaskItemFile>
+                    <div className="flex items-center gap-2 w-full">
+                      <TaskItemFile
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFile(filePath);
+                        }}
+                        className="cursor-pointer flex-1 items-center gap-2"
+                      >
+                        <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
+                        {extractFilename(filePath)}
+                      </TaskItemFile>
+                    </div>
                   </TaskItem>
                 ))
             )}

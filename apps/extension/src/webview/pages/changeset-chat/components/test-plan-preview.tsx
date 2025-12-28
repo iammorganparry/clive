@@ -3,8 +3,6 @@ import { useCallback } from "react";
 import {
   Plan,
   PlanHeader,
-  PlanTitle,
-  PlanDescription,
   PlanContent,
   PlanTrigger,
   PlanAction,
@@ -44,12 +42,8 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
       className={cn("w-full", className)}
     >
       <PlanHeader>
-        <div className="flex-1">
-          <PlanTitle>{plan.title}</PlanTitle>
-          {plan.description && (
-            <PlanDescription>{plan.description}</PlanDescription>
-          )}
-        </div>
+        <div className="flex-1" />
+        
         {filePath && (
           <PlanAction>
             <Button
@@ -70,7 +64,7 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           )}
         >
-          {plan.summary || plan.description}
+          {`**${plan.title}**\n\n${plan.description}`}
         </Streamdown>
       </PlanContent>
     </Plan>

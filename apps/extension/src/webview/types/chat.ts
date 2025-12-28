@@ -18,8 +18,10 @@ export interface ToolEvent {
 export type ToolState =
   | "input-streaming"
   | "input-available"
+  | "approval-requested"
   | "output-available"
-  | "output-error";
+  | "output-error"
+  | "output-denied";
 
 export type MessagePart =
   | { type: "text"; text: string }

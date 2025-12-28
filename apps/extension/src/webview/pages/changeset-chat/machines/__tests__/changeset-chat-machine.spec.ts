@@ -20,7 +20,6 @@ describe("changeset-chat-machine test execution actions", () => {
       isReasoningStreaming: false,
       hasCompletedAnalysis: false,
       scratchpadTodos: [],
-      cacheLoaded: false,
       historyLoaded: false,
       testExecutions: [],
       accumulatedTestOutput: new Map(),
@@ -31,7 +30,6 @@ describe("changeset-chat-machine test execution actions", () => {
       planContent: null,
       planFilePath: null,
       usage: null,
-      cachedAt: undefined,
     };
   });
 
@@ -538,7 +536,6 @@ describe("changeset-chat-machine plan content actions", () => {
       isReasoningStreaming: false,
       hasCompletedAnalysis: false,
       scratchpadTodos: [],
-      cacheLoaded: false,
       historyLoaded: false,
       testExecutions: [],
       accumulatedTestOutput: new Map(),
@@ -549,7 +546,6 @@ describe("changeset-chat-machine plan content actions", () => {
       planContent: null,
       planFilePath: null,
       usage: null,
-      cachedAt: undefined,
     };
   });
 

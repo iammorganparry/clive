@@ -5,7 +5,6 @@ import { useEffect, useRef } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ToolEvent } from "../../../types/chat.js";
 import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
-import { useConversationCache } from "./use-conversation-cache.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -21,7 +20,6 @@ export function useChangesetChat({
   commitHash,
 }: UseChangesetChatOptions) {
   const rpc = useRpc();
-  const cache = useConversationCache(branchName, mode);
 
   const [state, send] = useMachine(changesetChatMachine, {
     input: {
@@ -40,13 +38,6 @@ export function useChangesetChat({
     },
     enabled: branchName.length > 0,
   });
-
-  // Send cache data when loaded
-  useEffect(() => {
-    if (branchName && state.value === "idle" && !state.context.cacheLoaded) {
-      send({ type: "RECEIVE_CACHE", cache: cache.load() });
-    }
-  }, [branchName, state.value, state.context.cacheLoaded, cache, send]);
 
   // Send backend history when query completes
   useEffect(() => {
@@ -242,27 +233,6 @@ export function useChangesetChat({
     }
   }, [files, state, planTestsSubscription, mode, commitHash]);
 
-  // Save to cache when conversation state changes
-  useEffect(() => {
-    if (
-      state.context.messages.length > 0 &&
-      (state.matches("idle") || state.matches("streaming"))
-    ) {
-      cache.save({
-        messages: state.context.messages,
-        hasCompletedAnalysis: state.context.hasCompletedAnalysis,
-        scratchpadTodos: state.context.scratchpadTodos,
-        cachedAt: Date.now(),
-      });
-    }
-  }, [
-    state.context.messages,
-    state.context.hasCompletedAnalysis,
-    state.context.scratchpadTodos,
-    state.matches,
-    cache,
-  ]);
-
   // Auto-send focused message when starting next suite in act mode
   const previousSuiteId = useRef<string | null>(null);
   useEffect(() => {
@@ -294,8 +264,7 @@ export function useChangesetChat({
     isReasoningStreaming: state.context.isReasoningStreaming,
     error: state.context.error,
     isLoading: state.matches("analyzing") || state.matches("streaming"),
-    isLoadingHistory:
-      !state.context.cacheLoaded || !state.context.historyLoaded,
+    isLoadingHistory: !state.context.historyLoaded,
     hasCompletedAnalysis: state.context.hasCompletedAnalysis,
     scratchpadTodos: state.context.scratchpadTodos,
     usage: state.context.usage,

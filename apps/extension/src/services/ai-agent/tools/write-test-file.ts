@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { Runtime } from "effect";
+import { Effect, Runtime } from "effect";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 import {
@@ -13,7 +13,10 @@ import {
 import {
   formatFileEditWithoutUserChanges,
   formatFileEditError,
+  formatFileEditResponse,
 } from "../response-formatter.js";
+import type { DiffContentProvider } from "../../diff-content-provider.js";
+import { DiffViewProvider } from "../../diff-view-provider.js";
 
 /**
  * Streaming file output callback type
@@ -29,10 +32,16 @@ export type StreamingFileOutputCallback = (chunk: {
  * Factory function to create writeTestFileTool with approval registry
  * The tool requires a valid proposalId from an approved proposeTest call
  * Supports streaming file content as it's written
+ * @param approvalRegistry Set of approved proposal IDs
+ * @param onStreamingOutput Optional callback for streaming file output
+ * @param diffProvider Optional DiffContentProvider for visual diff view. If not provided, falls back to direct file editing.
+ * @param autoApprove Whether to auto-approve changes (default: false)
  */
 export const createWriteTestFileTool = (
   approvalRegistry: Set<string>,
   onStreamingOutput?: StreamingFileOutputCallback,
+  diffProvider?: DiffContentProvider,
+  autoApprove: boolean = false,
 ) =>
   tool({
     description:
@@ -87,12 +96,9 @@ export const createWriteTestFileTool = (
         fileUri = vscode.Uri.joinPath(workspaceRoot, targetPath);
       }
 
-      try {
-        // Capture pre-edit diagnostics
-        const preEditDiagnostics = await Runtime.runPromise(
-          Runtime.defaultRuntime,
-        )(getDiagnostics(fileUri));
+      const relativePath = vscode.workspace.asRelativePath(fileUri, false);
 
+      try {
         // Check if file exists
         let fileExists = false;
         try {
@@ -103,7 +109,6 @@ export const createWriteTestFileTool = (
         }
 
         if (fileExists && !overwrite) {
-          const relativePath = vscode.workspace.asRelativePath(fileUri, false);
           return {
             success: false,
             filePath: relativePath,
@@ -111,165 +116,259 @@ export const createWriteTestFileTool = (
           };
         }
 
-        // Ensure parent directory exists
-        const parentDir = vscode.Uri.joinPath(fileUri, "..");
-        try {
-          await vscode.workspace.fs.stat(parentDir);
-        } catch {
-          // Directory doesn't exist, create it
-          await vscode.workspace.fs.createDirectory(parentDir);
-        }
-
         // Normalize escaped characters - convert literal escape sequences to actual characters
         const normalizedContent = normalizeEscapedChars(testContent);
 
         // Use targetPath for consistency with tool args (for streaming callback lookup)
-        // Convert to relative path for return value
-        const relativePath = vscode.workspace.asRelativePath(fileUri, false);
         const callbackPath = path.isAbsolute(targetPath)
           ? relativePath
-          : targetPath; // Use original targetPath if relative, otherwise use computed relativePath
+          : targetPath;
 
-        // Create empty file and open it immediately for streaming
-        let document: vscode.TextDocument;
-        try {
-          // Create empty file first
-          await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
-          
-          // Open the file in the editor immediately
-          document = await vscode.workspace.openTextDocument(fileUri);
-          await vscode.window.showTextDocument(document, {
-            preview: false, // Keep the tab open (not preview mode)
-            preserveFocus: false, // Focus the new editor tab
-          });
+        // Use diff view if provider is available, otherwise use direct editing
+        if (diffProvider) {
+          // Create diff view provider instance using Effect service
+          const diffViewInstance = await Runtime.runPromise(
+            Runtime.defaultRuntime,
+          )(
+            DiffViewProvider.pipe(
+              Effect.flatMap((service) => service.create(diffProvider)),
+              Effect.provide(DiffViewProvider.Default),
+            ),
+          );
 
-          // Emit file-created event
-          if (onStreamingOutput) {
-            onStreamingOutput({
-              filePath: callbackPath,
-              content: "",
-              isComplete: false,
-            });
-          }
-        } catch (_error) {
-          // If opening fails, fall back to regular write
-          const content = Buffer.from(normalizedContent, "utf-8");
-          await vscode.workspace.fs.writeFile(fileUri, content);
-          
-          return {
-            success: true,
-            filePath: relativePath,
-            message: fileExists
-              ? `Test file updated: ${relativePath}`
-              : `Test file created: ${relativePath}`,
-          };
-        }
+          // Open diff view
+          const openResult = await Runtime.runPromise(Runtime.defaultRuntime)(
+            diffViewInstance.open(fileUri.fsPath).pipe(
+              Effect.provide(DiffViewProvider.Default),
+            ),
+          );
 
-        // Stream content incrementally using TextEditor API
-        // Chunk size: approximately 200 characters per chunk for smooth streaming
-        const chunkSize = 200;
-        let accumulatedContent = "";
-        
-        // Get the active text editor for this document
-        const editor = vscode.window.visibleTextEditors.find(
-          (e) => e.document.uri.toString() === fileUri.toString(),
-        );
-        
-        if (editor) {
-          // Use TextEditor for incremental writes
-          for (let i = 0; i < normalizedContent.length; i += chunkSize) {
-            const chunk = normalizedContent.slice(i, i + chunkSize);
-            accumulatedContent += chunk;
-            
-            // Append chunk to document
-            const edit = new vscode.WorkspaceEdit();
-            const currentLength = accumulatedContent.length - chunk.length;
-            const endPosition = document.positionAt(currentLength);
-            edit.insert(fileUri, endPosition, chunk);
-            await vscode.workspace.applyEdit(edit);
-            
-            // Reload document to get updated content
-            document = await vscode.workspace.openTextDocument(fileUri);
-            
-          // Emit streaming chunk
-          if (onStreamingOutput) {
-            onStreamingOutput({
-              filePath: callbackPath,
-              content: accumulatedContent,
-              isComplete: i + chunkSize >= normalizedContent.length,
-            });
-          }
-            
-            // Small delay to make streaming visible
-            await new Promise((resolve) => setTimeout(resolve, 20));
-          }
-        } else {
-          // Fallback: write entire file at once if editor not available
-          const content = Buffer.from(normalizedContent, "utf-8");
-          await vscode.workspace.fs.writeFile(fileUri, content);
-          
-          if (onStreamingOutput) {
-            onStreamingOutput({
+          if (!openResult.success) {
+            return {
+              success: false,
               filePath: relativePath,
-              content: normalizedContent,
+              message: `Failed to open diff view: ${openResult.error}`,
+            };
+          }
+
+          // Update diff view with new content
+          await Runtime.runPromise(Runtime.defaultRuntime)(
+            diffViewInstance.update(normalizedContent, true).pipe(
+              Effect.provide(DiffViewProvider.Default),
+            ),
+          );
+
+          // Handle approval flow
+          if (!autoApprove) {
+            // Show notification for user approval
+            const approval = await vscode.window.showInformationMessage(
+              `Review the changes to ${relativePath} in the diff view.`,
+              "Approve",
+              "Reject",
+            );
+
+            if (approval !== "Approve") {
+              await Runtime.runPromise(Runtime.defaultRuntime)(
+                diffViewInstance.revertChanges().pipe(
+                  Effect.flatMap(() => diffViewInstance.reset()),
+                  Effect.provide(DiffViewProvider.Default),
+                ),
+              );
+              return {
+                success: false,
+                filePath: relativePath,
+                message: `Changes to ${relativePath} were rejected by user.`,
+              };
+            }
+          }
+
+          // Save changes
+          const saveResult = await Runtime.runPromise(Runtime.defaultRuntime)(
+            diffViewInstance.saveChanges().pipe(
+              Effect.provide(DiffViewProvider.Default),
+            ),
+          );
+
+          // Format response
+          const message = formatFileEditResponse(relativePath, saveResult);
+
+          // Emit streaming callback
+          if (onStreamingOutput) {
+            onStreamingOutput({
+              filePath: callbackPath,
+              content: saveResult.finalContent,
               isComplete: true,
             });
           }
+
+          // Clean up
+          await Runtime.runPromise(Runtime.defaultRuntime)(
+            diffViewInstance.reset().pipe(
+              Effect.provide(DiffViewProvider.Default),
+            ),
+          );
+
+          return {
+            success: true,
+            filePath: relativePath,
+            message,
+          };
+        } else {
+          // Fallback: Direct file editing (legacy behavior)
+          // Capture pre-edit diagnostics
+          const preEditDiagnostics = await Runtime.runPromise(
+            Runtime.defaultRuntime,
+          )(getDiagnostics(fileUri));
+
+          // Ensure parent directory exists
+          const parentDir = vscode.Uri.joinPath(fileUri, "..");
+          try {
+            await vscode.workspace.fs.stat(parentDir);
+          } catch {
+            // Directory doesn't exist, create it
+            await vscode.workspace.fs.createDirectory(parentDir);
+          }
+
+          // Create empty file and open it immediately for streaming
+          let document: vscode.TextDocument;
+          try {
+            // Create empty file first
+            await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+            
+            // Open the file in the editor immediately
+            document = await vscode.workspace.openTextDocument(fileUri);
+            await vscode.window.showTextDocument(document, {
+              preview: false, // Keep the tab open (not preview mode)
+              preserveFocus: false, // Focus the new editor tab
+            });
+
+            // Emit file-created event
+            if (onStreamingOutput) {
+              onStreamingOutput({
+                filePath: callbackPath,
+                content: "",
+                isComplete: false,
+              });
+            }
+          } catch (_error) {
+            // If opening fails, fall back to regular write
+            const content = Buffer.from(normalizedContent, "utf-8");
+            await vscode.workspace.fs.writeFile(fileUri, content);
+            
+            return {
+              success: true,
+              filePath: relativePath,
+              message: fileExists
+                ? `Test file updated: ${relativePath}`
+                : `Test file created: ${relativePath}`,
+            };
+          }
+
+          // Stream content incrementally using TextEditor API
+          // Chunk size: approximately 200 characters per chunk for smooth streaming
+          const chunkSize = 200;
+          let accumulatedContent = "";
+          
+          // Get the active text editor for this document
+          const editor = vscode.window.visibleTextEditors.find(
+            (e) => e.document.uri.toString() === fileUri.toString(),
+          );
+          
+          if (editor) {
+            // Use TextEditor for incremental writes
+            for (let i = 0; i < normalizedContent.length; i += chunkSize) {
+              const chunk = normalizedContent.slice(i, i + chunkSize);
+              accumulatedContent += chunk;
+              
+              // Append chunk to document
+              const edit = new vscode.WorkspaceEdit();
+              const currentLength = accumulatedContent.length - chunk.length;
+              const endPosition = document.positionAt(currentLength);
+              edit.insert(fileUri, endPosition, chunk);
+              await vscode.workspace.applyEdit(edit);
+              
+              // Reload document to get updated content
+              document = await vscode.workspace.openTextDocument(fileUri);
+              
+            // Emit streaming chunk
+            if (onStreamingOutput) {
+              onStreamingOutput({
+                filePath: callbackPath,
+                content: accumulatedContent,
+                isComplete: i + chunkSize >= normalizedContent.length,
+              });
+            }
+              
+              // Small delay to make streaming visible
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+          } else {
+            // Fallback: write entire file at once if editor not available
+            const content = Buffer.from(normalizedContent, "utf-8");
+            await vscode.workspace.fs.writeFile(fileUri, content);
+            
+            if (onStreamingOutput) {
+              onStreamingOutput({
+                filePath: relativePath,
+                content: normalizedContent,
+                isComplete: true,
+              });
+            }
+          }
+
+          // Capture post-edit diagnostics and detect auto-formatting
+          const preSaveContent = normalizedContent;
+          
+          // Read the actual file content after save (to detect auto-formatting)
+          const savedDoc = await vscode.workspace.openTextDocument(fileUri);
+          const postSaveContent = savedDoc.getText();
+
+          // Get post-edit diagnostics
+          const postEditDiagnostics = await Runtime.runPromise(
+            Runtime.defaultRuntime,
+          )(getDiagnostics(fileUri));
+
+          const newProblems = getNewProblems(
+            preEditDiagnostics,
+            postEditDiagnostics,
+          );
+
+          const newProblemsMessage =
+            newProblems.length > 0
+              ? formatDiagnosticsMessage(newProblems)
+              : undefined;
+
+          // Normalize EOL for comparison
+          const normalizeEOL = (content: string): string => {
+            return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+          };
+
+          const normalizedPreSave = normalizeEOL(preSaveContent);
+          const normalizedPostSave = normalizeEOL(postSaveContent);
+
+          // Detect auto-formatting changes
+          const autoFormattingEdits =
+            normalizedPreSave !== normalizedPostSave
+              ? `Auto-formatting was applied by the editor`
+              : undefined;
+
+          // Format response for AI
+          const message = formatFileEditWithoutUserChanges(
+            relativePath,
+            postSaveContent,
+            autoFormattingEdits,
+            newProblemsMessage,
+          );
+
+          return {
+            success: true,
+            filePath: relativePath,
+            message,
+          };
         }
-
-        // Capture post-edit diagnostics and detect auto-formatting
-        const preSaveContent = normalizedContent;
-        
-        // Read the actual file content after save (to detect auto-formatting)
-        const savedDoc = await vscode.workspace.openTextDocument(fileUri);
-        const postSaveContent = savedDoc.getText();
-
-        // Get post-edit diagnostics
-        const postEditDiagnostics = await Runtime.runPromise(
-          Runtime.defaultRuntime,
-        )(getDiagnostics(fileUri));
-
-        const newProblems = getNewProblems(
-          preEditDiagnostics,
-          postEditDiagnostics,
-        );
-
-        const newProblemsMessage =
-          newProblems.length > 0
-            ? formatDiagnosticsMessage(newProblems)
-            : undefined;
-
-        // Normalize EOL for comparison
-        const normalizeEOL = (content: string): string => {
-          return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        };
-
-        const normalizedPreSave = normalizeEOL(preSaveContent);
-        const normalizedPostSave = normalizeEOL(postSaveContent);
-
-        // Detect auto-formatting changes
-        const autoFormattingEdits =
-          normalizedPreSave !== normalizedPostSave
-            ? `Auto-formatting was applied by the editor`
-            : undefined;
-
-        // Format response for AI
-        const message = formatFileEditWithoutUserChanges(
-          relativePath,
-          postSaveContent,
-          autoFormattingEdits,
-          newProblemsMessage,
-        );
-
-        return {
-          success: true,
-          filePath: relativePath,
-          message,
-        };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
-        const relativePath = vscode.workspace.asRelativePath(fileUri, false);
 
         // Try to read current file content for error context
         let originalContent: string | undefined;

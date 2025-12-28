@@ -274,8 +274,30 @@ describe("Tool Factory", () => {
         yield* createToolSet(config);
 
         expect(createWriteTestFileTool).toHaveBeenCalledWith(
-          expect.anything(),
-          fileCallback,
+          expect.anything(), // approvalRegistry
+          fileCallback,      // fileStreamingCallback
+          undefined,         // diffProvider (not provided)
+          false,             // autoApprove
+        );
+      }),
+    );
+
+    it.effect("should pass diff provider to write test file in act mode", () =>
+      Effect.gen(function* () {
+        const { createWriteTestFileTool } = yield* Effect.promise(() =>
+          import("../tools/write-test-file"),
+        );
+        const config = createBaseMockConfig();
+        config.mode = "act";
+        config.diffProvider = {} as unknown as DiffContentProvider;
+
+        yield* createToolSet(config);
+
+        expect(createWriteTestFileTool).toHaveBeenCalledWith(
+          expect.anything(),    // approvalRegistry
+          undefined,            // fileStreamingCallback (not provided)
+          config.diffProvider,  // diffProvider
+          false,                // autoApprove
         );
       }),
     );

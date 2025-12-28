@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@clive/ui/dropdown-menu";
-import { Bug, CheckCircle, XCircle, List, RotateCcw } from "lucide-react";
+import { Bug, CheckCircle, XCircle, List, RotateCcw, Terminal, FileEdit, Search, Globe, Brain, Activity, AlertCircle } from "lucide-react";
 import type { ChangesetChatEvent } from "../machines/changeset-chat-machine.js";
 import {
   createMockPlan,
@@ -18,6 +18,18 @@ import {
   createMockPassedSuiteQueue,
   createMockFailedSuiteQueue,
   createMockMixedQueue,
+  createMockBashExecuteMessage,
+  createMockWriteTestFileMessage,
+  createMockWriteTestFilePendingApproval,
+  createMockWriteTestFileRejected,
+  createMockSearchKnowledgeMessage,
+  createMockReplaceInFileMessage,
+  createMockReplaceInFilePendingApproval,
+  createMockReplaceInFileRejected,
+  createMockWebSearchMessage,
+  createMockReasoningState,
+  createMockUsage,
+  createMockError,
 } from "../utils/mock-states.js";
 
 interface DevTestingToolbarProps {
@@ -128,6 +140,158 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
     setIsOpen(false);
   };
 
+  // Tool call handlers
+  const handleBashExecute = () => {
+    const message = createMockBashExecuteMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleWriteTestFile = () => {
+    const message = createMockWriteTestFileMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleSearchKnowledge = () => {
+    const message = createMockSearchKnowledgeMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleReplaceInFile = () => {
+    const message = createMockReplaceInFileMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleWebSearch = () => {
+    const message = createMockWebSearchMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleWriteTestFilePending = () => {
+    const message = createMockWriteTestFilePendingApproval();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleWriteTestFileRejected = () => {
+    const message = createMockWriteTestFileRejected();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleReplaceInFilePending = () => {
+    const message = createMockReplaceInFilePendingApproval();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleReplaceInFileRejected = () => {
+    const message = createMockReplaceInFileRejected();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+        agentMode: "act",
+      },
+    });
+    setIsOpen(false);
+  };
+
+  // State handlers
+  const handleShowReasoning = () => {
+    const reasoning = createMockReasoningState();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: reasoning,
+    });
+    setIsOpen(false);
+  };
+
+  const handleShowUsage = () => {
+    const usage = createMockUsage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: { usage },
+    });
+    setIsOpen(false);
+  };
+
+  const handleShowErrorSubscription = () => {
+    const error = createMockError("subscription");
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: { error },
+    });
+    setIsOpen(false);
+  };
+
+  const handleShowErrorAnalysis = () => {
+    const error = createMockError("analysis");
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: { error },
+    });
+    setIsOpen(false);
+  };
+
   return (
     <div className="fixed bottom-[150px] right-4 z-50">
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -135,7 +299,7 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
           <Button
             variant="outline"
             size="icon"
-            className="h-12 w-12 rounded-full shadow-lg bg-background border-2 border-primary/20 hover:border-primary/40"
+            className="h-12 w-12 rounded-full shadow-lg bg-primary z-50 border-2 border-primary/20 hover:border-primary/40"
             aria-label="Dev Testing Toolbar"
           >
             <Bug className="h-5 w-5" />
@@ -192,6 +356,82 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
             <DropdownMenuItem onClick={handleSomeFailed}>
               <XCircle className="mr-2 h-4 w-4" />
               Some Failed
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Tool Calls
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={handleBashExecute}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Bash Execute
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleWriteTestFile}>
+              <FileEdit className="mr-2 h-4 w-4" />
+              Write Test File
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSearchKnowledge}>
+              <Search className="mr-2 h-4 w-4" />
+              Search Knowledge
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleReplaceInFile}>
+              <FileEdit className="mr-2 h-4 w-4" />
+              Replace In File
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleWebSearch}>
+              <Globe className="mr-2 h-4 w-4" />
+              Web Search
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Diff Approval States
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={handleWriteTestFilePending}>
+              <FileEdit className="mr-2 h-4 w-4 text-yellow-500" />
+              Write File: Pending Approval
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleWriteTestFileRejected}>
+              <XCircle className="mr-2 h-4 w-4 text-red-500" />
+              Write File: Rejected
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleReplaceInFilePending}>
+              <FileEdit className="mr-2 h-4 w-4 text-yellow-500" />
+              Edit File: Pending Approval
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleReplaceInFileRejected}>
+              <XCircle className="mr-2 h-4 w-4 text-red-500" />
+              Edit File: Rejected
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              States
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={handleShowReasoning}>
+              <Brain className="mr-2 h-4 w-4" />
+              Show Reasoning
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowUsage}>
+              <Activity className="mr-2 h-4 w-4" />
+              Show Usage
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowErrorSubscription}>
+              <AlertCircle className="mr-2 h-4 w-4" />
+              Error: Subscription
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowErrorAnalysis}>
+              <AlertCircle className="mr-2 h-4 w-4" />
+              Error: Analysis
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
