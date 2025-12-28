@@ -39,14 +39,44 @@ const ProposeTestPlanInputSchema = z.object({
   overview: z
     .string()
     .describe("Brief description of what tests will cover (1-2 sentences)"),
-  todos: z
-    .array(z.string())
-    .describe("List of test types to be created (e.g., ['unit-tests', 'integration-tests', 'e2e-tests'])"),
+  suites: z
+    .array(
+      z.object({
+        id: z
+          .string()
+          .describe(
+            "Unique identifier for the suite (e.g., 'suite-1-unit-auth')",
+          ),
+        name: z
+          .string()
+          .describe(
+            "Human-readable name (e.g., 'Unit Tests for Authentication Logic')",
+          ),
+        testType: z
+          .enum(["unit", "integration", "e2e"])
+          .describe("Type of test suite"),
+        targetFilePath: z
+          .string()
+          .describe(
+            "Path where test file will be created (e.g., 'src/auth/__tests__/auth.test.ts')",
+          ),
+        sourceFiles: z
+          .array(z.string())
+          .describe("Source files that will be tested by this suite"),
+        description: z
+          .string()
+          .optional()
+          .describe("Brief description of what this suite tests"),
+      }),
+    )
+    .describe(
+      "Array of test suites to be created. Each suite will be processed individually in the queue.",
+    ),
   planContent: z
     .string()
     .describe(
       "The complete test plan in markdown format with YAML frontmatter. Must include:\n" +
-        "- YAML frontmatter with name, overview, todos\n" +
+        "- YAML frontmatter with name, overview, suites array\n" +
         "- Problem Summary section\n" +
         "- Implementation Plan with numbered sections\n" +
         "- Changes Summary footer",
@@ -60,7 +90,14 @@ export interface ProposeTestPlanOutput {
   planId: string;
   name: string;
   overview: string;
-  todos: string[];
+  suites: Array<{
+    id: string;
+    name: string;
+    testType: "unit" | "integration" | "e2e";
+    targetFilePath: string;
+    sourceFiles: string[];
+    description?: string;
+  }>;
   message: string;
   filePath?: string;
 }
@@ -446,7 +483,7 @@ const createOutputResult = (
   planId,
   name: input.name,
   overview: input.overview,
-  todos: input.todos,
+  suites: input.suites,
   message: approved
     ? `Test plan proposal created: ${input.name}`
     : `Test plan proposal rejected: ${input.name}`,

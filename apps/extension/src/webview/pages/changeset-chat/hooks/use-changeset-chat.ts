@@ -288,6 +288,7 @@ export function useChangesetChat({
     currentSuiteId: state.context.currentSuiteId,
     agentMode: state.context.agentMode,
     subscriptionId: state.context.subscriptionId,
+    hasPendingPlanApproval: state.context.hasPendingPlanApproval,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });

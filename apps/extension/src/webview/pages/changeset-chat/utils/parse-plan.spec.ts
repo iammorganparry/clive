@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parsePlan, hasPlanContent } from './parse-plan';
+import { parsePlan, hasPlanContent, parsePlanSections } from './parse-plan';
 
 describe('parsePlan', () => {
   describe('hasPlanContent', () => {
-    it('should detect YAML frontmatter format', () => {
+    it('should detect YAML frontmatter format with name field', () => {
       const text = `---
 name: Test Plan for Authentication
 overview: Tests for auth
@@ -30,36 +30,24 @@ overview: Testing authentication
       expect(hasPlanContent(text)).toBe(true);
     });
 
-    it('should detect H1 header format', () => {
-      const text = `# Test Plan for API Routes
+    it('should detect name field without YAML delimiters', () => {
+      const text = `name: Test Plan for API Routes
 
 Content here`;
       
       expect(hasPlanContent(text)).toBe(true);
     });
 
-    it('should detect H2 Test Plan: format', () => {
-      const text = `## Test Plan: Authentication
-
-Content here`;
-      
-      expect(hasPlanContent(text)).toBe(true);
-    });
-
-    it('should detect H2 Recommendation: format', () => {
-      const text = `## Recommendation: Integration Tests
-
-Content here`;
-      
-      expect(hasPlanContent(text)).toBe(true);
-    });
-
-    it('should return false when no plan content is present', () => {
+    it('should return false when no name field is present', () => {
       const text = `# Regular Document
 
 This is just regular content without a test plan.`;
       
       expect(hasPlanContent(text)).toBe(false);
+    });
+
+    it('should return false for empty string', () => {
+      expect(hasPlanContent('')).toBe(false);
     });
   });
 
@@ -68,7 +56,12 @@ This is just regular content without a test plan.`;
       const markdown = `---
 name: Test Plan for Authentication
 overview: Comprehensive tests for auth flow
-todos: ["unit-tests", "integration-tests"]
+suites:
+  - id: unit-auth
+    name: Unit Tests for Auth
+    testType: unit
+    targetFilePath: src/auth/__tests__/auth.test.ts
+    sourceFiles: [src/auth/login.ts, src/auth/logout.ts]
 ---
 
 # Test Plan
@@ -81,6 +74,9 @@ Content here`;
       if (result) {
         expect(result.title).toBe('Test Plan for Authentication');
         expect(result.description).toBe('Comprehensive tests for auth flow');
+        expect(result.suites).toHaveLength(1);
+        expect(result.suites?.[0].id).toBe('unit-auth');
+        expect(result.suites?.[0].sourceFiles).toEqual(['src/auth/login.ts', 'src/auth/logout.ts']);
       }
     });
 
@@ -172,74 +168,24 @@ overview: Overview
     });
   });
 
-  describe('H1 header parsing', () => {
-    it('should extract title from H1 header', () => {
-      const markdown = `# Test Plan for Authentication
-
-## Problem Summary
-
-Content here`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.title).toBe('Test Plan for Authentication');
-      }
-    });
-
-    it('should handle H1 without "for" clause', () => {
-      const markdown = `# Test Plan
-
-Content here`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.title).toBe('Test Plan');
-      }
-    });
-
-    it('should extract description from first paragraph after H1', () => {
-      const markdown = `# Test Plan for API
-
-This is the description of the test plan.
-
-## Problem Summary`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.description).toContain('This is the description');
-      }
-    });
-
-    it('should extract body up to next major H2 section', () => {
-      const markdown = `# Test Plan for Authentication
-
-Some intro text here.
-
-## Problem Summary
-
-Problems here`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.body).toContain('# Test Plan for Authentication');
-        expect(result.body).toContain('Some intro text here');
-        // Body stops at first H2 section
-        expect(result.body).not.toContain('## Problem Summary');
-      }
-    });
-  });
-
-  describe('H2 header parsing (backward compatibility)', () => {
-    it('should extract title from H2 Test Plan: header', () => {
-      const markdown = `## Test Plan: Authentication Flow
+  describe('Suites extraction from YAML', () => {
+    it('should extract suites array from YAML frontmatter', () => {
+      const markdown = `---
+name: Test Plan for Authentication
+overview: Comprehensive auth testing
+suites:
+  - id: unit-auth
+    name: Unit Tests for Auth Logic
+    testType: unit
+    targetFilePath: src/auth/__tests__/auth.test.ts
+    sourceFiles: [src/auth/login.ts, src/auth/logout.ts]
+    description: Test authentication functions
+  - id: integration-auth
+    name: Integration Tests for Auth Flow
+    testType: integration
+    targetFilePath: src/auth/__tests__/auth-flow.test.ts
+    sourceFiles: [src/auth/middleware.ts]
+---
 
 Content here`;
 
@@ -247,49 +193,48 @@ Content here`;
       
       expect(result).not.toBeNull();
       if (result) {
-        expect(result.title).toBe('Authentication Flow');
+        expect(result.suites).toHaveLength(2);
+        expect(result.suites?.[0].id).toBe('unit-auth');
+        expect(result.suites?.[0].name).toBe('Unit Tests for Auth Logic');
+        expect(result.suites?.[0].testType).toBe('unit');
+        expect(result.suites?.[0].targetFilePath).toBe('src/auth/__tests__/auth.test.ts');
+        expect(result.suites?.[0].sourceFiles).toEqual(['src/auth/login.ts', 'src/auth/logout.ts']);
+        expect(result.suites?.[1].testType).toBe('integration');
       }
     });
 
-    it('should extract title from H2 Recommendation: header', () => {
-      const markdown = `## Recommendation: Integration Tests
-
-Content here`;
+    it('should handle suites with e2e test type', () => {
+      const markdown = `---
+name: Test Plan
+overview: E2E testing
+suites:
+  - id: e2e-flow
+    name: E2E User Flow Tests
+    testType: e2e
+    targetFilePath: e2e/user-flow.spec.ts
+    sourceFiles: []
+---`;
 
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
       if (result) {
-        expect(result.title).toBe('Integration Tests');
+        expect(result.suites).toHaveLength(1);
+        expect(result.suites?.[0].testType).toBe('e2e');
       }
     });
 
-    it('should handle empty title after colon', () => {
-      const markdown = `## Test Plan:
-
-Content here`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      // When no title after colon, the implementation uses the first line as title
-      if (result) {
-        expect(result.title).toBeDefined();
-      }
-    });
-
-    it('should extract description from first line after header', () => {
-      const markdown = `## Test Plan: API Routes
-
-This is a description of the test plan.
-
-More content here`;
+    it('should return undefined suites when not present in YAML', () => {
+      const markdown = `---
+name: Test Plan
+overview: Overview without suites
+---`;
 
       const result = parsePlan(markdown);
       
       expect(result).not.toBeNull();
       if (result) {
-        expect(result.description).toContain('This is a description');
+        expect(result.suites).toBeUndefined();
       }
     });
   });
@@ -373,7 +318,7 @@ overview: Overview
   });
 
   describe('Edge cases', () => {
-    it('should return null when no plan content detected', () => {
+    it('should return null when no YAML name field is present', () => {
       const markdown = `# Regular Document
 
 This is just regular content.`;
@@ -390,7 +335,10 @@ This is just regular content.`;
     });
 
     it('should handle markdown with special characters', () => {
-      const markdown = `# Test Plan for Auth & Security (v2.0)
+      const markdown = `---
+name: Test Plan for Auth & Security (v2.0)
+overview: Testing with special chars
+---
 
 Content with <tags> and special @characters!`;
 
@@ -445,50 +393,111 @@ Content 2`;
     });
   });
 
-  describe('Format priority', () => {
-    it('should prioritize YAML frontmatter over H1 headers', () => {
-      const markdown = `---
-name: YAML Title
-overview: YAML description
----
-
-# Test Plan for H1 Title
-
-Content`;
-
-      const result = parsePlan(markdown);
+  describe('parsePlanSections', () => {
+    it('should extract suites from YAML frontmatter', () => {
+      const planContent = `---
+name: Test Plan
+overview: Overview
+suites:
+  - id: unit-auth
+    name: Unit Tests for Auth
+    testType: unit
+    targetFilePath: src/auth/__tests__/auth.test.ts
+    sourceFiles: [src/auth/login.ts, src/auth/logout.ts]
+---`;
       
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.title).toBe('YAML Title');
-        expect(result.description).toBe('YAML description');
-      }
+      const sections = parsePlanSections(planContent);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].id).toBe('unit-auth');
+      expect(sections[0].name).toBe('Unit Tests for Auth');
+      expect(sections[0].testType).toBe('unit');
+      expect(sections[0].sourceFiles).toEqual(['src/auth/login.ts', 'src/auth/logout.ts']);
     });
 
-    it('should prioritize H1 headers over H2 headers', () => {
-      const markdown = `# Test Plan for H1 Title
-
-Some content
-
-## Test Plan: H2 Title
-
-More content`;
-
-      const result = parsePlan(markdown);
+    it('should return empty array when no suites in YAML', () => {
+      const planContent = `---
+name: Test Plan
+overview: Overview
+---`;
       
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.title).toBe('Test Plan for H1 Title');
-      }
+      const sections = parsePlanSections(planContent);
+      expect(sections).toEqual([]);
+    });
+
+    it('should return empty array when no YAML frontmatter', () => {
+      const planContent = `# Regular content`;
+      
+      const sections = parsePlanSections(planContent);
+      expect(sections).toEqual([]);
+    });
+
+    it('should handle multiple suites with all test types', () => {
+      const planContent = `---
+name: Comprehensive Test Plan
+overview: All test types
+suites:
+  - id: unit-1
+    name: Unit Tests
+    testType: unit
+    targetFilePath: src/__tests__/unit.test.ts
+    sourceFiles: [src/file1.ts]
+  - id: integration-1
+    name: Integration Tests
+    testType: integration
+    targetFilePath: src/__tests__/integration.test.ts
+    sourceFiles: [src/file2.ts]
+  - id: e2e-1
+    name: E2E Tests
+    testType: e2e
+    targetFilePath: e2e/flow.spec.ts
+    sourceFiles: []
+---`;
+      
+      const sections = parsePlanSections(planContent);
+      expect(sections).toHaveLength(3);
+      expect(sections[0].testType).toBe('unit');
+      expect(sections[1].testType).toBe('integration');
+      expect(sections[2].testType).toBe('e2e');
+    });
+
+    it('should include sectionNumber for each suite', () => {
+      const planContent = `---
+name: Test Plan
+suites:
+  - id: suite-1
+    name: Suite 1
+    testType: unit
+    targetFilePath: test1.ts
+    sourceFiles: []
+  - id: suite-2
+    name: Suite 2
+    testType: unit
+    targetFilePath: test2.ts
+    sourceFiles: []
+---`;
+      
+      const sections = parsePlanSections(planContent);
+      expect(sections[0].sectionNumber).toBe(1);
+      expect(sections[1].sectionNumber).toBe(2);
     });
   });
 
   describe('Real-world test plan formats', () => {
-    it('should parse complete YAML frontmatter test plan', () => {
+    it('should parse complete YAML frontmatter test plan with suites', () => {
       const markdown = `---
 name: Test Plan for RPC Routers
 overview: Comprehensive testing strategy covering RPC layer
-todos: ["unit-tests", "integration-tests"]
+suites:
+  - id: unit-rpc
+    name: Unit Tests for RPC Handlers
+    testType: unit
+    targetFilePath: src/rpc/__tests__/handlers.test.ts
+    sourceFiles: [src/rpc/handlers.ts, src/rpc/utils.ts]
+  - id: integration-rpc
+    name: Integration Tests for RPC Layer
+    testType: integration
+    targetFilePath: src/rpc/__tests__/integration.test.ts
+    sourceFiles: [src/rpc/router.ts]
 ---
 
 # Test Plan for RPC Routers
@@ -530,13 +539,23 @@ Lines to cover:
         expect(result.body).toContain('## Changes Summary');
         expect(result.summary).toContain('# Test Plan for RPC Routers');
         expect(result.fullContent).toContain('name: Test Plan for RPC Routers');
+        expect(result.suites).toHaveLength(2);
+        expect(result.suites?.[0].id).toBe('unit-rpc');
+        expect(result.suites?.[1].id).toBe('integration-rpc');
       }
     });
 
-    it('should parse H1 format test plan', () => {
-      const markdown = `# Test Plan for Authentication
-
-This is an overview paragraph.
+    it('should parse minimal YAML test plan', () => {
+      const markdown = `---
+name: Test Plan for Authentication
+overview: Auth testing
+suites:
+  - id: unit-auth
+    name: Unit Tests
+    testType: unit
+    targetFilePath: src/__tests__/auth.test.ts
+    sourceFiles: [src/auth.ts]
+---
 
 ## Problem Summary
 
@@ -547,33 +566,8 @@ Authentication flow needs comprehensive testing.`;
       expect(result).not.toBeNull();
       if (result) {
         expect(result.title).toBe('Test Plan for Authentication');
-        expect(result.body).toContain('# Test Plan for Authentication');
-        expect(result.body).toContain('This is an overview paragraph');
-        // Body stops at first H2
-        expect(result.body).not.toContain('## Problem Summary');
-        expect(result.fullContent).toContain('## Problem Summary');
-      }
-    });
-
-    it('should parse H2 format test plan (backward compatible)', () => {
-      const markdown = `## Test Plan: Database Layer
-
-### Overview
-
-Testing database queries and transactions.
-
-### Tests to Add
-
-1. Query validation tests
-2. Transaction rollback tests`;
-
-      const result = parsePlan(markdown);
-      
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result.title).toBe('Database Layer');
-        expect(result.body).toContain('### Overview');
-        expect(result.body).toContain('### Tests to Add');
+        expect(result.body).toContain('## Problem Summary');
+        expect(result.suites).toHaveLength(1);
       }
     });
   });

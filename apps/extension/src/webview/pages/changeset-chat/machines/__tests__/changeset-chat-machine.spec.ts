@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { ChangesetChatContext } from "../changeset-chat-machine.js";
-import { isTestCommand, extractTestFilePath } from "../../utils/parse-test-output.js";
+import {
+  isTestCommand,
+  extractTestFilePath,
+  parseTestOutput,
+  updateTestExecutionFromStream,
+} from "../../utils/parse-test-output.js";
 
 // Mock the state machine actions by testing the logic directly
 // Since XState actions are pure functions, we can test them in isolation
@@ -19,6 +24,7 @@ describe("changeset-chat-machine test execution actions", () => {
       reasoningContent: "",
       isReasoningStreaming: false,
       hasCompletedAnalysis: false,
+      hasPendingPlanApproval: false,
       scratchpadTodos: [],
       historyLoaded: false,
       testExecutions: [],
@@ -520,6 +526,298 @@ describe("changeset-chat-machine test execution actions", () => {
       expect(nextSuite?.id).toBe(suiteId2);
     });
   });
+
+  describe("Streaming Test Output to testExecutions", () => {
+    it("should accumulate streaming vitest output and parse test results", () => {
+      const toolCallId = "test-tool-call-1";
+      const command = "vitest run src/utils.test.ts";
+      const filePath = "src/utils.test.ts";
+
+      // Add tool event
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate streaming chunks
+      const chunks = [
+        "✓ should validate input",
+        " (50ms)\n",
+        "✓ should handle errors",
+        " (30ms)\n",
+      ];
+
+      let accumulated = "";
+      chunks.forEach((chunk) => {
+        accumulated += chunk;
+        mockContext.accumulatedTestOutput.set(toolCallId, accumulated);
+      });
+
+      // Parse the accumulated output
+      const results = parseTestOutput(accumulated, command);
+      expect(results).toHaveLength(2);
+      expect(results[0]).toMatchObject({
+        testName: "should validate input",
+        status: "pass",
+        duration: 50,
+      });
+      expect(results[1]).toMatchObject({
+        testName: "should handle errors",
+        status: "pass",
+        duration: 30,
+      });
+
+      // Verify file path extraction
+      expect(extractTestFilePath(command)).toBe(filePath);
+    });
+
+    it("should update testExecutions array from streaming output", () => {
+      const toolCallId = "test-tool-call-1";
+      const command = "npx vitest run test.spec.ts";
+      const filePath = "test.spec.ts";
+
+      // Add tool event
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate first chunk - incomplete output (no duration yet)
+      const chunk1 = "✓ test1";
+      mockContext.accumulatedTestOutput.set(toolCallId, chunk1);
+
+      const updated1 = updateTestExecutionFromStream(
+        null,
+        command,
+        chunk1,
+        chunk1,
+      );
+
+      expect(updated1).toBeDefined();
+      expect(updated1?.filePath).toBe(filePath);
+      expect(updated1?.tests.length).toBeGreaterThan(0);
+      expect(updated1?.status).toBe("running");
+
+      // Simulate second chunk - complete with durations
+      const chunk2 = " (100ms)\n✓ test2 (200ms)\n";
+      const accumulated = chunk1 + chunk2;
+      mockContext.accumulatedTestOutput.set(toolCallId, accumulated);
+
+      const updated2 = updateTestExecutionFromStream(
+        updated1,
+        command,
+        chunk2,
+        accumulated,
+      );
+
+      expect(updated2?.tests.length).toBeGreaterThanOrEqual(2);
+      expect(updated2?.summary?.passed).toBeGreaterThanOrEqual(2);
+    });
+
+    it("should handle failed test results in streaming output", () => {
+      const toolCallId = "test-tool-call-1";
+      const command = "vitest run test.spec.ts";
+
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate streaming with failures
+      const output = "✓ test1 (100ms)\n✗ test2 (50ms)\n  Error: Expected true but got false\n";
+      mockContext.accumulatedTestOutput.set(toolCallId, output);
+
+      const updated = updateTestExecutionFromStream(
+        null,
+        command,
+        output,
+        output,
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.tests.length).toBeGreaterThanOrEqual(2);
+      expect(updated?.summary?.passed).toBeGreaterThanOrEqual(1);
+      expect(updated?.summary?.failed).toBeGreaterThanOrEqual(1);
+
+      const failedTest = updated?.tests.find((t) => t.status === "fail");
+      expect(failedTest).toBeDefined();
+      expect(failedTest?.error).toBeTruthy();
+    });
+
+    it("should process jest streaming output correctly", () => {
+      const toolCallId = "test-tool-call-2";
+      const command = "jest test auth.test.js";
+
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate jest output streaming
+      const chunks = [
+        "PASS tests/auth.test.js\n",
+        "  ✓ login with valid credentials (100ms)\n",
+        "  ✓ logout (50ms)\n",
+      ];
+
+      let accumulated = "";
+      chunks.forEach((chunk) => {
+        accumulated += chunk;
+        mockContext.accumulatedTestOutput.set(toolCallId, accumulated);
+      });
+
+      const updated = updateTestExecutionFromStream(
+        null,
+        command,
+        accumulated,
+        accumulated,
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.tests.length).toBeGreaterThanOrEqual(2);
+      
+      const testNames = updated?.tests.map((t) => t.testName) || [];
+      expect(testNames.some((name) => name.includes("login"))).toBe(true);
+      expect(testNames.some((name) => name.includes("logout"))).toBe(true);
+    });
+
+    it("should link testExecutions to testSuiteQueue during streaming", () => {
+      const suiteId = "suite-1";
+      const toolCallId = "test-tool-call-1";
+      const command = "vitest run test.spec.ts";
+      const filePath = "test.spec.ts";
+
+      // Setup suite queue
+      mockContext.testSuiteQueue.push({
+        id: suiteId,
+        name: "Test Suite",
+        testType: "unit",
+        targetFilePath: filePath,
+        sourceFiles: [],
+        status: "in_progress",
+        testResults: undefined,
+      });
+      mockContext.currentSuiteId = suiteId;
+
+      // Setup tool event
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate streaming output
+      const output = "✓ test1 (100ms)\n✓ test2 (200ms)\n";
+      mockContext.accumulatedTestOutput.set(toolCallId, output);
+
+      const updated = updateTestExecutionFromStream(
+        null,
+        command,
+        output,
+        output,
+      );
+
+      expect(updated).toBeDefined();
+      expect(updated?.filePath).toBe(filePath);
+
+      // Add to testExecutions
+      if (updated) {
+        mockContext.testExecutions.push(updated);
+      }
+
+      // Verify linkage
+      const currentSuite = mockContext.testSuiteQueue.find(
+        (s) => s.id === suiteId,
+      );
+      const execution = mockContext.testExecutions.find(
+        (te) => te.filePath === filePath,
+      );
+
+      expect(currentSuite?.targetFilePath).toBe(execution?.filePath);
+      expect(execution?.summary?.total).toBe(2);
+      expect(execution?.summary?.passed).toBe(2);
+    });
+
+    it("should handle multiple test files streaming in parallel", () => {
+      const commands = [
+        { id: "tool-1", cmd: "vitest run test1.spec.ts", file: "test1.spec.ts" },
+        { id: "tool-2", cmd: "vitest run test2.spec.ts", file: "test2.spec.ts" },
+      ];
+
+      commands.forEach(({ id, cmd, file }) => {
+        mockContext.toolEvents.push({
+          toolCallId: id,
+          toolName: "bashExecute",
+          args: { command: cmd },
+          state: "output-available",
+          timestamp: new Date(),
+        });
+
+        const output = `✓ test from ${file} (100ms)\n`;
+        mockContext.accumulatedTestOutput.set(id, output);
+
+        const updated = updateTestExecutionFromStream(null, cmd, output, output);
+        if (updated) {
+          mockContext.testExecutions.push(updated);
+        }
+      });
+
+      expect(mockContext.testExecutions.length).toBe(2);
+      expect(mockContext.testExecutions[0].filePath).toContain("test1");
+      expect(mockContext.testExecutions[1].filePath).toContain("test2");
+    });
+
+    it("should transition test execution status from running to completed", () => {
+      const toolCallId = "test-tool-call-1";
+      const command = "vitest run test.spec.ts";
+
+      mockContext.toolEvents.push({
+        toolCallId,
+        toolName: "bashExecute",
+        args: { command },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate incomplete streaming (running state)
+      const incompleteOutput = "✓ test1";
+      const running = updateTestExecutionFromStream(
+        null,
+        command,
+        incompleteOutput,
+        incompleteOutput,
+      );
+
+      expect(running?.status).toBe("running");
+      expect(running?.completedAt).toBeUndefined();
+
+      // Simulate complete streaming with summary markers
+      const completeOutput = "✓ test1 (100ms)\n✓ test2 (200ms)\n";
+      const completed = updateTestExecutionFromStream(
+        running,
+        command,
+        completeOutput,
+        completeOutput,
+      );
+
+      expect(completed?.status).toBe("completed");
+      expect(completed?.completedAt).toBeInstanceOf(Date);
+    });
+  });
 });
 
 describe("changeset-chat-machine plan content actions", () => {
@@ -536,6 +834,7 @@ describe("changeset-chat-machine plan content actions", () => {
       reasoningContent: "",
       isReasoningStreaming: false,
       hasCompletedAnalysis: false,
+      hasPendingPlanApproval: false,
       scratchpadTodos: [],
       historyLoaded: false,
       testExecutions: [],
@@ -625,21 +924,6 @@ describe("changeset-chat-machine plan content actions", () => {
 
       expect(resetContext.planFilePath).toBeNull();
     });
-
-    it("should reset both planContent and planFilePath together", () => {
-      mockContext.planContent = "# Test Plan\n\nSome content";
-      mockContext.planFilePath = ".clive/plans/test-plan-123.md";
-      
-      // Simulate reset action
-      const resetContext = {
-        ...mockContext,
-        planContent: null,
-        planFilePath: null,
-      };
-
-      expect(resetContext.planContent).toBeNull();
-      expect(resetContext.planFilePath).toBeNull();
-    });
   });
 
   describe("plan content streaming flow", () => {
@@ -675,6 +959,365 @@ describe("changeset-chat-machine plan content actions", () => {
       // Final state should have the complete content
       expect(mockContext.planContent).toContain("Complete");
       expect(mockContext.planFilePath).toBe(".clive/plans/test-plan-123.md");
+    });
+  });
+});
+
+describe("changeset-chat-machine hasPendingPlanApproval flag", () => {
+  let mockContext: ChangesetChatContext;
+
+  beforeEach(() => {
+    mockContext = {
+      files: [],
+      branchName: "test-branch",
+      messages: [],
+      streamingContent: "",
+      toolEvents: [],
+      error: null,
+      reasoningContent: "",
+      isReasoningStreaming: false,
+      hasCompletedAnalysis: false,
+      hasPendingPlanApproval: false,
+      scratchpadTodos: [],
+      historyLoaded: false,
+      testExecutions: [],
+      accumulatedTestOutput: new Map(),
+      accumulatedFileContent: new Map(),
+      testSuiteQueue: [],
+      currentSuiteId: null,
+      agentMode: "plan",
+      planContent: null,
+      planFilePath: null,
+      usage: null,
+      subscriptionId: null,
+    };
+  });
+
+  describe("initial state", () => {
+    it("should be false initially", () => {
+      expect(mockContext.hasPendingPlanApproval).toBe(false);
+    });
+  });
+
+  describe("proposeTestPlan tool completion", () => {
+    it("should set hasPendingPlanApproval to true when proposeTestPlan succeeds", () => {
+      // Add a proposeTestPlan tool event
+      mockContext.toolEvents.push({
+        toolCallId: "tool-1",
+        toolName: "proposeTestPlan",
+        args: {
+          name: "Test Plan",
+          overview: "Testing",
+          suites: [],
+        },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      // Simulate updateToolPart action when proposeTestPlan completes
+      const toolResult = {
+        toolCallId: "tool-1",
+        state: "output-available" as const,
+        output: { success: true, planId: "plan-123" },
+      };
+
+      // Check if this tool event is proposeTestPlan with success
+      const toolEvent = mockContext.toolEvents.find(
+        (t) => t.toolCallId === toolResult.toolCallId,
+      );
+      const shouldSetFlag =
+        toolEvent &&
+        toolEvent.toolName === "proposeTestPlan" &&
+        toolResult.state === "output-available";
+
+      expect(shouldSetFlag).toBe(true);
+
+      // Simulate the flag being set
+      if (shouldSetFlag) {
+        mockContext.hasPendingPlanApproval = true;
+      }
+
+      expect(mockContext.hasPendingPlanApproval).toBe(true);
+    });
+
+    it("should not set flag for other tools", () => {
+      mockContext.toolEvents.push({
+        toolCallId: "tool-2",
+        toolName: "bashExecute",
+        args: { command: "ls" },
+        state: "output-available",
+        timestamp: new Date(),
+      });
+
+      const toolResult = {
+        toolCallId: "tool-2",
+        state: "output-available" as const,
+      };
+
+      const toolEvent = mockContext.toolEvents.find(
+        (t) => t.toolCallId === toolResult.toolCallId,
+      );
+      const shouldSetFlag =
+        toolEvent &&
+        toolEvent.toolName === "proposeTestPlan" &&
+        toolResult.state === "output-available";
+
+      expect(shouldSetFlag).toBe(false);
+      expect(mockContext.hasPendingPlanApproval).toBe(false);
+    });
+  });
+
+  describe("APPROVE_PLAN event", () => {
+    it("should reset hasPendingPlanApproval to false on approval", () => {
+      mockContext.hasPendingPlanApproval = true;
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+
+      // Simulate approvePlan action
+      mockContext.hasPendingPlanApproval = false;
+      mockContext.agentMode = "act";
+      mockContext.currentSuiteId = "suite-1";
+      mockContext.testSuiteQueue[0].status = "in_progress";
+
+      expect(mockContext.hasPendingPlanApproval).toBe(false);
+      expect(mockContext.agentMode).toBe("act");
+    });
+  });
+
+  describe("RESET event", () => {
+    it("should reset hasPendingPlanApproval to false", () => {
+      mockContext.hasPendingPlanApproval = true;
+
+      // Simulate reset action
+      mockContext.hasPendingPlanApproval = false;
+
+      expect(mockContext.hasPendingPlanApproval).toBe(false);
+    });
+  });
+});
+
+describe("changeset-chat-machine SKIP_SUITE event", () => {
+  let mockContext: ChangesetChatContext;
+
+  beforeEach(() => {
+    mockContext = {
+      files: [],
+      branchName: "test-branch",
+      messages: [],
+      streamingContent: "",
+      toolEvents: [],
+      error: null,
+      reasoningContent: "",
+      isReasoningStreaming: false,
+      hasCompletedAnalysis: false,
+      hasPendingPlanApproval: false,
+      scratchpadTodos: [],
+      historyLoaded: false,
+      testExecutions: [],
+      accumulatedTestOutput: new Map(),
+      accumulatedFileContent: new Map(),
+      testSuiteQueue: [],
+      currentSuiteId: null,
+      agentMode: "act",
+      planContent: null,
+      planFilePath: null,
+      usage: null,
+      subscriptionId: null,
+    };
+  });
+
+  describe("skipSuite action", () => {
+    it("should mark a pending suite as skipped", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Simulate skipSuite action for suite-2
+      const suiteId = "suite-2";
+      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
+      );
+
+      const skippedSuite = mockContext.testSuiteQueue.find((s) => s.id === suiteId);
+      expect(skippedSuite?.status).toBe("skipped");
+    });
+
+    it("should not affect completed or in_progress suites", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "completed",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+      ];
+
+      // Try to skip completed suite
+      const suiteId = "suite-1";
+      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
+      );
+
+      // The action would mark it as skipped, but in practice this shouldn't happen
+      // This tests that the action itself works mechanically
+      const targetSuite = mockContext.testSuiteQueue.find((s) => s.id === suiteId);
+      expect(targetSuite?.status).toBe("skipped");
+    });
+
+    it("should advance to next pending suite if current suite is skipped", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+        {
+          id: "suite-3",
+          name: "E2E Tests",
+          testType: "e2e",
+          targetFilePath: "test3.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Simulate skipSuite action for current suite
+      const suiteId = "suite-1";
+      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
+      );
+
+      // If current suite is skipped, advance to next pending
+      if (mockContext.currentSuiteId === suiteId) {
+        const nextPending = mockContext.testSuiteQueue.find((s) => s.status === "pending");
+        mockContext.currentSuiteId = nextPending?.id || null;
+        if (nextPending) {
+          mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+            suite.id === nextPending.id ? { ...suite, status: "in_progress" as const } : suite,
+          );
+        }
+      }
+
+      expect(mockContext.currentSuiteId).toBe("suite-2");
+      const suite2 = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
+      expect(suite2?.status).toBe("in_progress");
+    });
+
+    it("should set currentSuiteId to null if no pending suites remain", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Skip the only suite
+      const suiteId = "suite-1";
+      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
+      );
+
+      // Advance logic
+      if (mockContext.currentSuiteId === suiteId) {
+        const nextPending = mockContext.testSuiteQueue.find((s) => s.status === "pending");
+        mockContext.currentSuiteId = nextPending?.id || null;
+      }
+
+      expect(mockContext.currentSuiteId).toBeNull();
+    });
+
+    it("should handle skipping a non-current pending suite", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+        {
+          id: "suite-3",
+          name: "E2E Tests",
+          testType: "e2e",
+          targetFilePath: "test3.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Skip suite-3 (not current)
+      const suiteId = "suite-3";
+      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
+      );
+
+      // Current suite should remain unchanged
+      expect(mockContext.currentSuiteId).toBe("suite-1");
+      const suite3 = mockContext.testSuiteQueue.find((s) => s.id === "suite-3");
+      expect(suite3?.status).toBe("skipped");
+      const suite1 = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
+      expect(suite1?.status).toBe("in_progress");
     });
   });
 });

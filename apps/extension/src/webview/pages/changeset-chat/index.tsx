@@ -76,12 +76,25 @@ export const ChangesetChatPage: React.FC = () => {
     currentSuiteId,
     agentMode,
     subscriptionId,
+    hasPendingPlanApproval,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName, mode, commitHash });
 
   // Parse plan content if available
   const parsedPlan = planContent ? parsePlan(planContent) : null;
+  
+  // Get suite count from parsed plan or parse sections from planContent
+  const suiteCount = useMemo(() => {
+    if (parsedPlan?.suites) {
+      return parsedPlan.suites.length;
+    }
+    if (planContent) {
+      const sections = parsePlanSections(planContent);
+      return sections.length;
+    }
+    return 0;
+  }, [parsedPlan, planContent]);
 
   // Render conversation content based on loading states
   const renderConversationContent = useCallback((): React.ReactNode => {
@@ -329,14 +342,19 @@ export const ChangesetChatPage: React.FC = () => {
           {/* Test Suite Queue - shows progress when in act mode */}
           {agentMode === "act" && testSuiteQueue.length > 0 && (
             <div className="border-t bg-background px-4 py-2">
-              <TestSuiteQueue queue={testSuiteQueue} currentSuiteId={currentSuiteId} />
+              <TestSuiteQueue 
+                queue={testSuiteQueue} 
+                currentSuiteId={currentSuiteId}
+                onSkipSuite={(suiteId) => send({ type: "SKIP_SUITE", suiteId })}
+              />
             </div>
           )}
 
           {/* Floating Approval Bar - only show when there's a test proposal */}
           <FloatingApprovalBar
-            isVisible={hasCompletedAnalysis && !isLoading && parsedPlan !== null && agentMode === "plan"}
+            isVisible={hasCompletedAnalysis && !isLoading && hasPendingPlanApproval && agentMode === "plan"}
             onApprove={handleApprove}
+            suiteCount={suiteCount}
           />
 
           {/* Input Area */}

@@ -339,6 +339,153 @@ describe("bashExecuteTool", () => {
         expect(streamingChunks.length).toBeGreaterThan(0);
       }),
     );
+
+    it.effect("should emit command with streaming output for test commands", () =>
+      Effect.gen(function* () {
+        const streamingChunks: Array<{ command: string; output: string }> = [];
+        streamingCallback = (chunk) => {
+          streamingChunks.push(chunk);
+        };
+
+        const mockBudget = createMockTokenBudgetService();
+        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        let stdoutHandler: ((data: Buffer) => void) | undefined;
+        let closeHandler: ((code: number) => void) | undefined;
+
+        const mockChild = createMockChildProcess({
+          onStdoutData: (handler) => {
+            stdoutHandler = handler;
+          },
+          onClose: (handler) => {
+            closeHandler = handler as (code: number) => void;
+          },
+        });
+        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
+
+        const testCommand = "vitest run test.spec.ts";
+        const input: BashExecuteInput = { command: testCommand };
+        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+        // Simulate test output streaming
+        if (stdoutHandler) {
+          stdoutHandler(Buffer.from("✓ test1 (100ms)\n"));
+          stdoutHandler(Buffer.from("✓ test2 (200ms)\n"));
+        }
+
+        // Simulate process completion
+        if (closeHandler) {
+          closeHandler(0);
+        }
+
+        yield* Effect.promise(() => promise);
+
+        // Verify streaming chunks include the command
+        expect(streamingChunks.length).toBeGreaterThan(0);
+        expect(streamingChunks.every((chunk) => chunk.command === testCommand)).toBe(true);
+        expect(streamingChunks.some((chunk) => chunk.output.includes("test1"))).toBe(true);
+        expect(streamingChunks.some((chunk) => chunk.output.includes("test2"))).toBe(true);
+      }),
+    );
+
+    it.effect("should stream vitest output in proper format", () =>
+      Effect.gen(function* () {
+        const streamingChunks: Array<{ command: string; output: string }> = [];
+        streamingCallback = (chunk) => {
+          streamingChunks.push(chunk);
+        };
+
+        const mockBudget = createMockTokenBudgetService();
+        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        let stdoutHandler: ((data: Buffer) => void) | undefined;
+        let closeHandler: ((code: number) => void) | undefined;
+
+        const mockChild = createMockChildProcess({
+          onStdoutData: (handler) => {
+            stdoutHandler = handler;
+          },
+          onClose: (handler) => {
+            closeHandler = handler as (code: number) => void;
+          },
+        });
+        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
+
+        const testCommand = "npx vitest run src/utils.test.ts";
+        const input: BashExecuteInput = { command: testCommand };
+        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+        // Simulate realistic vitest output with incremental streaming
+        if (stdoutHandler) {
+          stdoutHandler(Buffer.from("✓ should validate input (50ms)\n"));
+          stdoutHandler(Buffer.from("✓ should handle errors (30ms)\n"));
+          stdoutHandler(Buffer.from("✗ should fail gracefully (20ms)\n"));
+          stdoutHandler(Buffer.from("  Error: Expected true but got false\n"));
+        }
+
+        // Simulate process completion
+        if (closeHandler) {
+          closeHandler(1); // Exit code 1 for failures
+        }
+
+        yield* Effect.promise(() => promise);
+
+        // Verify structure of streaming chunks
+        expect(streamingChunks.length).toBeGreaterThan(0);
+        for (const chunk of streamingChunks) {
+          expect(chunk).toHaveProperty("command");
+          expect(chunk).toHaveProperty("output");
+          expect(chunk.command).toBe(testCommand);
+          expect(typeof chunk.output).toBe("string");
+        }
+      }),
+    );
+
+    it.effect("should stream jest output with correct format", () =>
+      Effect.gen(function* () {
+        const streamingChunks: Array<{ command: string; output: string }> = [];
+        streamingCallback = (chunk) => {
+          streamingChunks.push(chunk);
+        };
+
+        const mockBudget = createMockTokenBudgetService();
+        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        let stdoutHandler: ((data: Buffer) => void) | undefined;
+        let closeHandler: ((code: number) => void) | undefined;
+
+        const mockChild = createMockChildProcess({
+          onStdoutData: (handler) => {
+            stdoutHandler = handler;
+          },
+          onClose: (handler) => {
+            closeHandler = handler as (code: number) => void;
+          },
+        });
+        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
+
+        const testCommand = "jest test auth.test.js";
+        const input: BashExecuteInput = { command: testCommand };
+        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+        // Simulate jest output
+        if (stdoutHandler) {
+          stdoutHandler(Buffer.from("PASS tests/auth.test.js\n"));
+          stdoutHandler(Buffer.from("  ✓ login with valid credentials (100ms)\n"));
+          stdoutHandler(Buffer.from("  ✓ logout (50ms)\n"));
+        }
+
+        // Simulate process completion
+        if (closeHandler) {
+          closeHandler(0);
+        }
+
+        yield* Effect.promise(() => promise);
+
+        // Verify streaming chunks contain command and parseable test output
+        expect(streamingChunks.length).toBeGreaterThan(0);
+        const allOutput = streamingChunks.map((c) => c.output).join("");
+        expect(allOutput).toContain("login with valid credentials");
+        expect(allOutput).toContain("logout");
+      }),
+    );
   });
 
   describe("Token Budget Integration", () => {

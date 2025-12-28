@@ -29,7 +29,22 @@ You MUST output your test proposal in the following structured format:
 ---
 name: Test Plan for [Component/Feature Name]
 overview: Brief description of what tests will cover (1-2 sentences)
-todos: ["unit-tests", "integration-tests", "e2e-tests"]  # List test types to be created
+suites:
+  - id: suite-1-unit-[feature]
+    name: Unit Tests for [Feature/Component Name]
+    testType: unit
+    targetFilePath: path/to/test/file.test.ts
+    sourceFiles:
+      - path/to/source1.ts
+      - path/to/source2.ts
+    description: Brief description of what this suite tests
+  - id: suite-2-integration-[feature]
+    name: Integration Tests for [Feature Name]
+    testType: integration
+    targetFilePath: path/to/integration/file.integration.test.ts
+    sourceFiles:
+      - path/to/source.ts
+    description: Brief description of integration tests
 ---
 
 # Test Plan for [Component/Feature Name]
@@ -66,7 +81,10 @@ Lines to cover:
 \\\`\\\`\\\`
 
 **Format Requirements:**
-- **YAML frontmatter**: MUST include \\\`name\\\`, \\\`overview\\\`, and \\\`todos\\\` fields
+- **YAML frontmatter**: MUST include \\\`name\\\`, \\\`overview\\\`, and \\\`suites\\\` array
+  - Each suite in the array MUST have: \\\`id\\\`, \\\`name\\\`, \\\`testType\\\`, \\\`targetFilePath\\\`, \\\`sourceFiles\\\` array, and optional \\\`description\\\`
+  - Suite IDs should follow pattern: \\\`suite-[number]-[testType]-[feature]\\\` (e.g., "suite-1-unit-auth")
+  - Test types must be one of: "unit", "integration", or "e2e"
 - **Problem Summary**: List testing gaps/risks, not just recommendations
 - **Implementation Plan**: Numbered sections, each with:
   - File path as markdown link: [\\\`path/to/file.ts\\\`](path/to/file.ts)
@@ -79,12 +97,13 @@ Lines to cover:
 
 **CRITICAL for multi-file changesets:**
 - Output ONE consolidated plan, not separate plans per file
-- Group tests by feature/flow, not by file
-- Reference which files each test covers in the Implementation Plan sections
+- Group tests by feature/flow in the suites array
+- Each suite should reference which files it covers in the \\\`sourceFiles\\\` array
 - Keep Problem Summary concise (3-5 gaps max)
 
 **When writing your proposal:**
-- Specify testType ("unit", "integration", or "e2e") and framework in each Implementation Plan section
+- The suites array defines what will be queued - each suite becomes a separate task
+- Specify testType ("unit", "integration", or "e2e") for each suite in the YAML frontmatter
 - Include line number references (Lines X-Y) when describing code sections
 - For E2E: mention navigationPath, userFlow, pageContext, prerequisites in the Solution
 - For unit/integration: mention mockDependencies and test setup needs in the Solution

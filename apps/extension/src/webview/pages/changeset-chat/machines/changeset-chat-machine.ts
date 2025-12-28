@@ -113,7 +113,7 @@ export interface TestSuiteQueueItem {
   testType: "unit" | "integration" | "e2e";
   targetFilePath: string; // "src/auth/__tests__/auth.test.ts"
   sourceFiles: string[]; // Files being tested
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: "pending" | "in_progress" | "completed" | "failed" | "skipped";
   testResults?: TestFileExecution;
   description?: string; // From plan section
 }
@@ -140,6 +140,7 @@ export interface ChangesetChatContext {
   currentSuiteId: string | null; // ID of currently processing suite
   agentMode: "plan" | "act"; // Current agent mode
   subscriptionId: string | null; // Active subscription ID for tool approvals
+  hasPendingPlanApproval: boolean; // True when proposeTestPlan tool completes successfully
 }
 
 interface BackendHistoryMessage {
@@ -201,6 +202,7 @@ export type ChangesetChatEvent =
   | { type: "CLOSE_TEST_DRAWER" }
   | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
   | { type: "START_NEXT_SUITE" }
+  | { type: "SKIP_SUITE"; suiteId: string }
   | { type: "MARK_SUITE_COMPLETED"; suiteId: string; results: TestFileExecution }
   | {
       type: "MARK_SUITE_FAILED";
@@ -316,7 +318,14 @@ export const changesetChatMachine = setup({
       if (!event.toolResult) return {};
       const toolResult = event.toolResult;
       const toolCallId = toolResult.toolCallId;
-      return {
+      
+      // Find the tool event to check tool name
+      const toolEvent = context.toolEvents.find(
+        (t) => t.toolCallId === toolCallId,
+      );
+      
+      // Detect successful proposeTestPlan completion
+      const updates: Partial<ChangesetChatContext> = {
         toolEvents: context.toolEvents.map((t) =>
           t.toolCallId === toolCallId
             ? {
@@ -327,6 +336,17 @@ export const changesetChatMachine = setup({
             : t,
         ),
       };
+      
+      // Set hasPendingPlanApproval when proposeTestPlan succeeds
+      if (
+        toolEvent?.toolName === "proposeTestPlan" &&
+        toolResult.updates.state === "output-available" &&
+        !toolResult.updates.errorText
+      ) {
+        updates.hasPendingPlanApproval = true;
+      }
+      
+      return updates;
     }),
     updateScratchpadTodos: assign(({ context, event }) => {
       // Check for scratchpad content from bashExecute tool results
@@ -933,6 +953,7 @@ export const changesetChatMachine = setup({
       testSuiteQueue: () => [],
       currentSuiteId: () => null,
       agentMode: () => "plan",
+      hasPendingPlanApproval: () => false,
     }),
     approvePlan: assign(({ event }) => {
       if (event.type !== "APPROVE_PLAN") return {};
@@ -941,6 +962,7 @@ export const changesetChatMachine = setup({
       return {
         currentSuiteId: firstSuite?.id || null,
         agentMode: "act" as const,
+        hasPendingPlanApproval: false, // Reset flag after approval
         // Mark first suite as in_progress
         testSuiteQueue: suites.map((suite, index) =>
           index === 0 ? { ...suite, status: "in_progress" as const } : suite,
@@ -995,6 +1017,41 @@ export const changesetChatMachine = setup({
         currentSuiteId: null,
       };
     }),
+    skipSuite: assign(({ context, event }) => {
+      if (event.type !== "SKIP_SUITE") return {};
+      const { suiteId } = event;
+      
+      // Mark suite as skipped
+      let updatedQueue = context.testSuiteQueue.map((suite) =>
+        suite.id === suiteId
+          ? { ...suite, status: "skipped" as const }
+          : suite,
+      );
+      
+      // Find next pending suite
+      const nextPendingSuite = updatedQueue.find(
+        (s) => s.status === "pending",
+      );
+      
+      if (nextPendingSuite) {
+        // Mark next pending suite as in_progress
+        updatedQueue = updatedQueue.map((suite) =>
+          suite.id === nextPendingSuite.id
+            ? { ...suite, status: "in_progress" as const }
+            : suite,
+        );
+        return {
+          testSuiteQueue: updatedQueue,
+          currentSuiteId: nextPendingSuite.id,
+        };
+      }
+      
+      // No more pending suites
+      return {
+        testSuiteQueue: updatedQueue,
+        currentSuiteId: null,
+      };
+    }),
     cancelStream: assign({
       hasCompletedAnalysis: () => true, // Re-enable input
       isReasoningStreaming: () => false,
@@ -1033,6 +1090,7 @@ export const changesetChatMachine = setup({
     currentSuiteId: null,
     agentMode: "plan" as const,
     subscriptionId: null,
+    hasPendingPlanApproval: false,
   }),
   states: {
     idle: {
@@ -1072,6 +1130,10 @@ export const changesetChatMachine = setup({
         },
         APPROVE_PLAN: {
           actions: ["approvePlan"],
+          target: "analyzing",
+        },
+        SKIP_SUITE: {
+          actions: ["skipSuite"],
           target: "analyzing",
         },
         DEV_INJECT_STATE: {
@@ -1186,6 +1248,9 @@ export const changesetChatMachine = setup({
         },
         START_NEXT_SUITE: {
           actions: ["startNextSuite"],
+        },
+        SKIP_SUITE: {
+          actions: ["skipSuite"],
         },
         MARK_SUITE_COMPLETED: {
           actions: ["markSuiteCompleted"],
