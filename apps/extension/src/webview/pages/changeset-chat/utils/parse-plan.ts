@@ -8,16 +8,168 @@ export interface ParsedPlan {
   summary: string; // First paragraph or first few lines for preview
   body: string;
   fullContent: string;
+  suites?: ParsedPlanSection[]; // Parsed from YAML frontmatter if available
 }
 
 export interface ParsedPlanSection {
   sectionNumber: number;
   name: string; // Section heading (e.g., "Unit Tests for Authentication Logic")
   testType: "unit" | "integration" | "e2e";
-  targetFilePath: string; // From **File**: link
+  targetFilePath: string; // From **File**: link or YAML suites array
+  sourceFiles?: string[]; // From YAML suites array
   issue?: string;
   solution?: string;
   description?: string;
+  id?: string; // From YAML suites array
+}
+
+/**
+ * Simple YAML frontmatter parser
+ * Extracts YAML content between --- delimiters at the start of text
+ */
+function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
+  const frontmatterMatch = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) return null;
+
+  const yamlContent = frontmatterMatch[1];
+  const result: Record<string, unknown> = {};
+
+  // Simple YAML parser for our specific structure
+  // Handles: key: value, key: [array], and nested arrays with - items
+  const lines = yamlContent.split("\n");
+  let currentKey: string | null = null;
+  let currentArray: unknown[] | null = null;
+  let currentObject: Record<string, unknown> | null = null;
+  let objectsArray: Record<string, unknown>[] | null = null;
+
+  for (const line of lines) {
+    // Skip empty lines
+    if (!line.trim()) continue;
+
+    // Top-level key: value
+    const keyValueMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/);
+    if (keyValueMatch && !line.startsWith(" ")) {
+      const key = keyValueMatch[1];
+      const value = keyValueMatch[2].trim();
+
+      // Finalize previous array if any
+      if (currentKey && currentArray) {
+        result[currentKey] = currentArray;
+      }
+      if (currentKey && objectsArray) {
+        result[currentKey] = objectsArray;
+      }
+
+      currentKey = key;
+      currentArray = null;
+      currentObject = null;
+      objectsArray = null;
+
+      if (value) {
+        // Inline array [a, b, c]
+        if (value.startsWith("[") && value.endsWith("]")) {
+          const items = value
+            .slice(1, -1)
+            .split(",")
+            .map((s) => s.trim().replace(/^["']|["']$/g, ""));
+          result[key] = items;
+          currentKey = null;
+        } else {
+          // Simple string value
+          result[key] = value.replace(/^["']|["']$/g, "");
+          currentKey = null;
+        }
+      }
+      // Otherwise it's a multiline value or array (handled below)
+    }
+    // Array item at top level (2 space indent with dash)
+    else if (line.match(/^ {2}- /) && currentKey) {
+      const afterDash = line.slice(4).trim();
+      
+      // Check if this is an object (has key:value) or simple array item
+      const hasKeyValue = afterDash.includes(':');
+      
+      if (hasKeyValue) {
+        // This is an object in array with inline first property
+        // Finalize previous object if any
+        if (currentObject && objectsArray) {
+          objectsArray.push(currentObject);
+        }
+        if (!objectsArray) objectsArray = [];
+        currentObject = {};
+        currentArray = null;
+        
+        // Parse the first property
+        const propMatch = afterDash.match(/^([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/);
+        if (propMatch) {
+          const key = propMatch[1];
+          const value = propMatch[2].trim();
+          
+          if (value.startsWith("[") && value.endsWith("]")) {
+            // Inline array
+            const items = value
+              .slice(1, -1)
+              .split(",")
+              .map((s) => s.trim().replace(/^["']|["']$/g, ""));
+            currentObject[key] = items;
+          } else if (value) {
+            currentObject[key] = value.replace(/^["']|["']$/g, "");
+          }
+        }
+      } else {
+        // Simple array item
+        if (!currentArray) currentArray = [];
+        const value = afterDash.replace(/^["']|["']$/g, "");
+        currentArray.push(value);
+        currentObject = null;
+        objectsArray = null;
+      }
+    }
+    // Property in object (4 space indent)
+    else if (line.match(/^ {4}/) && currentObject) {
+      const propMatch = line.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/);
+      if (propMatch) {
+        const key = propMatch[1];
+        const value = propMatch[2].trim();
+
+        if (value.startsWith("[") && value.endsWith("]")) {
+          // Inline array
+          const items = value
+            .slice(1, -1)
+            .split(",")
+            .map((s) => s.trim().replace(/^["']|["']$/g, ""));
+          currentObject[key] = items;
+        } else if (value) {
+          currentObject[key] = value.replace(/^["']|["']$/g, "");
+        } else {
+          // Array will follow
+          currentObject[key] = [];
+        }
+      }
+    }
+    // Array item in nested property (6 space indent)
+    else if (line.match(/^ {6}- /) && currentObject) {
+      // Find last array property in current object
+      const keys = Object.keys(currentObject);
+      const lastKey = keys[keys.length - 1];
+      if (lastKey && Array.isArray(currentObject[lastKey])) {
+        const value = line.slice(8).trim().replace(/^["']|["']$/g, "");
+        (currentObject[lastKey] as unknown[]).push(value);
+      }
+    }
+  }
+
+  // Finalize last array/object
+  if (currentKey) {
+    if (currentArray) {
+      result[currentKey] = currentArray;
+    } else if (objectsArray) {
+      if (currentObject) objectsArray.push(currentObject);
+      result[currentKey] = objectsArray;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -49,224 +201,120 @@ function extractSummary(body: string): string {
 }
 
 /**
- * Detect if text contains a test plan by looking for plan headers
+ * Detect if text contains a test plan by looking for YAML frontmatter with name field
  */
 export function hasPlanContent(text: string): boolean {
-  const planPatterns = [
-    /^##\s+Test Plan:/m, // ## Test Plan: (existing H2 format)
-    /^##\s+Recommendation:/m, // ## Recommendation: (existing)
-    /^##\s+Test Plan\s*$/m, // ## Test Plan (existing)
-    /^name:\s*.+/m, // name: ... (any YAML frontmatter name field)
-    /^#\s+Test Plan/m, // # Test Plan... (H1 header)
-  ];
-
-  return planPatterns.some((pattern) => pattern.test(text));
+  return /^name:\s*.+/m.test(text);
 }
 
 /**
- * Parse plan content from markdown text
- * Extracts title, description, and body content
- * Supports multiple formats:
- * 1. YAML frontmatter: name:, overview:, todos:
- * 2. H1 headers: # Test Plan for...
- * 3. H2 headers: ## Test Plan: (backward compatibility)
+ * Parse plan content from markdown text with YAML frontmatter
+ * Extracts title, description, body content, and suites from YAML frontmatter
  */
 export function parsePlan(text: string): ParsedPlan | null {
   if (!hasPlanContent(text)) {
     return null;
   }
 
-  // Check for YAML frontmatter format (name:, overview:, todos:)
+  // Parse YAML frontmatter
+  const yamlData = parseYAMLFrontmatter(text);
+  let parsedSuites: ParsedPlanSection[] | undefined;
+
+  if (yamlData?.suites && Array.isArray(yamlData.suites)) {
+    // Extract suites from YAML frontmatter
+    parsedSuites = yamlData.suites.map(
+      (suite: Record<string, unknown>, index: number) => ({
+        sectionNumber: index + 1,
+        id: (suite.id as string) || `suite-${index + 1}`,
+        name: (suite.name as string) || "Unnamed Suite",
+        testType: (suite.testType as "unit" | "integration" | "e2e") || "unit",
+        targetFilePath: (suite.targetFilePath as string) || "",
+        sourceFiles: Array.isArray(suite.sourceFiles)
+          ? (suite.sourceFiles as string[])
+          : [],
+        description: suite.description as string | undefined,
+      }),
+    );
+  }
+
+  // Extract metadata from YAML frontmatter
   const nameMatch = text.match(/^name:\s*(.+)$/m);
-  
-  if (nameMatch) {
-    const title = nameMatch[1]?.trim() || "Test Plan";
-    
-    // Find overview line (may be on next line or have spacing)
-    const overviewMatch = text.match(/^overview:\s*(.+?)(?:\n(?!todos:|#|##)|$)/ms);
-    const description = overviewMatch?.[1]?.trim() || "Test proposal for review";
-
-    // Find where frontmatter ends - look for blank line(s) or start of markdown content
-    const nameIndex = nameMatch.index ?? 0;
-    const afterName = text.slice(nameIndex);
-    
-    // Find first blank line (double newline) or markdown header after frontmatter
-    const blankLineMatch = afterName.match(/\n\n+/);
-    const markdownHeaderMatch = afterName.match(/\n#+\s+/);
-    
-    let bodyStart = text.length;
-    if (blankLineMatch && markdownHeaderMatch) {
-      // Use whichever comes first
-      bodyStart = nameIndex + Math.min(blankLineMatch.index ?? text.length, markdownHeaderMatch.index ?? text.length);
-    } else if (blankLineMatch) {
-      bodyStart = nameIndex + (blankLineMatch.index ?? 0) + blankLineMatch[0].length;
-    } else if (markdownHeaderMatch) {
-      bodyStart = nameIndex + (markdownHeaderMatch.index ?? 0);
-    }
-
-    // Extract body - everything after frontmatter
-    const body = text.slice(bodyStart).trim();
-    const fullContent = text.trim();
-    const finalBody = body || fullContent; // Use full content if body is empty
-
-    return {
-      title,
-      description,
-      summary: extractSummary(finalBody),
-      body: finalBody,
-      fullContent,
-    };
-  }
-
-  // Check for H1 header format (# Test Plan for...)
-  const h1HeaderMatch = text.match(/^#\s+Test Plan(?:\s+for\s+(.+?))?(?:\s*:)?$/m);
-
-  if (h1HeaderMatch) {
-    const headerIndex = h1HeaderMatch.index ?? 0;
-    const headerText = h1HeaderMatch[0];
-    const titleMatch = h1HeaderMatch[1]?.trim();
-
-    const title = titleMatch
-      ? `Test Plan for ${titleMatch}`
-      : "Test Plan";
-
-    // Find the description - usually the first paragraph after the header
-    const afterHeader = text.slice(headerIndex + headerText.length);
-    const descriptionMatch = afterHeader.match(/^([^\n#]+)/m);
-    const description = descriptionMatch
-      ? descriptionMatch[1].trim()
-      : "Test proposal for review";
-
-    // Extract the full plan body - everything from the header to the end
-    const planStart = headerIndex;
-    const nextMajorSection = text.slice(planStart).search(/^##\s+[^#]/m);
-    const planEnd =
-      nextMajorSection > 0 ? planStart + nextMajorSection : text.length;
-
-    const body = text.slice(planStart, planEnd).trim();
-    const fullContent = text.trim();
-
-    return {
-      title,
-      description,
-      summary: extractSummary(body),
-      body,
-      fullContent,
-    };
-  }
-
-  // Try to find the plan header (existing H2 format for backward compatibility)
-  const planHeaderMatch = text.match(
-    /^##\s+(Test Plan:|Recommendation:)\s*(.+)?$/m,
-  );
-
-  if (!planHeaderMatch) {
+  if (!nameMatch) {
     return null;
   }
 
-  const headerIndex = planHeaderMatch.index ?? 0;
-  const headerText = planHeaderMatch[0];
-  const titleMatch = planHeaderMatch[2]?.trim();
+  const title = nameMatch[1]?.trim() || "Test Plan";
 
-  // Extract title - use the header text or first line after header
-  const title = titleMatch || "Test Plan";
+  // Find overview line
+  const overviewMatch = text.match(
+    /^overview:\s*(.+?)(?:\n(?!suites:|#|##)|$)/ms,
+  );
+  const description = overviewMatch?.[1]?.trim() || "Test proposal for review";
 
-  // Find the description - usually the first paragraph after the header
-  // or the first line that's not a header
-  const afterHeader = text.slice(headerIndex + headerText.length);
-  const descriptionMatch = afterHeader.match(/^([^\n#]+)/m);
-  const description = descriptionMatch
-    ? descriptionMatch[1].trim()
-    : "Test proposal for review";
+  // Find where frontmatter ends
+  const nameIndex = nameMatch.index ?? 0;
+  const afterName = text.slice(nameIndex);
 
-  // Extract the full plan body - everything from the header to the end
-  // or until the next major section (if any)
-  const planStart = headerIndex;
-  const nextMajorSection = text.slice(planStart).search(/^##\s+[^#]/m);
-  const planEnd =
-    nextMajorSection > 0 ? planStart + nextMajorSection : text.length;
+  // Find first blank line (double newline) or markdown header after frontmatter
+  const blankLineMatch = afterName.match(/\n\n+/);
+  const markdownHeaderMatch = afterName.match(/\n#+\s+/);
 
-  const body = text.slice(planStart, planEnd).trim();
+  let bodyStart = text.length;
+  if (blankLineMatch && markdownHeaderMatch) {
+    // Use whichever comes first
+    bodyStart =
+      nameIndex +
+      Math.min(
+        blankLineMatch.index ?? text.length,
+        markdownHeaderMatch.index ?? text.length,
+      );
+  } else if (blankLineMatch) {
+    bodyStart =
+      nameIndex + (blankLineMatch.index ?? 0) + blankLineMatch[0].length;
+  } else if (markdownHeaderMatch) {
+    bodyStart = nameIndex + (markdownHeaderMatch.index ?? 0);
+  }
+
+  // Extract body - everything after frontmatter
+  const body = text.slice(bodyStart).trim();
   const fullContent = text.trim();
+  const finalBody = body || fullContent; // Use full content if body is empty
 
   return {
     title,
     description,
-    summary: extractSummary(body),
-    body,
+    summary: extractSummary(finalBody),
+    body: finalBody,
     fullContent,
+    suites: parsedSuites,
   };
 }
 
 /**
  * Parse Implementation Plan sections from plan content
- * Extracts individual test suites from numbered sections in the Implementation Plan
- * Each section becomes a queue item
+ * Extracts suites from YAML frontmatter
  */
 export function parsePlanSections(planContent: string): ParsedPlanSection[] {
-  const sections: ParsedPlanSection[] = [];
+  // Parse YAML frontmatter for suites array
+  const yamlData = parseYAMLFrontmatter(planContent);
 
-  // Find the Implementation Plan section
-  const implementationPlanMatch = planContent.match(/##\s+Implementation Plan\s*\n([\s\S]*?)(?=\n##\s+|$)/i);
-  if (!implementationPlanMatch) {
-    return sections;
+  if (yamlData?.suites && Array.isArray(yamlData.suites)) {
+    // Extract suites from YAML frontmatter
+    return yamlData.suites.map(
+      (suite: Record<string, unknown>, index: number) => ({
+        sectionNumber: index + 1,
+        id: (suite.id as string) || `suite-${index + 1}`,
+        name: (suite.name as string) || "Unnamed Suite",
+        testType: (suite.testType as "unit" | "integration" | "e2e") || "unit",
+        targetFilePath: (suite.targetFilePath as string) || "",
+        sourceFiles: Array.isArray(suite.sourceFiles)
+          ? (suite.sourceFiles as string[])
+          : [],
+        description: suite.description as string | undefined,
+      }),
+    );
   }
 
-  const implementationPlanContent = implementationPlanMatch[1];
-
-  // Match numbered sections: ### 1. Section Name
-  // Pattern: ### N. Section Name followed by content until next ### or end
-  const sectionPattern = /###\s+(\d+)\.\s+(.+?)(?=\n###\s+\d+\.|$)/gs;
-  let match: RegExpExecArray | null = null;
-
-  while (true) {
-    match = sectionPattern.exec(implementationPlanContent);
-    if (match === null) {
-      break;
-    }
-    const sectionNumber = parseInt(match[1], 10);
-    const sectionHeader = match[2].trim();
-    const sectionContent = match[0];
-
-    // Extract test type from section name (case-insensitive)
-    let testType: "unit" | "integration" | "e2e" = "unit";
-    const lowerHeader = sectionHeader.toLowerCase();
-    if (lowerHeader.includes("integration")) {
-      testType = "integration";
-    } else if (lowerHeader.includes("e2e") || lowerHeader.includes("end-to-end") || lowerHeader.includes("e2e")) {
-      testType = "e2e";
-    } else if (lowerHeader.includes("unit")) {
-      testType = "unit";
-    }
-
-    // Extract file path from **File**: [`path`](link) pattern
-    const fileMatch = sectionContent.match(/\*\*File\*\*:\s*\[`([^`]+)`\]/);
-    const targetFilePath = fileMatch ? fileMatch[1] : "";
-
-    // Extract issue from **Issue**: line
-    const issueMatch = sectionContent.match(/\*\*Issue\*\*:\s*(.+?)(?=\n\*\*|$)/s);
-    const issue = issueMatch ? issueMatch[1].trim() : undefined;
-
-    // Extract solution from **Solution**: line
-    const solutionMatch = sectionContent.match(/\*\*Solution\*\*:\s*(.+?)(?=\n\*\*|$)/s);
-    const solution = solutionMatch ? solutionMatch[1].trim() : undefined;
-
-    // Extract description (lines to cover section or other content)
-    const linesToCoverMatch = sectionContent.match(/Lines to cover:\s*\n((?:- .+\n?)+)/);
-    const description = linesToCoverMatch ? linesToCoverMatch[1].trim() : undefined;
-
-    if (targetFilePath) {
-      sections.push({
-        sectionNumber,
-        name: sectionHeader,
-        testType,
-        targetFilePath,
-        issue,
-        solution,
-        description,
-      });
-    }
-  }
-
-  return sections;
+  // No suites found in YAML frontmatter
+  return [];
 }

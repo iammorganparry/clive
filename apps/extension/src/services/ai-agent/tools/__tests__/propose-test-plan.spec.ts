@@ -19,7 +19,6 @@ vi.mock("vscode", async () => {
 });
 
 describe("proposeTestPlanTool", () => {
-  let approvalRegistry: Set<string>;
   let mockFs: {
     stat: ReturnType<typeof vi.fn>;
     writeFile: ReturnType<typeof vi.fn>;
@@ -33,7 +32,6 @@ describe("proposeTestPlanTool", () => {
   const getUniqueToolCallId = () => `test-tool-call-${++testCounter}-${Date.now()}`;
 
   beforeEach(() => {
-    approvalRegistry = new Set<string>();
     mockFs = vscode.workspace.fs as unknown as {
       stat: ReturnType<typeof vi.fn>;
       writeFile: ReturnType<typeof vi.fn>;
@@ -79,7 +77,22 @@ describe("proposeTestPlanTool", () => {
       const input: ProposeTestPlanInput = {
         name: "Test Plan for Authentication",
         overview: "Test authentication flow",
-        todos: ["unit-tests", "integration-tests"],
+        suites: [
+          {
+            id: "unit-auth",
+            name: "Unit Tests for Auth",
+            testType: "unit",
+            targetFilePath: "src/auth/__tests__/auth.test.ts",
+            sourceFiles: ["src/auth/login.ts"],
+          },
+          {
+            id: "integration-auth",
+            name: "Integration Tests for Auth Flow",
+            testType: "integration",
+            targetFilePath: "src/auth/__tests__/auth-flow.test.ts",
+            sourceFiles: ["src/auth/middleware.ts"],
+          },
+        ],
         planContent: "# Test Plan\n\n## Overview\nTest authentication",
       };
 
@@ -91,7 +104,7 @@ describe("proposeTestPlanTool", () => {
           planId: "",
           name: "",
           overview: "",
-          todos: [],
+          suites: [] as ProposeTestPlanOutput["suites"],
           message: "No result returned",
         } satisfies ProposeTestPlanOutput,
       );
@@ -100,16 +113,28 @@ describe("proposeTestPlanTool", () => {
       expect(result.planId).toBeDefined();
       expect(result.name).toBe("Test Plan for Authentication");
       expect(result.overview).toBe("Test authentication flow");
-      expect(result.todos).toEqual(["unit-tests", "integration-tests"]);
+      expect(result.suites).toHaveLength(2);
+      expect(result.suites[0].id).toBe("unit-auth");
+      expect(result.suites[0].testType).toBe("unit");
+      expect(result.suites[1].id).toBe("integration-auth");
+      expect(result.suites[1].testType).toBe("integration");
     });
 
-    it("should register planId in approval registry when auto-approved", async () => {
+    it("should include suites in output", async () => {
       const tool = createProposeTestPlanTool();
 
       const input: ProposeTestPlanInput = {
         name: "Test Plan",
         overview: "Overview",
-        todos: [],
+        suites: [
+          {
+            id: "unit-tests",
+            name: "Unit Tests",
+            testType: "unit",
+            targetFilePath: "src/__tests__/unit.test.ts",
+            sourceFiles: ["src/file.ts"],
+          },
+        ],
         planContent: "# Plan",
       };
 
@@ -121,13 +146,18 @@ describe("proposeTestPlanTool", () => {
           planId: "",
           name: "",
           overview: "",
-          todos: [],
+          suites: [] as ProposeTestPlanOutput["suites"],
           message: "No result returned",
         } satisfies ProposeTestPlanOutput,
       );
 
       expect(result.success).toBe(true);
-      expect(approvalRegistry.has(result.planId)).toBe(true);
+      expect(result.suites).toHaveLength(1);
+      expect(result.suites[0].id).toBe("unit-tests");
+      expect(result.suites[0].name).toBe("Unit Tests");
+      expect(result.suites[0].testType).toBe("unit");
+      expect(result.suites[0].targetFilePath).toBe("src/__tests__/unit.test.ts");
+      expect(result.suites[0].sourceFiles).toEqual(["src/file.ts"]);
     });
   });
 
