@@ -75,6 +75,7 @@ export const ChangesetChatPage: React.FC = () => {
     testSuiteQueue,
     currentSuiteId,
     agentMode,
+    subscriptionId,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName, mode, commitHash });
@@ -171,6 +172,8 @@ export const ChangesetChatPage: React.FC = () => {
                     output={part.output}
                     errorText={part.errorText}
                     streamingContent={part.streamingContent}
+                    toolCallId={part.toolCallId}
+                    subscriptionId={subscriptionId ?? undefined}
                   />
                 );
               }
@@ -181,7 +184,7 @@ export const ChangesetChatPage: React.FC = () => {
         </Message>
       );
     });
-  }, [isLoadingHistory, isLoading, messages, files.length, planFilePath]);
+  }, [isLoadingHistory, isLoading, messages, files.length, planFilePath, subscriptionId]);
 
   const handleApprove = () => {
     if (!planContent) return;

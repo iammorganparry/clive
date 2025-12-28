@@ -9,6 +9,7 @@ import { processModelContent } from "../../../utils/model-content-processor.js";
 import { DiffViewProvider } from "../../diff-view-provider.js";
 import { formatFileEditResponse, formatFileEditError } from "../response-formatter.js";
 import type { DiffContentProvider } from "../../diff-content-provider.js";
+import { APPROVAL } from "../hitl-utils.js";
 
 export interface ReplaceInFileInput {
   targetPath: string;
@@ -44,6 +45,7 @@ export const createReplaceInFileTool = (
   diffProvider?: DiffContentProvider,
   onStreamingOutput?: StreamingFileOutputCallback,
   autoApprove: boolean = false,
+  waitForApproval?: (toolCallId: string) => Promise<unknown>,
 ) =>
   tool({
     description:
@@ -73,12 +75,15 @@ export const createReplaceInFileTool = (
           "Multi-block SEARCH/REPLACE format. Use this for multiple edits:\n------- SEARCH\n[content to find]\n=======\n[replacement content]\n+++++++ REPLACE\n\nMultiple blocks can be included for multiple changes.",
         ),
     }),
-    execute: async ({
-      targetPath,
-      searchContent,
-      replaceContent,
-      diff,
-    }: ReplaceInFileInput): Promise<ReplaceInFileOutput> => {
+    execute: async (
+      {
+        targetPath,
+        searchContent,
+        replaceContent,
+        diff,
+      }: ReplaceInFileInput,
+      options?: { toolCallId?: string },
+    ): Promise<ReplaceInFileOutput> => {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         throw new Error("No workspace folder found");
@@ -208,14 +213,26 @@ export const createReplaceInFileTool = (
 
           // Handle approval flow
           if (!autoApprove) {
-            // Show notification for user approval
-            const approval = await vscode.window.showInformationMessage(
-              `Review the changes to ${relativePath} in the diff view.`,
-              "Approve",
-              "Reject",
-            );
+            // Use the actual toolCallId from AI SDK context for proper frontend matching
+            const approvalToolCallId = options?.toolCallId || `replace-${targetPath}-${Date.now()}`;
+            
+            let approved = false;
+            
+            if (waitForApproval) {
+              // Use RPC-based approval (webview UI)
+              const result = await waitForApproval(approvalToolCallId);
+              approved = result === APPROVAL.YES || result === true;
+            } else {
+              // Fallback to VS Code dialog
+              const approval = await vscode.window.showInformationMessage(
+                `Review the changes to ${relativePath} in the diff view.`,
+                "Approve",
+                "Reject",
+              );
+              approved = approval === "Approve";
+            }
 
-            if (approval !== "Approve") {
+            if (!approved) {
               await Runtime.runPromise(Runtime.defaultRuntime)(
                 diffViewInstance.revertChanges().pipe(
                   Effect.flatMap(() => diffViewInstance.reset()),

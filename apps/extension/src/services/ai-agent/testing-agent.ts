@@ -98,6 +98,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             progressCallback?: (status: string, message: string) => void;
             signal?: AbortSignal;
             diffProvider?: DiffContentProvider;
+            waitForApproval?: (toolCallId: string) => Promise<unknown>;
           },
         ) =>
           Effect.gen(function* () {
@@ -216,6 +217,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               onKnowledgeRetrieved: (results) => {
                 knowledgeContext.addFromSearchResults(results);
               },
+              waitForApproval: options?.waitForApproval,
             });
 
             progressCallback?.(

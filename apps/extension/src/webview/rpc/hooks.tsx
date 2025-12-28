@@ -273,6 +273,7 @@ export function useRpcSubscription<TInput, TOutput, TProgress = unknown>(
     progressData,
     error,
     isLoading: status === "subscribing" || status === "active",
+    subscriptionId: subscriptionIdRef.current,
   };
 }
 
@@ -359,6 +360,7 @@ export function createRpcHookFactories(): RpcHookFactories<VSCodeAPI> {
           error: subscription.error,
           isLoading: subscription.isLoading,
           unsubscribe: subscription.unsubscribe,
+          subscriptionId: subscription.subscriptionId,
         };
       };
     },

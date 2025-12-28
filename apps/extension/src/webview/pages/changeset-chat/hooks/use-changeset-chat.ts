@@ -107,6 +107,19 @@ export function useChangesetChat({
             },
           });
         }),
+        Match.when({ type: "tool-approval-requested" }, (p) => {
+          // Update tool state to approval-requested so UI shows approve/reject buttons
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "tool-result",
+            toolResult: {
+              toolCallId: p.toolCallId || "",
+              updates: {
+                state: "approval-requested",
+              },
+            },
+          });
+        }),
         Match.when({ type: "tool-output-streaming" }, (p) => {
           send({
             type: "RESPONSE_CHUNK",
@@ -274,6 +287,7 @@ export function useChangesetChat({
     testSuiteQueue: state.context.testSuiteQueue,
     currentSuiteId: state.context.currentSuiteId,
     agentMode: state.context.agentMode,
+    subscriptionId: state.context.subscriptionId,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });

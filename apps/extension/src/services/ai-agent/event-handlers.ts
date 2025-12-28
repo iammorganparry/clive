@@ -583,6 +583,9 @@ const handleProposeTestPlanResult = (
   Effect.gen(function* () {
     const accumulated = yield* getStreamingArgs(streamingState, toolCallId);
 
+    // Get file path before deleting the mapping
+    const targetPath = yield* getFilePathForPlan(streamingState, toolCallId);
+
     // Finalize streaming write if file was initialized
     const hasPlan = yield* hasPlanToolCall(streamingState, toolCallId);
     if (hasPlan) {
@@ -607,10 +610,6 @@ const handleProposeTestPlanResult = (
       const planContentValue = extractJsonField(accumulated, "planContent");
       if (planContentValue) {
         const planContent = unescapeJsonString(planContentValue);
-        const targetPath = yield* getFilePathForPlan(
-          streamingState,
-          toolCallId,
-        );
 
         // Emit final plan content as complete with file path
         yield* Effect.sync(() => {
