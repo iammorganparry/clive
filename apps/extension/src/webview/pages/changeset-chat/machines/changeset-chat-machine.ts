@@ -139,6 +139,7 @@ export interface ChangesetChatContext {
   testSuiteQueue: TestSuiteQueueItem[]; // Queue of test suites to process
   currentSuiteId: string | null; // ID of currently processing suite
   agentMode: "plan" | "act"; // Current agent mode
+  subscriptionId: string | null; // Active subscription ID for tool approvals
 }
 
 interface BackendHistoryMessage {
@@ -207,6 +208,7 @@ export type ChangesetChatEvent =
       error: string;
       results?: TestFileExecution;
     }
+  | { type: "SET_SUBSCRIPTION_ID"; subscriptionId: string | null }
   | {
       type: "DEV_INJECT_STATE";
       updates: Partial<ChangesetChatContext>;
@@ -263,6 +265,10 @@ export const changesetChatMachine = setup({
     },
   },
   actions: {
+    setSubscriptionId: assign(({ event }) => {
+      if (event.type !== "SET_SUBSCRIPTION_ID") return {};
+      return { subscriptionId: event.subscriptionId };
+    }),
     appendStreamingContent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "message")
         return {};
@@ -1026,6 +1032,7 @@ export const changesetChatMachine = setup({
     testSuiteQueue: [],
     currentSuiteId: null,
     agentMode: "plan" as const,
+    subscriptionId: null,
   }),
   states: {
     idle: {
@@ -1117,6 +1124,9 @@ export const changesetChatMachine = setup({
         DEV_INJECT_STATE: {
           actions: ["devInjectState"],
         },
+        SET_SUBSCRIPTION_ID: {
+          actions: ["setSubscriptionId"],
+        },
       },
     },
     streaming: {
@@ -1185,6 +1195,9 @@ export const changesetChatMachine = setup({
         },
         DEV_INJECT_STATE: {
           actions: ["devInjectState"],
+        },
+        SET_SUBSCRIPTION_ID: {
+          actions: ["setSubscriptionId"],
         },
       },
     },

@@ -2,6 +2,7 @@ import {
   CodeBlock,
   CodeBlockCopyButton,
 } from "@clive/ui/components/ai-elements/code-block";
+import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
 import {
   Task,
@@ -32,6 +33,7 @@ import { useCallback } from "react";
 import type { BundledLanguage } from "shiki";
 import { getVSCodeAPI } from "../../../services/vscode.js";
 import type { ToolState } from "../../../types/chat.js";
+import { useRpc } from "../../../rpc/provider.js";
 
 // Add vscode-icons collection for offline use (works with VS Code webview CSP)
 addCollection(vscodeIconsData);
@@ -43,6 +45,8 @@ interface ToolCallCardProps {
   output?: unknown;
   errorText?: string;
   streamingContent?: string; // For file-writing tools that stream content
+  toolCallId?: string;
+  subscriptionId?: string;
 }
 
 // Tool display config removed - using natural language summaries instead
@@ -899,10 +903,38 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   output,
   errorText,
   streamingContent,
+  toolCallId,
+  subscriptionId,
 }) => {
   const summary = generateToolSummary(toolName, input, output);
   const hasError = state === "output-error" || !!errorText;
   const filePaths = extractFilePaths(toolName, input, output);
+
+  // RPC mutation for approval
+  const rpc = useRpc();
+  const approveToolCall = rpc.agents.approveToolCall.useMutation();
+
+  // Handler for approval
+  const handleApprove = useCallback(() => {
+    if (!toolCallId || !subscriptionId) return;
+    
+    approveToolCall.mutate({
+      subscriptionId,
+      toolCallId,
+      approved: true,
+    });
+  }, [toolCallId, subscriptionId, approveToolCall]);
+
+  // Handler for rejection
+  const handleReject = useCallback(() => {
+    if (!toolCallId || !subscriptionId) return;
+    
+    approveToolCall.mutate({
+      subscriptionId,
+      toolCallId,
+      approved: false,
+    });
+  }, [toolCallId, subscriptionId, approveToolCall]);
 
   // Check if this is a file-writing tool with code content
   // Use streaming content if available, otherwise fall back to output/input
@@ -1100,6 +1132,18 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
         </div>
       </TaskTrigger>
       <TaskContent>
+        {/* Approval Buttons for approval-requested state */}
+        {state === "approval-requested" && toolCallId && subscriptionId && (
+          <div className="mb-4 flex items-center gap-2">
+            <Button onClick={handleApprove} variant="default" size="sm">
+              Approve
+            </Button>
+            <Button onClick={handleReject} variant="destructive" size="sm">
+              Reject
+            </Button>
+          </div>
+        )}
+
         {/* Code Writing Tools - Show code prominently */}
         {isCodeWritingTool && fileInfo ? (
           <div className="mt-2">

@@ -30,6 +30,7 @@ describe("changeset-chat-machine test execution actions", () => {
       planContent: null,
       planFilePath: null,
       usage: null,
+      subscriptionId: null,
     };
   });
 
@@ -546,6 +547,7 @@ describe("changeset-chat-machine plan content actions", () => {
       planContent: null,
       planFilePath: null,
       usage: null,
+      subscriptionId: null,
     };
   });
 

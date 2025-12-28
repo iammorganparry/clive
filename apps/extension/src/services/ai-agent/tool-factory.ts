@@ -69,6 +69,7 @@ export interface ToolConfig {
   bashStreamingCallback?: BashStreamingCallback;
   fileStreamingCallback?: FileStreamingCallback;
   onKnowledgeRetrieved?: KnowledgeRetrievedCallback;
+  waitForApproval?: (toolCallId: string) => Promise<unknown>;
 }
 
 /**
@@ -117,6 +118,31 @@ const createBaseTools = (config: ToolConfig) =>
   });
 
 /**
+ * Create a wrapped waitForApproval that emits an event before blocking
+ * This allows the frontend to know when approval is requested
+ */
+const createWaitForApprovalWithEvent = (
+  progressCallback?: (status: string, message: string) => void,
+  waitForApproval?: (toolCallId: string) => Promise<unknown>,
+) => {
+  if (!waitForApproval) return undefined;
+
+  return async (toolCallId: string): Promise<unknown> => {
+    // Emit approval-requested event to frontend before blocking
+    progressCallback?.(
+      "tool-approval-requested",
+      JSON.stringify({
+        type: "tool-approval-requested",
+        toolCallId,
+      }),
+    );
+
+    // Block until approval is received
+    return waitForApproval(toolCallId);
+  };
+};
+
+/**
  * Create write tools available only in act mode
  */
 const createWriteTools = (config: ToolConfig) =>
@@ -132,11 +158,18 @@ const createWriteTools = (config: ToolConfig) =>
       delete: (id: string) => autoApproveRegistry.delete(id),
     } as Set<string>;
 
+    // Create wrapped waitForApproval that emits events
+    const waitForApprovalWithEvent = createWaitForApprovalWithEvent(
+      config.progressCallback,
+      config.waitForApproval,
+    );
+
     const writeTestFile = createWriteTestFileTool(
       selfApprovingRegistry,
       config.fileStreamingCallback,
       config.diffProvider,
       false, // Don't auto-approve
+      waitForApprovalWithEvent,
     );
 
     const writeKnowledgeFile = createWriteKnowledgeFileTool(
@@ -147,6 +180,7 @@ const createWriteTools = (config: ToolConfig) =>
       config.diffProvider,
       config.fileStreamingCallback,
       false, // Don't auto-approve
+      waitForApprovalWithEvent,
     );
 
     return {

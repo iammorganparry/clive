@@ -17,6 +17,7 @@ import {
 } from "../response-formatter.js";
 import type { DiffContentProvider } from "../../diff-content-provider.js";
 import { DiffViewProvider } from "../../diff-view-provider.js";
+import { APPROVAL } from "../hitl-utils.js";
 
 /**
  * Streaming file output callback type
@@ -42,6 +43,7 @@ export const createWriteTestFileTool = (
   onStreamingOutput?: StreamingFileOutputCallback,
   diffProvider?: DiffContentProvider,
   autoApprove: boolean = false,
+  waitForApproval?: (toolCallId: string) => Promise<unknown>,
 ) =>
   tool({
     description:
@@ -66,12 +68,15 @@ export const createWriteTestFileTool = (
         .default(false)
         .describe("Whether to overwrite existing file (default: false)"),
     }),
-    execute: async ({
-      proposalId,
-      testContent,
-      targetPath,
-      overwrite = false,
-    }: WriteTestFileInput): Promise<WriteTestFileOutput> => {
+    execute: async (
+      {
+        proposalId,
+        testContent,
+        targetPath,
+        overwrite = false,
+      }: WriteTestFileInput,
+      _options?: { toolCallId?: string },
+    ): Promise<WriteTestFileOutput> => {
       // Check if proposalId is approved
       if (!approvalRegistry.has(proposalId)) {
         return {
@@ -109,10 +114,14 @@ export const createWriteTestFileTool = (
         }
 
         if (fileExists && !overwrite) {
+          // Read existing content to help agent use replaceInFile
+          const existingDoc = await vscode.workspace.openTextDocument(fileUri);
+          const existingContent = existingDoc.getText();
+          
           return {
             success: false,
             filePath: relativePath,
-            message: `File already exists. Set overwrite=true to replace it.`,
+            message: `File already exists at ${relativePath}. To preserve existing tests, use replaceInFile to add new test cases. Existing file content:\n\n<existing_file_content>\n${existingContent}\n</existing_file_content>\n\nUse replaceInFile with a SEARCH block matching where you want to add tests, and a REPLACE block with the new content.`,
           };
         }
 
@@ -160,14 +169,26 @@ export const createWriteTestFileTool = (
 
           // Handle approval flow
           if (!autoApprove) {
-            // Show notification for user approval
-            const approval = await vscode.window.showInformationMessage(
-              `Review the changes to ${relativePath} in the diff view.`,
-              "Approve",
-              "Reject",
-            );
+            let approved = false;
+            
+            // Use the actual toolCallId from AI SDK context for proper frontend matching
+            const approvalToolCallId = _options?.toolCallId || proposalId || "write-test-file";
+            
+            if (waitForApproval) {
+              // Use RPC-based approval (webview UI)
+              const result = await waitForApproval(approvalToolCallId);
+              approved = result === APPROVAL.YES || result === true;
+            } else {
+              // Fallback to VS Code dialog
+              const approval = await vscode.window.showInformationMessage(
+                `Review the changes to ${relativePath} in the diff view.`,
+                "Approve",
+                "Reject",
+              );
+              approved = approval === "Approve";
+            }
 
-            if (approval !== "Approve") {
+            if (!approved) {
               await Runtime.runPromise(Runtime.defaultRuntime)(
                 diffViewInstance.revertChanges().pipe(
                   Effect.flatMap(() => diffViewInstance.reset()),

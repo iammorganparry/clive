@@ -221,6 +221,19 @@ const mockService = {
 </pattern_discovery>
 
 <iterative_test_creation>
+**CRITICAL: Check for Existing Test Files First**
+
+Before writing ANY test file, you MUST:
+1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
+2. If the file exists (content is returned):
+   - Read and understand the existing tests
+   - Use \`replaceInFile\` to ADD new test cases without removing existing ones
+   - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
+3. If the file doesn't exist ("FILE_NOT_FOUND"):
+   - Use \`writeTestFile\` to create a new test file
+
+This prevents accidentally overwriting existing tests.
+
 **CRITICAL: One Test Case at a Time**
 
 You MUST create tests iteratively, one test case at a time. This ensures setup and mocking issues are caught immediately rather than after writing many tests that all fail for the same reason.
@@ -230,7 +243,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
    - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
-   - Use writeTestFile to create the test file with just this ONE test case
+   - If test file doesn't exist, use writeTestFile to create it with just this ONE test case
+   - If test file exists, use replaceInFile to add the test case
 
 2. **Verify the first test passes** - IMMEDIATELY run the test after writing it
    - Use bashExecute to run the test command
@@ -239,7 +253,7 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 
 3. **Add the next test case** - Once the first test passes, add ONE more test case
    - Use replaceInFile to add the new test case to the existing test file
-   - OR use writeTestFile with overwrite=true to update the file
+   - NEVER use writeTestFile with overwrite=true - it destroys existing tests
    - Choose the next simplest test case that builds on the first
 
 4. **Verify the second test passes** - Run the test again to ensure both tests pass
@@ -1121,6 +1135,19 @@ const mockService = {
 </pattern_discovery>
 
 <iterative_test_creation>
+**CRITICAL: Check for Existing Test Files First**
+
+Before writing ANY test file, you MUST:
+1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
+2. If the file exists (content is returned):
+   - Read and understand the existing tests
+   - Use \`replaceInFile\` to ADD new test cases without removing existing ones
+   - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
+3. If the file doesn't exist ("FILE_NOT_FOUND"):
+   - Use \`writeTestFile\` to create a new test file
+
+This prevents accidentally overwriting existing tests.
+
 **CRITICAL: One Test Case at a Time**
 
 You MUST create tests iteratively, one test case at a time. This ensures setup and mocking issues are caught immediately rather than after writing many tests that all fail for the same reason.
@@ -1130,7 +1157,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
    - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
-   - Use writeTestFile to create the test file with just this ONE test case
+   - If test file doesn't exist, use writeTestFile to create it with just this ONE test case
+   - If test file exists, use replaceInFile to add the test case
 
 2. **Verify the first test passes** - IMMEDIATELY run the test after writing it
    - Use bashExecute to run the test command
@@ -1139,7 +1167,7 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 
 3. **Add the next test case** - Once the first test passes, add ONE more test case
    - Use replaceInFile to add the new test case to the existing test file
-   - OR use writeTestFile with overwrite=true to update the file
+   - NEVER use writeTestFile with overwrite=true - it destroys existing tests
    - Choose the next simplest test case that builds on the first
 
 4. **Verify the second test passes** - Run the test again to ensure both tests pass

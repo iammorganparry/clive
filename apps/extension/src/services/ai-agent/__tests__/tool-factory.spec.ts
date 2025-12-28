@@ -237,6 +237,7 @@ describe("Tool Factory", () => {
           config.diffProvider,
           config.fileStreamingCallback,
           false,
+          config.waitForApproval,
         );
       }),
     );
@@ -278,6 +279,7 @@ describe("Tool Factory", () => {
           fileCallback,      // fileStreamingCallback
           undefined,         // diffProvider (not provided)
           false,             // autoApprove
+          config.waitForApproval, // waitForApproval
         );
       }),
     );
@@ -298,6 +300,7 @@ describe("Tool Factory", () => {
           undefined,            // fileStreamingCallback (not provided)
           config.diffProvider,  // diffProvider
           false,                // autoApprove
+          config.waitForApproval, // waitForApproval
         );
       }),
     );

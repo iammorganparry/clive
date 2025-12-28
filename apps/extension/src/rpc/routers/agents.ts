@@ -1,10 +1,12 @@
-import { createRouter } from "@clive/webview-rpc";
+import { createRouter, type RpcSubscriptionMessage } from "@clive/webview-rpc";
 import { Effect, Runtime } from "effect";
 import * as vscode from "vscode";
 import { z } from "zod";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
 import { ConversationService } from "../../services/conversation-service.js";
 import { createAgentServiceLayer } from "../../services/layer-factory.js";
+import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
+import { handleSubscriptionMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
@@ -58,6 +60,7 @@ export const agentsRouter = {
       ctx,
       signal,
       onProgress,
+      waitForApproval,
       subscriptionId,
     }: {
       input: {
@@ -75,6 +78,7 @@ export const agentsRouter = {
       ctx: RpcContext;
       signal: AbortSignal;
       onProgress?: (data: unknown) => void;
+      waitForApproval?: (toolCallId: string) => Promise<unknown>;
       subscriptionId?: string;
     }) {
       const serviceLayer = getAgentLayer(ctx);
@@ -150,8 +154,12 @@ export const agentsRouter = {
                 status === "tool-call" ||
                 status === "tool-result" ||
                 status === "tool-output-streaming" ||
+                status === "tool-approval-requested" ||
                 status === "usage" ||
-                status === "reasoning"
+                status === "reasoning" ||
+                status === "plan-content-streaming" ||
+                status === "file-created" ||
+                status === "file-output-streaming"
               ) {
                 try {
                   const eventData = JSON.parse(message);
@@ -177,6 +185,7 @@ export const agentsRouter = {
             diffProvider: ctx.diffProvider,
             progressCallback,
             signal,
+            waitForApproval,
           });
 
           // Persist conversation messages to database
@@ -352,5 +361,44 @@ export const agentsRouter = {
           }),
         ),
       ),
+    ),
+
+  /**
+   * Approve or reject a tool call
+   * Used by the frontend to respond to HITL approval requests
+   */
+  approveToolCall: procedure
+    .input(
+      z.object({
+        subscriptionId: z.string(),
+        toolCallId: z.string(),
+        approved: z.boolean(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[AgentsRouter] Tool call ${input.approved ? "approved" : "rejected"}: ${input.toolCallId}`,
+        );
+
+        // Create subscription message to resolve the pending approval
+        const message: RpcSubscriptionMessage = {
+          subscriptionId: input.subscriptionId,
+          type: "approval",
+          toolCallId: input.toolCallId,
+          data: input.approved ? APPROVAL.YES : APPROVAL.NO,
+        };
+
+        // Send the approval message to resolve the pending promise
+        const handled = handleSubscriptionMessage(message, ctx);
+
+        if (!handled) {
+          yield* Effect.logDebug(
+            `[AgentsRouter] No pending approval found for subscription: ${input.subscriptionId}, toolCallId: ${input.toolCallId}`,
+          );
+        }
+
+        return { success: handled };
+      }),
     ),
 };
