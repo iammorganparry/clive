@@ -104,7 +104,7 @@ describe("proposeTestPlanTool", () => {
     });
 
     it("should register planId in approval registry when auto-approved", async () => {
-      const tool = createProposeTestPlanTool(undefined, approvalRegistry);
+      const tool = createProposeTestPlanTool();
 
       const input: ProposeTestPlanInput = {
         name: "Test Plan",

@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { Data, Effect, Option, pipe, Runtime } from "effect";
+import { sanitizePlanName } from "../testing-agent-helpers.js";
 
 // ============================================================
 // Error Types
@@ -439,6 +440,7 @@ const createOutputResult = (
   input: ProposeTestPlanInput,
   planId: string,
   approved: boolean,
+  filePath?: string,
 ): ProposeTestPlanOutput => ({
   success: approved,
   planId,
@@ -448,36 +450,62 @@ const createOutputResult = (
   message: approved
     ? `Test plan proposal created: ${input.name}`
     : `Test plan proposal rejected: ${input.name}`,
+  filePath,
 });
 
-/**
- * Register plan ID in approval registry if approved
- */
-const registerApproval = (
-  planId: string,
-  approved: boolean,
-  registry: Set<string> | undefined,
-): Effect.Effect<void> =>
-  Effect.sync(() => {
-    if (approved && registry) {
-      registry.add(planId);
-    }
-  });
 
 // ============================================================
 // Tool Factory
 // ============================================================
 
 /**
- * Factory function to create proposeTestPlanTool with optional approval callback
- * When no approval callback is provided, proposals are auto-approved
+ * Write plan content to file
+ * Creates the file, writes content, and opens it in VS Code editor
+ */
+const writePlanToFile = (
+  input: ProposeTestPlanInput,
+  _toolCallId: string,
+): Effect.Effect<string, NoWorkspaceError | PlanStreamingError> =>
+  Effect.gen(function* () {
+    // Generate file path
+    const sanitizedName = sanitizePlanName(input.name);
+    const timestamp = Date.now();
+    const targetPath = `.clive/plans/test-plan-${sanitizedName}-${timestamp}.md`;
+
+    // Get workspace root
+    const workspaceRoot = yield* getWorkspaceRoot();
+    const fileUri = resolveFilePath(targetPath, workspaceRoot);
+
+    // Ensure parent directory exists
+    yield* ensureParentDirectory(fileUri);
+
+    // Write plan content to file
+    yield* Effect.tryPromise({
+      try: () =>
+        vscode.workspace.fs.writeFile(
+          fileUri,
+          Buffer.from(input.planContent, "utf-8"),
+        ),
+      catch: (error) =>
+        new PlanStreamingError({
+          message: "Failed to write plan content",
+          cause: error,
+        }),
+    });
+
+    // Open file in editor
+    yield* openFileInEditor(fileUri);
+
+    // Return relative path
+    return vscode.workspace.asRelativePath(fileUri, false);
+  });
+
+/**
+ * Factory function to create proposeTestPlanTool
+ * Creates a markdown plan file and opens it in the editor
  */
 export const createProposeTestPlanTool = (
-  waitForApproval?: (
-    toolCallId: string,
-    input: ProposeTestPlanInput,
-  ) => Promise<boolean>,
-  approvalRegistry?: Set<string>,
+  fileStreamingCallback?: StreamingFileOutputCallback,
 ) =>
   tool({
     description:
@@ -487,41 +515,42 @@ export const createProposeTestPlanTool = (
       "format defined in the system prompt with YAML frontmatter, Problem Summary, " +
       "Implementation Plan sections, and Changes Summary.",
     inputSchema: ProposeTestPlanInputSchema,
-    execute: (input): Promise<ProposeTestPlanOutput> =>
+    execute: (input, options): Promise<ProposeTestPlanOutput> =>
       pipe(
         Effect.gen(function* () {
           const planId = yield* generatePlanId();
+          const toolCallId = options?.toolCallId ?? (yield* generateToolCallId());
 
-          // Determine approval status
-          const approved = yield* pipe(
-            Option.fromNullable(waitForApproval),
-            Option.match({
-              // No approval callback = auto-approve
-              onNone: () => Effect.succeed(true),
-              // With approval callback = wait for approval
-              onSome: (approvalFn) =>
-                Effect.gen(function* () {
-                  const toolCallId = yield* generateToolCallId();
-                  return yield* Effect.tryPromise({
-                    try: () => approvalFn(toolCallId, input),
-                    catch: () => false, // Default to rejected on error
-                  });
-                }),
-            }),
+          // Write plan to file
+          const filePath = yield* pipe(
+            writePlanToFile(input, toolCallId),
+            Effect.tap((path) =>
+              Effect.sync(() => {
+                // Emit file-created event
+                fileStreamingCallback?.({
+                  filePath: path,
+                  content: "",
+                  isComplete: false,
+                });
+                // Emit final content event
+                fileStreamingCallback?.({
+                  filePath: path,
+                  content: input.planContent,
+                  isComplete: true,
+                });
+              }),
+            ),
+            Effect.catchAll(() => Effect.succeed(undefined)),
           );
 
-          // Register in approval registry
-          yield* registerApproval(planId, approved, approvalRegistry);
-
-          return createOutputResult(input, planId, approved);
+          return createOutputResult(input, planId, true, filePath);
         }),
         Runtime.runPromise(runtime),
       ),
   });
 
 /**
- * Default proposeTestPlanTool without approval callback (auto-approves)
- * Use createProposeTestPlanTool with waitForApproval for manual approval flow
+ * Default proposeTestPlanTool without streaming callback
  */
 export const proposeTestPlanTool = createProposeTestPlanTool();
 

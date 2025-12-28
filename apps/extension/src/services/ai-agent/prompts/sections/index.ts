@@ -19,6 +19,7 @@ import { scratchpad } from "./scratchpad.js";
 import { taskInstructions } from "./task-instructions.js";
 import { testEvaluation } from "./test-evaluation.js";
 import { testExecution } from "./test-execution.js";
+import { testUpdateDetection } from "./test-update-detection.js";
 import { verification } from "./verification.js";
 import { workflow } from "./workflow.js";
 import { workspaceContext } from "./workspace-context.js";
@@ -33,6 +34,7 @@ export const sectionRegistry: SectionRegistry = {
   [SectionId.Workflow]: workflow,
   [SectionId.PatternDiscovery]: patternDiscovery,
   [SectionId.IterativeTesting]: iterativeTesting,
+  [SectionId.TestUpdateDetection]: testUpdateDetection,
   [SectionId.TaskInstructions]: taskInstructions,
   [SectionId.AgentRules]: agentRules,
   [SectionId.CompletionSignal]: completionSignal,
@@ -58,6 +60,7 @@ export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
     SectionId.Workflow,
     SectionId.PatternDiscovery,
     SectionId.IterativeTesting,
+    SectionId.TestUpdateDetection,
     SectionId.TaskInstructions,
     SectionId.AgentRules,
     SectionId.CompletionSignal,
