@@ -75,7 +75,7 @@ export interface ToolConfig {
  * Create base tools available in both plan and act modes
  */
 const createBaseTools = (config: ToolConfig) =>
-  Effect.gen(function* () {
+  Effect.sync(() => {
     const bashExecute = createBashExecuteTool(
       config.budget,
       config.bashStreamingCallback,
@@ -120,7 +120,7 @@ const createBaseTools = (config: ToolConfig) =>
  * Create write tools available only in act mode
  */
 const createWriteTools = (config: ToolConfig) =>
-  Effect.gen(function* () {
+  Effect.sync(() => {
     // Self-approving registry for auto-approval
     const autoApproveRegistry = new Set<string>();
     const selfApprovingRegistry = {
@@ -135,6 +135,8 @@ const createWriteTools = (config: ToolConfig) =>
     const writeTestFile = createWriteTestFileTool(
       selfApprovingRegistry,
       config.fileStreamingCallback,
+      config.diffProvider,
+      false, // Don't auto-approve
     );
 
     const writeKnowledgeFile = createWriteKnowledgeFileTool(

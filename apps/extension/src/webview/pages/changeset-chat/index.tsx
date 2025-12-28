@@ -36,6 +36,7 @@ import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
 import { TestSuiteQueue } from "./components/test-suite-queue.js";
 import { DevTestingToolbar } from "./components/dev-testing-toolbar.js";
+import { UserMessageText } from "./components/user-message-text.js";
 import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
 import type { MessagePart } from "../../types/chat.js";
 import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
@@ -141,7 +142,17 @@ export const ChangesetChatPage: React.FC = () => {
                   );
                 }
 
-                // Default to MessageResponse for non-plan text
+                // For user messages, use UserMessageText with truncation
+                if (message.role === "user") {
+                  return (
+                    <UserMessageText 
+                      key={`${message.id}-text-${index}`} 
+                      text={part.text} 
+                    />
+                  );
+                }
+
+                // For assistant messages, use MessageResponse (existing behavior)
                 return (
                   <MessageResponse key={`${message.id}-text-${index}`}>
                     {part.text}

@@ -129,9 +129,7 @@ export interface ChangesetChatContext {
   isReasoningStreaming: boolean;
   hasCompletedAnalysis: boolean;
   scratchpadTodos: ScratchpadTodo[];
-  cacheLoaded: boolean;
   historyLoaded: boolean;
-  cachedAt?: number; // Timestamp of when cache was loaded
   usage: LanguageModelUsage | null;
   planContent: string | null; // Plan content extracted from scratchpad file
   planFilePath: string | null; // Path to the plan file created by the agent
@@ -141,13 +139,6 @@ export interface ChangesetChatContext {
   testSuiteQueue: TestSuiteQueueItem[]; // Queue of test suites to process
   currentSuiteId: string | null; // ID of currently processing suite
   agentMode: "plan" | "act"; // Current agent mode
-}
-
-interface CachedConversation {
-  messages: ChatMessage[];
-  hasCompletedAnalysis: boolean;
-  scratchpadTodos: ScratchpadTodo[];
-  cachedAt: number;
 }
 
 interface BackendHistoryMessage {
@@ -166,7 +157,6 @@ interface BackendHistoryData {
 export type ChangesetChatEvent =
   | { type: "START_ANALYSIS" }
   | { type: "LOAD_HISTORY"; messages: ChatMessage[] }
-  | { type: "RECEIVE_CACHE"; cache: CachedConversation | null }
   | { type: "RECEIVE_BACKEND_HISTORY"; historyData: BackendHistoryData | null }
   | {
       type: "RESPONSE_CHUNK";
@@ -252,32 +242,18 @@ export const changesetChatMachine = setup({
     input: {} as ChangesetChatInput,
   },
   guards: {
-    shouldLoadBackendHistory: ({ context, event }): boolean => {
+    shouldLoadBackendHistory: ({ event }): boolean => {
       if (event.type !== "RECEIVE_BACKEND_HISTORY") return false;
-      if (
-        !event.historyData ||
-        !event.historyData.conversationId ||
-        event.historyData.messages.length === 0
-      ) {
-        return false;
-      }
-      // If cache wasn't loaded, always use backend
-      if (!context.cacheLoaded) return true;
-      // If cache was loaded, compare message counts and timestamps
-      const backendMessages = event.historyData.messages;
-      const backendNewer =
-        backendMessages.length > context.messages.length ||
-        (backendMessages.length > 0 &&
-          context.messages.length > 0 &&
-          context.cachedAt !== undefined &&
-          new Date(
-            backendMessages[backendMessages.length - 1].createdAt,
-          ).getTime() > context.cachedAt);
-      return backendNewer;
+      // Load backend history if it exists and has messages
+      return (
+        event.historyData !== null &&
+        event.historyData.conversationId !== null &&
+        event.historyData.messages.length > 0
+      );
     },
     shouldStartFreshAnalysis: ({ context, event }): boolean => {
       if (event.type !== "RECEIVE_BACKEND_HISTORY") return false;
-      // Start fresh if no backend history and no messages were loaded from cache
+      // Start fresh if no backend history and no messages loaded yet
       return (
         (!event.historyData ||
           !event.historyData.conversationId ||
@@ -826,20 +802,6 @@ export const changesetChatMachine = setup({
     }),
     clearError: assign({ error: () => null }),
     markHistoryLoaded: assign({ historyLoaded: () => true }),
-    receiveCache: assign(({ event }) => {
-      if (event.type !== "RECEIVE_CACHE") return {};
-      if (!event.cache || event.cache.messages.length === 0) {
-        return { cacheLoaded: true };
-      }
-      // Load cached messages immediately
-      return {
-        messages: event.cache.messages,
-        hasCompletedAnalysis: event.cache.hasCompletedAnalysis,
-        scratchpadTodos: event.cache.scratchpadTodos,
-        cacheLoaded: true,
-        cachedAt: event.cache.cachedAt,
-      };
-    }),
     receiveBackendHistory: assign(({ event }) => {
       if (event.type !== "RECEIVE_BACKEND_HISTORY") return {};
       if (
@@ -956,9 +918,7 @@ export const changesetChatMachine = setup({
       isReasoningStreaming: () => false,
       hasCompletedAnalysis: () => false,
       scratchpadTodos: () => [],
-      cacheLoaded: () => true, // Mark as loaded (intentionally skipping cache)
       historyLoaded: () => true, // Mark as loaded (intentionally skipping history)
-      cachedAt: () => undefined,
       usage: () => null,
       planContent: () => null,
       planFilePath: () => null,
@@ -1056,9 +1016,7 @@ export const changesetChatMachine = setup({
     isReasoningStreaming: false,
     hasCompletedAnalysis: false,
     scratchpadTodos: [],
-    cacheLoaded: false,
     historyLoaded: false,
-    cachedAt: undefined,
     usage: null,
     planContent: null,
     planFilePath: null,
@@ -1072,9 +1030,6 @@ export const changesetChatMachine = setup({
   states: {
     idle: {
       on: {
-        RECEIVE_CACHE: {
-          actions: ["receiveCache"],
-        },
         RECEIVE_BACKEND_HISTORY: [
           {
             guard: "shouldLoadBackendHistory",
@@ -1086,7 +1041,7 @@ export const changesetChatMachine = setup({
             actions: ["addInitialMessage", "markHistoryLoaded"],
           },
           {
-            // Backend history received but cache is newer or already loaded
+            // Backend history received but no valid history
             actions: ["markHistoryLoaded"],
           },
         ],

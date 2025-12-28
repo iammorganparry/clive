@@ -129,3 +129,9 @@ export const makeTokenBudget = () =>
   Effect.gen(function* () {
     return yield* TokenBudgetService;
   }).pipe(Effect.provide(TokenBudgetService.Default));
+
+/**
+ * Type alias for TokenBudgetService instance
+ * Use this type when accepting a budget as a parameter
+ */
+export type TokenBudget = Effect.Effect.Success<ReturnType<typeof makeTokenBudget>>;
