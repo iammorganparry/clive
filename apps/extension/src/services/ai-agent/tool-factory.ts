@@ -97,8 +97,7 @@ const createBaseTools = (config: ToolConfig) =>
     );
 
     const proposeTestPlan = createProposeTestPlanTool(
-      undefined, // No approval callback for now
-      new Set<string>(), // Auto-approve registry
+      config.fileStreamingCallback, // File streaming callback for real-time updates
     );
 
     const completeTask = createCompleteTaskTool();

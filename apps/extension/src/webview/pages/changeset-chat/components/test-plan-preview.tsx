@@ -6,6 +6,8 @@ import {
   PlanContent,
   PlanTrigger,
   PlanAction,
+  PlanTitle,
+  PlanDescription,
 } from "@clive/ui/components/ai-elements/plan";
 import { Button } from "@clive/ui/button";
 import { Streamdown } from "streamdown";
@@ -42,7 +44,10 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
       className={cn("w-full", className)}
     >
       <PlanHeader>
-        <div className="flex-1" />
+        <div className="flex-1 space-y-1">
+          <PlanTitle>{plan.title}</PlanTitle>
+          <PlanDescription>{plan.description}</PlanDescription>
+        </div>
         
         {filePath && (
           <PlanAction>
@@ -64,7 +69,7 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           )}
         >
-          {`**${plan.title}**\n\n${plan.description}`}
+          {plan.body}
         </Streamdown>
       </PlanContent>
     </Plan>

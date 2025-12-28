@@ -70,6 +70,20 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     send,
   ]);
 
+  // React to auth state changes - send LOGOUT when isAuthenticated becomes false
+  // This handles the logout flow reactively, avoiding race conditions
+  useEffect(() => {
+    const isInAuthenticatedState =
+      state.matches("ready") ||
+      state.matches("checkingOnboarding") ||
+      state.matches("checkingConversation") ||
+      state.matches("needsOnboarding");
+
+    if (!isAuthenticated && !authLoading && isInAuthenticatedState) {
+      send({ type: "LOGOUT" });
+    }
+  }, [isAuthenticated, authLoading, state, send]);
+
   // Derive initialization state from machine state
   const isInitializing =
     state.matches("initializing") ||

@@ -11,6 +11,7 @@ export const SectionId = {
   Workflow: "WORKFLOW",
   PatternDiscovery: "PATTERN_DISCOVERY",
   IterativeTesting: "ITERATIVE_TESTING",
+  TestUpdateDetection: "TEST_UPDATE_DETECTION",
   TaskInstructions: "TASK_INSTRUCTIONS",
   AgentRules: "AGENT_RULES",
   CompletionSignal: "COMPLETION_SIGNAL",

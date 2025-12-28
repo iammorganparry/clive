@@ -529,6 +529,7 @@ export const handleToolResult = (
         streamingState,
         progressCallback,
         correlationId,
+        actualOutput,
       );
     }
 
@@ -579,12 +580,25 @@ const handleProposeTestPlanResult = (
   streamingState: Ref.Ref<StreamingState>,
   progressCallback: ProgressCallback | undefined,
   correlationId: string,
+  toolOutput?: unknown,
 ) =>
   Effect.gen(function* () {
     const accumulated = yield* getStreamingArgs(streamingState, toolCallId);
 
-    // Get file path before deleting the mapping
-    const targetPath = yield* getFilePathForPlan(streamingState, toolCallId);
+    // Extract file path from tool output if available
+    let finalFilePath: string | undefined;
+    if (
+      toolOutput &&
+      typeof toolOutput === "object" &&
+      "filePath" in toolOutput &&
+      typeof toolOutput.filePath === "string"
+    ) {
+      finalFilePath = toolOutput.filePath;
+    }
+
+    // Get file path from streaming state (fallback)
+    const streamingFilePath = yield* getFilePathForPlan(streamingState, toolCallId);
+    const targetPath = finalFilePath || streamingFilePath;
 
     // Finalize streaming write if file was initialized
     const hasPlan = yield* hasPlanToolCall(streamingState, toolCallId);
@@ -628,6 +642,21 @@ const handleProposeTestPlanResult = (
 
       // Clean up accumulated args after extraction
       yield* deleteStreamingArgs(streamingState, toolCallId);
+    } else if (targetPath) {
+      // If no accumulated content (tool executed without streaming deltas),
+      // emit a final event with just the filePath so frontend can display it
+      yield* Effect.sync(() => {
+        progressCallback?.(
+          "plan-content-streaming",
+          JSON.stringify({
+            type: "plan-content-streaming",
+            toolCallId,
+            content: "",
+            isComplete: true,
+            filePath: targetPath,
+          }),
+        );
+      });
     }
   });
 

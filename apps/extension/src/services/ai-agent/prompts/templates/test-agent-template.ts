@@ -15,6 +15,8 @@ export const testAgentTemplate = `{{AGENT_ROLE}}
 
 {{ITERATIVE_TESTING}}
 
+{{TEST_UPDATE_DETECTION}}
+
 {{TASK_INSTRUCTIONS}}
 
 {{AGENT_RULES}}

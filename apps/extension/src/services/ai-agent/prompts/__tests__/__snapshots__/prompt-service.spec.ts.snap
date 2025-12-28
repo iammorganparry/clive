@@ -227,12 +227,48 @@ Before writing ANY test file, you MUST:
 1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
 2. If the file exists (content is returned):
    - Read and understand the existing tests
-   - Use \`replaceInFile\` to ADD new test cases without removing existing ones
+   - **Determine if tests need updates or additions** (see test-update-detection section)
+   - For updates: Use \`replaceInFile\` to UPDATE test cases that reference changed code
+   - For additions: Use \`replaceInFile\` to ADD new test cases without removing existing ones
    - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
 3. If the file doesn't exist ("FILE_NOT_FOUND"):
    - Use \`writeTestFile\` to create a new test file
 
 This prevents accidentally overwriting existing tests.
+
+**Updating vs. Adding Tests:**
+
+When a test file exists, distinguish between:
+
+**A. UPDATING existing test cases** (when source code changed):
+- Function signatures changed (parameters, return types)
+- Function/component renamed
+- Mock interfaces changed
+- Expected behavior modified
+- Use \`replaceInFile\` to replace the affected test case with updated version
+
+**B. ADDING new test cases** (when coverage is incomplete):
+- New functions/methods added to source
+- New conditional branches added
+- New edge cases need coverage
+- Use \`replaceInFile\` to insert new test cases alongside existing ones
+
+**Example - Updating a test:**
+\`\`\`typescript
+// Source changed: processUser(userId: string, options: Options)
+// Old test needs update:
+SEARCH:
+  it('should process user', async () => {
+    const result = await processUser('user-123');
+    expect(result).toBe('success');
+  });
+
+REPLACE:
+  it('should process user', async () => {
+    const result = await processUser('user-123', { validate: true });
+    expect(result).toBe('success');
+  });
+\`\`\`
 
 **CRITICAL: One Test Case at a Time**
 
@@ -287,14 +323,165 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 - Use replaceInFile to add test cases incrementally to existing files
 </iterative_test_creation>
 
+<test_update_detection>
+**CRITICAL: Detect When Existing Tests Need Updates**
+
+When analyzing code changes, you MUST determine whether existing tests need updates or new tests should be added.
+
+**Step 1: Check for Existing Tests**
+
+For each changed file, check if tests already exist:
+\`\`\`bash
+# Find test file for src/services/auth.ts
+find . -path "*/__tests__/*" -name "*auth*.spec.ts" -o -name "*auth*.test.ts"
+
+# Or check conventional location
+cat src/services/__tests__/auth.spec.ts 2>/dev/null || echo "NO_TESTS_FOUND"
+\`\`\`
+
+**Step 2: Analyze Changes and Determine Impact**
+
+If tests exist, categorize the changes:
+
+**A. API Signature Changes** (tests MUST be updated):
+- Function parameter changes (added, removed, reordered, type changed)
+- Return type changes
+- Function/method renamed
+- Class constructor changes
+- Component prop changes
+
+Example:
+\`\`\`typescript
+// BEFORE
+function processUser(userId: string) { }
+
+// AFTER
+function processUser(userId: string, options: ProcessOptions) { }
+// → Tests calling processUser() must be updated to pass options
+\`\`\`
+
+**B. Behavior Changes** (tests may need updates or additions):
+- Changed business logic
+- Modified error handling
+- New conditional paths
+- Changed validation rules
+
+**C. Dependency Changes** (mocks may need updates):
+- New imported dependencies
+- Removed dependencies
+- Changed dependency usage
+
+**D. New Features** (new tests should be added):
+- New functions/methods added
+- New conditional branches
+- New error cases
+- New edge cases
+
+**Step 3: Plan Updates vs. New Tests**
+
+**UPDATE existing tests when:**
+- API signatures changed (parameters, return types)
+- Function/component renamed
+- Existing behavior modified
+- Mock interfaces changed due to dependency updates
+- Tests will fail due to code changes
+
+**ADD new tests when:**
+- New functions/methods added
+- New conditional paths/branches added
+- New error handling added
+- New edge cases introduced
+- Existing tests remain valid but coverage is incomplete
+
+**Step 4: Execution Strategy**
+
+**For test updates:**
+1. Read the existing test file
+2. Identify which test cases are affected by changes
+3. Use \`replaceInFile\` to update specific test cases
+4. Update function calls, assertions, or mocks as needed
+5. Run tests to verify updates work
+
+**For new tests:**
+1. Use \`replaceInFile\` to add new test cases to existing test file
+2. Follow the pattern of existing tests in the file
+3. Add one test case at a time, verify each passes
+
+**Common Update Patterns:**
+
+**1. Parameter Addition:**
+\`\`\`typescript
+// BEFORE in test
+expect(processUser('user-123')).resolves.toBe(result);
+
+// AFTER (add new parameter)
+expect(processUser('user-123', { validate: true })).resolves.toBe(result);
+\`\`\`
+
+**2. Return Type Change:**
+\`\`\`typescript
+// BEFORE
+expect(result).toBe('success');
+
+// AFTER (now returns object)
+expect(result).toEqual({ status: 'success', data: expect.any(Object) });
+\`\`\`
+
+**3. Mock Interface Change:**
+\`\`\`typescript
+// BEFORE
+const mockService = { getData: vi.fn() };
+
+// AFTER (method renamed)
+const mockService = { fetchData: vi.fn() };
+\`\`\`
+
+**4. Function Rename:**
+\`\`\`typescript
+// BEFORE
+import { processUser } from './auth';
+
+// AFTER
+import { authenticateUser } from './auth';
+\`\`\`
+
+**In Your Proposal:**
+
+Clearly distinguish in your plan between:
+- **Tests requiring updates**: List which existing tests need changes and why
+- **New tests needed**: List what new test cases should be added
+
+Example format in Problem Summary:
+\`\`\`markdown
+## Problem Summary
+
+3 testing issues identified:
+
+1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.ts\` must be updated to pass new parameter.
+
+2. **New tests needed** - New validation logic added (lines 62-75) with no test coverage. Need 3 new test cases for validation edge cases.
+
+3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in \`auth.spec.ts\` must be updated.
+\`\`\`
+
+**Why This Matters:**
+
+- **Prevents test failures**: Updates catch breaking changes before they cause CI failures
+- **Maintains coverage**: Existing tests remain effective after code changes
+- **Reduces maintenance**: Keeps tests synchronized with implementation
+- **Faster iterations**: Update existing tests is often faster than writing from scratch
+</test_update_detection>
+
 <your_task>
 You are in a conversational testing workflow:
 
 1. **Analyze the conversation history** - understand what the user has asked and your previous analysis
-2. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
-3. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
+2. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
+3. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
+4. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
+   - Clearly distinguish between: tests requiring updates vs. new tests needed
    - Your chat output IS the proposal - user will approve via UI buttons
-4. **Write tests when approved** - when user clicks "Approve & Write Tests", start with ONE test case, verify it passes, then add test cases incrementally one at a time
+5. **Write/update tests when approved** - when user clicks "Approve & Write Tests", start with ONE test case or update, verify it passes, then continue incrementally one at a time
 
 **IMPORTANT**: You have ALL tools available (bashExecute, webSearch, writeTestFile). Use bashExecute to manage scratchpad files (.clive/plans/) for context and progress tracking in large changesets. Use webSearch to look up framework documentation, testing best practices, or API references when needed. Output your analysis and recommendations in chat - the user will approve via UI buttons.
 
@@ -315,9 +502,10 @@ todos: ["unit-tests", "integration-tests", "e2e-tests"]  # List test types to be
 
 N testing gaps/risks identified:
 
-1. **Gap description** - What's missing or at risk (reference specific lines if relevant)
-2. **Gap description** - What's missing or at risk (reference specific lines if relevant)
-3. **Gap description** - What's missing or at risk (reference specific lines if relevant)
+1. **Existing tests require updates** - Describe which tests need updates due to code changes (e.g., "API signature changed, 8 test cases in auth.spec.ts must be updated")
+2. **New tests needed** - What's missing or at risk (reference specific lines if relevant)
+3. **Mock updates required** - Describe mock interface changes (e.g., "UserService.getData renamed to fetchData, mocks must be updated")
+4. **Coverage gaps** - What's missing or at risk (reference specific lines if relevant)
 
 ## Implementation Plan
 
@@ -1141,12 +1329,48 @@ Before writing ANY test file, you MUST:
 1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
 2. If the file exists (content is returned):
    - Read and understand the existing tests
-   - Use \`replaceInFile\` to ADD new test cases without removing existing ones
+   - **Determine if tests need updates or additions** (see test-update-detection section)
+   - For updates: Use \`replaceInFile\` to UPDATE test cases that reference changed code
+   - For additions: Use \`replaceInFile\` to ADD new test cases without removing existing ones
    - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
 3. If the file doesn't exist ("FILE_NOT_FOUND"):
    - Use \`writeTestFile\` to create a new test file
 
 This prevents accidentally overwriting existing tests.
+
+**Updating vs. Adding Tests:**
+
+When a test file exists, distinguish between:
+
+**A. UPDATING existing test cases** (when source code changed):
+- Function signatures changed (parameters, return types)
+- Function/component renamed
+- Mock interfaces changed
+- Expected behavior modified
+- Use \`replaceInFile\` to replace the affected test case with updated version
+
+**B. ADDING new test cases** (when coverage is incomplete):
+- New functions/methods added to source
+- New conditional branches added
+- New edge cases need coverage
+- Use \`replaceInFile\` to insert new test cases alongside existing ones
+
+**Example - Updating a test:**
+\`\`\`typescript
+// Source changed: processUser(userId: string, options: Options)
+// Old test needs update:
+SEARCH:
+  it('should process user', async () => {
+    const result = await processUser('user-123');
+    expect(result).toBe('success');
+  });
+
+REPLACE:
+  it('should process user', async () => {
+    const result = await processUser('user-123', { validate: true });
+    expect(result).toBe('success');
+  });
+\`\`\`
 
 **CRITICAL: One Test Case at a Time**
 
@@ -1201,14 +1425,165 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 - Use replaceInFile to add test cases incrementally to existing files
 </iterative_test_creation>
 
+<test_update_detection>
+**CRITICAL: Detect When Existing Tests Need Updates**
+
+When analyzing code changes, you MUST determine whether existing tests need updates or new tests should be added.
+
+**Step 1: Check for Existing Tests**
+
+For each changed file, check if tests already exist:
+\`\`\`bash
+# Find test file for src/services/auth.ts
+find . -path "*/__tests__/*" -name "*auth*.spec.ts" -o -name "*auth*.test.ts"
+
+# Or check conventional location
+cat src/services/__tests__/auth.spec.ts 2>/dev/null || echo "NO_TESTS_FOUND"
+\`\`\`
+
+**Step 2: Analyze Changes and Determine Impact**
+
+If tests exist, categorize the changes:
+
+**A. API Signature Changes** (tests MUST be updated):
+- Function parameter changes (added, removed, reordered, type changed)
+- Return type changes
+- Function/method renamed
+- Class constructor changes
+- Component prop changes
+
+Example:
+\`\`\`typescript
+// BEFORE
+function processUser(userId: string) { }
+
+// AFTER
+function processUser(userId: string, options: ProcessOptions) { }
+// → Tests calling processUser() must be updated to pass options
+\`\`\`
+
+**B. Behavior Changes** (tests may need updates or additions):
+- Changed business logic
+- Modified error handling
+- New conditional paths
+- Changed validation rules
+
+**C. Dependency Changes** (mocks may need updates):
+- New imported dependencies
+- Removed dependencies
+- Changed dependency usage
+
+**D. New Features** (new tests should be added):
+- New functions/methods added
+- New conditional branches
+- New error cases
+- New edge cases
+
+**Step 3: Plan Updates vs. New Tests**
+
+**UPDATE existing tests when:**
+- API signatures changed (parameters, return types)
+- Function/component renamed
+- Existing behavior modified
+- Mock interfaces changed due to dependency updates
+- Tests will fail due to code changes
+
+**ADD new tests when:**
+- New functions/methods added
+- New conditional paths/branches added
+- New error handling added
+- New edge cases introduced
+- Existing tests remain valid but coverage is incomplete
+
+**Step 4: Execution Strategy**
+
+**For test updates:**
+1. Read the existing test file
+2. Identify which test cases are affected by changes
+3. Use \`replaceInFile\` to update specific test cases
+4. Update function calls, assertions, or mocks as needed
+5. Run tests to verify updates work
+
+**For new tests:**
+1. Use \`replaceInFile\` to add new test cases to existing test file
+2. Follow the pattern of existing tests in the file
+3. Add one test case at a time, verify each passes
+
+**Common Update Patterns:**
+
+**1. Parameter Addition:**
+\`\`\`typescript
+// BEFORE in test
+expect(processUser('user-123')).resolves.toBe(result);
+
+// AFTER (add new parameter)
+expect(processUser('user-123', { validate: true })).resolves.toBe(result);
+\`\`\`
+
+**2. Return Type Change:**
+\`\`\`typescript
+// BEFORE
+expect(result).toBe('success');
+
+// AFTER (now returns object)
+expect(result).toEqual({ status: 'success', data: expect.any(Object) });
+\`\`\`
+
+**3. Mock Interface Change:**
+\`\`\`typescript
+// BEFORE
+const mockService = { getData: vi.fn() };
+
+// AFTER (method renamed)
+const mockService = { fetchData: vi.fn() };
+\`\`\`
+
+**4. Function Rename:**
+\`\`\`typescript
+// BEFORE
+import { processUser } from './auth';
+
+// AFTER
+import { authenticateUser } from './auth';
+\`\`\`
+
+**In Your Proposal:**
+
+Clearly distinguish in your plan between:
+- **Tests requiring updates**: List which existing tests need changes and why
+- **New tests needed**: List what new test cases should be added
+
+Example format in Problem Summary:
+\`\`\`markdown
+## Problem Summary
+
+3 testing issues identified:
+
+1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.ts\` must be updated to pass new parameter.
+
+2. **New tests needed** - New validation logic added (lines 62-75) with no test coverage. Need 3 new test cases for validation edge cases.
+
+3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in \`auth.spec.ts\` must be updated.
+\`\`\`
+
+**Why This Matters:**
+
+- **Prevents test failures**: Updates catch breaking changes before they cause CI failures
+- **Maintains coverage**: Existing tests remain effective after code changes
+- **Reduces maintenance**: Keeps tests synchronized with implementation
+- **Faster iterations**: Update existing tests is often faster than writing from scratch
+</test_update_detection>
+
 <your_task>
 You are in a conversational testing workflow:
 
 1. **Analyze the conversation history** - understand what the user has asked and your previous analysis
-2. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
-3. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
+2. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
+3. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
+4. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
+   - Clearly distinguish between: tests requiring updates vs. new tests needed
    - Your chat output IS the proposal - user will approve via UI buttons
-4. **Write tests when approved** - when user clicks "Approve & Write Tests", start with ONE test case, verify it passes, then add test cases incrementally one at a time
+5. **Write/update tests when approved** - when user clicks "Approve & Write Tests", start with ONE test case or update, verify it passes, then continue incrementally one at a time
 
 **IMPORTANT**: You have ALL tools available (bashExecute, webSearch, writeTestFile). Use bashExecute to manage scratchpad files (.clive/plans/) for context and progress tracking in large changesets. Use webSearch to look up framework documentation, testing best practices, or API references when needed. Output your analysis and recommendations in chat - the user will approve via UI buttons.
 
@@ -1229,9 +1604,10 @@ todos: ["unit-tests", "integration-tests", "e2e-tests"]  # List test types to be
 
 N testing gaps/risks identified:
 
-1. **Gap description** - What's missing or at risk (reference specific lines if relevant)
-2. **Gap description** - What's missing or at risk (reference specific lines if relevant)
-3. **Gap description** - What's missing or at risk (reference specific lines if relevant)
+1. **Existing tests require updates** - Describe which tests need updates due to code changes (e.g., "API signature changed, 8 test cases in auth.spec.ts must be updated")
+2. **New tests needed** - What's missing or at risk (reference specific lines if relevant)
+3. **Mock updates required** - Describe mock interface changes (e.g., "UserService.getData renamed to fetchData, mocks must be updated")
+4. **Coverage gaps** - What's missing or at risk (reference specific lines if relevant)
 
 ## Implementation Plan
 

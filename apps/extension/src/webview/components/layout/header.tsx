@@ -8,12 +8,12 @@ import { useAuth } from "../../contexts/auth-context.js";
 
 export const Header: React.FC = () => {
   const { logout } = useAuth();
-  const { route, navigate, goBack, send } = useRouter();
+  const { route, navigate, goBack } = useRouter();
 
   const handleLogout = useCallback(() => {
     logout();
-    send({ type: "LOGOUT" });
-  }, [logout, send]);
+    // Router will automatically transition when isAuthenticated becomes false
+  }, [logout]);
 
   return (
     <div className="flex items-center w-full justify-between border-b border-border px-4 py-2">
