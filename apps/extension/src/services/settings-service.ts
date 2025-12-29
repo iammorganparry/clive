@@ -1,6 +1,11 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import type * as vscode from "vscode";
 import { GlobalStateKeys } from "../constants.js";
+
+class SettingsError extends Data.TaggedError("SettingsError")<{
+  message: string;
+  operation: string;
+}> {}
 
 /**
  * Service for managing user preferences using VS Code globalState
@@ -43,9 +48,43 @@ export class SettingsService extends Effect.Service<SettingsService>()(
          * Mark onboarding as complete
          */
         setOnboardingComplete: (complete: boolean) =>
-          Effect.promise(async () => {
+          Effect.tryPromise({
+            try: async () => {
+              const state = ensureGlobalState();
+              await state.update(GlobalStateKeys.onboardingComplete, complete);
+            },
+            catch: (error) =>
+              new SettingsError({
+                message: error instanceof Error ? error.message : String(error),
+                operation: "setOnboardingComplete",
+              }),
+          }),
+
+        /**
+         * Get user-configured base branch
+         * @returns configured base branch name or null for auto-detect
+         */
+        getBaseBranch: () =>
+          Effect.sync(() => {
             const state = ensureGlobalState();
-            await state.update(GlobalStateKeys.onboardingComplete, complete);
+            return state.get<string | null>(GlobalStateKeys.baseBranch) ?? null;
+          }),
+
+        /**
+         * Set user-configured base branch
+         * @param branch - branch name or null to use auto-detect
+         */
+        setBaseBranch: (branch: string | null) =>
+          Effect.tryPromise({
+            try: async () => {
+              const state = ensureGlobalState();
+              await state.update(GlobalStateKeys.baseBranch, branch);
+            },
+            catch: (error) =>
+              new SettingsError({
+                message: error instanceof Error ? error.message : String(error),
+                operation: "setBaseBranch",
+              }),
           }),
       };
     }),
@@ -56,9 +95,50 @@ export class SettingsService extends Effect.Service<SettingsService>()(
  * Create a SettingsService layer with the globalState from extension context
  */
 export function createSettingsServiceLayer(context: vscode.ExtensionContext) {
-  return Effect.gen(function* () {
-    const service = yield* SettingsService;
-    service.setGlobalState(context.globalState);
-    return service;
+  return Effect.sync(() => {
+    const globalState = context.globalState;
+
+    return {
+      _tag: "SettingsService" as const,
+      setGlobalState: (_state: vscode.Memento) => {
+        // Already initialized with context.globalState
+      },
+
+      isOnboardingComplete: () =>
+        Effect.sync(() => {
+          return (
+            globalState.get<boolean>(GlobalStateKeys.onboardingComplete) ?? false
+          );
+        }),
+
+      setOnboardingComplete: (complete: boolean) =>
+        Effect.tryPromise({
+          try: async () => {
+            await globalState.update(GlobalStateKeys.onboardingComplete, complete);
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setOnboardingComplete",
+            }),
+        }),
+
+      getBaseBranch: () =>
+        Effect.sync(() => {
+          return globalState.get<string | null>(GlobalStateKeys.baseBranch) ?? null;
+        }),
+
+      setBaseBranch: (branch: string | null) =>
+        Effect.tryPromise({
+          try: async () => {
+            await globalState.update(GlobalStateKeys.baseBranch, branch);
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setBaseBranch",
+            }),
+        }),
+    };
   });
 }

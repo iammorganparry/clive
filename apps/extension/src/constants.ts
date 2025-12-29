@@ -84,6 +84,8 @@ export const GlobalStateKeys = {
   onboardingComplete: "clive.onboardingComplete",
   /** Whether .gitignore has been updated with Clive patterns */
   gitignoreUpdated: "clive.gitignoreUpdated",
+  /** User-configured base branch (null = auto-detect) */
+  baseBranch: "clive.baseBranch",
 } as const;
 
 /**

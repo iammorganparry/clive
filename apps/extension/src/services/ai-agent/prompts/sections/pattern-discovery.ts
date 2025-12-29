@@ -13,10 +13,18 @@ export const patternDiscovery: Section = (_config) =>
 
 Before writing ANY test file, you MUST:
 
-1. **Find similar test files** (same test type):
-   - Unit tests: \\\`find . -name "*.spec.ts" -o -name "*.test.ts" | head -5\\\`
-   - Integration tests: Search for files containing "integration" in path
-   - E2E tests: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\` directories
+1. **Find similar test files** (same test type) - framework-agnostic search:
+   - **Unit tests**: Search comprehensively using multiple patterns (adapt based on detected framework):
+     * Co-located tests (same directory as source): \\\`find src/services \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+     * Tests in __tests__ subdirectories (JS/TS): \\\`find . -path "*/__tests__/*" | head -5\\\`
+     * Tests in tests/ or test/ directories (universal): \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -5\\\`
+     * Any location with test patterns: \\\`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+   - **Integration tests**: Search for files containing "integration" in path or filename
+   - **E2E tests**: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
+   - **For specific source file**: If testing \\\`src/components/Button.tsx\\\` (or Button.py, Button.js, etc.), check for:
+     * Co-located: \\\`src/components/Button.test.*\\\`, \\\`src/components/Button.spec.*\\\`, \\\`src/components/test_Button.*\\\`
+     * __tests__ subdirectory: \\\`src/components/__tests__/Button.*\\\`
+     * tests directory: \\\`tests/components/Button.*\\\` or \\\`test/components/test_Button.*\\\`
    
 2. **Read 1-2 similar test files** to understand:
    - Import patterns and module paths
@@ -34,7 +42,7 @@ Before writing ANY test file, you MUST:
    - Import from centralized mock factories
    - Use existing mock creation functions
    - If a mock doesn't exist, ADD it to the factory (see rule 5)
-   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\`
+   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\` (or \\\`from "../test/mock_factories"\\\` for Python, etc.)
 
 5. **EXTEND mock factories** when new mocks are needed:
    - Add to existing factory file rather than creating inline
@@ -42,32 +50,31 @@ Before writing ANY test file, you MUST:
    - Export the new mock for future reuse
    - Use configurable overrides pattern for flexibility
 
-**Mock Factory Pattern (Reference):**
+**Mock Factory Pattern (Reference - framework-agnostic):**
 
-\\\`\\\`\\\`typescript
-// GOOD: Centralized mock factory with overrides
-export function createMockService(
-  overrides?: Partial<ServiceInterface>
-): ServiceInterface {
+\\\`\\\`\\\`
+// GOOD: Centralized mock factory with overrides (adapt syntax to your framework)
+function createMockService(overrides = {}) {
   return {
-    method1: overrides?.method1 ?? vi.fn().mockResolvedValue("default"),
-    method2: overrides?.method2 ?? vi.fn(),
-  } as ServiceInterface;
+    method1: overrides.method1 ?? mockFn().mockResolvedValue("default"),
+    method2: overrides.method2 ?? mockFn(),
+    ...overrides
+  };
 }
 
 // GOOD: Using the factory in tests
 import { createMockService } from "../__tests__/mock-factories";
 const mockService = createMockService({
-  method1: vi.fn().mockResolvedValue("custom"),
+  method1: mockFn().mockResolvedValue("custom"),
 });
 \\\`\\\`\\\`
 
-\\\`\\\`\\\`typescript
+\\\`\\\`\\\`
 // BAD: Inline mock duplication
 const mockService = {
-  method1: vi.fn().mockResolvedValue("value"),
-  method2: vi.fn(),
-} as ServiceInterface;
+  method1: mockFn().mockResolvedValue("value"),
+  method2: mockFn(),
+};
 // This should be in a factory instead!
 \\\`\\\`\\\`
 

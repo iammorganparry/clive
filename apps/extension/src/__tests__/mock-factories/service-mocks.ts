@@ -3,13 +3,21 @@
  * Provides reusable mocks for non-Effect services used in AI agent tools
  */
 
-import { vi, } from "vitest";
-import { Effect } from "effect";
+import { vi } from "vitest";
+import { Effect, Layer, Data } from "effect";
+import type * as vscode from "vscode";
 import type { TokenBudgetService } from "../../services/ai-agent/token-budget.js";
 import type { SummaryService } from "../../services/ai-agent/summary-service.js";
 import type { KnowledgeFileService } from "../../services/knowledge-file-service.js";
 import type { DiffContentProvider } from "../../services/diff-content-provider.js";
 import type { Message } from "../../services/ai-agent/context-tracker.js";
+import { SettingsService } from "../../services/settings-service.js";
+import { GlobalStateKeys } from "../../constants.js";
+
+class SettingsError extends Data.TaggedError("SettingsError")<{
+  message: string;
+  operation: string;
+}> {}
 
 /**
  * Create a mock TokenBudgetService for testing
@@ -202,3 +210,101 @@ export function createMockPlanStreaming(overrides?: PlanStreamingMockOverrides) 
   };
 }
 
+/**
+ * Create a mock vscode.Memento with in-memory storage
+ * Returns both the mock and the underlying storage Map for inspection
+ */
+export function createMockGlobalState(): {
+  mockGlobalState: vscode.Memento;
+  storage: Map<string, unknown>;
+} {
+  const storage = new Map<string, unknown>();
+  const mockGlobalState = {
+    get: vi.fn((key: string) => storage.get(key)),
+    update: vi.fn(async (key: string, value: unknown) => {
+      storage.set(key, value);
+    }),
+    keys: vi.fn(() => Array.from(storage.keys())),
+    setKeysForSync: vi.fn(),
+  } as unknown as vscode.Memento;
+
+  return { mockGlobalState, storage };
+}
+
+/**
+ * Create a mock SettingsService layer for testing
+ * Uses in-memory storage that can be inspected via the returned storage Map
+ *
+ * @example
+ * ```typescript
+ * const { layer, mockGlobalState, storage } = createMockSettingsServiceLayer();
+ *
+ * // Use in Effect programs
+ * await Effect.gen(function* () {
+ *   const service = yield* SettingsService;
+ *   yield* service.setBaseBranch("develop");
+ * }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+ *
+ * // Inspect storage
+ * expect(storage.get(GlobalStateKeys.baseBranch)).toBe("develop");
+ * expect(mockGlobalState.update).toHaveBeenCalled();
+ * ```
+ */
+export function createMockSettingsServiceLayer(): {
+  layer: Layer.Layer<SettingsService>;
+  mockGlobalState: vscode.Memento;
+  storage: Map<string, unknown>;
+} {
+  const { mockGlobalState, storage } = createMockGlobalState();
+
+  const layer = Layer.effect(
+    SettingsService,
+    Effect.sync(() => ({
+      _tag: "SettingsService" as const,
+      setGlobalState: (_state: vscode.Memento) => {
+        // Already initialized with mock globalState
+      },
+      isOnboardingComplete: () =>
+        Effect.sync(() => {
+          return (
+            mockGlobalState.get<boolean>(GlobalStateKeys.onboardingComplete) ??
+            false
+          );
+        }),
+      setOnboardingComplete: (complete: boolean) =>
+        Effect.tryPromise({
+          try: async () => {
+            await mockGlobalState.update(
+              GlobalStateKeys.onboardingComplete,
+              complete,
+            );
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setOnboardingComplete",
+            }),
+        }),
+      getBaseBranch: () =>
+        Effect.sync(() => {
+          return (
+            mockGlobalState.get<string | null>(GlobalStateKeys.baseBranch) ??
+            null
+          );
+        }),
+      setBaseBranch: (branch: string | null) =>
+        Effect.tryPromise({
+          try: async () => {
+            await mockGlobalState.update(GlobalStateKeys.baseBranch, branch);
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setBaseBranch",
+            }),
+        }),
+    })),
+  );
+
+  return { layer, mockGlobalState, storage };
+}

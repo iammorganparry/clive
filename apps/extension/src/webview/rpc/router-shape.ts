@@ -36,6 +36,8 @@ export const routerShape: RouterRecord = {
     saveApiKey: createProcedureShape("mutation"),
     deleteApiKey: createProcedureShape("mutation"),
     completeOnboarding: createProcedureShape("mutation"),
+    getBaseBranch: createProcedureShape("query"),
+    setBaseBranch: createProcedureShape("mutation"),
   },
   conversations: {
     start: createProcedureShape("mutation"),

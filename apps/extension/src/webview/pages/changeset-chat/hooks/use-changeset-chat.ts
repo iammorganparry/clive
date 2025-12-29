@@ -9,6 +9,7 @@ import { changesetChatMachine, type TestSuiteQueueItem } from "../machines/chang
 interface UseChangesetChatOptions {
   files: string[];
   branchName: string;
+  baseBranch?: string;
   mode?: "branch" | "uncommitted";
   commitHash?: string;
 }
@@ -16,6 +17,7 @@ interface UseChangesetChatOptions {
 export function useChangesetChat({
   files,
   branchName,
+  baseBranch = "main",
   mode = "branch",
   commitHash,
 }: UseChangesetChatOptions) {
@@ -32,7 +34,7 @@ export function useChangesetChat({
   const { data: historyData, isLoading: isHistoryLoading } = rpc.conversations.getBranchHistory.useQuery({
     input: {
       branchName,
-      baseBranch: "main",
+      baseBranch,
       conversationType: mode,
       commitHash,
     },
@@ -67,7 +69,13 @@ export function useChangesetChat({
         filePath?: string;
         isComplete?: boolean;
         suites?: TestSuiteQueueItem[];
+        subscriptionId?: string;
       };
+
+      // Capture subscriptionId when received
+      if (event.subscriptionId && !state.context.subscriptionId) {
+        send({ type: "SET_SUBSCRIPTION_ID", subscriptionId: event.subscriptionId });
+      }
 
       Match.value(event).pipe(
         Match.when({ type: "content_streamed" }, (p) => {
@@ -243,7 +251,7 @@ export function useChangesetChat({
       planTestsSubscription.subscribe({
         files,
         branchName: state.context.branchName,
-        baseBranch: "main",
+        baseBranch,
         conversationType: mode,
         commitHash,
         mode: state.context.agentMode, // Pass agent mode (plan or act)
@@ -251,7 +259,7 @@ export function useChangesetChat({
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
     }
-  }, [files, state, planTestsSubscription, mode, commitHash]);
+  }, [files, state, planTestsSubscription, mode, commitHash, baseBranch]);
 
   // Auto-send focused message when starting next suite in act mode
   const previousSuiteId = useRef<string | null>(null);

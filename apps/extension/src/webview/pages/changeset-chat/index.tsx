@@ -56,6 +56,7 @@ export const ChangesetChatPage: React.FC = () => {
   }, [routeParams.files]);
 
   const branchName = routeParams.branchName || "";
+  const baseBranch = routeParams.baseBranch || "main";
   const mode = (routeParams.mode as "branch" | "uncommitted") || "branch";
   const commitHash = routeParams.commitHash;
 
@@ -77,7 +78,7 @@ export const ChangesetChatPage: React.FC = () => {
     hasPendingPlanApproval,
     send,
     cancelStream,
-  } = useChangesetChat({ files, branchName, mode, commitHash });
+  } = useChangesetChat({ files, branchName, baseBranch, mode, commitHash });
 
   // Parse plan content if available
   const parsedPlan = planContent ? parsePlan(planContent) : null;
@@ -322,9 +323,11 @@ export const ChangesetChatPage: React.FC = () => {
               <span className="text-xs text-muted-foreground">
                 ({files.length} file{files.length !== 1 ? "s" : ""})
               </span>
-              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                {mode === "branch" ? "All Changes" : "Uncommitted"}
-              </span>
+              {branchName !== baseBranch && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                  {mode === "branch" ? "All Changes" : "Uncommitted"}
+                </span>
+              )}
             </div>
             <Button
               variant="ghost"

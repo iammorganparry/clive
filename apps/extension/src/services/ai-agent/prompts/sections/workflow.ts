@@ -17,9 +17,15 @@ PHASE 0: RAPID CONTEXT (3-4 commands max)
   REQUIRED (do these FIRST, in parallel if possible):
   1. Read the target file(s): cat the files you need to test
   2. Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. Find similar tests AND mock factories:
-     - Similar tests: find . -path "*/__tests__/*" -name "*.spec.ts" | head -3
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  3. Find existing tests for target files AND mock factories:
+     - For each target file, search comprehensively using framework-agnostic patterns:
+       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts" or "auth" from "src/services/auth.py")
+       * Co-located tests (same directory): find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" -o -name "test_BASENAME.*" -o -name "BASENAME_test.*" 2>/dev/null
+       * Tests in __tests__ subdirectory: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
+       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" \) -name "*BASENAME*" 2>/dev/null
+       * Common test file patterns: find . \( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" \) 2>/dev/null | head -10
+     - If files were changed, get git diff to understand modifications: git diff HEAD~1 -- path/to/changed/file (or git diff baseBranch...HEAD -- path/to/file for branch changes)
+     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" -o -path "*/test/*mock*" -o -path "*/tests/*mock*" | head -5
   4. Read ONE similar test file to understand project patterns
   
   **STOP exploring after 4 commands.** You have enough context. Move to Phase 1.

@@ -13,29 +13,33 @@
 
 import { Layer } from "effect";
 import type * as vscode from "vscode";
-import {
-  VSCodeService,
-  createSecretStorageLayer,
-  SecretStorageService,
-} from "./vs-code.js";
-import { createLoggerLayer } from "./logger-service.js";
-import { ConfigServiceLive } from "./config-service.js";
-import { ApiKeyServiceLive } from "./api-key-service.js";
-import { TrpcClientServiceLive } from "./trpc-client-service.js";
-import { RepositoryServiceLive } from "./repository-service.js";
-import { ConversationServiceLive } from "./conversation-service.js";
-import { SourceFileFilterLive } from "./source-file-filter.js";
-import { GitServiceLive } from "./git-service.js";
-import { TestingAgentLive } from "./ai-agent/testing-agent.js";
-import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
-import { SummaryServiceLive } from "./ai-agent/summary-service.js";
 import { CompletionDetectorLive } from "./ai-agent/completion-detector.js";
-import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
-import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
-import { DeviceAuthServiceLive } from "./device-auth-service.js";
-import { PlanFileService } from "./plan-file-service.js";
+import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
 import { PromptServiceLive } from "./ai-agent/prompts/prompt-service.js";
 import { RulesServiceLive } from "./ai-agent/prompts/rules-service.js";
+import { SummaryServiceLive } from "./ai-agent/summary-service.js";
+import { TestingAgentLive } from "./ai-agent/testing-agent.js";
+import { ApiKeyServiceLive } from "./api-key-service.js";
+import { ConfigServiceLive } from "./config-service.js";
+import { ConversationServiceLive } from "./conversation-service.js";
+import { DeviceAuthServiceLive } from "./device-auth-service.js";
+import { GitServiceLive } from "./git-service.js";
+import { KnowledgeBaseServiceLive } from "./knowledge-base-service.js";
+import { KnowledgeFileServiceLive } from "./knowledge-file-service.js";
+import { createLoggerLayer } from "./logger-service.js";
+import { PlanFileService } from "./plan-file-service.js";
+import { RepositoryServiceLive } from "./repository-service.js";
+import {
+  createSettingsServiceLayer,
+  SettingsService,
+} from "./settings-service.js";
+import { SourceFileFilterLive } from "./source-file-filter.js";
+import { TrpcClientServiceLive } from "./trpc-client-service.js";
+import {
+  createSecretStorageLayer,
+  SecretStorageService,
+  VSCodeService,
+} from "./vs-code.js";
 
 /**
  * Context required to create the core layer
@@ -78,6 +82,10 @@ export function createBaseLayer(coreLayer: ReturnType<typeof createCoreLayer>) {
     Layer.provide(configLayer),
   );
 
+  // SettingsService depends on extension context (from LayerContext)
+  // We need to provide it separately in each router that needs it
+  // For now, return base layer without SettingsService
+
   return Layer.mergeAll(coreLayer, apiKeyLayer, configLayer, trpcClientLayer);
 }
 
@@ -87,6 +95,7 @@ export function createBaseLayer(coreLayer: ReturnType<typeof createCoreLayer>) {
  */
 export function createDomainLayer(
   baseLayer: ReturnType<typeof createBaseLayer>,
+  ctx?: LayerContext,
 ) {
   // RepositoryService depends on ConfigService
   const repoLayer = RepositoryServiceLive.pipe(Layer.provide(baseLayer));
@@ -97,7 +106,28 @@ export function createDomainLayer(
   // SourceFileFilter depends on VSCodeService (in baseLayer via coreLayer)
   const sourceFilterLayer = SourceFileFilterLive.pipe(Layer.provide(baseLayer));
 
-  // GitService depends on VSCodeService (in baseLayer via coreLayer)
+  // SettingsService depends on extension context
+  // GitService depends on VSCodeService and SettingsService
+  if (ctx?.extensionContext) {
+    const settingsLayer = Layer.effect(
+      SettingsService,
+      createSettingsServiceLayer(ctx.extensionContext),
+    );
+    const gitLayer = GitServiceLive.pipe(
+      Layer.provide(Layer.mergeAll(baseLayer, settingsLayer)),
+    );
+
+    return Layer.mergeAll(
+      baseLayer,
+      repoLayer,
+      convLayer,
+      sourceFilterLayer,
+      settingsLayer,
+      gitLayer,
+    );
+  }
+
+  // Fallback: GitService without SettingsService (will use auto-detect only)
   const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer));
 
   return Layer.mergeAll(
@@ -129,7 +159,7 @@ export function createFeatureLayer(
 export function createConfigServiceLayer(ctx: LayerContext) {
   const coreLayer = createCoreLayer(ctx);
   const baseLayer = createBaseLayer(coreLayer);
-  const domainLayer = createDomainLayer(baseLayer);
+  const domainLayer = createDomainLayer(baseLayer, ctx);
 
   // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
   const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
@@ -163,7 +193,7 @@ export function createConfigServiceLayer(ctx: LayerContext) {
 export function createAgentServiceLayer(ctx: LayerContext) {
   const coreLayer = createCoreLayer(ctx);
   const baseLayer = createBaseLayer(coreLayer);
-  const domainLayer = createDomainLayer(baseLayer);
+  const domainLayer = createDomainLayer(baseLayer, ctx);
 
   // PlanFileService depends on VSCodeService (in baseLayer via coreLayer)
   const planFileLayer = PlanFileService.Default.pipe(Layer.provide(baseLayer));
@@ -244,7 +274,7 @@ export function createAuthServiceLayer(ctx: LayerContext) {
 export function createSystemServiceLayer(ctx: LayerContext) {
   const coreLayer = createCoreLayer(ctx);
   const baseLayer = createBaseLayer(coreLayer);
-  const domainLayer = createDomainLayer(baseLayer);
+  const domainLayer = createDomainLayer(baseLayer, ctx);
   return domainLayer;
 }
 
