@@ -2,9 +2,12 @@ import { Effect } from "effect";
 import { z } from "zod";
 import { createRouter } from "@clive/webview-rpc";
 import { ApiKeyService } from "../../services/api-key-service.js";
+import { GitService } from "../../services/git-service.js";
+import { SettingsService } from "../../services/settings-service.js";
 import { GlobalStateKeys } from "../../constants.js";
 import { createConfigServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
+import { VSCodeService } from "../../services/vs-code.js";
 
 const { procedure } = createRouter<RpcContext>();
 
@@ -138,5 +141,84 @@ export const configRouter = {
 
         return { success: true };
       }).pipe(provideConfigLayer(ctx)),
+    ),
+
+  /**
+   * Get base branch configuration
+   * Returns user-configured base branch and auto-detected base branch
+   */
+  getBaseBranch: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Getting base branch configuration");
+      const settingsService = yield* SettingsService;
+      const gitService = yield* GitService;
+      const vscode = yield* VSCodeService;
+
+      // Get user-configured base branch (null if not set)
+      const userConfigured = yield* settingsService.getBaseBranch();
+
+      // Get auto-detected base branch
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let autoDetected = "main"; // default fallback
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+        autoDetected = yield* gitService.getBaseBranch(workspaceRoot);
+      }
+
+      return {
+        baseBranch: userConfigured,
+        autoDetected,
+      };
+    }).pipe(provideConfigLayer(ctx)),
+  ),
+
+  /**
+   * Set base branch configuration
+   * Pass null to use auto-detection
+   */
+  setBaseBranch: procedure
+    .input(
+      z.object({
+        branch: z.string().nullable(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConfigRouter] Setting base branch: ${input.branch ?? "auto-detect"}`,
+        );
+        const settingsService = yield* SettingsService;
+        yield* settingsService.setBaseBranch(input.branch);
+
+        // Return updated configuration
+        const gitService = yield* GitService;
+        const vscode = yield* VSCodeService;
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        let autoDetected = "main";
+        if (workspaceFolders && workspaceFolders.length > 0) {
+          const workspaceRoot = workspaceFolders[0].uri.fsPath;
+          autoDetected = yield* gitService.getBaseBranch(workspaceRoot);
+        }
+
+        return {
+          baseBranch: input.branch,
+          autoDetected,
+        };
+      }).pipe(
+        Effect.catchTags({
+          SettingsError: (error) =>
+            Effect.gen(function* () {
+              yield* Effect.logDebug(
+                `[ConfigRouter] SettingsError in setBaseBranch: ${error.message} (operation: ${error.operation})`,
+              );
+              return {
+                baseBranch: null,
+                autoDetected: "main",
+                error: error.message,
+              };
+            })
+        }),
+        provideConfigLayer(ctx),
+      ),
     ),
 };

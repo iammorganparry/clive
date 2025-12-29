@@ -25,6 +25,7 @@ import { PromptFactory, PromptService } from "./prompts/index.js";
 import { makeTokenBudget } from "./token-budget.js";
 import { KnowledgeContext } from "./knowledge-context.js";
 import type { DiffContentProvider } from "../diff-content-provider.js";
+import { addCacheControlToMessages } from "./utils/cache-control.js";
 import {
   createAgentState,
   createStreamingState,
@@ -267,26 +268,31 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // Stream execution
             const currentState = yield* Ref.get(agentState);
+            
+            // Apply dynamic prompt caching to messages
+            const model = anthropic(AIModels.anthropic.testing);
+            
+            // Build all messages (system + conversation)
+            const allMessages = [
+              {
+                role: "system" as const,
+                content: systemPromptWithWorkspace,
+              },
+              ...currentState.messages,
+            ];
+            
+            // Apply cache control to the last message (incremental caching)
+            const cachedMessages = addCacheControlToMessages(allMessages, model);
+            
             const streamResult = yield* Effect.try({
               try: () =>
                 streamText({
-                  model: anthropic(AIModels.anthropic.testing),
+                  model,
                   tools,
                   maxRetries: 0,
                   stopWhen: stopWhenComplete,
                   abortSignal: signal,
-                  messages: [
-                    {
-                      role: "system" as const,
-                      content: systemPromptWithWorkspace,
-                      providerOptions: {
-                        anthropic: {
-                          cacheControl: { type: "ephemeral" },
-                        },
-                      },
-                    },
-                    ...currentState.messages,
-                  ],
+                  messages: cachedMessages,
                   providerOptions: {
                     anthropic: {
                       thinking: { type: "enabled", budgetTokens: 5000 },

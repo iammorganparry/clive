@@ -46,6 +46,7 @@ interface BranchChangesProps {
 
 interface BranchHeaderProps {
   branchName: string;
+  baseBranch?: string;
   isLoading: boolean;
   onRefresh: () => void;
   fileCount?: {
@@ -56,11 +57,13 @@ interface BranchHeaderProps {
 
 const BranchHeader: React.FC<BranchHeaderProps> = ({
   branchName,
+  baseBranch,
   isLoading,
   onRefresh,
   fileCount,
 }) => {
   const { mode, setMode } = useComparisonMode();
+  const isOnBaseBranch = branchName === baseBranch;
 
   return (
     <div className="px-4 py-2 border-b">
@@ -76,32 +79,34 @@ const BranchHeader: React.FC<BranchHeaderProps> = ({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
-            <button
-              type="button"
-              onClick={() => setMode("branch")}
-              className={cn(
-                "px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors",
-                mode === "branch"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              All Changes
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("uncommitted")}
-              className={cn(
-                "px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors",
-                mode === "uncommitted"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Uncommitted
-            </button>
-          </div>
+          {!isOnBaseBranch && (
+            <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
+              <button
+                type="button"
+                onClick={() => setMode("branch")}
+                className={cn(
+                  "px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors",
+                  mode === "branch"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                All Changes
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("uncommitted")}
+                className={cn(
+                  "px-1.5 py-0.5 text-[10px] font-medium rounded transition-colors",
+                  mode === "uncommitted"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Uncommitted
+              </button>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -167,6 +172,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
     const params: Record<string, string> = {
       files: filesJson,
       branchName: props.changes?.branchName ?? "",
+      baseBranch: props.changes?.baseBranch ?? "main",
       mode,
     };
     if (mode === "uncommitted" && commitHash) {
@@ -176,6 +182,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   }, [
     eligibleFilePaths,
     props.changes?.branchName,
+    props.changes?.baseBranch,
     navigate,
     mode,
     commitHash,
@@ -193,6 +200,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       <div className="flex flex-col h-full">
         <BranchHeader
           branchName={branchName}
+          baseBranch={props.changes?.baseBranch}
           isLoading={props.isLoading}
           onRefresh={handleRefresh}
         />
@@ -211,6 +219,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       <div className="flex flex-col h-full">
         <BranchHeader
           branchName={branchName}
+          baseBranch={props.changes?.baseBranch}
           isLoading={props.isLoading}
           onRefresh={handleRefresh}
         />
@@ -227,6 +236,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       <div className="flex flex-col h-full">
         <BranchHeader
           branchName={branchName}
+          baseBranch={props.changes?.baseBranch}
           isLoading={props.isLoading}
           onRefresh={handleRefresh}
         />
@@ -244,6 +254,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
     <div className="flex flex-col h-full">
       <BranchHeader
         branchName={branchName}
+        baseBranch={props.changes?.baseBranch}
         isLoading={props.isLoading}
         onRefresh={handleRefresh}
         fileCount={{ eligible: eligibleCount, total: totalFiles }}

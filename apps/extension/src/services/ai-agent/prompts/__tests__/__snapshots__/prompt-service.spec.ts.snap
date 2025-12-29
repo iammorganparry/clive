@@ -90,9 +90,15 @@ PHASE 0: RAPID CONTEXT (3-4 commands max)
   REQUIRED (do these FIRST, in parallel if possible):
   1. Read the target file(s): cat the files you need to test
   2. Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. Find similar tests AND mock factories:
-     - Similar tests: find . -path "*/__tests__/*" -name "*.spec.ts" | head -3
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  3. Find existing tests for target files AND mock factories:
+     - For each target file, search comprehensively using framework-agnostic patterns:
+       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts" or "auth" from "src/services/auth.py")
+       * Co-located tests (same directory): find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" -o -name "test_BASENAME.*" -o -name "BASENAME_test.*" 2>/dev/null
+       * Tests in __tests__ subdirectory: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
+       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
+       * Common test file patterns: find . ( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" ) 2>/dev/null | head -10
+     - If files were changed, get git diff to understand modifications: git diff HEAD~1 -- path/to/changed/file (or git diff baseBranch...HEAD -- path/to/file for branch changes)
+     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" -o -path "*/test/*mock*" -o -path "*/tests/*mock*" | head -5
   4. Read ONE similar test file to understand project patterns
   
   **STOP exploring after 4 commands.** You have enough context. Move to Phase 1.
@@ -130,10 +136,18 @@ PHASE 3: VERIFICATION (MANDATORY after each test case)
 
 Before writing ANY test file, you MUST:
 
-1. **Find similar test files** (same test type):
-   - Unit tests: \\\`find . -name "*.spec.ts" -o -name "*.test.ts" | head -5\\\`
-   - Integration tests: Search for files containing "integration" in path
-   - E2E tests: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\` directories
+1. **Find similar test files** (same test type) - framework-agnostic search:
+   - **Unit tests**: Search comprehensively using multiple patterns (adapt based on detected framework):
+     * Co-located tests (same directory as source): \\\`find src/services \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+     * Tests in __tests__ subdirectories (JS/TS): \\\`find . -path "*/__tests__/*" | head -5\\\`
+     * Tests in tests/ or test/ directories (universal): \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -5\\\`
+     * Any location with test patterns: \\\`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+   - **Integration tests**: Search for files containing "integration" in path or filename
+   - **E2E tests**: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
+   - **For specific source file**: If testing \\\`src/components/Button.tsx\\\` (or Button.py, Button.js, etc.), check for:
+     * Co-located: \\\`src/components/Button.test.*\\\`, \\\`src/components/Button.spec.*\\\`, \\\`src/components/test_Button.*\\\`
+     * __tests__ subdirectory: \\\`src/components/__tests__/Button.*\\\`
+     * tests directory: \\\`tests/components/Button.*\\\` or \\\`test/components/test_Button.*\\\`
    
 2. **Read 1-2 similar test files** to understand:
    - Import patterns and module paths
@@ -151,7 +165,7 @@ Before writing ANY test file, you MUST:
    - Import from centralized mock factories
    - Use existing mock creation functions
    - If a mock doesn't exist, ADD it to the factory (see rule 5)
-   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\`
+   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\` (or \\\`from "../test/mock_factories"\\\` for Python, etc.)
 
 5. **EXTEND mock factories** when new mocks are needed:
    - Add to existing factory file rather than creating inline
@@ -159,32 +173,31 @@ Before writing ANY test file, you MUST:
    - Export the new mock for future reuse
    - Use configurable overrides pattern for flexibility
 
-**Mock Factory Pattern (Reference):**
+**Mock Factory Pattern (Reference - framework-agnostic):**
 
-\\\`\\\`\\\`typescript
-// GOOD: Centralized mock factory with overrides
-export function createMockService(
-  overrides?: Partial<ServiceInterface>
-): ServiceInterface {
+\\\`\\\`\\\`
+// GOOD: Centralized mock factory with overrides (adapt syntax to your framework)
+function createMockService(overrides = {}) {
   return {
-    method1: overrides?.method1 ?? vi.fn().mockResolvedValue("default"),
-    method2: overrides?.method2 ?? vi.fn(),
-  } as ServiceInterface;
+    method1: overrides.method1 ?? mockFn().mockResolvedValue("default"),
+    method2: overrides.method2 ?? mockFn(),
+    ...overrides
+  };
 }
 
 // GOOD: Using the factory in tests
 import { createMockService } from "../__tests__/mock-factories";
 const mockService = createMockService({
-  method1: vi.fn().mockResolvedValue("custom"),
+  method1: mockFn().mockResolvedValue("custom"),
 });
 \\\`\\\`\\\`
 
-\\\`\\\`\\\`typescript
+\\\`\\\`\\\`
 // BAD: Inline mock duplication
 const mockService = {
-  method1: vi.fn().mockResolvedValue("value"),
-  method2: vi.fn(),
-} as ServiceInterface;
+  method1: mockFn().mockResolvedValue("value"),
+  method2: mockFn(),
+};
 // This should be in a factory instead!
 \\\`\\\`\\\`
 
@@ -324,14 +337,66 @@ When analyzing code changes, you MUST determine whether existing tests need upda
 
 **Step 1: Check for Existing Tests**
 
-For each changed file, check if tests already exist:
+For each changed file, comprehensively search for existing tests using multiple patterns:
 \`\`\`bash
-# Find test file for src/services/auth.ts
-find . -path "*/__tests__/*" -name "*auth*.spec.ts" -o -name "*auth*.test.ts"
+# Example: Finding tests for src/services/auth.py (or .ts, .go, .rs, etc.)
+# Extract base filename (auth) from path - adjust extension for your language
+BASENAME=$(basename src/services/auth.py .py)
 
-# Or check conventional location
-cat src/services/__tests__/auth.spec.ts 2>/dev/null || echo "NO_TESTS_FOUND"
+# 1. Co-located tests (same directory as source file)
+# Works for any language: *test* and *spec* patterns match common test naming conventions
+find src/services -name "\${BASENAME}*test*" -o -name "\${BASENAME}*spec*" 2>/dev/null
+
+# 2. Tests in __tests__ subdirectory
+find . -path "*/__tests__/*\${BASENAME}*test*" -o -path "*/__tests__/*\${BASENAME}*spec*" 2>/dev/null
+
+# 3. Tests in tests/ or test/ directories
+find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*\${BASENAME}*test*" -o -name "*\${BASENAME}*spec*" 2>/dev/null
+
+# 4. Any location with matching filename pattern
+find . -name "*\${BASENAME}*test*" -o -name "*\${BASENAME}*spec*" 2>/dev/null | head -10
+
+# 5. Check conventional location directly
+cat src/services/__tests__/\${BASENAME}*spec* 2>/dev/null || echo "NO_TESTS_FOUND"
 \`\`\`
+
+**Step 1.5: Analyze Git Diff for Changed Files**
+
+**CRITICAL**: If a file has been edited, you MUST read the git diff to fully understand what changed. The diff shows:
+- What code was added, removed, or modified
+- Which functions/methods changed
+- What lines were affected
+- Context around changes
+
+\`\`\`bash
+# For uncommitted changes (working directory) - works for any file type
+git diff -- path/to/changed/file
+
+# For committed changes (compare with previous commit)
+git diff HEAD~1 -- path/to/changed/file
+
+# For branch changes (compare with base branch, e.g., main)
+git diff main...HEAD -- path/to/changed/file
+
+# For uncommitted changes including staged
+git diff HEAD -- path/to/changed/file
+\`\`\`
+
+**What to look for in the diff:**
+- **Function signatures changed**: Parameters added/removed/reordered, return types changed
+- **Functions renamed**: Old name → new name
+- **New functions added**: Entirely new code blocks
+- **Code removed**: Deleted functions or logic
+- **Logic modified**: Changed conditionals, error handling, business rules
+- **Imports changed**: New dependencies added or removed
+- **Class/interface changes**: Properties added/removed, method signatures changed
+
+**Use the diff to:**
+1. Identify exactly which functions/methods changed
+2. Understand the scope of changes (minor vs. major refactor)
+3. Determine which existing tests will break
+4. Identify what new test coverage is needed
+5. See context around changes (what code was nearby)
 
 **Step 2: Analyze Changes and Determine Impact**
 
@@ -344,13 +409,13 @@ If tests exist, categorize the changes:
 - Class constructor changes
 - Component prop changes
 
-Example:
-\`\`\`typescript
+Example (framework-agnostic):
+\`\`\`
 // BEFORE
-function processUser(userId: string) { }
+function processUser(userId) { }
 
-// AFTER
-function processUser(userId: string, options: ProcessOptions) { }
+// AFTER  
+function processUser(userId, options) { }
 // → Tests calling processUser() must be updated to pass options
 \`\`\`
 
@@ -404,7 +469,7 @@ function processUser(userId: string, options: ProcessOptions) { }
 **Common Update Patterns:**
 
 **1. Parameter Addition:**
-\`\`\`typescript
+\`\`\`
 // BEFORE in test
 expect(processUser('user-123')).resolves.toBe(result);
 
@@ -413,25 +478,25 @@ expect(processUser('user-123', { validate: true })).resolves.toBe(result);
 \`\`\`
 
 **2. Return Type Change:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
 expect(result).toBe('success');
 
-// AFTER (now returns object)
+// AFTER (now returns object/dict)
 expect(result).toEqual({ status: 'success', data: expect.any(Object) });
 \`\`\`
 
 **3. Mock Interface Change:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
-const mockService = { getData: vi.fn() };
+const mockService = { getData: mockFn() };
 
 // AFTER (method renamed)
-const mockService = { fetchData: vi.fn() };
+const mockService = { fetchData: mockFn() };
 \`\`\`
 
 **4. Function Rename:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
 import { processUser } from './auth';
 
@@ -451,11 +516,11 @@ Example format in Problem Summary:
 
 3 testing issues identified:
 
-1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.ts\` must be updated to pass new parameter.
+1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.*\` (or \`test_auth.*\`) must be updated to pass new parameter.
 
 2. **New tests needed** - New validation logic added (lines 62-75) with no test coverage. Need 3 new test cases for validation edge cases.
 
-3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in \`auth.spec.ts\` must be updated.
+3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in test files must be updated.
 \`\`\`
 
 **Why This Matters:**
@@ -1203,9 +1268,15 @@ PHASE 0: RAPID CONTEXT (3-4 commands max)
   REQUIRED (do these FIRST, in parallel if possible):
   1. Read the target file(s): cat the files you need to test
   2. Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. Find similar tests AND mock factories:
-     - Similar tests: find . -path "*/__tests__/*" -name "*.spec.ts" | head -3
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  3. Find existing tests for target files AND mock factories:
+     - For each target file, search comprehensively using framework-agnostic patterns:
+       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts" or "auth" from "src/services/auth.py")
+       * Co-located tests (same directory): find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" -o -name "test_BASENAME.*" -o -name "BASENAME_test.*" 2>/dev/null
+       * Tests in __tests__ subdirectory: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
+       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
+       * Common test file patterns: find . ( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" ) 2>/dev/null | head -10
+     - If files were changed, get git diff to understand modifications: git diff HEAD~1 -- path/to/changed/file (or git diff baseBranch...HEAD -- path/to/file for branch changes)
+     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" -o -path "*/test/*mock*" -o -path "*/tests/*mock*" | head -5
   4. Read ONE similar test file to understand project patterns
   
   **STOP exploring after 4 commands.** You have enough context. Move to Phase 1.
@@ -1243,10 +1314,18 @@ PHASE 3: VERIFICATION (MANDATORY after each test case)
 
 Before writing ANY test file, you MUST:
 
-1. **Find similar test files** (same test type):
-   - Unit tests: \\\`find . -name "*.spec.ts" -o -name "*.test.ts" | head -5\\\`
-   - Integration tests: Search for files containing "integration" in path
-   - E2E tests: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\` directories
+1. **Find similar test files** (same test type) - framework-agnostic search:
+   - **Unit tests**: Search comprehensively using multiple patterns (adapt based on detected framework):
+     * Co-located tests (same directory as source): \\\`find src/services \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+     * Tests in __tests__ subdirectories (JS/TS): \\\`find . -path "*/__tests__/*" | head -5\\\`
+     * Tests in tests/ or test/ directories (universal): \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -5\\\`
+     * Any location with test patterns: \\\`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
+   - **Integration tests**: Search for files containing "integration" in path or filename
+   - **E2E tests**: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
+   - **For specific source file**: If testing \\\`src/components/Button.tsx\\\` (or Button.py, Button.js, etc.), check for:
+     * Co-located: \\\`src/components/Button.test.*\\\`, \\\`src/components/Button.spec.*\\\`, \\\`src/components/test_Button.*\\\`
+     * __tests__ subdirectory: \\\`src/components/__tests__/Button.*\\\`
+     * tests directory: \\\`tests/components/Button.*\\\` or \\\`test/components/test_Button.*\\\`
    
 2. **Read 1-2 similar test files** to understand:
    - Import patterns and module paths
@@ -1264,7 +1343,7 @@ Before writing ANY test file, you MUST:
    - Import from centralized mock factories
    - Use existing mock creation functions
    - If a mock doesn't exist, ADD it to the factory (see rule 5)
-   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\`
+   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\` (or \\\`from "../test/mock_factories"\\\` for Python, etc.)
 
 5. **EXTEND mock factories** when new mocks are needed:
    - Add to existing factory file rather than creating inline
@@ -1272,32 +1351,31 @@ Before writing ANY test file, you MUST:
    - Export the new mock for future reuse
    - Use configurable overrides pattern for flexibility
 
-**Mock Factory Pattern (Reference):**
+**Mock Factory Pattern (Reference - framework-agnostic):**
 
-\\\`\\\`\\\`typescript
-// GOOD: Centralized mock factory with overrides
-export function createMockService(
-  overrides?: Partial<ServiceInterface>
-): ServiceInterface {
+\\\`\\\`\\\`
+// GOOD: Centralized mock factory with overrides (adapt syntax to your framework)
+function createMockService(overrides = {}) {
   return {
-    method1: overrides?.method1 ?? vi.fn().mockResolvedValue("default"),
-    method2: overrides?.method2 ?? vi.fn(),
-  } as ServiceInterface;
+    method1: overrides.method1 ?? mockFn().mockResolvedValue("default"),
+    method2: overrides.method2 ?? mockFn(),
+    ...overrides
+  };
 }
 
 // GOOD: Using the factory in tests
 import { createMockService } from "../__tests__/mock-factories";
 const mockService = createMockService({
-  method1: vi.fn().mockResolvedValue("custom"),
+  method1: mockFn().mockResolvedValue("custom"),
 });
 \\\`\\\`\\\`
 
-\\\`\\\`\\\`typescript
+\\\`\\\`\\\`
 // BAD: Inline mock duplication
 const mockService = {
-  method1: vi.fn().mockResolvedValue("value"),
-  method2: vi.fn(),
-} as ServiceInterface;
+  method1: mockFn().mockResolvedValue("value"),
+  method2: mockFn(),
+};
 // This should be in a factory instead!
 \\\`\\\`\\\`
 
@@ -1437,14 +1515,66 @@ When analyzing code changes, you MUST determine whether existing tests need upda
 
 **Step 1: Check for Existing Tests**
 
-For each changed file, check if tests already exist:
+For each changed file, comprehensively search for existing tests using multiple patterns:
 \`\`\`bash
-# Find test file for src/services/auth.ts
-find . -path "*/__tests__/*" -name "*auth*.spec.ts" -o -name "*auth*.test.ts"
+# Example: Finding tests for src/services/auth.py (or .ts, .go, .rs, etc.)
+# Extract base filename (auth) from path - adjust extension for your language
+BASENAME=$(basename src/services/auth.py .py)
 
-# Or check conventional location
-cat src/services/__tests__/auth.spec.ts 2>/dev/null || echo "NO_TESTS_FOUND"
+# 1. Co-located tests (same directory as source file)
+# Works for any language: *test* and *spec* patterns match common test naming conventions
+find src/services -name "\${BASENAME}*test*" -o -name "\${BASENAME}*spec*" 2>/dev/null
+
+# 2. Tests in __tests__ subdirectory
+find . -path "*/__tests__/*\${BASENAME}*test*" -o -path "*/__tests__/*\${BASENAME}*spec*" 2>/dev/null
+
+# 3. Tests in tests/ or test/ directories
+find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*\${BASENAME}*test*" -o -name "*\${BASENAME}*spec*" 2>/dev/null
+
+# 4. Any location with matching filename pattern
+find . -name "*\${BASENAME}*test*" -o -name "*\${BASENAME}*spec*" 2>/dev/null | head -10
+
+# 5. Check conventional location directly
+cat src/services/__tests__/\${BASENAME}*spec* 2>/dev/null || echo "NO_TESTS_FOUND"
 \`\`\`
+
+**Step 1.5: Analyze Git Diff for Changed Files**
+
+**CRITICAL**: If a file has been edited, you MUST read the git diff to fully understand what changed. The diff shows:
+- What code was added, removed, or modified
+- Which functions/methods changed
+- What lines were affected
+- Context around changes
+
+\`\`\`bash
+# For uncommitted changes (working directory) - works for any file type
+git diff -- path/to/changed/file
+
+# For committed changes (compare with previous commit)
+git diff HEAD~1 -- path/to/changed/file
+
+# For branch changes (compare with base branch, e.g., main)
+git diff main...HEAD -- path/to/changed/file
+
+# For uncommitted changes including staged
+git diff HEAD -- path/to/changed/file
+\`\`\`
+
+**What to look for in the diff:**
+- **Function signatures changed**: Parameters added/removed/reordered, return types changed
+- **Functions renamed**: Old name → new name
+- **New functions added**: Entirely new code blocks
+- **Code removed**: Deleted functions or logic
+- **Logic modified**: Changed conditionals, error handling, business rules
+- **Imports changed**: New dependencies added or removed
+- **Class/interface changes**: Properties added/removed, method signatures changed
+
+**Use the diff to:**
+1. Identify exactly which functions/methods changed
+2. Understand the scope of changes (minor vs. major refactor)
+3. Determine which existing tests will break
+4. Identify what new test coverage is needed
+5. See context around changes (what code was nearby)
 
 **Step 2: Analyze Changes and Determine Impact**
 
@@ -1457,13 +1587,13 @@ If tests exist, categorize the changes:
 - Class constructor changes
 - Component prop changes
 
-Example:
-\`\`\`typescript
+Example (framework-agnostic):
+\`\`\`
 // BEFORE
-function processUser(userId: string) { }
+function processUser(userId) { }
 
-// AFTER
-function processUser(userId: string, options: ProcessOptions) { }
+// AFTER  
+function processUser(userId, options) { }
 // → Tests calling processUser() must be updated to pass options
 \`\`\`
 
@@ -1517,7 +1647,7 @@ function processUser(userId: string, options: ProcessOptions) { }
 **Common Update Patterns:**
 
 **1. Parameter Addition:**
-\`\`\`typescript
+\`\`\`
 // BEFORE in test
 expect(processUser('user-123')).resolves.toBe(result);
 
@@ -1526,25 +1656,25 @@ expect(processUser('user-123', { validate: true })).resolves.toBe(result);
 \`\`\`
 
 **2. Return Type Change:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
 expect(result).toBe('success');
 
-// AFTER (now returns object)
+// AFTER (now returns object/dict)
 expect(result).toEqual({ status: 'success', data: expect.any(Object) });
 \`\`\`
 
 **3. Mock Interface Change:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
-const mockService = { getData: vi.fn() };
+const mockService = { getData: mockFn() };
 
 // AFTER (method renamed)
-const mockService = { fetchData: vi.fn() };
+const mockService = { fetchData: mockFn() };
 \`\`\`
 
 **4. Function Rename:**
-\`\`\`typescript
+\`\`\`
 // BEFORE
 import { processUser } from './auth';
 
@@ -1564,11 +1694,11 @@ Example format in Problem Summary:
 
 3 testing issues identified:
 
-1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.ts\` must be updated to pass new parameter.
+1. **Existing tests require updates** - \`processUser\` signature changed (added \`options\` parameter, lines 45-60). 8 test cases in \`auth.spec.*\` (or \`test_auth.*\`) must be updated to pass new parameter.
 
 2. **New tests needed** - New validation logic added (lines 62-75) with no test coverage. Need 3 new test cases for validation edge cases.
 
-3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in \`auth.spec.ts\` must be updated.
+3. **Mock updates required** - \`UserService\` interface changed (renamed \`getData\` to \`fetchData\`). All mocks in test files must be updated.
 \`\`\`
 
 **Why This Matters:**

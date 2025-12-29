@@ -4,6 +4,7 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { Data, Effect } from "effect";
 import { VSCodeService } from "./vs-code.js";
+import { SettingsService } from "./settings-service.js";
 
 const execAsync = promisify(exec);
 
@@ -85,6 +86,22 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         yield* Effect.logDebug(
           `[GitService] Determining base branch for workspace: ${workspaceRoot}`,
         );
+
+        // Check user-configured base branch first (optional dependency)
+        const settingsServiceOption = yield* Effect.serviceOption(SettingsService);
+        const userConfigured =
+          settingsServiceOption._tag === "Some"
+            ? yield* settingsServiceOption.value.getBaseBranch()
+            : null;
+        
+        if (userConfigured) {
+          yield* Effect.logDebug(
+            `[GitService] Using user-configured base branch: ${userConfigured}`,
+          );
+          return userConfigured;
+        }
+
+        // Fall back to auto-detection
         // Try main first - command succeeds if branch exists
         const mainExists = yield* executeGitCommand(
           "git show-ref --verify --quiet refs/heads/main",

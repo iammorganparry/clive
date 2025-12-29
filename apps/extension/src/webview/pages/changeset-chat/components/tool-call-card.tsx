@@ -337,12 +337,7 @@ const getStatusBadge = (state: ToolState): React.ReactNode | null => {
   const icons: Record<ToolState, React.ReactNode> = {
     "input-streaming": <CircleIcon className="size-3" />,
     "input-available": <ClockIcon className="size-3 animate-pulse" />,
-    "approval-requested": (
-      <div className="flex items-center gap-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5">
-        <ClockIcon className="size-3 text-yellow-600 dark:text-yellow-400" />
-        <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">Awaiting Approval</span>
-      </div>
-    ),
+    "approval-requested": null, // No badge - buttons shown inline instead
     "output-available": <CheckCircleIcon className="size-3 text-green-600" />,
     "output-error": <XCircleIcon className="size-3 text-red-600" />,
     "output-denied": (
@@ -353,11 +348,10 @@ const getStatusBadge = (state: ToolState): React.ReactNode | null => {
     ),
   };
 
-  // Show badge for completed, error, and approval states
+  // Show badge for completed, error, and denial states
   if (
     state === "output-available" ||
     state === "output-error" ||
-    state === "approval-requested" ||
     state === "output-denied"
   ) {
     return (
@@ -367,7 +361,7 @@ const getStatusBadge = (state: ToolState): React.ReactNode | null => {
     );
   }
 
-  // Return null for running states (no badge)
+  // Return null for running states and approval-requested (no badge)
   return null;
 };
 
@@ -1160,6 +1154,17 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               <span className="text-sm">{summary}</span>
             )}
           </div>
+          {/* Inline Approval Buttons for approval-requested state */}
+          {state === "approval-requested" && toolCallId && subscriptionId && (
+            <div className="flex items-center gap-1">
+              <Button onClick={handleApprove} variant="default" size="sm" className="h-6 px-2 text-xs">
+                Approve
+              </Button>
+              <Button onClick={handleReject} variant="destructive" size="sm" className="h-6 px-2 text-xs">
+                Reject
+              </Button>
+            </div>
+          )}
           {statusBadge && (
             <div className="flex items-center gap-2 shrink-0">
               {statusBadge}
@@ -1169,18 +1174,6 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
         </div>
       </TaskTrigger>
       <TaskContent>
-        {/* Approval Buttons for approval-requested state */}
-        {state === "approval-requested" && toolCallId && subscriptionId && (
-          <div className="mb-4 flex items-center gap-2">
-            <Button onClick={handleApprove} variant="default" size="sm">
-              Approve
-            </Button>
-            <Button onClick={handleReject} variant="destructive" size="sm">
-              Reject
-            </Button>
-          </div>
-        )}
-
         {/* Code Writing Tools - Show code prominently */}
         {isCodeWritingTool && fileInfo ? (
           <div className="mt-2">

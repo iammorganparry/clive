@@ -2,6 +2,7 @@ import type React from "react";
 import type { VSCodeAPI } from "../../services/vscode.js";
 import { ApiKeyForm } from "./components/api-key-form.js";
 import { KnowledgeBaseCard } from "./components/knowledge-base-card.js";
+import { BaseBranchForm } from "./components/base-branch-form.js";
 
 interface SettingsPageProps {
   vscode: VSCodeAPI;
@@ -29,6 +30,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Manage your API keys and knowledge base
         </p>
       </div>
+
+      <BaseBranchForm />
 
       <KnowledgeBaseCard />
 

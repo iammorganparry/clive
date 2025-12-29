@@ -52,7 +52,6 @@ const BLOCKED_PATTERNS = [
   /\bshutdown\b/,
   /\breboot\b/,
   /\bsystemctl\b/,
-  /\bservice\b/,
 
   // Package installation (use existing packages only)
   /\bapt\b/,
