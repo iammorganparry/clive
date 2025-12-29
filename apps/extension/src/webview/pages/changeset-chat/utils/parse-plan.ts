@@ -125,8 +125,18 @@ function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
         objectsArray = null;
       }
     }
-    // Property in object (4 space indent)
-    else if (line.match(/^ {4}/) && currentObject) {
+    // Array item in nested property (6 space indent) - CHECK THIS FIRST
+    else if (line.match(/^ {6}- /) && currentObject) {
+      // Find last array property in current object
+      const keys = Object.keys(currentObject);
+      const lastKey = keys[keys.length - 1];
+      if (lastKey && Array.isArray(currentObject[lastKey])) {
+        const value = line.slice(8).trim().replace(/^["']|["']$/g, "");
+        (currentObject[lastKey] as unknown[]).push(value);
+      }
+    }
+    // Property in object (4 space indent, but not 6 spaces)
+    else if (line.match(/^ {4}[^ ]/) && currentObject) {
       const propMatch = line.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/);
       if (propMatch) {
         const key = propMatch[1];
@@ -145,16 +155,6 @@ function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
           // Array will follow
           currentObject[key] = [];
         }
-      }
-    }
-    // Array item in nested property (6 space indent)
-    else if (line.match(/^ {6}- /) && currentObject) {
-      // Find last array property in current object
-      const keys = Object.keys(currentObject);
-      const lastKey = keys[keys.length - 1];
-      if (lastKey && Array.isArray(currentObject[lastKey])) {
-        const value = line.slice(8).trim().replace(/^["']|["']$/g, "");
-        (currentObject[lastKey] as unknown[]).push(value);
       }
     }
   }

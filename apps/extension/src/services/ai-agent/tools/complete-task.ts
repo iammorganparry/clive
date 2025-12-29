@@ -87,8 +87,7 @@ export const createCompleteTaskTool = () =>
     description:
       "Signal that the testing task is complete. This tool CANNOT be used until you've " +
       "confirmed from test execution results that ALL tests have passed. " +
-      "Before using this tool, you must ask yourself in <thinking></thinking> tags " +
-      "if you've verified that all test files pass. " +
+      "Before using this tool, verify that all test files pass. " +
       "This tool replaces the [COMPLETE] delimiter with structured validation.",
     inputSchema: CompleteTaskInputSchema,
     execute: async (input): Promise<CompleteTaskOutput> => {

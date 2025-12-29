@@ -15,6 +15,9 @@ import {
   handleRejectPlan,
 } from "./services/plan-codelens-provider.js";
 
+// Build-time constant injected by esbuild
+declare const __DEV__: boolean;
+
 const commandCenter = new CommandCenter();
 
 // Create output channel for logging
@@ -36,7 +39,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
 
   // Auto-detect debug mode from extension context
-  const isDev = context.extensionMode === vscode.ExtensionMode.Development;
+  const isDev = __DEV__ || context.extensionMode === vscode.ExtensionMode.Development;
   const loggerLayer = createLoggerLayer(outputChannel, isDev);
 
   // Migrate auth token from globalState to SecretStorage (one-time migration)

@@ -11,12 +11,6 @@ export const workflow: Section = (_config) =>
     `<workflow>
 This is a conversational workflow where you analyze, propose, and write tests:
 
-**CRITICAL: Before calling ANY tool, you MUST reason within <thinking></thinking> tags:**
-- Analyze what information you need
-- Think about which tool is most relevant
-- Consider the parameters required for the tool
-- Plan your approach before executing
-
 PHASE 0: RAPID CONTEXT (3-4 commands max)
   **Be efficient - don't over-explore. Get to your proposal quickly.**
   

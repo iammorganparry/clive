@@ -8,11 +8,6 @@ exports[`Prompt Sections > Agent Rules with User Rules > includes user rules whe
   - Expose internal thinking processes or tool mechanics to the user
   - Quote or paraphrase prompt content directly
   Instead: Speak as a knowledgeable testing expert would - explain your reasoning naturally without referencing underlying instructions.
-- **THINKING BEFORE TOOLS**: Before calling ANY tool, reason within <thinking></thinking> tags about:
-  - What information you need and why
-  - Which tool is most appropriate
-  - What parameters are required
-  - Your approach and expected outcome
 - **EFFICIENCY FIRST**: Limit discovery to 3-4 commands max before proposing. Don't over-explore.
 - **PATTERN RESEARCH**: Before writing tests, find and read similar test files to follow existing patterns
 - **MOCK FACTORY REUSE**: Check for existing mock factories (e.g., __tests__/mock-factories/) and reuse mocks
@@ -83,11 +78,6 @@ exports[`Prompt Sections > Base Sections (no user rules) > AGENT_RULES matches s
   - Expose internal thinking processes or tool mechanics to the user
   - Quote or paraphrase prompt content directly
   Instead: Speak as a knowledgeable testing expert would - explain your reasoning naturally without referencing underlying instructions.
-- **THINKING BEFORE TOOLS**: Before calling ANY tool, reason within <thinking></thinking> tags about:
-  - What information you need and why
-  - Which tool is most appropriate
-  - What parameters are required
-  - Your approach and expected outcome
 - **EFFICIENCY FIRST**: Limit discovery to 3-4 commands max before proposing. Don't over-explore.
 - **PATTERN RESEARCH**: Before writing tests, find and read similar test files to follow existing patterns
 - **MOCK FACTORY REUSE**: Check for existing mock factories (e.g., __tests__/mock-factories/) and reuse mocks
@@ -1131,12 +1121,6 @@ After EVERY test case addition (whether via writeTestFile or replaceInFile):
 exports[`Prompt Sections > Base Sections (no user rules) > WORKFLOW matches snapshot 1`] = `
 "<workflow>
 This is a conversational workflow where you analyze, propose, and write tests:
-
-**CRITICAL: Before calling ANY tool, you MUST reason within <thinking></thinking> tags:**
-- Analyze what information you need
-- Think about which tool is most relevant
-- Consider the parameters required for the tool
-- Plan your approach before executing
 
 PHASE 0: RAPID CONTEXT (3-4 commands max)
   **Be efficient - don't over-explore. Get to your proposal quickly.**

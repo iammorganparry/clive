@@ -293,7 +293,7 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
   };
 
   return (
-    <div className="fixed bottom-[150px] right-4 z-50">
+    <div className="fixed bottom-[50px] right-4 z-50">
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
         <DropdownMenuTrigger asChild>
           <Button

@@ -556,9 +556,14 @@ const generateActionList = (
 ): string[] => {
   const actions: string[] = [];
 
-  // bashExecute: Show command as action
+  // bashExecute: Show command as action (unless it's a file-reading command)
   if (toolName === "bashExecute" && isBashExecuteArgs(input)) {
-    actions.push(input.command.trim());
+    const command = input.command.trim();
+    // Skip file-reading commands - they're shown in CodeBlock instead
+    if (isFileReadingCommand(command)) {
+      return [];
+    }
+    actions.push(command);
     return actions;
   }
 
@@ -652,6 +657,21 @@ const formatToolOutput = (
   if (toolName === "bashExecute" && typeof output === "object") {
     const bashOutput = output as { stdout?: string; stderr?: string; command?: string };
     const command = bashOutput.command || "";
+    
+    // Handle file-reading commands (cat, head, tail, less) with proper syntax highlighting
+    if (isFileReadingCommand(command) && bashOutput.stdout) {
+      const filePath = extractFilePathFromReadCommand(command);
+      const language = filePath ? detectLanguageFromPath(filePath) : ("text" as BundledLanguage);
+      return (
+        <CodeBlock 
+          code={bashOutput.stdout} 
+          language={language} 
+          showLineNumbers={true} 
+        >
+          <CodeBlockCopyButton />
+        </CodeBlock>
+      );
+    }
     
     // For grep/find commands, return null - we'll handle them in the component body
     if (command.includes("grep") || command.includes("find")) {
@@ -778,6 +798,23 @@ const parseFindOutput = (stdout: string): string[] => {
     .split("\n")
     .filter((line) => line.trim() && !line.startsWith("find:"))
     .map((line) => line.trim());
+};
+
+/**
+ * Check if command is a file-reading command (cat, head, tail, less)
+ */
+const isFileReadingCommand = (command: string): boolean => {
+  const readCommands = ["cat ", "head ", "tail ", "less "];
+  return readCommands.some((cmd) => command.trim().startsWith(cmd));
+};
+
+/**
+ * Extract file path from file-reading command
+ */
+const extractFilePathFromReadCommand = (command: string): string | null => {
+  // Match: cat/head/tail/less [flags] <filepath>
+  const match = command.match(/^(?:cat|head|tail|less)\s+(?:-[^\s]+\s+)*([^\s|><]+)/);
+  return match?.[1]?.replace(/['"]/g, "") || null;
 };
 
 /**

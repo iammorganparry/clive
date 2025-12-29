@@ -25,6 +25,7 @@ export type ToolState =
 
 export type MessagePart =
   | { type: "text"; text: string }
+  | { type: "reasoning"; content: string; isStreaming?: boolean }
   | {
       type: `tool-${string}`;
       toolName: string;
