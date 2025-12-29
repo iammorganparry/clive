@@ -39,6 +39,9 @@ async function main() {
 		outfile: 'dist/extension.cjs',
 		external: ['vscode'],
 		logLevel: 'silent',
+		define: {
+			__DEV__: JSON.stringify(!production),
+		},
 		plugins: [
 			/* add to the end of plugins array */
 			esbuildProblemMatcherPlugin,

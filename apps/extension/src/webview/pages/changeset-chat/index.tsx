@@ -38,7 +38,7 @@ import { TestSuiteQueue } from "./components/test-suite-queue.js";
 import { DevTestingToolbar } from "./components/dev-testing-toolbar.js";
 import { UserMessageText } from "./components/user-message-text.js";
 import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
-import type { MessagePart } from "../../types/chat.js";
+import type { MessagePart, ChatMessage } from "../../types/chat.js";
 import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
 
 export const ChangesetChatPage: React.FC = () => {
@@ -62,8 +62,6 @@ export const ChangesetChatPage: React.FC = () => {
   // Use the changeset chat hook with state machine
   const {
     messages,
-    reasoningContent,
-    isReasoningStreaming,
     error,
     isLoading,
     isLoadingHistory,
@@ -174,6 +172,19 @@ export const ChangesetChatPage: React.FC = () => {
                 );
               }
 
+              // Render reasoning parts inline
+              if (part.type === "reasoning") {
+                return (
+                  <Reasoning 
+                    key={`${message.id}-reasoning-${index}`}
+                    isStreaming={part.isStreaming ?? false}
+                  >
+                    <ReasoningTrigger />
+                    <ReasoningContent>{part.content}</ReasoningContent>
+                  </Reasoning>
+                );
+              }
+
               // All tools use ToolCallCard
               if (part.type.startsWith("tool-")) {
                 return (
@@ -199,11 +210,42 @@ export const ChangesetChatPage: React.FC = () => {
     });
   }, [isLoadingHistory, isLoading, messages, files.length, planFilePath, subscriptionId]);
 
+  // Extract planContent from proposeTestPlan tool output in messages
+  const extractPlanContentFromMessages = useCallback((messages: ChatMessage[]): string | null => {
+    for (const msg of messages) {
+      for (const part of msg.parts) {
+        if (
+          part.type.startsWith("tool-") &&
+          "toolName" in part &&
+          part.toolName === "proposeTestPlan" &&
+          "input" in part &&
+          part.input &&
+          typeof part.input === "object" &&
+          "planContent" in part.input
+        ) {
+          return (part.input as { planContent?: string }).planContent || null;
+        }
+      }
+    }
+    return null;
+  }, []);
+
   const handleApprove = () => {
-    if (!planContent) return;
+    // Try planContent from state, fallback to extracting from tool call messages
+    const content = planContent || extractPlanContentFromMessages(messages);
+    
+    console.log("[handleApprove] planContent:", planContent ? "present" : "null");
+    console.log("[handleApprove] content (with fallback):", content ? "present" : "null");
+    
+    if (!content) {
+      console.warn("[handleApprove] No plan content available");
+      return;
+    }
 
     // Parse Implementation Plan sections from plan content
-    const sections = parsePlanSections(planContent);
+    const sections = parsePlanSections(content);
+    
+    console.log("[handleApprove] sections parsed:", sections.length);
 
     if (sections.length === 0) {
       // Fallback: send message if parsing fails
@@ -311,14 +353,6 @@ export const ChangesetChatPage: React.FC = () => {
                   }}
                   onDismiss={() => send({ type: "CLEAR_ERROR" })}
                 />
-              )}
-
-              {/* Reasoning output - shown separately above timeline */}
-              {reasoningContent && (
-                <Reasoning isStreaming={isReasoningStreaming}>
-                  <ReasoningTrigger />
-                  <ReasoningContent>{reasoningContent}</ReasoningContent>
-                </Reasoning>
               )}
 
               {/* Scratchpad Queue - shows agent's TODO list */}

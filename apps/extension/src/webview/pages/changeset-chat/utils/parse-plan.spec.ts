@@ -480,6 +480,26 @@ suites:
       expect(sections[0].sectionNumber).toBe(1);
       expect(sections[1].sectionNumber).toBe(2);
     });
+
+    it('should handle multi-line sourceFiles arrays', () => {
+      const planContent = `---
+name: Test Plan
+suites:
+  - id: suite-1
+    name: Suite One
+    testType: unit
+    targetFilePath: test.spec.ts
+    sourceFiles:
+      - src/file1.ts
+      - src/file2.ts
+    description: Test description
+---`;
+      
+      const sections = parsePlanSections(planContent);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].sourceFiles).toEqual(['src/file1.ts', 'src/file2.ts']);
+      expect(sections[0].description).toBe('Test description');
+    });
   });
 
   describe('Real-world test plan formats', () => {

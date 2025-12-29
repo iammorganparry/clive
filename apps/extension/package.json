@@ -3,7 +3,7 @@
   "publisher": "iammorganparry",
   "displayName": "Clive - AI Test Writer",
   "description": "Your AI-powered test writer for automated testing across all languages and frameworks",
-  "version": "0.0.1",
+  "version": "0.0.1-dev.fa78c1b.1767002181",
   "repository": {
     "type": "git",
     "url": "https://github.com/iammorganparry/clive.git"
@@ -79,8 +79,9 @@
     "test": "vscode-test",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "install:local": "npx @vscode/vsce package --no-dependencies --allow-missing-repository && code --install-extension $(ls *.vsix | head -1) --force",
-    "install:cursor": "npx @vscode/vsce package --no-dependencies --allow-missing-repository && cursor --install-extension $(ls *.vsix | head -1) --force",
+    "set-dev-version": "node scripts/set-dev-version.js",
+    "install:local": "turbo build && yarn set-dev-version && rm -f *.vsix && npx @vscode/vsce package --no-dependencies --allow-missing-repository && code --install-extension $(ls -t *.vsix | head -1) --force",
+    "install:cursor": "turbo build && yarn set-dev-version && rm -f *.vsix && npx @vscode/vsce package --no-dependencies --allow-missing-repository && cursor --install-extension $(ls -t *.vsix | head -1) --force",
     "package:vsix": "npx @vscode/vsce package --no-dependencies --allow-missing-repository",
     "prepare": "husky",
     "commitlint": "commitlint --edit"

@@ -282,8 +282,58 @@ export const changesetChatMachine = setup({
     appendReasoningContent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "reasoning")
         return {};
+      if (!event.content) return {};
+
+      // Add reasoning as a message part to current assistant message
+      const lastMessage = context.messages[context.messages.length - 1];
+      
+      if (lastMessage && lastMessage.role === "assistant") {
+        // Find existing reasoning part or create new one
+        const lastPart = lastMessage.parts[lastMessage.parts.length - 1];
+        const updatedParts =
+          lastPart && lastPart.type === "reasoning"
+            ? [
+                ...lastMessage.parts.slice(0, -1),
+                { 
+                  ...lastPart, 
+                  content: lastPart.content + event.content,
+                  isStreaming: true,
+                },
+              ]
+            : [
+                ...lastMessage.parts,
+                { 
+                  type: "reasoning" as const, 
+                  content: event.content,
+                  isStreaming: true,
+                },
+              ];
+
+        return {
+          messages: [
+            ...context.messages.slice(0, -1),
+            { ...lastMessage, parts: updatedParts },
+          ],
+          reasoningContent: context.reasoningContent + event.content, // Keep for backwards compatibility
+          isReasoningStreaming: true,
+        };
+      }
+
+      // Create new assistant message with reasoning part if no message exists
+      const newMessage: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "assistant",
+        parts: [{ 
+          type: "reasoning" as const, 
+          content: event.content,
+          isStreaming: true,
+        }],
+        timestamp: new Date(),
+      };
+      
       return {
-        reasoningContent: context.reasoningContent + (event.content || ""),
+        messages: [...context.messages, newMessage],
+        reasoningContent: context.reasoningContent + event.content, // Keep for backwards compatibility
         isReasoningStreaming: true,
       };
     }),
@@ -291,7 +341,26 @@ export const changesetChatMachine = setup({
       reasoningContent: () => "",
       isReasoningStreaming: () => false,
     }),
-    stopReasoningStreaming: assign({ isReasoningStreaming: () => false }),
+    stopReasoningStreaming: assign(({ context }) => {
+      // Mark all reasoning parts as no longer streaming
+      const updatedMessages = context.messages.map((msg) => {
+        if (msg.role !== "assistant") return msg;
+        
+        const updatedParts = msg.parts.map((part) => {
+          if (part.type === "reasoning" && part.isStreaming) {
+            return { ...part, isStreaming: false };
+          }
+          return part;
+        });
+        
+        return { ...msg, parts: updatedParts };
+      });
+      
+      return {
+        isReasoningStreaming: false,
+        messages: updatedMessages,
+      };
+    }),
     addToolEvent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "tool-call")
         return {};

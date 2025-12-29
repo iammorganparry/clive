@@ -31,6 +31,8 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
   const rpc = useRpc();
   const openFileMutation = rpc.system.openFile.useMutation();
 
+  const truncatedBody = `${plan.body.split("\n").slice(0, 10).join("\n")}...`;
+
   const handleReadMore = useCallback(() => {
     if (filePath) {
       openFileMutation.mutate({ filePath });
@@ -69,7 +71,7 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
             "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           )}
         >
-          {plan.body}
+          {truncatedBody}
         </Streamdown>
       </PlanContent>
     </Plan>

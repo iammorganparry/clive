@@ -29,7 +29,7 @@ export function useChangesetChat({
   });
 
   // Load conversation history from backend
-  const { data: historyData } = rpc.conversations.getBranchHistory.useQuery({
+  const { data: historyData, isLoading: isHistoryLoading } = rpc.conversations.getBranchHistory.useQuery({
     input: {
       branchName,
       baseBranch: "main",
@@ -41,13 +41,13 @@ export function useChangesetChat({
 
   // Send backend history when query completes
   useEffect(() => {
-    if (state.value === "idle" && !state.context.historyLoaded) {
+    if (state.value === "idle" && !state.context.historyLoaded && !isHistoryLoading) {
       send({
         type: "RECEIVE_BACKEND_HISTORY",
         historyData: historyData ?? null,
       });
     }
-  }, [historyData, state.value, state.context.historyLoaded, send]);
+  }, [historyData, state.value, state.context.historyLoaded, send, isHistoryLoading]);
 
   // Subscribe to planTests
   const planTestsSubscription = rpc.agents.planTests.useSubscription({
