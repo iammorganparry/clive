@@ -24,7 +24,7 @@ import {
 import { PromptFactory, PromptService } from "./prompts/index.js";
 import { makeTokenBudget } from "./token-budget.js";
 import { KnowledgeContext } from "./knowledge-context.js";
-import type { DiffContentProvider } from "../diff-content-provider.js";
+// DiffContentProvider import removed - file edits now use PendingEditService
 import { addCacheControlToMessages } from "./utils/cache-control.js";
 import {
   createAgentState,
@@ -98,8 +98,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             outputChannel?: vscode.OutputChannel;
             progressCallback?: (status: string, message: string) => void;
             signal?: AbortSignal;
-            diffProvider?: DiffContentProvider;
-            waitForApproval?: (toolCallId: string) => Promise<unknown>;
           },
         ) =>
           Effect.gen(function* () {
@@ -194,7 +192,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               mode,
               budget,
               firecrawlEnabled: !!firecrawlApiKey,
-              diffProvider: options?.diffProvider,
               knowledgeFileService,
               summaryService,
               summaryModel,
@@ -218,7 +215,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               onKnowledgeRetrieved: (results) => {
                 knowledgeContext.addFromSearchResults(results);
               },
-              waitForApproval: options?.waitForApproval,
             });
 
             progressCallback?.(

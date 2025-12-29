@@ -132,8 +132,6 @@ const isReadFileArgs = (input: unknown): input is ReadFileArgs =>
 interface ReplaceInFileArgs {
   targetPath?: string;
   filePath?: string;
-  searchContent?: string;
-  replaceContent?: string;
   diff?: string;
 }
 
@@ -1155,7 +1153,9 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
             )}
           </div>
           {/* Inline Approval Buttons for approval-requested state */}
-          {state === "approval-requested" && toolCallId && subscriptionId && (
+          {/* File edit tools (writeTestFile, replaceInFile) use CodeLens in editor instead */}
+          {state === "approval-requested" && toolCallId && subscriptionId && 
+           !["writeTestFile", "replaceInFile"].includes(toolName) && (
             <div className="flex items-center gap-1">
               <Button onClick={handleApprove} variant="default" size="sm" className="h-6 px-2 text-xs">
                 Approve

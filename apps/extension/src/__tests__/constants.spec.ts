@@ -20,4 +20,20 @@ describe("Constants", () => {
       expect(ApiUrls.trpc).toBe("http://localhost:3000/api/trpc");
     });
   });
+
+  describe("Commands", () => {
+    it("should have acceptEdit command", () => {
+      expect(Commands.acceptEdit).toBe("clive.acceptEdit");
+    });
+
+    it("should have rejectEdit command", () => {
+      expect(Commands.rejectEdit).toBe("clive.rejectEdit");
+    });
+  });
+
+  describe("GlobalStateKeys", () => {
+    it("should have baseBranch key", () => {
+      expect(GlobalStateKeys.baseBranch).toBe("clive.baseBranch");
+    });
+  });
 });

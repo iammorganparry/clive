@@ -2,20 +2,14 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { Effect, Runtime, } from "effect";
-import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 import { constructNewFileContent } from "../diff.js";
 import { processModelContent } from "../../../utils/model-content-processor.js";
-import { DiffViewProvider } from "../../diff-view-provider.js";
-import { formatFileEditResponse, formatFileEditError } from "../response-formatter.js";
-import type { DiffContentProvider } from "../../diff-content-provider.js";
-import { APPROVAL } from "../hitl-utils.js";
+import { formatFileEditError } from "../response-formatter.js";
+import { registerPendingEditSync } from "../../pending-edit-service.js";
 
 export interface ReplaceInFileInput {
   targetPath: string;
-  searchContent?: string; // Legacy: single search/replace
-  replaceContent?: string; // Legacy: single search/replace
-  diff?: string; // New: multi-block SEARCH/REPLACE format
+  diff: string;
 }
 
 export interface ReplaceInFileOutput {
@@ -36,53 +30,32 @@ export type StreamingFileOutputCallback = (chunk: {
 
 /**
  * Factory function to create replaceInFileTool
- * Supports both legacy single search/replace and new multi-block SEARCH/REPLACE format
- * @param diffProvider Optional DiffContentProvider for visual diff view. If not provided, falls back to direct file editing.
+ * Writes changes directly to file (non-blocking) and registers with PendingEditService
+ * User can accept/reject via CodeLens in the editor
+ *
  * @param onStreamingOutput Optional streaming callback
- * @param autoApprove Whether to auto-approve changes (default: false)
  */
 export const createReplaceInFileTool = (
-  diffProvider?: DiffContentProvider,
   onStreamingOutput?: StreamingFileOutputCallback,
-  autoApprove: boolean = false,
-  waitForApproval?: (toolCallId: string) => Promise<unknown>,
 ) =>
   tool({
     description:
-      "Replace specific content in an existing file using SEARCH/REPLACE blocks. Supports multiple edits in a single operation. More efficient than rewriting entire files for small changes. Preserves formatting and reduces errors.",
+      "Replace specific content in an existing file using SEARCH/REPLACE blocks. Supports multiple edits in a single operation. Changes are written immediately and user can accept/reject via CodeLens in the editor.",
     inputSchema: z.object({
       targetPath: z
         .string()
         .describe(
           "The target file path. Can be relative to workspace root or absolute.",
         ),
-      searchContent: z
-        .string()
-        .optional()
-        .describe(
-          "Legacy: The exact content to find and replace. Must match exactly (including whitespace). Use 'diff' parameter for multi-block edits.",
-        ),
-      replaceContent: z
-        .string()
-        .optional()
-        .describe(
-          "Legacy: The content to replace searchContent with. Use 'diff' parameter for multi-block edits.",
-        ),
       diff: z
         .string()
-        .optional()
         .describe(
-          "Multi-block SEARCH/REPLACE format. Use this for multiple edits:\n------- SEARCH\n[content to find]\n=======\n[replacement content]\n+++++++ REPLACE\n\nMultiple blocks can be included for multiple changes.",
+          "Multi-block SEARCH/REPLACE format for file edits:\n------- SEARCH\n[content to find]\n=======\n[replacement content]\n+++++++ REPLACE\n\nMultiple blocks can be included for multiple changes.",
         ),
     }),
     execute: async (
-      {
-        targetPath,
-        searchContent,
-        replaceContent,
-        diff,
-      }: ReplaceInFileInput,
-      options?: { toolCallId?: string },
+      { targetPath, diff }: ReplaceInFileInput,
+      _options?: { toolCallId?: string },
     ): Promise<ReplaceInFileOutput> => {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -103,12 +76,9 @@ export const createReplaceInFileTool = (
 
       try {
         // Check if file exists
-        let fileExists = false;
         try {
           await vscode.workspace.fs.stat(fileUri);
-          fileExists = true;
         } catch {
-          // File doesn't exist
           return {
             success: false,
             filePath: relativePath,
@@ -116,195 +86,58 @@ export const createReplaceInFileTool = (
           };
         }
 
-        if (!fileExists) {
-          return {
-            success: false,
-            filePath: relativePath,
-            message: `File does not exist: ${relativePath}`,
-          };
-        }
-
         // Read existing file content
         const document = await vscode.workspace.openTextDocument(fileUri);
         const originalContent = document.getText();
 
-        // Determine which mode to use
-        let newContent: string;
-        let _diffString: string;
-
-        if (diff) {
-          // Multi-block SEARCH/REPLACE mode
-          _diffString = diff;
-          const result = constructNewFileContent(originalContent, diff);
-          if (result.error) {
-            return {
-              success: false,
-              filePath: relativePath,
-              message: `${result.error}\n\nCurrent file content:\n${originalContent}`,
-            };
-          }
-          newContent = result.content;
-        } else if (searchContent && replaceContent) {
-          // Legacy single search/replace mode
-          const normalizedSearch = normalizeEscapedChars(searchContent);
-          const normalizedReplace = normalizeEscapedChars(replaceContent);
-
-          const searchIndex = originalContent.indexOf(normalizedSearch);
-          if (searchIndex === -1) {
-            return {
-              success: false,
-              filePath: relativePath,
-              message: `Search content not found in file. Make sure the searchContent matches exactly (including whitespace and newlines).`,
-            };
-          }
-
-          newContent =
-            originalContent.slice(0, searchIndex) +
-            normalizedReplace +
-            originalContent.slice(searchIndex + normalizedSearch.length);
-
-          // Convert to diff format for consistency
-          _diffString = `------- SEARCH\n${normalizedSearch}\n=======\n${normalizedReplace}\n+++++++ REPLACE`;
-        } else {
+        // Apply multi-block SEARCH/REPLACE diff
+        const result = constructNewFileContent(originalContent, diff);
+        if (result.error) {
           return {
             success: false,
             filePath: relativePath,
-            message:
-              "Either 'diff' parameter or both 'searchContent' and 'replaceContent' must be provided.",
+            message: `${result.error}\n\nCurrent file content:\n${originalContent}`,
           };
         }
 
         // Process model-specific content fixes
-        newContent = processModelContent(newContent, fileUri.fsPath);
+        const newContent = processModelContent(result.content, fileUri.fsPath);
 
-        // Use diff view if provider is available, otherwise use direct editing
-        if (diffProvider) {
-          // Create diff view provider instance using Effect service
-          const diffViewInstance = await Runtime.runPromise(
-            Runtime.defaultRuntime,
-          )(
-            DiffViewProvider.pipe(
-              Effect.flatMap((service) => service.create(diffProvider)),
-              Effect.provide(DiffViewProvider.Default),
-            ),
-          );
+        // Register pending edit BEFORE writing (store original for revert)
+        registerPendingEditSync(
+          fileUri.fsPath,
+          originalContent,
+          false, // not a new file
+        );
 
-          // Open diff view
-          const openResult = await Runtime.runPromise(Runtime.defaultRuntime)(
-            diffViewInstance.open(fileUri.fsPath).pipe(
-              Effect.provide(DiffViewProvider.Default),
-            ),
-          );
+        // Write the file directly
+        const content = Buffer.from(newContent, "utf-8");
+        await vscode.workspace.fs.writeFile(fileUri, content);
 
-          if (!openResult.success) {
-            return {
-              success: false,
-              filePath: relativePath,
-              message: `Failed to open diff view: ${openResult.error}`,
-            };
-          }
+        // Open the file in the editor to show changes
+        const updatedDocument = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.window.showTextDocument(updatedDocument, {
+          preview: false,
+          preserveFocus: false,
+        });
 
-          // Update diff view with new content
-          await Runtime.runPromise(Runtime.defaultRuntime)(
-            diffViewInstance.update(newContent, true).pipe(
-              Effect.provide(DiffViewProvider.Default),
-            ),
-          );
-
-          // Handle approval flow
-          if (!autoApprove) {
-            // Use the actual toolCallId from AI SDK context for proper frontend matching
-            const approvalToolCallId = options?.toolCallId || `replace-${targetPath}-${Date.now()}`;
-            
-            let approved = false;
-            
-            if (waitForApproval) {
-              // Use RPC-based approval (webview UI)
-              const result = await waitForApproval(approvalToolCallId);
-              approved = result === APPROVAL.YES || result === true;
-            } else {
-              // Fallback to VS Code dialog
-              const approval = await vscode.window.showInformationMessage(
-                `Review the changes to ${relativePath} in the diff view.`,
-                "Approve",
-                "Reject",
-              );
-              approved = approval === "Approve";
-            }
-
-            if (!approved) {
-              await Runtime.runPromise(Runtime.defaultRuntime)(
-                diffViewInstance.revertChanges().pipe(
-                  Effect.flatMap(() => diffViewInstance.reset()),
-                  Effect.provide(DiffViewProvider.Default),
-                ),
-              );
-              return {
-                success: false,
-                filePath: relativePath,
-                message: `Changes to ${relativePath} were rejected by user.`,
-              };
-            }
-          }
-
-          // Save changes
-          const saveResult = await Runtime.runPromise(Runtime.defaultRuntime)(
-            diffViewInstance.saveChanges().pipe(
-              Effect.provide(DiffViewProvider.Default),
-            ),
-          );
-
-          // Format response
-          const message = formatFileEditResponse(relativePath, saveResult);
-
-          // Emit streaming callback
-          if (onStreamingOutput) {
-            const callbackPath = path.isAbsolute(targetPath)
-              ? relativePath
-              : targetPath;
-            onStreamingOutput({
-              filePath: callbackPath,
-              content: saveResult.finalContent,
-              isComplete: true,
-            });
-          }
-
-          // Clean up
-          await Runtime.runPromise(Runtime.defaultRuntime)(
-            diffViewInstance.reset().pipe(
-              Effect.provide(DiffViewProvider.Default),
-            ),
-          );
-
-          return {
-            success: true,
-            filePath: relativePath,
-            message,
-          };
-        } else {
-          // Fallback: Direct file editing (legacy behavior)
-          const content = Buffer.from(newContent, "utf-8");
-          await vscode.workspace.fs.writeFile(fileUri, content);
-
-          // Emit streaming callback
-          if (onStreamingOutput) {
-            const callbackPath = path.isAbsolute(targetPath)
-              ? relativePath
-              : targetPath;
-            onStreamingOutput({
-              filePath: callbackPath,
-              content: newContent,
-              isComplete: true,
-            });
-          }
-
-          return {
-            success: true,
-            filePath: relativePath,
-            message: `Content replaced in ${relativePath}`,
-          };
+        // Emit streaming callback
+        if (onStreamingOutput) {
+          const callbackPath = path.isAbsolute(targetPath)
+            ? relativePath
+            : targetPath;
+          onStreamingOutput({
+            filePath: callbackPath,
+            content: newContent,
+            isComplete: true,
+          });
         }
 
+        return {
+          success: true,
+          filePath: relativePath,
+          message: `Content replaced in ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+        };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
@@ -334,7 +167,6 @@ export const createReplaceInFileTool = (
   });
 
 /**
- * Legacy replaceInFileTool for backward compatibility
- * Uses direct file editing without diff view
+ * Default replaceInFileTool instance
  */
-export const replaceInFileTool = createReplaceInFileTool(undefined, undefined, false);
+export const replaceInFileTool = createReplaceInFileTool(undefined);
