@@ -5,7 +5,6 @@
  */
 
 import { Effect } from "effect";
-import type { DiffContentProvider } from "../diff-content-provider.js";
 import type { KnowledgeFileService } from "../knowledge-file-service.js";
 import type { SummaryService } from "./summary-service.js";
 import type { Message } from "./context-tracker.js";
@@ -60,10 +59,9 @@ export interface ToolConfig {
   mode: "plan" | "act";
   budget: TokenBudget;
   firecrawlEnabled: boolean;
-  diffProvider?: DiffContentProvider;
   knowledgeFileService: KnowledgeFileService;
   summaryService: SummaryService;
-  summaryModel: LanguageModel; // LanguageModel from ai SDK
+  summaryModel: LanguageModel;
   getMessages: Effect.Effect<Message[]>;
   setMessages: (messages: Message[]) => Effect.Effect<void>;
   getKnowledgeContext: Effect.Effect<string>;
@@ -71,7 +69,6 @@ export interface ToolConfig {
   bashStreamingCallback?: BashStreamingCallback;
   fileStreamingCallback?: FileStreamingCallback;
   onKnowledgeRetrieved?: KnowledgeRetrievedCallback;
-  waitForApproval?: (toolCallId: string) => Promise<unknown>;
 }
 
 /**
@@ -99,11 +96,11 @@ const createBaseTools = (config: ToolConfig) =>
     );
 
     const proposeTestPlan = createProposeTestPlanTool(
-      config.fileStreamingCallback, // File streaming callback for real-time updates
+      config.fileStreamingCallback,
     );
 
     const approvePlan = createApprovePlanTool(
-      config.progressCallback, // Progress callback to emit plan-approved event
+      config.progressCallback,
     );
 
     const completeTask = createCompleteTaskTool();
@@ -124,36 +121,13 @@ const createBaseTools = (config: ToolConfig) =>
   });
 
 /**
- * Create a wrapped waitForApproval that emits an event before blocking
- * This allows the frontend to know when approval is requested
- */
-const createWaitForApprovalWithEvent = (
-  progressCallback?: (status: string, message: string) => void,
-  waitForApproval?: (toolCallId: string) => Promise<unknown>,
-) => {
-  if (!waitForApproval) return undefined;
-
-  return async (toolCallId: string): Promise<unknown> => {
-    // Emit approval-requested event to frontend before blocking
-    progressCallback?.(
-      "tool-approval-requested",
-      JSON.stringify({
-        type: "tool-approval-requested",
-        toolCallId,
-      }),
-    );
-
-    // Block until approval is received
-    return waitForApproval(toolCallId);
-  };
-};
-
-/**
  * Create write tools available only in act mode
+ * File edits are written directly and registered with PendingEditService
+ * User can accept/reject via CodeLens in the editor (non-blocking)
  */
 const createWriteTools = (config: ToolConfig) =>
   Effect.sync(() => {
-    // Self-approving registry for auto-approval
+    // Self-approving registry for auto-approval of proposalIds
     const autoApproveRegistry = new Set<string>();
     const selfApprovingRegistry = {
       has: (id: string) => {
@@ -164,18 +138,9 @@ const createWriteTools = (config: ToolConfig) =>
       delete: (id: string) => autoApproveRegistry.delete(id),
     } as Set<string>;
 
-    // Create wrapped waitForApproval that emits events
-    const waitForApprovalWithEvent = createWaitForApprovalWithEvent(
-      config.progressCallback,
-      config.waitForApproval,
-    );
-
     const writeTestFile = createWriteTestFileTool(
       selfApprovingRegistry,
       config.fileStreamingCallback,
-      config.diffProvider,
-      false, // Don't auto-approve
-      waitForApprovalWithEvent,
     );
 
     const writeKnowledgeFile = createWriteKnowledgeFileTool(
@@ -183,10 +148,7 @@ const createWriteTools = (config: ToolConfig) =>
     );
 
     const replaceInFile = createReplaceInFileTool(
-      config.diffProvider,
       config.fileStreamingCallback,
-      false, // Don't auto-approve
-      waitForApprovalWithEvent,
     );
 
     return {
@@ -212,4 +174,3 @@ export const createToolSet = (config: ToolConfig) =>
 
     return baseTools;
   });
-

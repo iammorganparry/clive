@@ -14,6 +14,16 @@ import {
   handleApprovePlan,
   handleRejectPlan,
 } from "./services/plan-codelens-provider.js";
+import {
+  EditCodeLensService,
+  handleAcceptEdit,
+  handleRejectEdit,
+  setEditCodeLensServiceInstance,
+} from "./services/edit-codelens-provider.js";
+import {
+  PendingEditService,
+  setPendingEditServiceInstance,
+} from "./services/pending-edit-service.js";
 
 // Build-time constant injected by esbuild
 declare const __DEV__: boolean;
@@ -129,6 +139,57 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     },
   );
   context.subscriptions.push(refreshCodeLensDisposable);
+
+  // Initialize PendingEditService (Effect service)
+  const pendingEditService = Runtime.runSync(Runtime.defaultRuntime)(
+    Effect.gen(function* () {
+      return yield* PendingEditService;
+    }).pipe(Effect.provide(PendingEditService.Default)),
+  );
+  setPendingEditServiceInstance(pendingEditService);
+
+  // Initialize EditCodeLensService (Effect service with PendingEditService dependency)
+  const editCodeLensService = Runtime.runSync(Runtime.defaultRuntime)(
+    Effect.gen(function* () {
+      return yield* EditCodeLensService;
+    }).pipe(Effect.provide(EditCodeLensService.Default)),
+  );
+  setEditCodeLensServiceInstance(editCodeLensService);
+
+  // Get the CodeLens provider and register it
+  const editCodeLensProvider = Runtime.runSync(Runtime.defaultRuntime)(
+    editCodeLensService.getProvider(),
+  );
+  const editCodeLensDisposable = vscode.languages.registerCodeLensProvider(
+    { scheme: "file" },
+    editCodeLensProvider,
+  );
+  context.subscriptions.push(editCodeLensDisposable);
+
+  // Register accept/reject edit commands
+  const acceptEditDisposable = vscode.commands.registerCommand(
+    Commands.acceptEdit,
+    async (fileUri: vscode.Uri) => {
+      await handleAcceptEdit(fileUri);
+    },
+  );
+  context.subscriptions.push(acceptEditDisposable);
+
+  const rejectEditDisposable = vscode.commands.registerCommand(
+    Commands.rejectEdit,
+    async (fileUri: vscode.Uri) => {
+      await handleRejectEdit(fileUri);
+    },
+  );
+  context.subscriptions.push(rejectEditDisposable);
+
+  // Clean up services when extension deactivates
+  context.subscriptions.push({
+    dispose: () => {
+      Runtime.runSync(Runtime.defaultRuntime)(editCodeLensService.dispose());
+      Runtime.runSync(Runtime.defaultRuntime)(pendingEditService.dispose());
+    },
+  });
 
   // Register sendApproval command (used by CodeLens to send approval to RPC)
   const sendApprovalDisposable = vscode.commands.registerCommand(

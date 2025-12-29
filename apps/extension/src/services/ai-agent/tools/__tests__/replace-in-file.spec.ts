@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as vscode from "vscode";
-import { Effect } from "effect";
 import { createReplaceInFileTool } from "../replace-in-file";
 import type { ReplaceInFileInput, ReplaceInFileOutput } from "../replace-in-file";
 import { executeTool } from "./test-helpers";
-import type { DiffContentProvider } from "../../../diff-content-provider";
 
 // Mock vscode module using shared factory
 vi.mock("vscode", async () => {
@@ -22,28 +20,10 @@ vi.mock("../../../../utils/model-content-processor", () => ({
   processModelContent: vi.fn((content: string) => content),
 }));
 
-// Mock DiffViewProvider
-// Store the mock instance that will be returned
-let currentMockInstance: unknown = null;
-
-vi.mock("../../../diff-view-provider", async () => {
-  const { Effect, Layer } = await import("effect");
-  
-  // DiffViewProvider mock that defers to currentMockInstance at runtime
-  // The pipe() returns an Effect that will resolve to currentMockInstance when run
-  const DiffViewProvider = {
-    pipe: () => {
-      // Return an Effect that captures currentMockInstance at execution time
-      return Effect.sync(() => currentMockInstance);
-    },
-    Default: Layer.empty,
-  };
-  
-  return {
-    DiffViewProvider,
-    DiffViewProviderDefault: Layer.empty,
-  };
-});
+// Mock pending edit service
+vi.mock("../../../pending-edit-service", () => ({
+  registerPendingEditSync: vi.fn(),
+}));
 
 describe("replaceInFileTool", () => {
   let mockFs: {
@@ -63,7 +43,6 @@ describe("replaceInFileTool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     streamingCallback = undefined;
-    currentMockInstance = null;
 
     mockFs = vscode.workspace.fs as unknown as {
       stat: ReturnType<typeof vi.fn>;
@@ -92,62 +71,7 @@ describe("replaceInFileTool", () => {
     mockFs.writeFile.mockResolvedValue(undefined);
   });
 
-  describe("Legacy Single Search/Replace Mode", () => {
-    it("should replace content successfully", async () => {
-      const tool = createReplaceInFileTool();
-
-      const input: ReplaceInFileInput = {
-        targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
-      };
-
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
-
-      expect(result.success).toBe(true);
-      expect(result.filePath).toBe("src/test.ts");
-      expect(mockFs.writeFile).toHaveBeenCalled();
-    });
-
-    it("should return error when search content not found", async () => {
-      const tool = createReplaceInFileTool();
-
-      const input: ReplaceInFileInput = {
-        targetPath: "src/test.ts",
-        searchContent: "nonexistent content",
-        replaceContent: "new content",
-      };
-
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Search content not found");
-      expect(mockFs.writeFile).not.toHaveBeenCalled();
-    });
-
-    it("should normalize escaped characters", async () => {
-      // Override mock document for this test to include searchable content
-      mockDocument.getText.mockReturnValue("line1\nline2\nline 3");
-
-      const tool = createReplaceInFileTool();
-
-      const input: ReplaceInFileInput = {
-        targetPath: "src/test.ts",
-        searchContent: "line1\nline2",
-        replaceContent: "new1\nnew2",
-      };
-
-      await executeTool(tool, input, {} as ReplaceInFileOutput);
-
-      expect(mockFs.writeFile).toHaveBeenCalled();
-      const writeCall = mockFs.writeFile.mock.calls[0];
-      const writtenContent = writeCall[1].toString();
-      expect(writtenContent).toContain("new1");
-      expect(writtenContent).toContain("new2");
-    });
-  });
-
-  describe("Multi-Block SEARCH/REPLACE Mode", () => {
+  describe("SEARCH/REPLACE Diff Mode", () => {
     it("should apply multi-block diff successfully", async () => {
       const { constructNewFileContent } = await import("../../diff");
       vi.mocked(constructNewFileContent).mockReturnValue({
@@ -188,6 +112,35 @@ describe("replaceInFileTool", () => {
       expect(result.message).toContain("SEARCH block not found");
       expect(mockFs.writeFile).not.toHaveBeenCalled();
     });
+
+    it("should handle multiple SEARCH/REPLACE blocks", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "replaced1\nreplaced2\nline 3",
+      });
+
+      const tool = createReplaceInFileTool();
+
+      const input: ReplaceInFileInput = {
+        targetPath: "src/test.ts",
+        diff: `------- SEARCH
+original content
+=======
+replaced1
++++++++ REPLACE
+
+------- SEARCH
+line 2
+=======
+replaced2
++++++++ REPLACE`,
+      };
+
+      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
+
+      expect(result.success).toBe(true);
+      expect(constructNewFileContent).toHaveBeenCalled();
+    });
   });
 
   describe("File Validation", () => {
@@ -198,8 +151,7 @@ describe("replaceInFileTool", () => {
 
       const input: ReplaceInFileInput = {
         targetPath: "src/nonexistent.ts",
-        searchContent: "old",
-        replaceContent: "new",
+        diff: "------- SEARCH\nold\n=======\nnew\n+++++++ REPLACE",
       };
 
       const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
@@ -209,12 +161,16 @@ describe("replaceInFileTool", () => {
     });
 
     it("should handle absolute paths", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
+
       const tool = createReplaceInFileTool();
 
       const input: ReplaceInFileInput = {
         targetPath: "/absolute/path/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
       const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
@@ -224,152 +180,80 @@ describe("replaceInFileTool", () => {
     });
   });
 
-  describe("Input Validation", () => {
-    it("should return error when neither diff nor search/replace provided", async () => {
+  describe("PendingEditService Integration", () => {
+    it("should register pending edit before writing", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      const { registerPendingEditSync } = await import("../../../pending-edit-service");
+
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
+
       const tool = createReplaceInFileTool();
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
+      await executeTool(tool, input, {} as ReplaceInFileOutput);
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Either 'diff' parameter or both 'searchContent' and 'replaceContent'");
+      expect(registerPendingEditSync).toHaveBeenCalled();
+      // Verify it was called with the original content for revert capability
+      expect(registerPendingEditSync).toHaveBeenCalledWith(
+        expect.any(String),
+        "original content\nline 2\nline 3",
+        false, // not a new file
+      );
     });
 
-    it("should return error when only searchContent provided", async () => {
+    it("should write changes directly to file", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
+
       const tool = createReplaceInFileTool();
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
-        searchContent: "old",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
+      await executeTool(tool, input, {} as ReplaceInFileOutput);
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Either 'diff' parameter or both 'searchContent' and 'replaceContent'");
+      expect(mockFs.writeFile).toHaveBeenCalled();
+      const writeCall = mockFs.writeFile.mock.calls[0];
+      const writtenContent = writeCall[1].toString();
+      expect(writtenContent).toBe("new content\nline 2\nline 3");
     });
-  });
 
-  describe("Diff View Integration", () => {
-    it("should use diff view when provider is available", async () => {
-      const mockDiffProvider = {
-        getOriginalContent: vi.fn(),
-        getModifiedContent: vi.fn(),
-      } as unknown as DiffContentProvider;
+    it("should open file in editor after writing", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
 
-      const mockDiffViewInstance = {
-        open: vi.fn(() => Effect.succeed({ success: true })),
-        update: vi.fn(() => Effect.void),
-        saveChanges: vi.fn(() =>
-          Effect.succeed({
-            success: true,
-            finalContent: "new content\nline 2\nline 3",
-          }),
-        ),
-        revertChanges: vi.fn(() => Effect.void),
-        reset: vi.fn(() => Effect.void),
-      };
-
-      // Set the mock instance that will be returned by the service.create method
-      currentMockInstance = mockDiffViewInstance;
-
-      // Mock user approval
-      vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
-        "Approve" as unknown as vscode.MessageItem,
-      );
-
-      const tool = createReplaceInFileTool(mockDiffProvider);
+      const tool = createReplaceInFileTool();
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
+      await executeTool(tool, input, {} as ReplaceInFileOutput);
 
-      expect(result.success).toBe(true);
-      expect(mockDiffViewInstance.open).toHaveBeenCalled();
-      expect(mockDiffViewInstance.update).toHaveBeenCalled();
-      expect(mockDiffViewInstance.saveChanges).toHaveBeenCalled();
-    });
-
-    it("should handle user rejection in diff view", async () => {
-      const mockDiffProvider = {
-        getOriginalContent: vi.fn(),
-        getModifiedContent: vi.fn(),
-      } as unknown as DiffContentProvider;
-
-      const mockDiffViewInstance = {
-        open: vi.fn(() => Effect.succeed({ success: true })),
-        update: vi.fn(() => Effect.void),
-        revertChanges: vi.fn(() => Effect.void),
-        reset: vi.fn(() => Effect.void),
-      };
-
-      // Set the mock instance that will be returned by the service.create method
-      currentMockInstance = mockDiffViewInstance;
-
-      vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
-        "Reject" as unknown as vscode.MessageItem,
-      );
-
-      const tool = createReplaceInFileTool(mockDiffProvider, undefined, false);
-
-      const input: ReplaceInFileInput = {
-        targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
-      };
-
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("rejected");
-      expect(mockDiffViewInstance.revertChanges).toHaveBeenCalled();
-    });
-
-    it("should auto-approve when autoApprove is true", async () => {
-      const mockDiffProvider = {
-        getOriginalContent: vi.fn(),
-        getModifiedContent: vi.fn(),
-      } as unknown as DiffContentProvider;
-
-      const mockDiffViewInstance = {
-        open: vi.fn(() => Effect.succeed({ success: true })),
-        update: vi.fn(() => Effect.void),
-        saveChanges: vi.fn(() =>
-          Effect.succeed({
-            success: true,
-            finalContent: "new content\nline 2\nline 3",
-          }),
-        ),
-        reset: vi.fn(() => Effect.void),
-      };
-
-      // Set the mock instance that will be returned by the service.create method
-      currentMockInstance = mockDiffViewInstance;
-
-      const tool = createReplaceInFileTool(mockDiffProvider, undefined, true);
-
-      const input: ReplaceInFileInput = {
-        targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
-      };
-
-      const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
-
-      expect(result.success).toBe(true);
-      expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+      expect(vscode.window.showTextDocument).toHaveBeenCalled();
     });
   });
 
   describe("Streaming Output", () => {
     it("should call streaming callback on success", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
+
       const streamingChunks: Array<{
         filePath: string;
         content: string;
@@ -379,12 +263,11 @@ describe("replaceInFileTool", () => {
         streamingChunks.push(chunk);
       };
 
-      const tool = createReplaceInFileTool(undefined, streamingCallback);
+      const tool = createReplaceInFileTool(streamingCallback);
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
       await executeTool(tool, input, {} as ReplaceInFileOutput);
@@ -405,8 +288,7 @@ describe("replaceInFileTool", () => {
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
-        searchContent: "old",
-        replaceContent: "new",
+        diff: "------- SEARCH\nold\n=======\nnew\n+++++++ REPLACE",
       };
 
       const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
@@ -415,32 +297,24 @@ describe("replaceInFileTool", () => {
       expect(result.message).toContain("error");
     });
 
-    it("should handle diff view errors gracefully", async () => {
-      const mockDiffProvider = {
-        getOriginalContent: vi.fn(),
-        getModifiedContent: vi.fn(),
-      } as unknown as DiffContentProvider;
+    it("should return success message indicating pending review", async () => {
+      const { constructNewFileContent } = await import("../../diff");
+      vi.mocked(constructNewFileContent).mockReturnValue({
+        content: "new content\nline 2\nline 3",
+      });
 
-      const mockDiffViewInstance = {
-        open: vi.fn(() => Effect.succeed({ success: false, error: "Failed to open" })),
-      };
-
-      // Set the mock instance that will be returned by the service.create method
-      currentMockInstance = mockDiffViewInstance;
-
-      const tool = createReplaceInFileTool(mockDiffProvider);
+      const tool = createReplaceInFileTool();
 
       const input: ReplaceInFileInput = {
         targetPath: "src/test.ts",
-        searchContent: "original content",
-        replaceContent: "new content",
+        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
       };
 
       const result = await executeTool(tool, input, {} as ReplaceInFileOutput);
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Failed to open diff view");
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("pending user review");
+      expect(result.message).toContain("CodeLens");
     });
   });
 });
-

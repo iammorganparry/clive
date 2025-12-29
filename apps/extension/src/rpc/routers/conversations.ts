@@ -170,7 +170,6 @@ export const conversationsRouter = {
             .planAndExecuteTests(input.sourceFile, {
               conversationHistory,
               outputChannel: ctx.outputChannel,
-              diffProvider: ctx.diffProvider,
               progressCallback: (status, message) => {
                 // Forward progress to frontend
                 if (onProgress) {

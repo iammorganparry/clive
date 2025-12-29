@@ -16,6 +16,10 @@ export const Commands = {
   rejectPlan: "clive.rejectPlan",
   sendApproval: "clive.sendApproval",
   refreshCodeLens: "clive.refreshCodeLens",
+  /** Accept pending file edit (keep AI changes) */
+  acceptEdit: "clive.acceptEdit",
+  /** Reject pending file edit (revert to original) */
+  rejectEdit: "clive.rejectEdit",
 } as const;
 
 /**

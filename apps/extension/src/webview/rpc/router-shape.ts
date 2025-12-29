@@ -23,6 +23,9 @@ export const routerShape: RouterRecord = {
     cancelTest: createProcedureShape("mutation"),
     previewDiff: createProcedureShape("mutation"),
     approveToolCall: createProcedureShape("mutation"),
+    acceptEdit: createProcedureShape("mutation"),
+    rejectEdit: createProcedureShape("mutation"),
+    getPendingEdits: createProcedureShape("query"),
   },
   auth: {
     startDeviceAuth: createProcedureShape("mutation"),

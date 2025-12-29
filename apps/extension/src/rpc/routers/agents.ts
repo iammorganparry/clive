@@ -8,6 +8,11 @@ import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
 import { handleSubscriptionMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
+import {
+  acceptEditAsync,
+  rejectEditAsync,
+  getPendingEditServiceInstance,
+} from "../../services/pending-edit-service.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
@@ -178,14 +183,13 @@ export const agentsRouter = {
           };
 
           // Use planAndExecuteTests - proposals auto-approve
+          // File edits are non-blocking and registered with PendingEditService
           const result = yield* testingAgent.planAndExecuteTests(input.files, {
             mode: input.mode || "plan",
             conversationHistory: input.conversationHistory,
             outputChannel: ctx.outputChannel,
-            diffProvider: ctx.diffProvider,
             progressCallback,
             signal,
-            waitForApproval,
           });
 
           // Persist conversation messages to database
@@ -401,4 +405,93 @@ export const agentsRouter = {
         return { success: handled };
       }),
     ),
+
+  /**
+   * Accept a pending file edit (keep current changes)
+   * Used by the webview to accept AI-generated file changes
+   */
+  acceptEdit: procedure
+    .input(
+      z.object({
+        filePath: z.string(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[AgentsRouter] Accepting edit for: ${input.filePath}`,
+        );
+
+        const accepted = yield* Effect.tryPromise({
+          try: () => acceptEditAsync(input.filePath),
+          catch: (error) =>
+            new Error(
+              `Failed to accept edit: ${error instanceof Error ? error.message : "Unknown error"}`,
+            ),
+        });
+
+        if (accepted) {
+          // Fire-and-forget notification (don't await - it hangs until dismissed)
+          vscode.window.showInformationMessage(
+            `Changes accepted for ${vscode.workspace.asRelativePath(input.filePath)}`,
+          );
+        }
+
+        return { success: accepted };
+      }),
+    ),
+
+  /**
+   * Reject a pending file edit (revert to original)
+   * Used by the webview to reject AI-generated file changes
+   */
+  rejectEdit: procedure
+    .input(
+      z.object({
+        filePath: z.string(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[AgentsRouter] Rejecting edit for: ${input.filePath}`,
+        );
+
+        const rejected = yield* Effect.tryPromise({
+          try: () => rejectEditAsync(input.filePath),
+          catch: (error) =>
+            new Error(
+              `Failed to reject edit: ${error instanceof Error ? error.message : "Unknown error"}`,
+            ),
+        });
+
+        if (rejected) {
+          // Fire-and-forget notification (don't await - it hangs until dismissed)
+          vscode.window.showInformationMessage(
+            `Changes reverted for ${vscode.workspace.asRelativePath(input.filePath)}`,
+          );
+        }
+
+        return { success: rejected };
+      }),
+    ),
+
+  /**
+   * Get list of files with pending edits
+   * Used by the webview to show pending edit status
+   */
+  getPendingEdits: procedure
+    .input(z.void())
+    .query(() =>
+    Effect.gen(function* () {
+      try {
+        const service = getPendingEditServiceInstance();
+        const paths = yield* service.getPendingEditPaths();
+        return { paths };
+      } catch {
+        // Service not initialized yet
+        return { paths: [] };
+      }
+    }),
+  ),
 };
