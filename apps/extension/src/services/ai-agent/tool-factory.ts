@@ -20,7 +20,9 @@ import {
   createProposeTestPlanTool,
   createCompleteTaskTool,
   createReplaceInFileTool,
+  createApprovePlanTool,
 } from "./tools/index.js";
+import type { LanguageModel } from "ai";
 
 /**
  * Streaming callback for bash command output
@@ -61,7 +63,7 @@ export interface ToolConfig {
   diffProvider?: DiffContentProvider;
   knowledgeFileService: KnowledgeFileService;
   summaryService: SummaryService;
-  summaryModel: any; // LanguageModel from ai SDK
+  summaryModel: LanguageModel; // LanguageModel from ai SDK
   getMessages: Effect.Effect<Message[]>;
   setMessages: (messages: Message[]) => Effect.Effect<void>;
   getKnowledgeContext: Effect.Effect<string>;
@@ -100,6 +102,10 @@ const createBaseTools = (config: ToolConfig) =>
       config.fileStreamingCallback, // File streaming callback for real-time updates
     );
 
+    const approvePlan = createApprovePlanTool(
+      config.progressCallback, // Progress callback to emit plan-approved event
+    );
+
     const completeTask = createCompleteTaskTool();
 
     const webTools = config.firecrawlEnabled
@@ -111,6 +117,7 @@ const createBaseTools = (config: ToolConfig) =>
       searchKnowledge,
       summarizeContext,
       proposeTestPlan,
+      approvePlan,
       completeTask,
       ...webTools,
     };

@@ -4,7 +4,7 @@ import { Match } from "effect";
 import { useEffect, useRef } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ToolEvent } from "../../../types/chat.js";
-import { changesetChatMachine } from "../machines/changeset-chat-machine.js";
+import { changesetChatMachine, type TestSuiteQueueItem } from "../machines/changeset-chat-machine.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -66,6 +66,7 @@ export function useChangesetChat({
         command?: string;
         filePath?: string;
         isComplete?: boolean;
+        suites?: TestSuiteQueueItem[];
       };
 
       Match.value(event).pipe(
@@ -184,6 +185,12 @@ export function useChangesetChat({
               usage: p.usage,
             });
           }
+        }),
+        Match.when({ type: "plan-approved" }, (p) => {
+          // Agent approved the plan - extract suites and dispatch APPROVE_PLAN
+          const suites = (p.suites as TestSuiteQueueItem[]) || [];
+          console.log("[plan-approved] Agent approved plan with", suites.length, "suites");
+          send({ type: "APPROVE_PLAN", suites });
         }),
         Match.when({ type: "error" }, (p) => {
           const errorMessage =

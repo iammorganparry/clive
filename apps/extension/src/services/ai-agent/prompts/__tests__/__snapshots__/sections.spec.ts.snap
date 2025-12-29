@@ -20,7 +20,10 @@ exports[`Prompt Sections > Agent Rules with User Rules > includes user rules whe
 - **ACT MODE**: Only write test files after user has approved the plan
 - You MUST specify testType and framework in your proposal
 - Do NOT write test code directly - use proposeTestPlan in plan mode, writeTestFile only in act mode after approval
-- User will approve your proposal via UI buttons - wait for approval before writing tests
+- **USER APPROVAL DETECTION**: When user indicates approval of your proposed plan (e.g., they say "looks good", "approved", "proceed", "write the tests", "go ahead", "let's do it"):
+  - Call the approvePlan tool with the complete suites array from your proposeTestPlan output
+  - This will switch you from plan mode to act mode, allowing you to use writeTestFile
+  - After calling approvePlan, you can immediately start writing tests
 - **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT add another test case until the current one passes
 - **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition
@@ -90,7 +93,10 @@ exports[`Prompt Sections > Base Sections (no user rules) > AGENT_RULES matches s
 - **ACT MODE**: Only write test files after user has approved the plan
 - You MUST specify testType and framework in your proposal
 - Do NOT write test code directly - use proposeTestPlan in plan mode, writeTestFile only in act mode after approval
-- User will approve your proposal via UI buttons - wait for approval before writing tests
+- **USER APPROVAL DETECTION**: When user indicates approval of your proposed plan (e.g., they say "looks good", "approved", "proceed", "write the tests", "go ahead", "let's do it"):
+  - Call the approvePlan tool with the complete suites array from your proposeTestPlan output
+  - This will switch you from plan mode to act mode, allowing you to use writeTestFile
+  - After calling approvePlan, you can immediately start writing tests
 - **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT add another test case until the current one passes
 - **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition

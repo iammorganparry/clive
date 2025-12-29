@@ -27,6 +27,10 @@ export {
   createReplaceInFileTool,
   replaceInFileTool,
 } from "./replace-in-file.js";
+export {
+  createApprovePlanTool,
+  approvePlanTool,
+} from "./approve-plan.js";
 
 // Web search and scraping tools (Firecrawl)
 export { createWebTools, searchTool, scrapeTool } from "./web-tools.js";
