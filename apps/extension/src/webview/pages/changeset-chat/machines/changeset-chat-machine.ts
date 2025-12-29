@@ -679,7 +679,7 @@ export const changesetChatMachine = setup({
               accumulatedTestOutput: updatedAccumulated,
             };
 
-            if (context.currentSuiteId && updated.status === "completed") {
+            if (context.currentSuiteId && (updated.status === "completed" || updated.status === "failed")) {
               const currentSuite = context.testSuiteQueue.find(
                 (s) => s.id === context.currentSuiteId,
               );
@@ -1032,9 +1032,11 @@ export const changesetChatMachine = setup({
         currentSuiteId: firstSuite?.id || null,
         agentMode: "act" as const,
         hasPendingPlanApproval: false, // Reset flag after approval
-        // Mark first suite as in_progress
+        // Mark first suite as in_progress, remaining as pending
         testSuiteQueue: suites.map((suite, index) =>
-          index === 0 ? { ...suite, status: "in_progress" as const } : suite,
+          index === 0
+            ? { ...suite, status: "in_progress" as const }
+            : { ...suite, status: "pending" as const },
         ),
       };
     }),

@@ -29,6 +29,10 @@ vi.mock("../tools/complete-task", () => ({
   createCompleteTaskTool: vi.fn(() => ({ name: "completeTask", execute: vi.fn() })),
 }));
 
+vi.mock("../tools/approve-plan", () => ({
+  createApprovePlanTool: vi.fn(() => ({ name: "approvePlan", execute: vi.fn() })),
+}));
+
 vi.mock("../tools/web-tools", () => ({
   createWebTools: vi.fn(() => ({ webSearch: { name: "webSearch", execute: vi.fn() } })),
 }));
@@ -84,6 +88,7 @@ describe("Tool Factory", () => {
         expect(tools).toHaveProperty("searchKnowledge");
         expect(tools).toHaveProperty("summarizeContext");
         expect(tools).toHaveProperty("proposeTestPlan");
+        expect(tools).toHaveProperty("approvePlan");
         expect(tools).toHaveProperty("completeTask");
       }),
     );
@@ -138,6 +143,7 @@ describe("Tool Factory", () => {
         expect(tools).toHaveProperty("searchKnowledge");
         expect(tools).toHaveProperty("summarizeContext");
         expect(tools).toHaveProperty("proposeTestPlan");
+        expect(tools).toHaveProperty("approvePlan");
         expect(tools).toHaveProperty("completeTask");
       }),
     );
@@ -218,6 +224,22 @@ describe("Tool Factory", () => {
           expect.anything(),
           config.progressCallback,
           expect.anything(),
+        );
+      }),
+    );
+
+    it.effect("should pass progress callback to approve plan tool", () =>
+      Effect.gen(function* () {
+        const { createApprovePlanTool } = yield* Effect.promise(() =>
+          import("../tools/approve-plan"),
+        );
+        const config = createBaseMockConfig();
+        config.progressCallback = vi.fn();
+
+        yield* createToolSet(config);
+
+        expect(createApprovePlanTool).toHaveBeenCalledWith(
+          config.progressCallback,
         );
       }),
     );
