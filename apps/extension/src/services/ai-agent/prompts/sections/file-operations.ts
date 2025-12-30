@@ -17,75 +17,31 @@ When you realize a file was created with an incorrect name:
 - Example: If you created \\\`test-file.ts\\\` but meant \\\`test-file.spec.ts\\\`, run: \\\`mv test-file.ts test-file.spec.ts\\\`
 
 **Editing Existing Files:**
-For small changes to existing files, prefer replaceInFile over rewriting the entire file:
-- More efficient for targeted fixes
-- Preserves unchanged content
-- Less prone to formatting errors
-- Use replaceInFile when:
-  - Fixing a single function or method
-  - Updating a specific test case
-  - Making small corrections
-  - Making multiple related changes to the same file
-- Use writeTestFile (with overwrite=true) when:
-  - Creating a new file
-  - Making extensive changes (50%+ of file)
-  - Complete rewrite is needed
+For targeted edits to existing test files, use editFile with line numbers:
+- Read the file first to see line numbers (use bashExecute with \\\`cat -n\\\` or read the file in editor)
+- Specify exact line ranges (1-based) to replace
+- Multiple edits can be batched in a single call - they apply from bottom to top
+- The system will highlight changed lines with diff decorations (green for additions, red for removals)
 
-**replaceInFile SEARCH/REPLACE Format:**
-The replaceInFile tool supports multi-block SEARCH/REPLACE format for multiple edits in a single operation:
+**editFile Examples:**
+- Replace lines 10-15: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 10, endLine: 15, content: "new code here" }] })\\\`
+- Insert after line 5: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 6, endLine: 5, content: "new line" }] })\\\` (startLine > endLine = insert)
+- Delete lines 20-25: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 20, endLine: 25, content: "" }] })\\\`
+- Multiple edits: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 10, endLine: 12, content: "..." }, { startLine: 50, endLine: 52, content: "..." }] })\\\`
 
-Use the 'diff' parameter with this format:
-\\\`\\\`\\\`
-------- SEARCH
-[exact content to find in the file]
-=======
-[new content to replace with]
-+++++++ REPLACE
-\\\`\\\`\\\`
-
-For multiple edits, include multiple blocks in order:
-\\\`\\\`\\\`
-------- SEARCH
-[first content to find]
-=======
-[first replacement]
-+++++++ REPLACE
-------- SEARCH
-[second content to find]
-=======
-[second replacement]
-+++++++ REPLACE
-\\\`\\\`\\\`
-
-**SEARCH Block Requirements:**
-- Must match exactly (character-for-character) including whitespace
-- Include complete lines only (don't split lines)
-- Include enough context to make the match unique
-- Order multiple blocks as they appear in the file (top to bottom)
-- Empty SEARCH block means replace entire file (or insert if file is empty)
-
-**Matching Strategy:**
-The tool uses three-tier matching:
-1. Exact match (character-for-character)
-2. Line-trimmed fallback (ignores leading/trailing whitespace per line)
-3. Block anchor match (uses first and last lines as anchors for 3+ line blocks)
-
-**Response Format:**
-After edits, the tool returns:
-- Final file content in <final_file_content> tags - ALWAYS use this as baseline for future edits
-- Auto-formatting changes (quotes, semicolons, indentation, etc.) - learn from these
-- User edits (if user modified before approving) - incorporate these
-- New diagnostic problems (if any) - fix these in next edit
+**When to use writeTestFile vs editFile:**
+- **editFile**: For small targeted changes (fixing a test, adding a test case, updating imports). Token-efficient for large files.
+- **writeTestFile with overwrite=true**: For creating new files or when making extensive changes (50%+ of file). Requires full file content.
 
 **Error Handling After File Edits:**
-After each file write tool (writeTestFile, replaceInFile), you will receive:
+After each file edit tool (writeTestFile or editFile), you will receive:
 1. Final file content - USE THIS as baseline for any future edits
-2. Auto-formatting changes - Learn from these for accurate SEARCH blocks
+2. Auto-formatting changes - Learn from these for accurate future edits
 3. New diagnostic errors - YOU MUST FIX THESE before proceeding
 
 When new diagnostic errors are reported:
 - STOP and analyze the error messages
-- Fix the errors using replaceInFile with targeted SEARCH/REPLACE
+- Fix the errors using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
 - Verify the fix by checking the next tool response
 - Do NOT proceed to new tests until errors are resolved
 
@@ -96,11 +52,11 @@ The system tracks consecutive mistakes:
 - Always address diagnostic errors immediately to avoid accumulating mistakes
 
 **Best Practices:**
-- Default to replaceInFile with 'diff' parameter for most changes
-- Batch related changes in a single replaceInFile call with multiple blocks
 - Always use the final_file_content from responses as the baseline for future edits
-- Pay attention to auto-formatting changes to improve future SEARCH blocks
+- Pay attention to auto-formatting changes to improve future edits
 - Address diagnostic errors immediately before continuing
+- Use editFile for small targeted changes to save tokens
+- Use writeTestFile with overwrite=true for new files or extensive changes
 
 **File Writing Best Practices:**
 - Files are written incrementally as content is generated (streaming)

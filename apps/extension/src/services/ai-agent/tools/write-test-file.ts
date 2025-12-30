@@ -15,6 +15,7 @@ import {
   formatFileEditError,
 } from "../response-formatter.js";
 import { registerPendingEditSync } from "../../../services/pending-edit-service.js";
+import { applyDiffDecorationsSync } from "../../../services/diff-decoration-service.js";
 
 /**
  * Streaming file output callback type
@@ -113,7 +114,7 @@ export const createWriteTestFileTool = (
           return {
             success: false,
             filePath: relativePath,
-            message: `File already exists at ${relativePath}. To preserve existing tests, use replaceInFile to add new test cases. Existing file content:\n\n<existing_file_content>\n${originalContent}\n</existing_file_content>\n\nUse replaceInFile with a SEARCH block matching where you want to add tests, and a REPLACE block with the new content.`,
+            message: `File already exists at ${relativePath}. To modify existing tests, read the file first and then use writeTestFile with overwrite=true to include your changes. Existing file content:\n\n<existing_file_content>\n${originalContent}\n</existing_file_content>\n\nSet overwrite=true to update this file with your changes.`,
           };
         }
 
@@ -152,13 +153,28 @@ export const createWriteTestFileTool = (
 
         // Open the file in the editor
         const document = await vscode.workspace.openTextDocument(fileUri);
-        await vscode.window.showTextDocument(document, {
+        const editor = await vscode.window.showTextDocument(document, {
           preview: false,
           preserveFocus: false,
         });
 
         // Get the actual content after opening (may be auto-formatted)
         const actualContent = document.getText();
+
+        // Apply diff decorations to show what's new
+        // For new files, all content is highlighted green
+        // For existing files (overwrite), show changes
+        try {
+          applyDiffDecorationsSync(
+            editor,
+            originalContent,
+            actualContent,
+            !fileExists, // isNewFile
+          );
+        } catch (error) {
+          // Log error but don't fail the operation
+          console.error("Failed to apply diff decorations:", error);
+        }
 
         // Emit streaming callback with final content
         if (onStreamingOutput) {

@@ -11,11 +11,11 @@ export const verification: Section = (_config) =>
     `<verification_rules>
 **STOP AFTER EACH TEST CASE**
 
-After EVERY test case addition (whether via writeTestFile or replaceInFile):
+After EVERY test case addition (via writeTestFile or editFile):
 1. **IMMEDIATELY run test** → bashExecute("npx vitest run <test-file>")
 2. **Check result**:
    - PASS (exit code 0) → Proceed to add the next test case
-   - FAIL (exit code non-0) → Fix with writeTestFile(overwrite=true) or replaceInFile, re-run
+   - FAIL (exit code non-0) → Fix with editFile for targeted fixes or writeTestFile(overwrite=true) for extensive changes, re-run
 3. **Max 3 fix attempts** → then ask user for help
 
 **DO NOT add another test case until the current one passes**
@@ -31,7 +31,7 @@ After EVERY test case addition (whether via writeTestFile or replaceInFile):
 
 2. **If test fails**:
    - Analyze the error output from bashExecute (check stdout and stderr)
-   - Fix the test code using writeTestFile with overwrite=true or replaceInFile
+   - Fix the test code using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
    - Re-run the test using bashExecute with the same command
    - **For integration/E2E tests**: Ensure sandbox is still running (check with \\\`docker-compose ps\\\`) before re-running
    - Maximum 3 fix attempts per test case before asking user for help

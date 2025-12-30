@@ -32,7 +32,7 @@ const BUILT_IN_RULES = `<rules>
 - **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT add another test case until the current one passes
 - **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition
-- **CRITICAL**: Use replaceInFile to add test cases incrementally to existing test files
+- **CRITICAL**: Use editFile (line-based) for small targeted changes or writeTestFile with overwrite=true for new files/extensive changes
 - **CRITICAL**: Create test files in appropriate locations based on project structure
 - **CRITICAL**: NEVER write placeholder tests - every assertion must verify real behavior
 - **CRITICAL**: ALWAYS match exact function signatures from source code

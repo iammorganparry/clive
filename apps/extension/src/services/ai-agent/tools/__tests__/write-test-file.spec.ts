@@ -6,6 +6,7 @@ import { createWriteTestFileTool } from "../write-test-file";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../../types";
 import { executeTool } from "./test-helpers";
 import { createMockDiagnosticWithRange } from "../../../../__tests__/mock-factories/diagnostics-mock";
+import { applyDiffDecorationsSync } from "../../../diff-decoration-service";
 
 // Mock Effect to make sleep instant in tests
 vi.mock("effect", async () => {
@@ -30,28 +31,10 @@ vi.mock("../../../pending-edit-service", () => ({
   registerPendingEditSync: vi.fn(),
 }));
 
-// Mock DiffViewProvider
-// Store the mock instance that will be returned
-const currentMockInstance: unknown = null;
-
-vi.mock("../../../diff-view-provider", async () => {
-  const { Effect, Layer } = await import("effect");
-  
-  // DiffViewProvider mock that defers to currentMockInstance at runtime
-  // The pipe() returns an Effect that will resolve to currentMockInstance when run
-  const DiffViewProvider = {
-    pipe: () => {
-      // Return an Effect that captures currentMockInstance at execution time
-      return Effect.sync(() => currentMockInstance);
-    },
-    Default: Layer.empty,
-  };
-  
-  return {
-    DiffViewProvider,
-    DiffViewProviderDefault: Layer.empty,
-  };
-});
+// Mock diff decoration service
+vi.mock("../../../diff-decoration-service", () => ({
+  applyDiffDecorationsSync: vi.fn(),
+}));
 
 describe("writeTestFileTool", () => {
   let approvalRegistry: Set<string>;
@@ -70,6 +53,11 @@ describe("writeTestFileTool", () => {
     
     // Reset all mocks
     vi.clearAllMocks();
+    
+    // Reset diff decoration mock to no-op (success case)
+    (applyDiffDecorationsSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      // no-op by default
+    });
     
     // Default: file doesn't exist (for parent directory check)
     mockFs.stat.mockRejectedValue(new Error("File not found"));
@@ -370,6 +358,112 @@ describe("writeTestFileTool", () => {
           expect(result.success).toBe(false);
           expect(result.message).toContain("Editor error");
           expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
+  });
+
+  describe("Diff Decorations", () => {
+    it.effect("should apply diff decorations for new file", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-diff-1"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-diff-1",
+          testContent: "test content",
+          targetPath: "src/new-file.spec.ts",
+        };
+
+        yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          // applyDiffDecorationsSync should be called with the editor and isNewFile=true
+          expect(applyDiffDecorationsSync).toHaveBeenCalledWith(
+            expect.anything(), // editor object (mocked as empty object)
+            "", // originalContent (empty for new file)
+            "test content", // actualContent
+            true, // isNewFile
+          );
+        });
+      }),
+    );
+
+    it.effect("should apply diff decorations when overwriting existing file", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-diff-2"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        // Mock existing file with original content, then updated content after write
+        yield* Effect.sync(() => {
+          let callCount = 0;
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockImplementation(() => {
+              callCount++;
+              if (callCount === 1) {
+                // First call: file exists check - return original content
+                return Promise.resolve({
+                  uri: "file://test",
+                  getText: () => "original content",
+                } as unknown as vscode.TextDocument);
+              }
+              // Second call: after write - return updated content
+              return Promise.resolve({
+                uri: "file://test",
+                getText: () => "updated content",
+              } as unknown as vscode.TextDocument);
+            });
+        });
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-diff-2",
+          testContent: "updated content",
+          targetPath: "src/existing.spec.ts",
+          overwrite: true,
+        };
+
+        yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          // applyDiffDecorationsSync should be called with the editor and isNewFile=false
+          expect(applyDiffDecorationsSync).toHaveBeenCalledWith(
+            expect.anything(), // editor object (mocked as empty object)
+            "original content", // originalContent
+            "updated content", // actualContent
+            false, // isNewFile
+          );
+        });
+      }),
+    );
+
+    it.effect("should continue successfully even if diff decoration fails", () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-diff-3"));
+        const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
+
+        // Mock applyDiffDecorationsSync to throw an error
+        yield* Effect.sync(() => {
+          (applyDiffDecorationsSync as ReturnType<typeof vi.fn>)
+            .mockImplementation(() => {
+              throw new Error("Decoration service failed");
+            });
+        });
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-diff-3",
+          testContent: "test content",
+          targetPath: "src/test.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
+
+        yield* Effect.sync(() => {
+          // Operation should succeed despite decoration failure
+          expect(result.success).toBe(true);
+          expect(result.filePath).toBe("src/test.spec.ts");
+          expect(mockFs.writeFile).toHaveBeenCalled();
+          // Ensure applyDiffDecorationsSync was attempted
+          expect(applyDiffDecorationsSync).toHaveBeenCalled();
         });
       }),
     );
@@ -755,4 +849,3 @@ describe("Diagnostics Integration", () => {
     }),
   );
 });
-

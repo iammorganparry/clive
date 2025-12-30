@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { Data, Effect, Runtime } from "effect";
 import { PendingEditService } from "./pending-edit-service.js";
 import { Commands } from "../constants.js";
+import { DiffDecorationService } from "./diff-decoration-service.js";
 
 /**
  * Error types for edit CodeLens operations
@@ -99,6 +100,7 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
   {
     effect: Effect.gen(function* () {
       const pendingEditService = yield* PendingEditService;
+      const diffDecorationService = yield* DiffDecorationService;
 
       // Create the CodeLens provider implementation
       const provider = new EditCodeLensProviderImpl(pendingEditService);
@@ -121,6 +123,11 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
        */
       const acceptEdit = (fileUri: vscode.Uri) =>
         Effect.gen(function* () {
+          // Clear diff decorations before accepting (ignore errors)
+          yield* diffDecorationService
+            .clearDecorations(fileUri.fsPath)
+            .pipe(Effect.catchAll(() => Effect.void));
+
           const accepted = yield* pendingEditService.acceptEdit(
             fileUri.fsPath,
           );
@@ -140,6 +147,11 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
        */
       const rejectEdit = (fileUri: vscode.Uri) =>
         Effect.gen(function* () {
+          // Clear diff decorations before rejecting (ignore errors)
+          yield* diffDecorationService
+            .clearDecorations(fileUri.fsPath)
+            .pipe(Effect.catchAll(() => Effect.void));
+
           const rejected = yield* pendingEditService
             .rejectEdit(fileUri.fsPath)
             .pipe(
@@ -179,7 +191,7 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
         dispose,
       };
     }),
-    dependencies: [PendingEditService.Default],
+    dependencies: [PendingEditService.Default, DiffDecorationService.Default],
   },
 ) {}
 

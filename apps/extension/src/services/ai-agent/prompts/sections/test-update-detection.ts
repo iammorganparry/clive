@@ -133,14 +133,14 @@ function processUser(userId, options) { }
 **Step 4: Execution Strategy**
 
 **For test updates:**
-1. Read the existing test file
+1. Read the existing test file with line numbers (\`cat -n\`)
 2. Identify which test cases are affected by changes
-3. Use \`replaceInFile\` to update specific test cases
+3. Use \`editFile\` with specific line numbers to update the test cases (token-efficient)
 4. Update function calls, assertions, or mocks as needed
 5. Run tests to verify updates work
 
 **For new tests:**
-1. Use \`replaceInFile\` to add new test cases to existing test file
+1. Use \`editFile\` to add new test cases at specific line positions (token-efficient)
 2. Follow the pattern of existing tests in the file
 3. Add one test case at a time, verify each passes
 

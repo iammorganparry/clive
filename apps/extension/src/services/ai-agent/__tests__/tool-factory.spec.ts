@@ -156,7 +156,7 @@ describe("Tool Factory", () => {
 
         expect(tools).toHaveProperty("writeTestFile");
         expect(tools).toHaveProperty("writeKnowledgeFile");
-        expect(tools).toHaveProperty("replaceInFile");
+        expect(tools).toHaveProperty("editFile");
       }),
     );
 
