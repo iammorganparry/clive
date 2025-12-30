@@ -2,18 +2,21 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { constructNewFileContent } from "../diff.js";
 import { processModelContent } from "../../../utils/model-content-processor.js";
 import { formatFileEditError } from "../response-formatter.js";
 import { registerPendingEditSync } from "../../pending-edit-service.js";
 import { applyDiffDecorationsSync } from "../../diff-decoration-service.js";
 
-export interface ReplaceInFileInput {
+export interface EditFileInput {
   targetPath: string;
-  diff: string;
+  edits: Array<{
+    startLine: number;
+    endLine: number;
+    content: string;
+  }>;
 }
 
-export interface ReplaceInFileOutput {
+export interface EditFileOutput {
   success: boolean;
   filePath: string;
   message: string;
@@ -30,34 +33,104 @@ export type StreamingFileOutputCallback = (chunk: {
 }) => void;
 
 /**
- * Factory function to create replaceInFileTool
- * Writes changes directly to file (non-blocking) and registers with PendingEditService
+ * Apply line-based edits to file content
+ * Edits are sorted by startLine descending (bottom to top) to preserve line numbers
+ */
+function applyLineEdits(
+  originalContent: string,
+  edits: Array<{ startLine: number; endLine: number; content: string }>,
+): string {
+  // Sort edits by startLine descending (apply from bottom to top)
+  const sortedEdits = [...edits].sort((a, b) => b.startLine - a.startLine);
+
+  const lines = originalContent.split("\n");
+
+  for (const edit of sortedEdits) {
+    // Validate line numbers
+    if (edit.startLine < 1 || edit.endLine < 1) {
+      throw new Error(
+        `Line numbers must be 1-based (got startLine: ${edit.startLine}, endLine: ${edit.endLine})`,
+      );
+    }
+    if (edit.startLine > lines.length + 1) {
+      throw new Error(
+        `startLine ${edit.startLine} exceeds file length (${lines.length} lines)`,
+      );
+    }
+    if (edit.endLine > lines.length) {
+      throw new Error(
+        `endLine ${edit.endLine} exceeds file length (${lines.length} lines)`,
+      );
+    }
+
+    // Handle insertion case (startLine > endLine means insert before startLine)
+    if (edit.startLine > edit.endLine) {
+      // Insert before startLine
+      const newLines = edit.content ? edit.content.split("\n") : [];
+      lines.splice(edit.endLine, 0, ...newLines);
+    } else {
+      // Normal replacement case
+      const newLines = edit.content ? edit.content.split("\n") : [];
+      const deleteCount = edit.endLine - edit.startLine + 1;
+      lines.splice(edit.startLine - 1, deleteCount, ...newLines);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Factory function to create editFileTool
+ * Edits specific lines in a file using line numbers
+ * Changes are written directly and registered with PendingEditService
  * User can accept/reject via CodeLens in the editor
  *
  * @param onStreamingOutput Optional streaming callback
  */
-export const createReplaceInFileTool = (
+export const createEditFileTool = (
   onStreamingOutput?: StreamingFileOutputCallback,
 ) =>
   tool({
     description:
-      "Replace specific content in an existing file using SEARCH/REPLACE blocks. Supports multiple edits in a single operation. Changes are written immediately and user can accept/reject via CodeLens in the editor.",
+      "Edit specific lines in an existing file using line numbers (1-based). Provide line ranges and replacement content. Multiple edits can be batched. Changes are written immediately and user can accept/reject via CodeLens in the editor.",
     inputSchema: z.object({
       targetPath: z
         .string()
         .describe(
           "The target file path. Can be relative to workspace root or absolute.",
         ),
-      diff: z
-        .string()
+      edits: z
+        .array(
+          z.object({
+            startLine: z
+              .number()
+              .int()
+              .positive()
+              .describe(
+                "Starting line number (1-based, inclusive). For insertion, use startLine > endLine (e.g., startLine: 11, endLine: 10 inserts after line 10).",
+              ),
+            endLine: z
+              .number()
+              .int()
+              .positive()
+              .describe(
+                "Ending line number (1-based, inclusive). Must be >= startLine for replacement, or < startLine for insertion.",
+              ),
+            content: z
+              .string()
+              .describe(
+                "New content to replace the lines with. Use empty string to delete lines. For multi-line content, include newlines in the string.",
+              ),
+          }),
+        )
         .describe(
-          "Multi-block SEARCH/REPLACE format for file edits:\n------- SEARCH\n[content to find]\n=======\n[replacement content]\n+++++++ REPLACE\n\nMultiple blocks can be included for multiple changes.",
+          "Array of edits to apply. Edits are automatically sorted and applied from bottom to top to preserve line numbers.",
         ),
     }),
     execute: async (
-      { targetPath, diff }: ReplaceInFileInput,
+      { targetPath, edits }: EditFileInput,
       _options?: { toolCallId?: string },
-    ): Promise<ReplaceInFileOutput> => {
+    ): Promise<EditFileOutput> => {
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         throw new Error("No workspace folder found");
@@ -91,18 +164,20 @@ export const createReplaceInFileTool = (
         const document = await vscode.workspace.openTextDocument(fileUri);
         const originalContent = document.getText();
 
-        // Apply multi-block SEARCH/REPLACE diff
-        const result = constructNewFileContent(originalContent, diff);
-        if (result.error) {
+        // Apply line-based edits
+        let newContent: string;
+        try {
+          newContent = applyLineEdits(originalContent, edits);
+        } catch (error) {
           return {
             success: false,
             filePath: relativePath,
-            message: `${result.error}\n\nCurrent file content:\n${originalContent}`,
+            message: `Failed to apply edits: ${error instanceof Error ? error.message : "Unknown error"}\n\nCurrent file has ${originalContent.split("\n").length} lines.`,
           };
         }
 
         // Process model-specific content fixes
-        const newContent = processModelContent(result.content, fileUri.fsPath);
+        newContent = processModelContent(newContent, fileUri.fsPath);
 
         // Register pending edit BEFORE writing (store original for revert)
         registerPendingEditSync(
@@ -150,10 +225,14 @@ export const createReplaceInFileTool = (
           });
         }
 
+        const editSummary = edits.length === 1
+          ? `lines ${edits[0].startLine}-${edits[0].endLine}`
+          : `${edits.length} line ranges`;
+
         return {
           success: true,
           filePath: relativePath,
-          message: `Content replaced in ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+          message: `Edited ${editSummary} in ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
         };
       } catch (error) {
         const errorMessage =
@@ -184,6 +263,6 @@ export const createReplaceInFileTool = (
   });
 
 /**
- * Default replaceInFileTool instance
+ * Default editFileTool instance
  */
-export const replaceInFileTool = createReplaceInFileTool(undefined);
+export const editFileTool = createEditFileTool(undefined);

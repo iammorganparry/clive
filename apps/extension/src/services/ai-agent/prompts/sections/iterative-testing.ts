@@ -14,15 +14,14 @@ export const iterativeTesting: Section = (_config) =>
 Before writing ANY test file, you MUST:
 1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
 2. If the file exists (content is returned):
-   - Read and understand the existing tests
+   - Read and understand the existing tests (use \`cat -n\` to see line numbers)
    - **Determine if tests need updates or additions** (see test-update-detection section)
-   - For updates: Use \`replaceInFile\` to UPDATE test cases that reference changed code
-   - For additions: Use \`replaceInFile\` to ADD new test cases without removing existing ones
-   - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
+   - For small changes: Use \`editFile\` with specific line numbers (token-efficient)
+   - For extensive changes: Use \`writeTestFile\` with \`overwrite=true\` to rewrite the entire file
 3. If the file doesn't exist ("FILE_NOT_FOUND"):
    - Use \`writeTestFile\` to create a new test file
 
-This prevents accidentally overwriting existing tests.
+This prevents accidentally overwriting existing tests without understanding them first.
 
 **Updating vs. Adding Tests:**
 
@@ -33,30 +32,13 @@ When a test file exists, distinguish between:
 - Function/component renamed
 - Mock interfaces changed
 - Expected behavior modified
-- Use \`replaceInFile\` to replace the affected test case with updated version
+- Use \`editFile\` to update specific test case lines (token-efficient)
 
 **B. ADDING new test cases** (when coverage is incomplete):
 - New functions/methods added to source
 - New conditional branches added
 - New edge cases need coverage
-- Use \`replaceInFile\` to insert new test cases alongside existing ones
-
-**Example - Updating a test:**
-\`\`\`typescript
-// Source changed: processUser(userId: string, options: Options)
-// Old test needs update:
-SEARCH:
-  it('should process user', async () => {
-    const result = await processUser('user-123');
-    expect(result).toBe('success');
-  });
-
-REPLACE:
-  it('should process user', async () => {
-    const result = await processUser('user-123', { validate: true });
-    expect(result).toBe('success');
-  });
-\`\`\`
+- Use \`editFile\` to insert new test cases at specific line positions
 
 **CRITICAL: One Test Case at a Time**
 
@@ -67,8 +49,7 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
    - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
-   - If test file doesn't exist, use writeTestFile to create it with just this ONE test case
-   - If test file exists, use replaceInFile to add the test case
+   - Use writeTestFile to create the test file with just this ONE test case
 
 2. **Verify the first test passes** - IMMEDIATELY run the test after writing it
    - Use bashExecute to run the test command
@@ -76,8 +57,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
    - Do NOT proceed to add more tests until this first test passes
 
 3. **Add the next test case** - Once the first test passes, add ONE more test case
-   - Use replaceInFile to add the new test case to the existing test file
-   - NEVER use writeTestFile with overwrite=true - it destroys existing tests
+   - Use editFile to insert the new test case at the appropriate line position
+   - Specify the line numbers where to insert the new test
    - Choose the next simplest test case that builds on the first
 
 4. **Verify the second test passes** - Run the test again to ensure both tests pass
@@ -108,7 +89,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 - Run it immediately to verify setup works
 - Fix any issues before adding more tests
 - Add test cases one at a time, verifying after each addition
-- Use replaceInFile to add test cases incrementally to existing files
+- Use editFile to add test cases incrementally (token-efficient for large files)
+- Use writeTestFile with overwrite=true only for new files or extensive changes
 </iterative_test_creation>`,
   );
 

@@ -22,8 +22,8 @@ PHASE 0: RAPID CONTEXT (3-4 commands max)
        * Extract base filename from path (e.g., "auth" from "src/services/auth.ts" or "auth" from "src/services/auth.py")
        * Co-located tests (same directory): find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" -o -name "test_BASENAME.*" -o -name "BASENAME_test.*" 2>/dev/null
        * Tests in __tests__ subdirectory: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
-       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" \) -name "*BASENAME*" 2>/dev/null
-       * Common test file patterns: find . \( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" \) 2>/dev/null | head -10
+       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
+       * Common test file patterns: find . ( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" \) 2>/dev/null | head -10
      - If files were changed, get git diff to understand modifications: git diff HEAD~1 -- path/to/changed/file (or git diff baseBranch...HEAD -- path/to/file for branch changes)
      - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" -o -path "*/test/*mock*" -o -path "*/tests/*mock*" | head -5
   4. Read ONE similar test file to understand project patterns
@@ -51,9 +51,9 @@ PHASE 2: EXECUTION (when user approves)
 
 PHASE 3: VERIFICATION (MANDATORY after each test case)
   - **IMMEDIATELY after writing ONE test case**: Use bashExecute to run the test command and verify it passes
-  - **If test fails**: Analyze error output, fix test code using writeTestFile with overwrite=true or replaceInFile, re-run until passing
+  - **If test fails**: Analyze error output, fix test code using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes, re-run until passing
   - **Maximum retries**: 3 fix attempts per test case before asking user for help
-  - **Once first test passes**: Add the next test case using replaceInFile or writeTestFile with overwrite=true
+  - **Once first test passes**: Add the next test case using editFile to insert at specific line position
   - **Continue iteratively**: Add one test case → verify it passes → add next test case → verify → repeat
   - **Never write all test cases at once**: Build up the test file incrementally, one test case at a time
 </workflow>`,

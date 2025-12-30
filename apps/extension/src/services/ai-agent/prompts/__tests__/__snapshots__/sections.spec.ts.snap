@@ -27,7 +27,7 @@ exports[`Prompt Sections > Agent Rules with User Rules > includes user rules whe
 - **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT add another test case until the current one passes
 - **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition
-- **CRITICAL**: Use replaceInFile to add test cases incrementally to existing test files
+- **CRITICAL**: Use editFile (line-based) for small targeted changes or writeTestFile with overwrite=true for new files/extensive changes
 - **CRITICAL**: Create test files in appropriate locations based on project structure
 - **CRITICAL**: NEVER write placeholder tests - every assertion must verify real behavior
 - **CRITICAL**: ALWAYS match exact function signatures from source code
@@ -100,7 +100,7 @@ exports[`Prompt Sections > Base Sections (no user rules) > AGENT_RULES matches s
 - **CRITICAL**: Write ONE test case first, then IMMEDIATELY use bashExecute to run the test command and verify it passes
 - **CRITICAL**: Do NOT add another test case until the current one passes
 - **CRITICAL**: Build up test files incrementally - one test case at a time, verifying after each addition
-- **CRITICAL**: Use replaceInFile to add test cases incrementally to existing test files
+- **CRITICAL**: Use editFile (line-based) for small targeted changes or writeTestFile with overwrite=true for new files/extensive changes
 - **CRITICAL**: Create test files in appropriate locations based on project structure
 - **CRITICAL**: NEVER write placeholder tests - every assertion must verify real behavior
 - **CRITICAL**: ALWAYS match exact function signatures from source code
@@ -175,75 +175,31 @@ When you realize a file was created with an incorrect name:
 - Example: If you created \\\`test-file.ts\\\` but meant \\\`test-file.spec.ts\\\`, run: \\\`mv test-file.ts test-file.spec.ts\\\`
 
 **Editing Existing Files:**
-For small changes to existing files, prefer replaceInFile over rewriting the entire file:
-- More efficient for targeted fixes
-- Preserves unchanged content
-- Less prone to formatting errors
-- Use replaceInFile when:
-  - Fixing a single function or method
-  - Updating a specific test case
-  - Making small corrections
-  - Making multiple related changes to the same file
-- Use writeTestFile (with overwrite=true) when:
-  - Creating a new file
-  - Making extensive changes (50%+ of file)
-  - Complete rewrite is needed
+For targeted edits to existing test files, use editFile with line numbers:
+- Read the file first to see line numbers (use bashExecute with \\\`cat -n\\\` or read the file in editor)
+- Specify exact line ranges (1-based) to replace
+- Multiple edits can be batched in a single call - they apply from bottom to top
+- The system will highlight changed lines with diff decorations (green for additions, red for removals)
 
-**replaceInFile SEARCH/REPLACE Format:**
-The replaceInFile tool supports multi-block SEARCH/REPLACE format for multiple edits in a single operation:
+**editFile Examples:**
+- Replace lines 10-15: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 10, endLine: 15, content: "new code here" }] })\\\`
+- Insert after line 5: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 6, endLine: 5, content: "new line" }] })\\\` (startLine > endLine = insert)
+- Delete lines 20-25: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 20, endLine: 25, content: "" }] })\\\`
+- Multiple edits: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 10, endLine: 12, content: "..." }, { startLine: 50, endLine: 52, content: "..." }] })\\\`
 
-Use the 'diff' parameter with this format:
-\\\`\\\`\\\`
-------- SEARCH
-[exact content to find in the file]
-=======
-[new content to replace with]
-+++++++ REPLACE
-\\\`\\\`\\\`
-
-For multiple edits, include multiple blocks in order:
-\\\`\\\`\\\`
-------- SEARCH
-[first content to find]
-=======
-[first replacement]
-+++++++ REPLACE
-------- SEARCH
-[second content to find]
-=======
-[second replacement]
-+++++++ REPLACE
-\\\`\\\`\\\`
-
-**SEARCH Block Requirements:**
-- Must match exactly (character-for-character) including whitespace
-- Include complete lines only (don't split lines)
-- Include enough context to make the match unique
-- Order multiple blocks as they appear in the file (top to bottom)
-- Empty SEARCH block means replace entire file (or insert if file is empty)
-
-**Matching Strategy:**
-The tool uses three-tier matching:
-1. Exact match (character-for-character)
-2. Line-trimmed fallback (ignores leading/trailing whitespace per line)
-3. Block anchor match (uses first and last lines as anchors for 3+ line blocks)
-
-**Response Format:**
-After edits, the tool returns:
-- Final file content in <final_file_content> tags - ALWAYS use this as baseline for future edits
-- Auto-formatting changes (quotes, semicolons, indentation, etc.) - learn from these
-- User edits (if user modified before approving) - incorporate these
-- New diagnostic problems (if any) - fix these in next edit
+**When to use writeTestFile vs editFile:**
+- **editFile**: For small targeted changes (fixing a test, adding a test case, updating imports). Token-efficient for large files.
+- **writeTestFile with overwrite=true**: For creating new files or when making extensive changes (50%+ of file). Requires full file content.
 
 **Error Handling After File Edits:**
-After each file write tool (writeTestFile, replaceInFile), you will receive:
+After each file edit tool (writeTestFile or editFile), you will receive:
 1. Final file content - USE THIS as baseline for any future edits
-2. Auto-formatting changes - Learn from these for accurate SEARCH blocks
+2. Auto-formatting changes - Learn from these for accurate future edits
 3. New diagnostic errors - YOU MUST FIX THESE before proceeding
 
 When new diagnostic errors are reported:
 - STOP and analyze the error messages
-- Fix the errors using replaceInFile with targeted SEARCH/REPLACE
+- Fix the errors using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
 - Verify the fix by checking the next tool response
 - Do NOT proceed to new tests until errors are resolved
 
@@ -254,11 +210,11 @@ The system tracks consecutive mistakes:
 - Always address diagnostic errors immediately to avoid accumulating mistakes
 
 **Best Practices:**
-- Default to replaceInFile with 'diff' parameter for most changes
-- Batch related changes in a single replaceInFile call with multiple blocks
 - Always use the final_file_content from responses as the baseline for future edits
-- Pay attention to auto-formatting changes to improve future SEARCH blocks
+- Pay attention to auto-formatting changes to improve future edits
 - Address diagnostic errors immediately before continuing
+- Use editFile for small targeted changes to save tokens
+- Use writeTestFile with overwrite=true for new files or extensive changes
 
 **File Writing Best Practices:**
 - Files are written incrementally as content is generated (streaming)
@@ -302,15 +258,14 @@ exports[`Prompt Sections > Base Sections (no user rules) > ITERATIVE_TESTING mat
 Before writing ANY test file, you MUST:
 1. Check if the test file already exists: \`cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"\`
 2. If the file exists (content is returned):
-   - Read and understand the existing tests
+   - Read and understand the existing tests (use \`cat -n\` to see line numbers)
    - **Determine if tests need updates or additions** (see test-update-detection section)
-   - For updates: Use \`replaceInFile\` to UPDATE test cases that reference changed code
-   - For additions: Use \`replaceInFile\` to ADD new test cases without removing existing ones
-   - Never use \`writeTestFile\` with \`overwrite=true\` on existing test files
+   - For small changes: Use \`editFile\` with specific line numbers (token-efficient)
+   - For extensive changes: Use \`writeTestFile\` with \`overwrite=true\` to rewrite the entire file
 3. If the file doesn't exist ("FILE_NOT_FOUND"):
    - Use \`writeTestFile\` to create a new test file
 
-This prevents accidentally overwriting existing tests.
+This prevents accidentally overwriting existing tests without understanding them first.
 
 **Updating vs. Adding Tests:**
 
@@ -321,30 +276,13 @@ When a test file exists, distinguish between:
 - Function/component renamed
 - Mock interfaces changed
 - Expected behavior modified
-- Use \`replaceInFile\` to replace the affected test case with updated version
+- Use \`editFile\` to update specific test case lines (token-efficient)
 
 **B. ADDING new test cases** (when coverage is incomplete):
 - New functions/methods added to source
 - New conditional branches added
 - New edge cases need coverage
-- Use \`replaceInFile\` to insert new test cases alongside existing ones
-
-**Example - Updating a test:**
-\`\`\`typescript
-// Source changed: processUser(userId: string, options: Options)
-// Old test needs update:
-SEARCH:
-  it('should process user', async () => {
-    const result = await processUser('user-123');
-    expect(result).toBe('success');
-  });
-
-REPLACE:
-  it('should process user', async () => {
-    const result = await processUser('user-123', { validate: true });
-    expect(result).toBe('success');
-  });
-\`\`\`
+- Use \`editFile\` to insert new test cases at specific line positions
 
 **CRITICAL: One Test Case at a Time**
 
@@ -355,8 +293,7 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
    - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
-   - If test file doesn't exist, use writeTestFile to create it with just this ONE test case
-   - If test file exists, use replaceInFile to add the test case
+   - Use writeTestFile to create the test file with just this ONE test case
 
 2. **Verify the first test passes** - IMMEDIATELY run the test after writing it
    - Use bashExecute to run the test command
@@ -364,8 +301,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
    - Do NOT proceed to add more tests until this first test passes
 
 3. **Add the next test case** - Once the first test passes, add ONE more test case
-   - Use replaceInFile to add the new test case to the existing test file
-   - NEVER use writeTestFile with overwrite=true - it destroys existing tests
+   - Use editFile to insert the new test case at the appropriate line position
+   - Specify the line numbers where to insert the new test
    - Choose the next simplest test case that builds on the first
 
 4. **Verify the second test passes** - Run the test again to ensure both tests pass
@@ -396,7 +333,8 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
 - Run it immediately to verify setup works
 - Fix any issues before adding more tests
 - Add test cases one at a time, verifying after each addition
-- Use replaceInFile to add test cases incrementally to existing files
+- Use editFile to add test cases incrementally (token-efficient for large files)
+- Use writeTestFile with overwrite=true only for new files or extensive changes
 </iterative_test_creation>"
 `;
 
@@ -1045,14 +983,14 @@ function processUser(userId, options) { }
 **Step 4: Execution Strategy**
 
 **For test updates:**
-1. Read the existing test file
+1. Read the existing test file with line numbers (\`cat -n\`)
 2. Identify which test cases are affected by changes
-3. Use \`replaceInFile\` to update specific test cases
+3. Use \`editFile\` with specific line numbers to update the test cases (token-efficient)
 4. Update function calls, assertions, or mocks as needed
 5. Run tests to verify updates work
 
 **For new tests:**
-1. Use \`replaceInFile\` to add new test cases to existing test file
+1. Use \`editFile\` to add new test cases at specific line positions (token-efficient)
 2. Follow the pattern of existing tests in the file
 3. Add one test case at a time, verify each passes
 
@@ -1126,11 +1064,11 @@ exports[`Prompt Sections > Base Sections (no user rules) > VERIFICATION matches 
 "<verification_rules>
 **STOP AFTER EACH TEST CASE**
 
-After EVERY test case addition (whether via writeTestFile or replaceInFile):
+After EVERY test case addition (via writeTestFile or editFile):
 1. **IMMEDIATELY run test** → bashExecute("npx vitest run <test-file>")
 2. **Check result**:
    - PASS (exit code 0) → Proceed to add the next test case
-   - FAIL (exit code non-0) → Fix with writeTestFile(overwrite=true) or replaceInFile, re-run
+   - FAIL (exit code non-0) → Fix with editFile for targeted fixes or writeTestFile(overwrite=true) for extensive changes, re-run
 3. **Max 3 fix attempts** → then ask user for help
 
 **DO NOT add another test case until the current one passes**
@@ -1146,7 +1084,7 @@ After EVERY test case addition (whether via writeTestFile or replaceInFile):
 
 2. **If test fails**:
    - Analyze the error output from bashExecute (check stdout and stderr)
-   - Fix the test code using writeTestFile with overwrite=true or replaceInFile
+   - Fix the test code using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
    - Re-run the test using bashExecute with the same command
    - **For integration/E2E tests**: Ensure sandbox is still running (check with \\\`docker-compose ps\\\`) before re-running
    - Maximum 3 fix attempts per test case before asking user for help
@@ -1227,9 +1165,9 @@ PHASE 2: EXECUTION (when user approves)
 
 PHASE 3: VERIFICATION (MANDATORY after each test case)
   - **IMMEDIATELY after writing ONE test case**: Use bashExecute to run the test command and verify it passes
-  - **If test fails**: Analyze error output, fix test code using writeTestFile with overwrite=true or replaceInFile, re-run until passing
+  - **If test fails**: Analyze error output, fix test code using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes, re-run until passing
   - **Maximum retries**: 3 fix attempts per test case before asking user for help
-  - **Once first test passes**: Add the next test case using replaceInFile or writeTestFile with overwrite=true
+  - **Once first test passes**: Add the next test case using editFile to insert at specific line position
   - **Continue iteratively**: Add one test case → verify it passes → add next test case → verify → repeat
   - **Never write all test cases at once**: Build up the test file incrementally, one test case at a time
 </workflow>"

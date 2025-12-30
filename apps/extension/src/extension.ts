@@ -24,6 +24,10 @@ import {
   PendingEditService,
   setPendingEditServiceInstance,
 } from "./services/pending-edit-service.js";
+import {
+  DiffDecorationService,
+  setDiffDecorationServiceInstance,
+} from "./services/diff-decoration-service.js";
 
 // Build-time constant injected by esbuild
 declare const __DEV__: boolean;
@@ -156,6 +160,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
   setEditCodeLensServiceInstance(editCodeLensService);
 
+  // Initialize DiffDecorationService (Effect service for inline diff highlighting)
+  const diffDecorationService = Runtime.runSync(Runtime.defaultRuntime)(
+    Effect.gen(function* () {
+      return yield* DiffDecorationService;
+    }).pipe(Effect.provide(DiffDecorationService.Default)),
+  );
+  setDiffDecorationServiceInstance(diffDecorationService);
+
   // Get the CodeLens provider and register it
   const editCodeLensProvider = Runtime.runSync(Runtime.defaultRuntime)(
     editCodeLensService.getProvider(),
@@ -186,6 +198,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   // Clean up services when extension deactivates
   context.subscriptions.push({
     dispose: () => {
+      Runtime.runSync(Runtime.defaultRuntime)(diffDecorationService.dispose());
       Runtime.runSync(Runtime.defaultRuntime)(editCodeLensService.dispose());
       Runtime.runSync(Runtime.defaultRuntime)(pendingEditService.dispose());
     },

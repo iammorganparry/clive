@@ -18,8 +18,8 @@ import {
   createWriteTestFileTool,
   createProposeTestPlanTool,
   createCompleteTaskTool,
-  createReplaceInFileTool,
   createApprovePlanTool,
+  createEditFileTool,
 } from "./tools/index.js";
 import type { LanguageModel } from "ai";
 
@@ -147,14 +147,12 @@ const createWriteTools = (config: ToolConfig) =>
       config.knowledgeFileService,
     );
 
-    const replaceInFile = createReplaceInFileTool(
-      config.fileStreamingCallback,
-    );
+    const editFile = createEditFileTool(config.fileStreamingCallback);
 
     return {
       writeTestFile,
       writeKnowledgeFile,
-      replaceInFile,
+      editFile,
     };
   });
 
