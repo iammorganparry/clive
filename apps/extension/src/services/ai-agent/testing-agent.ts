@@ -266,7 +266,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const currentState = yield* Ref.get(agentState);
             
             // Apply dynamic prompt caching to messages
-            const model = anthropic(AIModels.anthropic.testing);
+            const model = anthropic(AIModels.testing.medium);
             
             // Build all messages (system + conversation)
             const allMessages = [

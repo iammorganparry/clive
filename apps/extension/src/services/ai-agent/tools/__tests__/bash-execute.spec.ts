@@ -1,4 +1,4 @@
-import { describe, expect, vi, beforeEach, afterEach } from "vitest";
+import { expect, vi } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect, Exit, Cause, } from "effect";
 import type { ChildProcess } from "node:child_process";
@@ -11,9 +11,6 @@ import {
     createMockChildProcess,
   createMockTokenBudgetService,
 } from "../../../../__tests__/mock-factories";
-import { tmpdir } from "node:os";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
 
 // Mock vscode-effects
 vi.mock("../../../../lib/vscode-effects", () => ({
@@ -24,21 +21,16 @@ vi.mock("../../../../lib/vscode-effects", () => ({
 describe("bashExecuteTool", () => {
   let mockSpawn: ReturnType<typeof vi.fn<SpawnFn>>;
   let streamingCallback: ((chunk: { command: string; output: string }) => void) | undefined;
-  let testWorkspaceDir: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
     streamingCallback = undefined;
     mockSpawn = vi.fn<SpawnFn>();
 
-    // Create a real temp directory for OverlayFs
-    testWorkspaceDir = join(tmpdir(), `clive-test-${Date.now()}`);
-    mkdirSync(testWorkspaceDir, { recursive: true });
-
-    // Mock workspace root with real directory
+    // Mock workspace root
     vi.mocked(vscodeEffects.getWorkspaceRoot).mockReturnValue(
       Effect.succeed({
-        fsPath: testWorkspaceDir,
+        fsPath: "/test-workspace",
         scheme: "file",
       } as vscode.Uri),
     );
@@ -53,11 +45,13 @@ describe("bashExecuteTool", () => {
       Effect.gen(function* () {
         const mockBudget = createMockTokenBudgetService();
         const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-        // Use npm/npx commands to test real shell blocking (not just-bash)
         const blockedCommands = [
-          "npm run test && sudo apt update",  // sudo blocked in real shell
-          "npx vitest && curl http://example.com",  // curl blocked in real shell
-          "npm install && kill 1234",  // kill blocked in real shell
+          "rm file.txt",
+          "mv old new",
+          "sudo apt update",
+          "curl http://example.com",
+          "kill 1234",
+          "npm install package",
         ];
 
         for (const command of blockedCommands) {
@@ -79,7 +73,7 @@ describe("bashExecuteTool", () => {
         const mockBudget = yield* Effect.sync(() => createMockTokenBudgetService());
         const tool = yield* Effect.sync(() => createBashExecuteTool(mockBudget, undefined, mockSpawn));
 
-        // Mock successful command execution for npm command (routes to real shell)
+        // Mock successful command execution
         yield* Effect.sync(() => {
           const child = createMockChildProcess({
             onClose: (handler) => {
@@ -89,7 +83,7 @@ describe("bashExecuteTool", () => {
           mockSpawn.mockReturnValue(child as unknown as ChildProcess);
         });
 
-        const input: BashExecuteInput = { command: "npm run test" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "echo hello" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
         yield* Effect.promise(() => promise);
 
@@ -118,7 +112,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm run test" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "echo test" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate stdout data
@@ -158,7 +152,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm run failing-test" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "command-with-error" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate stderr
@@ -190,7 +184,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npx invalid-command" };  // npx routes to real shell
+        const input: BashExecuteInput = { command: "invalid-command" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate process error
@@ -224,7 +218,7 @@ describe("bashExecuteTool", () => {
             return child;
           });
 
-          const input: BashExecuteInput = { command: "npm run sleep-long" };  // npm routes to real shell
+          const input: BashExecuteInput = { command: "sleep 100" };
           
           // Create promise - executeTool returns a Promise
           const promise = executeTool(tool, input, {} as BashExecuteOutput);
@@ -282,7 +276,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm run multiline" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "echo line1 && echo line2" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate streaming output
@@ -326,7 +320,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm run partial-output" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "printf 'partial'" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate partial output (no newline)
@@ -368,7 +362,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const testCommand = "npx vitest run test.spec.ts";  // npx routes to real shell
+        const testCommand = "vitest run test.spec.ts";
         const input: BashExecuteInput = { command: testCommand };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
@@ -467,7 +461,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const testCommand = "npx jest test auth.test.js";  // npx routes to real shell
+        const testCommand = "jest test auth.test.js";
         const input: BashExecuteInput = { command: testCommand };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
@@ -520,7 +514,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npx generate-large-output" };  // npx routes to real shell
+        const input: BashExecuteInput = { command: "generate-large-output" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate large output
@@ -557,7 +551,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm test" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "echo test" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate output
@@ -578,289 +572,6 @@ describe("bashExecuteTool", () => {
     );
   });
 
-  describe("Hybrid Execution Model", () => {
-    it.effect("should use just-bash sandbox for safe commands (ls)", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        const input: BashExecuteInput = { command: "ls -la" };
-        const result = yield* Effect.promise(() => executeTool(tool, input, {} as BashExecuteOutput));
-
-        yield* Effect.sync(() => {
-          // Verify mockSpawn was NOT called (just-bash doesn't use spawn)
-          expect(mockSpawn).not.toHaveBeenCalled();
-          // Verify we got a result (just-bash executed successfully)
-          expect(result.exitCode).toBeDefined();
-        });
-      }),
-    );
-
-    it.effect("should use real shell for npm commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-        let closeHandler: ((code: number) => void) | undefined;
-
-        const mockChild = createMockChildProcess({
-          onClose: (handler) => {
-            closeHandler = handler as (code: number) => void;
-          },
-        });
-        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
-
-        const input: BashExecuteInput = { command: "npm test" };
-        const promise = executeTool(tool, input, {} as BashExecuteOutput);
-
-        // Simulate process completion
-        if (closeHandler) {
-          closeHandler(0);
-        }
-
-        yield* Effect.promise(() => promise);
-
-        yield* Effect.sync(() => {
-          // Verify mockSpawn WAS called (real shell for npm)
-          expect(mockSpawn).toHaveBeenCalled();
-          expect(mockSpawn).toHaveBeenCalledWith(
-            "npm test",
-            expect.objectContaining({
-              shell: true,
-              cwd: testWorkspaceDir,
-            }),
-          );
-        });
-      }),
-    );
-
-    it.effect("should use real shell for npx commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-        let closeHandler: ((code: number) => void) | undefined;
-
-        const mockChild = createMockChildProcess({
-          onClose: (handler) => {
-            closeHandler = handler as (code: number) => void;
-          },
-        });
-        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
-
-        const input: BashExecuteInput = { command: "npx vitest run test.spec.ts" };
-        const promise = executeTool(tool, input, {} as BashExecuteOutput);
-
-        // Simulate process completion
-        if (closeHandler) {
-          closeHandler(0);
-        }
-
-        yield* Effect.promise(() => promise);
-
-        yield* Effect.sync(() => {
-          // Verify mockSpawn WAS called (real shell for npx)
-          expect(mockSpawn).toHaveBeenCalled();
-          expect(mockSpawn).toHaveBeenCalledWith(
-            "npx vitest run test.spec.ts",
-            expect.objectContaining({
-              shell: true,
-            }),
-          );
-        });
-      }),
-    );
-
-    it.effect("should use just-bash for cat, grep, find commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        const safeCommands = [
-          "cat package.json",
-          "grep -r 'test' src/",
-          "find . -name '*.ts'",
-        ];
-
-        for (const command of safeCommands) {
-          // Clear mocks between commands
-          yield* Effect.sync(() => mockSpawn.mockClear());
-
-          const input: BashExecuteInput = { command };
-          yield* Effect.promise(() => executeTool(tool, input, {} as BashExecuteOutput));
-
-          yield* Effect.sync(() => {
-            // Verify mockSpawn was NOT called (just-bash handles these)
-            expect(mockSpawn).not.toHaveBeenCalled();
-          });
-        }
-      }),
-    );
-
-    it.effect("should only validate blocked patterns for real shell commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        // This would be blocked in real shell but is safe in just-bash sandbox
-        // Note: rm/mv are now allowed in just-bash since writes stay in memory
-        const input: BashExecuteInput = { command: "echo 'test' > /tmp/file.txt" };
-        const result = yield* Effect.promise(() => executeTool(tool, input, {} as BashExecuteOutput));
-
-        yield* Effect.sync(() => {
-          // Should execute successfully via just-bash (no validation error)
-          expect(result.exitCode).toBeDefined();
-          // Verify spawn was NOT called (used just-bash)
-          expect(mockSpawn).not.toHaveBeenCalled();
-        });
-      }),
-    );
-
-    it.effect("should still block dangerous patterns in real shell commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        // Real shell command with blocked pattern
-        const input: BashExecuteInput = { command: "npm install && sudo apt update" };
-        const promise = executeTool(tool, input, {} as BashExecuteOutput);
-        const result = yield* Effect.exit(Effect.promise(() => promise));
-
-        yield* Effect.sync(() => {
-          // Should fail with validation error
-          expect(Exit.isFailure(result)).toBe(true);
-          if (Exit.isFailure(result)) {
-            const error = Cause.squash(result.cause);
-            expect(error instanceof Error && error.message).toContain("Command not allowed");
-          }
-        });
-      }),
-    );
-
-    it.effect("should use real shell for pnpm, yarn, and bun commands", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        const packageManagerCommands = [
-          "pnpm test",
-          "yarn run build",
-          "bun test",
-        ];
-
-        for (const command of packageManagerCommands) {
-          // Clear mocks between commands
-          yield* Effect.sync(() => mockSpawn.mockClear());
-
-          let closeHandler: ((code: number) => void) | undefined;
-          const mockChild = yield* Effect.sync(() => 
-            createMockChildProcess({
-              onClose: (handler) => {
-                closeHandler = handler as (code: number) => void;
-              },
-            })
-          );
-          yield* Effect.sync(() => {
-            mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
-          });
-
-          const input: BashExecuteInput = { command };
-          const promise = executeTool(tool, input, {} as BashExecuteOutput);
-
-          // Simulate process completion
-          if (closeHandler) {
-            closeHandler(0);
-          }
-
-          yield* Effect.promise(() => promise);
-
-          yield* Effect.sync(() => {
-            // Verify mockSpawn WAS called (real shell for package managers)
-            expect(mockSpawn).toHaveBeenCalled();
-            expect(mockSpawn).toHaveBeenCalledWith(
-              command,
-              expect.objectContaining({
-                shell: true,
-              }),
-            );
-          });
-        }
-      }),
-    );
-
-    it.effect("should use real shell for direct runtime commands (node, deno, bun)", () =>
-      Effect.gen(function* () {
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, undefined, mockSpawn);
-
-        const runtimeCommands = [
-          "node script.js",
-          "deno run app.ts",
-          "bun run index.ts",
-        ];
-
-        for (const command of runtimeCommands) {
-          // Clear mocks between commands
-          yield* Effect.sync(() => mockSpawn.mockClear());
-
-          let closeHandler: ((code: number) => void) | undefined;
-          const mockChild = yield* Effect.sync(() => 
-            createMockChildProcess({
-              onClose: (handler) => {
-                closeHandler = handler as (code: number) => void;
-              },
-            })
-          );
-          yield* Effect.sync(() => {
-            mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
-          });
-
-          const input: BashExecuteInput = { command };
-          const promise = executeTool(tool, input, {} as BashExecuteOutput);
-
-          // Simulate process completion
-          if (closeHandler) {
-            closeHandler(0);
-          }
-
-          yield* Effect.promise(() => promise);
-
-          yield* Effect.sync(() => {
-            // Verify mockSpawn WAS called (real shell for runtimes)
-            expect(mockSpawn).toHaveBeenCalled();
-            expect(mockSpawn).toHaveBeenCalledWith(
-              command,
-              expect.objectContaining({
-                shell: true,
-              }),
-            );
-          });
-        }
-      }),
-    );
-
-    it.effect("should emit streaming output for just-bash commands", () =>
-      Effect.gen(function* () {
-        const streamingChunks: Array<{ command: string; output: string }> = []
-        const streamingCallback = (chunk: { command: string; output: string }) => {
-          streamingChunks.push(chunk);
-        };
-
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
-
-        const input: BashExecuteInput = { command: "echo 'hello from just-bash'" };
-        yield* Effect.promise(() => executeTool(tool, input, {} as BashExecuteOutput));
-
-        yield* Effect.sync(() => {
-          // Verify streaming callback was called
-          expect(streamingChunks.length).toBeGreaterThan(0);
-          // Verify output contains the echo result
-          const allOutput = streamingChunks.map((c) => c.output).join("");
-          expect(allOutput).toContain("hello from just-bash");
-        });
-      }),
-    );
-  });
-
   describe("Workspace Root", () => {
     it.effect("should execute commands from workspace root", () =>
       Effect.gen(function* () {
@@ -875,7 +586,7 @@ describe("bashExecuteTool", () => {
         });
         mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const input: BashExecuteInput = { command: "npm run pwd" };  // npm routes to real shell
+        const input: BashExecuteInput = { command: "pwd" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
         // Simulate process completion
@@ -885,11 +596,11 @@ describe("bashExecuteTool", () => {
 
         yield* Effect.promise(() => promise);
 
-        // Verify spawn was called with correct cwd (the temp directory we created)
+        // Verify spawn was called with correct cwd
         expect(mockSpawn).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            cwd: testWorkspaceDir,  // Use the actual temp directory
+            cwd: "/test-workspace",
           }),
         );
       }),

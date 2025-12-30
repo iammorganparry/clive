@@ -3,10 +3,15 @@
  * All model names should be referenced from here to ensure consistency
  */
 export const AIModels = {
+  testing: {
+    low:  "claude-haiku-4-5",
+    medium: "claude-sonnet-4-5",
+    high: "claude-opus-4-5",
+  },
   // Anthropic models
   anthropic: {
     /** High-capability reasoning model for planning and complex tasks */
-    testing: "claude-sonnet-4-5",
+    testing: "claude-haiku-4-5",
   },
 
   // xAI models

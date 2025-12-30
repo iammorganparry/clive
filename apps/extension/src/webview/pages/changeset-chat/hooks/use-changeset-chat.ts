@@ -215,9 +215,13 @@ export function useChangesetChat({
         }),
       );
     },
-    onComplete: () => {
+    onComplete: (data: unknown) => {
       console.log("[useChangesetChat] Subscription onComplete called");
-      send({ type: "RESPONSE_COMPLETE" });
+      const completionData = data as { taskCompleted?: boolean } | undefined;
+      send({ 
+        type: "RESPONSE_COMPLETE", 
+        taskCompleted: completionData?.taskCompleted ?? false 
+      });
     },
     onError: (err) => {
       send({ type: "RESPONSE_ERROR", error: err });

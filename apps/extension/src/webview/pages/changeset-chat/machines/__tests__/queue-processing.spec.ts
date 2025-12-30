@@ -377,7 +377,7 @@ describe("changeset-chat-machine queue processing", () => {
       expect(snapshot.context.currentSuiteId).toBe("suite-1");
 
       // Complete the response stream - this should mark suite complete and advance
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
       
@@ -497,7 +497,7 @@ describe("changeset-chat-machine queue processing", () => {
       expect(snapshot.context.currentSuiteId).toBe("suite-1");
 
       // Complete the response stream - this should mark suite failed and advance
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
       
@@ -681,7 +681,7 @@ describe("changeset-chat-machine queue processing", () => {
 
       // Suite 1 is in_progress, suite 2 is pending
       // Now complete the stream - should mark suite-1 complete and start suite-2
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { currentSuiteId, testSuiteQueue } = actor.getSnapshot().context;
       
@@ -722,7 +722,7 @@ describe("changeset-chat-machine queue processing", () => {
       });
 
       // Complete response
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const snapshot = actor.getSnapshot();
       

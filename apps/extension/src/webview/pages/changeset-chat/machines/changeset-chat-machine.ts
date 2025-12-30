@@ -193,7 +193,7 @@ export type ChangesetChatEvent =
       };
       usage?: LanguageModelUsage;
     }
-  | { type: "RESPONSE_COMPLETE" }
+  | { type: "RESPONSE_COMPLETE"; taskCompleted?: boolean }
   | { type: "RESPONSE_ERROR"; error: unknown }
   | { type: "CLEAR_ERROR" }
   | { type: "RESET" }
@@ -1096,7 +1096,12 @@ export const changesetChatMachine = setup({
       hasCompletedAnalysis: () => true, // Re-enable input
       isReasoningStreaming: () => false,
     }),
-    completeSuiteOnStreamEnd: assign(({ context }) => {
+    completeSuiteOnStreamEnd: assign(({ context, event }) => {
+      // Only complete if agent signaled task completion
+      if (event.type !== "RESPONSE_COMPLETE" || !event.taskCompleted) {
+        return {};
+      }
+
       // Only run if we're in act mode with a current suite
       if (context.agentMode !== "act" || !context.currentSuiteId) {
         return {};
