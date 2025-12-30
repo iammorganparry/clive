@@ -333,7 +333,13 @@ describe("changeset-chat-machine queue processing", () => {
 
       actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
 
-      // Simulate completion by updating testExecutions (triggers automatic advancement)
+      // Simulate test execution - transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Starting tests...",
+      });
+
       // Add tool event for test execution
       actor.send({
         type: "RESPONSE_CHUNK",
@@ -364,6 +370,14 @@ describe("changeset-chat-machine queue processing", () => {
           },
         },
       });
+
+      // Suite should still be in_progress until stream completes
+      const snapshot = actor.getSnapshot();
+      expect(snapshot.context.testSuiteQueue[0].status).toBe("in_progress");
+      expect(snapshot.context.currentSuiteId).toBe("suite-1");
+
+      // Complete the response stream - this should mark suite complete and advance
+      actor.send({ type: "RESPONSE_COMPLETE" });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
       
@@ -476,6 +490,14 @@ describe("changeset-chat-machine queue processing", () => {
           },
         },
       });
+
+      // Suite should still be in_progress until stream completes
+      const snapshot = actor.getSnapshot();
+      expect(snapshot.context.testSuiteQueue[0].status).toBe("in_progress");
+      expect(snapshot.context.currentSuiteId).toBe("suite-1");
+
+      // Complete the response stream - this should mark suite failed and advance
+      actor.send({ type: "RESPONSE_COMPLETE" });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
       
@@ -657,19 +679,8 @@ describe("changeset-chat-machine queue processing", () => {
         content: "Starting tests...",
       });
 
-      // Set up completed first suite, pending second suite
-      actor.send({
-        type: "DEV_INJECT_STATE",
-        updates: {
-          testSuiteQueue: [
-            { ...suites[0], status: "completed" as const },
-            { ...suites[1], status: "pending" as const },
-          ],
-          currentSuiteId: null,
-        },
-      });
-
-      // Trigger RESPONSE_COMPLETE - should auto-advance
+      // Suite 1 is in_progress, suite 2 is pending
+      // Now complete the stream - should mark suite-1 complete and start suite-2
       actor.send({ type: "RESPONSE_COMPLETE" });
 
       const { currentSuiteId, testSuiteQueue } = actor.getSnapshot().context;
@@ -677,6 +688,7 @@ describe("changeset-chat-machine queue processing", () => {
       // Should have transitioned to analyzing and started next suite
       expect(actor.getSnapshot().matches("analyzing")).toBe(true);
       expect(currentSuiteId).toBe("suite-2");
+      expect(testSuiteQueue[0].status).toBe("completed");
       expect(testSuiteQueue[1].status).toBe("in_progress");
     });
 
