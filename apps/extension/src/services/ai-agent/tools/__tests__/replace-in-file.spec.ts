@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as vscode from "vscode";
 import { createReplaceInFileTool } from "../replace-in-file";
-import type { ReplaceInFileInput, ReplaceInFileOutput } from "../replace-in-file";
+import type {
+  ReplaceInFileInput,
+  ReplaceInFileOutput,
+} from "../replace-in-file";
 import { executeTool } from "./test-helpers";
 
 // Mock vscode module using shared factory
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../../../__tests__/mock-factories");
+  const { createVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories"
+  );
   return createVSCodeMock();
 });
 
@@ -22,7 +27,12 @@ vi.mock("../../../../utils/model-content-processor", () => ({
 
 // Mock pending edit service
 vi.mock("../../../pending-edit-service", () => ({
-  registerPendingEditSync: vi.fn(),
+  registerBlockSync: vi.fn(),
+}));
+
+// Mock diff decoration service
+vi.mock("../../../diff-decoration-service", () => ({
+  applyDiffDecorationsSync: vi.fn(),
 }));
 
 describe("replaceInFileTool", () => {
@@ -34,11 +44,13 @@ describe("replaceInFileTool", () => {
   let mockDocument: {
     getText: ReturnType<typeof vi.fn>;
   };
-  let streamingCallback: ((chunk: {
-    filePath: string;
-    content: string;
-    isComplete: boolean;
-  }) => void) | undefined;
+  let streamingCallback:
+    | ((chunk: {
+        filePath: string;
+        content: string;
+        isComplete: boolean;
+      }) => void)
+    | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -63,9 +75,9 @@ describe("replaceInFileTool", () => {
     });
 
     // Default: openTextDocument succeeds
-    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockDocument as unknown as vscode.TextDocument,
-    );
+    (
+      vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockDocument as unknown as vscode.TextDocument);
 
     // Default: writeFile succeeds
     mockFs.writeFile.mockResolvedValue(undefined);
@@ -183,7 +195,9 @@ replaced2
   describe("PendingEditService Integration", () => {
     it("should register pending edit before writing", async () => {
       const { constructNewFileContent } = await import("../../diff");
-      const { registerPendingEditSync } = await import("../../../pending-edit-service");
+      const { registerBlockSync } = await import(
+        "../../../pending-edit-service"
+      );
 
       vi.mocked(constructNewFileContent).mockReturnValue({
         content: "new content\nline 2\nline 3",
@@ -198,11 +212,16 @@ replaced2
 
       await executeTool(tool, input, {} as ReplaceInFileOutput);
 
-      expect(registerPendingEditSync).toHaveBeenCalled();
-      // Verify it was called with the original content for revert capability
-      expect(registerPendingEditSync).toHaveBeenCalledWith(
-        expect.any(String),
-        "original content\nline 2\nline 3",
+      expect(registerBlockSync).toHaveBeenCalled();
+      // Verify it was called with the block parameters
+      expect(registerBlockSync).toHaveBeenCalledWith(
+        expect.any(String), // filePath
+        expect.stringMatching(/^replace-/), // blockId with replace- prefix
+        1, // startLine
+        3, // endLine (3 lines in new content)
+        ["original content", "line 2", "line 3"], // originalLines
+        3, // newLineCount
+        "original content\nline 2\nline 3", // baseContent
         false, // not a new file
       );
     });
@@ -280,9 +299,9 @@ replaced2
 
   describe("Error Handling", () => {
     it("should handle file read errors gracefully", async () => {
-      (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error("Cannot read file"),
-      );
+      (
+        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      ).mockRejectedValue(new Error("Cannot read file"));
 
       const tool = createReplaceInFileTool();
 
