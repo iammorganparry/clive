@@ -385,6 +385,15 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
       };
 
       /**
+       * Get file edit info including base content
+       */
+      const getFileEdits = (filePath: string) =>
+        Effect.gen(function* () {
+          const pendingEdits = yield* Ref.get(pendingEditsRef);
+          return pendingEdits.get(filePath);
+        });
+
+      /**
        * Get all file paths with pending edits
        */
       const getPendingEditPaths = () =>
@@ -429,6 +438,7 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
         hasPendingEditSync,
         getBlocksForFile,
         getBlocksForFileSync,
+        getFileEdits,
         getPendingEditPaths,
         getPendingEditCount,
         clearAllPendingEdits,
@@ -538,5 +548,17 @@ export function registerBlockSync(
       baseContent,
       isNewFile,
     ),
+  );
+}
+
+/**
+ * Helper to get file edits (sync wrapper for editor listener)
+ */
+export function getFileEditsSync(
+  filePath: string,
+): PendingFileEdits | undefined {
+  const service = getPendingEditServiceInstance();
+  return Runtime.runSync(Runtime.defaultRuntime)(
+    service.getFileEdits(filePath),
   );
 }

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { constructNewFileContent } from "../diff.js";
 import { processModelContent } from "../../../utils/model-content-processor.js";
 import { formatFileEditError } from "../response-formatter.js";
-import { registerPendingEditSync } from "../../pending-edit-service.js";
+import { registerBlockSync } from "../../pending-edit-service.js";
 import { applyDiffDecorationsSync } from "../../diff-decoration-service.js";
 
 export interface ReplaceInFileInput {
@@ -104,10 +104,22 @@ export const createReplaceInFileTool = (
         // Process model-specific content fixes
         const newContent = processModelContent(result.content, fileUri.fsPath);
 
-        // Register pending edit BEFORE writing (store original for revert)
-        registerPendingEditSync(
+        // Generate unique block ID for this replace operation
+        const blockId = `replace-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+        // For replace operations, the entire file is treated as one block
+        const originalLines = originalContent.split("\n");
+        const newLines = newContent.split("\n");
+
+        // Register block BEFORE writing (store original for revert)
+        registerBlockSync(
           fileUri.fsPath,
-          originalContent,
+          blockId,
+          1, // Start from first line
+          newLines.length, // End at last line
+          originalLines,
+          newLines.length,
+          originalContent, // base content
           false, // not a new file
         );
 
@@ -116,7 +128,8 @@ export const createReplaceInFileTool = (
         await vscode.workspace.fs.writeFile(fileUri, content);
 
         // Open the file in the editor to show changes
-        const updatedDocument = await vscode.workspace.openTextDocument(fileUri);
+        const updatedDocument =
+          await vscode.workspace.openTextDocument(fileUri);
         const editor = await vscode.window.showTextDocument(updatedDocument, {
           preview: false,
           preserveFocus: false,

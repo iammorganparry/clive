@@ -269,7 +269,6 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
         dispose,
       };
     }),
-    dependencies: [PendingEditService.Default, DiffDecorationService.Default],
   },
 ) {}
 

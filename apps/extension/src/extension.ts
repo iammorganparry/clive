@@ -25,6 +25,7 @@ import {
 import {
   PendingEditService,
   setPendingEditServiceInstance,
+  getFileEditsSync,
 } from "./services/pending-edit-service.js";
 import {
   DiffDecorationService,
@@ -154,9 +155,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     DiffDecorationService.Default,
   );
 
-  const editServicesLayer = Layer.merge(
-    sharedServicesLayer,
-    EditCodeLensService.Default,
+  // Provide the shared services to EditCodeLensService to ensure single instances
+  const editServicesLayer = EditCodeLensService.Default.pipe(
+    Layer.provide(sharedServicesLayer),
   );
 
   // Extract all services from the same composed layer
@@ -168,7 +169,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
           diffDecorationService: yield* DiffDecorationService,
           editCodeLensService: yield* EditCodeLensService,
         };
-      }).pipe(Effect.provide(editServicesLayer)),
+      }).pipe(
+        Effect.provide(Layer.merge(sharedServicesLayer, editServicesLayer)),
+      ),
     );
 
   // Set singletons for synchronous access from tools
@@ -245,6 +248,33 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
       Runtime.runSync(Runtime.defaultRuntime)(pendingEditService.dispose());
     },
   });
+
+  // Reapply decorations when files with pending edits become active
+  // This ensures decorations persist when tabs are closed and reopened
+  const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(
+    async (editor) => {
+      if (!editor) return;
+
+      const filePath = editor.document.uri.fsPath;
+
+      // Check if this file has pending edits
+      const fileEdits = getFileEditsSync(filePath);
+
+      if (fileEdits) {
+        // Reapply decorations using base content and current content
+        const currentContent = editor.document.getText();
+        Runtime.runSync(Runtime.defaultRuntime)(
+          diffDecorationService.applyDiffDecorations(
+            editor,
+            fileEdits.baseContent,
+            currentContent,
+            fileEdits.isNewFile,
+          ),
+        );
+      }
+    },
+  );
+  context.subscriptions.push(activeEditorListener);
 
   // Register sendApproval command (used by CodeLens to send approval to RPC)
   const sendApprovalDisposable = vscode.commands.registerCommand(
