@@ -269,6 +269,7 @@ export const agentsRouter = {
 
       return {
         executions: result.executions || [],
+        taskCompleted: "taskCompleted" in result ? result.taskCompleted : false,
       };
     }),
 

@@ -263,7 +263,7 @@ describe("Plan Content Handling", () => {
           filePath: ".clive/plans/reset-test.md",
         },
       } as ChangesetChatEvent);
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: false });
 
       let snapshot = actor.getSnapshot();
       expect(snapshot.context.planContent).toBe("Plan to be reset");
@@ -425,7 +425,7 @@ describe("Plan Content Handling", () => {
         },
       } as ChangesetChatEvent);
 
-      actor.send({ type: "RESPONSE_COMPLETE" });
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: false });
 
       const snapshot = actor.getSnapshot();
       expect(snapshot.value).toBe("idle");

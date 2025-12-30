@@ -25,6 +25,11 @@ vi.mock("vscode", async () => {
   return createVSCodeMock();
 });
 
+// Mock pending edit service
+vi.mock("../../../pending-edit-service", () => ({
+  registerPendingEditSync: vi.fn(),
+}));
+
 // Mock DiffViewProvider
 // Store the mock instance that will be returned
 const currentMockInstance: unknown = null;
@@ -66,12 +71,38 @@ describe("writeTestFileTool", () => {
     // Reset all mocks
     vi.clearAllMocks();
     
-    // Default: file doesn't exist
+    // Default: file doesn't exist (for parent directory check)
     mockFs.stat.mockRejectedValue(new Error("File not found"));
-    // Default: writeFile succeeds
-    mockFs.writeFile.mockResolvedValue(undefined);
+    
+    // Track file write state to simulate file existence after write
+    let fileWritten = false;
+    let fileContent = "";
+    
+    // Default: writeFile succeeds and marks file as written
+    mockFs.writeFile.mockImplementation((_uri: unknown, content: unknown) => {
+      fileWritten = true;
+      fileContent = content ? Buffer.from(content as Buffer).toString("utf-8") : "";
+      return Promise.resolve(undefined);
+    });
+    
     // Default: createDirectory succeeds
     mockFs.createDirectory.mockResolvedValue(undefined);
+    
+    // Default: openTextDocument rejects (file doesn't exist) until file is written
+    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+      .mockImplementation(() => {
+        if (fileWritten) {
+          return Promise.resolve({
+            uri: "file://test",
+            getText: () => fileContent,
+          } as unknown as vscode.TextDocument);
+        }
+        return Promise.reject(new Error("File not found"));
+      });
+    
+    // Default: showTextDocument succeeds
+    (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({});
   });
 
   describe("Happy Path", () => {
@@ -125,13 +156,14 @@ describe("writeTestFileTool", () => {
         yield* Effect.sync(() => approvalRegistry.add("test-3"));
         const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-        // File already exists
-        yield* Effect.sync(() => mockFs.stat.mockResolvedValue({
-          type: 1,
-          ctime: Date.now(),
-          mtime: Date.now(),
-          size: 100,
-        }));
+        // File already exists - mock openTextDocument to resolve
+        yield* Effect.sync(() => {
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockResolvedValue({
+              uri: "file://test",
+              getText: () => "existing content",
+            } as unknown as vscode.TextDocument);
+        });
 
         const input: WriteTestFileInput = {
           proposalId: "test-3",
@@ -243,13 +275,14 @@ describe("writeTestFileTool", () => {
         yield* Effect.sync(() => approvalRegistry.add("test-7"));
         const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-        // File exists
-        yield* Effect.sync(() => mockFs.stat.mockResolvedValue({
-          type: 1,
-          ctime: Date.now(),
-          mtime: Date.now(),
-          size: 100,
-        }));
+        // File exists - mock openTextDocument to resolve
+        yield* Effect.sync(() => {
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockResolvedValue({
+              uri: "file://test",
+              getText: () => "existing content",
+            } as unknown as vscode.TextDocument);
+        });
 
         const input: WriteTestFileInput = {
           proposalId: "test-7",
@@ -273,7 +306,13 @@ describe("writeTestFileTool", () => {
         yield* Effect.sync(() => approvalRegistry.add("test-8"));
         const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
-        yield* Effect.sync(() => mockFs.writeFile.mockRejectedValue(new Error("Permission denied")));
+        yield* Effect.sync(() => {
+          // First call: file doesn't exist (for the existence check)
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockRejectedValueOnce(new Error("File not found"));
+          // writeFile fails
+          mockFs.writeFile.mockRejectedValue(new Error("Permission denied"));
+        });
 
         const input: WriteTestFileInput = {
           proposalId: "test-8",
@@ -297,9 +336,25 @@ describe("writeTestFileTool", () => {
         const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
 
         yield* Effect.sync(() => {
-          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-            new Error("Editor error"),
-          );
+          // First call: file doesn't exist (for the existence check) - reject
+          // Second call: file opened successfully - resolve
+          // But then showTextDocument fails
+          let callCount = 0;
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockImplementation(() => {
+              callCount++;
+              if (callCount === 1) {
+                return Promise.reject(new Error("File not found"));
+              }
+              return Promise.resolve({
+                uri: "file://test",
+                getText: () => "test",
+              } as unknown as vscode.TextDocument);
+            });
+          
+          // showTextDocument fails
+          (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockRejectedValue(new Error("Editor error"));
         });
 
         const input: WriteTestFileInput = {
@@ -311,8 +366,9 @@ describe("writeTestFileTool", () => {
         const result = yield* Effect.promise(() => executeTool(tool, input, {} as WriteTestFileOutput));
 
         yield* Effect.sync(() => {
-          // Should still succeed even if editor opening fails
-          expect(result.success).toBe(true);
+          // Should fail because showTextDocument throws (not wrapped in try-catch)
+          expect(result.success).toBe(false);
+          expect(result.message).toContain("Editor error");
           expect(mockFs.writeFile).toHaveBeenCalled();
         });
       }),
@@ -458,17 +514,39 @@ describe("Diagnostics Integration", () => {
 
     vi.clearAllMocks();
 
-    // Default: file doesn't exist
+    // Default: file doesn't exist (for parent directory check)
     mockFs.stat.mockRejectedValue(new Error("File not found"));
-    // Default: writeFile succeeds
-    mockFs.writeFile.mockResolvedValue(undefined);
+    
+    // Track file write state to simulate file existence after write
+    let fileWritten = false;
+    let fileContent = "";
+    
+    // Default: writeFile succeeds and marks file as written
+    mockFs.writeFile.mockImplementation((_uri: unknown, content: unknown) => {
+      fileWritten = true;
+      fileContent = content ? Buffer.from(content as Buffer).toString("utf-8") : "";
+      return Promise.resolve(undefined);
+    });
+    
     // Default: createDirectory succeeds
     mockFs.createDirectory.mockResolvedValue(undefined);
-    // Default: openTextDocument succeeds
-    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      uri: "file://test",
-      getText: () => "test content",
-    } as unknown as vscode.TextDocument);
+    
+    // Default: openTextDocument rejects (file doesn't exist) until file is written
+    (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+      .mockImplementation(() => {
+        if (fileWritten) {
+          return Promise.resolve({
+            uri: "file://test",
+            getText: () => fileContent,
+          } as unknown as vscode.TextDocument);
+        }
+        return Promise.reject(new Error("File not found"));
+      });
+    
+    // Default: showTextDocument succeeds
+    (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValue({});
+    
     // Default: no diagnostics
     mockLanguages.getDiagnostics.mockReturnValue([]);
   });
@@ -554,12 +632,22 @@ describe("Diagnostics Integration", () => {
     Effect.gen(function* () {
       yield* Effect.sync(() => approvalRegistry.add("test-diag-4"));
       
-      // Mock openTextDocument to return the expected content
+      // Mock openTextDocument to handle both checks properly
       yield* Effect.sync(() => {
-        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-          uri: "file://test",
-          getText: () => "final test content",
-        } as unknown as vscode.TextDocument);
+        let callCount = 0;
+        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+          .mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+              // First call: file doesn't exist check
+              return Promise.reject(new Error("File not found"));
+            }
+            // Subsequent calls: return the final content after write
+            return Promise.resolve({
+              uri: "file://test",
+              getText: () => "final test content",
+            } as unknown as vscode.TextDocument);
+          });
       });
       
       const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));
@@ -584,12 +672,22 @@ describe("Diagnostics Integration", () => {
     Effect.gen(function* () {
       yield* Effect.sync(() => approvalRegistry.add("test-diag-5"));
 
-      // Mock document.getText to return formatted content
+      // Mock document.getText to return formatted content (different from what we wrote)
       yield* Effect.sync(() => {
-        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-          uri: "file://test",
-          getText: () => "formatted content", // Different from input
-        } as unknown as vscode.TextDocument);
+        let callCount = 0;
+        (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+          .mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+              // First call: file doesn't exist check
+              return Promise.reject(new Error("File not found"));
+            }
+            // Subsequent calls: return formatted content (different from input)
+            return Promise.resolve({
+              uri: "file://test",
+              getText: () => "formatted content",
+            } as unknown as vscode.TextDocument);
+          });
       });
 
       const tool = yield* Effect.sync(() => createWriteTestFileTool(approvalRegistry));

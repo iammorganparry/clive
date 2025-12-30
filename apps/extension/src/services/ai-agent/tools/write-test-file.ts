@@ -157,11 +157,14 @@ export const createWriteTestFileTool = (
           preserveFocus: false,
         });
 
+        // Get the actual content after opening (may be auto-formatted)
+        const actualContent = document.getText();
+
         // Emit streaming callback with final content
         if (onStreamingOutput) {
           onStreamingOutput({
             filePath: callbackPath,
-            content: normalizedContent,
+            content: actualContent,
             isComplete: true,
           });
         }
@@ -181,11 +184,16 @@ export const createWriteTestFileTool = (
             ? formatDiagnosticsMessage(newProblems)
             : undefined;
 
+        // Detect auto-formatting changes
+        const autoFormattingEdits = actualContent !== normalizedContent
+          ? `Auto-formatting was applied to ${relativePath}`
+          : undefined;
+
         // Format response for AI
         const message = formatFileEditWithoutUserChanges(
           relativePath,
-          normalizedContent,
-          undefined, // autoFormattingEdits
+          actualContent, // Use actual content, not normalized content
+          autoFormattingEdits,
           newProblemsMessage,
         );
 
