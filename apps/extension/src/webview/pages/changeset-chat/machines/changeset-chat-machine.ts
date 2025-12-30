@@ -673,56 +673,25 @@ export const changesetChatMachine = setup({
             const updatedAccumulated = new Map(context.accumulatedTestOutput);
             updatedAccumulated.delete(toolCallId);
 
-            // Check if current suite's test file matches and tests passed
+            // Update testExecutions for tracking
             const updates: Partial<ChangesetChatContext> = {
               testExecutions: updatedExecutions,
               accumulatedTestOutput: updatedAccumulated,
             };
 
-            if (context.currentSuiteId && (updated.status === "completed" || updated.status === "failed")) {
+            // Update testResults on current suite if it matches, but do NOT change status or advance
+            // Suite completion happens on RESPONSE_COMPLETE via completeSuiteOnStreamEnd action
+            if (context.currentSuiteId) {
               const currentSuite = context.testSuiteQueue.find(
                 (s) => s.id === context.currentSuiteId,
               );
-              if (
-                currentSuite &&
-                currentSuite.targetFilePath === filePath &&
-                updated.summary
-              ) {
-                // Mark suite as completed and update with results (including failures)
-                const suiteStatus: "completed" | "failed" =
-                  updated.summary.failed === 0 ? "completed" : "failed";
-                let updatedQueue = context.testSuiteQueue.map((suite) =>
+              if (currentSuite && currentSuite.targetFilePath === filePath) {
+                // Only update testResults, keep status as in_progress
+                updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
                   suite.id === context.currentSuiteId
-                    ? {
-                        ...suite,
-                        status: suiteStatus,
-                        testResults: updated,
-                      }
+                    ? { ...suite, testResults: updated }
                     : suite,
                 );
-
-                // Check if there are more pending suites to process
-                const hasPendingSuites = updatedQueue.some(
-                  (s) => s.status === "pending",
-                );
-                let nextSuiteId: string | null = null;
-                if (hasPendingSuites) {
-                  // Find next pending suite and mark as in_progress
-                  const nextSuite = updatedQueue.find(
-                    (s) => s.status === "pending",
-                  );
-                  if (nextSuite) {
-                    nextSuiteId = nextSuite.id;
-                    updatedQueue = updatedQueue.map((suite) =>
-                      suite.id === nextSuite.id
-                        ? { ...suite, status: "in_progress" as const }
-                        : suite,
-                    );
-                  }
-                }
-
-                updates.testSuiteQueue = updatedQueue;
-                updates.currentSuiteId = nextSuiteId;
               }
             }
 
@@ -1127,6 +1096,41 @@ export const changesetChatMachine = setup({
       hasCompletedAnalysis: () => true, // Re-enable input
       isReasoningStreaming: () => false,
     }),
+    completeSuiteOnStreamEnd: assign(({ context }) => {
+      // Only run if we're in act mode with a current suite
+      if (context.agentMode !== "act" || !context.currentSuiteId) {
+        return {};
+      }
+
+      const currentSuite = context.testSuiteQueue.find(
+        (s) => s.id === context.currentSuiteId,
+      );
+
+      if (!currentSuite) {
+        return {};
+      }
+
+      // Determine suite status based on final test results
+      let suiteStatus: "completed" | "failed" = "completed";
+      if (currentSuite.testResults) {
+        const summary = currentSuite.testResults.summary;
+        if (summary && summary.failed > 0) {
+          suiteStatus = "failed";
+        }
+      }
+
+      // Mark current suite as completed/failed
+      const updatedQueue = context.testSuiteQueue.map((suite) =>
+        suite.id === context.currentSuiteId
+          ? { ...suite, status: suiteStatus }
+          : suite,
+      );
+
+      return {
+        testSuiteQueue: updatedQueue,
+        currentSuiteId: null, // Clear current suite ID
+      };
+    }),
     devInjectState: assign(({ context, event }) => {
       if (event.type !== "DEV_INJECT_STATE") return {};
       // Merge the updates into the context
@@ -1233,6 +1237,7 @@ export const changesetChatMachine = setup({
         RESPONSE_COMPLETE: {
           target: "idle",
           actions: [
+            "completeSuiteOnStreamEnd",
             "clearStreamingContent",
             "stopReasoningStreaming",
             "markAnalysisComplete",
@@ -1284,8 +1289,8 @@ export const changesetChatMachine = setup({
         RESPONSE_COMPLETE: [
           {
             guard: ({ context }) => {
-              // If in act mode and current suite completed, start next suite
-              if (context.agentMode === "act" && context.currentSuiteId === null) {
+              // If in act mode with a current suite that will be completed, check for pending suites
+              if (context.agentMode === "act" && context.currentSuiteId) {
                 const hasPendingSuites = context.testSuiteQueue.some(
                   (s) => s.status === "pending",
                 );
@@ -1293,12 +1298,13 @@ export const changesetChatMachine = setup({
               }
               return false;
             },
-            actions: ["startNextSuite"],
+            actions: ["completeSuiteOnStreamEnd", "startNextSuite"],
             target: "analyzing",
           },
           {
             target: "idle",
             actions: [
+              "completeSuiteOnStreamEnd",
               "clearStreamingContent",
               "stopReasoningStreaming",
               "markAnalysisComplete",
