@@ -4,7 +4,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { processModelContent } from "../../../utils/model-content-processor.js";
 import { formatFileEditError } from "../response-formatter.js";
-import { registerPendingEditSync } from "../../pending-edit-service.js";
+import { registerBlockSync } from "../../pending-edit-service.js";
 import { applyDiffDecorationsSync } from "../../diff-decoration-service.js";
 
 export interface EditFileInput {
@@ -31,6 +31,66 @@ export type StreamingFileOutputCallback = (chunk: {
   content: string;
   isComplete: boolean;
 }) => void;
+
+/**
+ * Check if a line is at a potential function boundary
+ * Returns true for lines that are opening/closing braces
+ */
+function isAtFunctionBoundary(lines: string[], lineNum: number): boolean {
+  if (lineNum < 1 || lineNum > lines.length) {
+    return false;
+  }
+  const line = lines[lineNum - 1]?.trim() || "";
+  return (
+    line === "}" || line === "{" || line.endsWith("{") || line.endsWith("}")
+  );
+}
+
+/**
+ * Detect if edits might benefit from additional context
+ * Returns warnings if edits are at boundaries without buffer
+ */
+function detectBoundaryIssues(
+  originalContent: string,
+  edits: Array<{ startLine: number; endLine: number; content: string }>,
+): string[] {
+  const lines = originalContent.split("\n");
+  const warnings: string[] = [];
+
+  for (const edit of edits) {
+    // Skip insertion edits (startLine > endLine)
+    if (edit.startLine > edit.endLine) {
+      continue;
+    }
+
+    const startsAtBoundary = isAtFunctionBoundary(lines, edit.startLine);
+    const endsAtBoundary = isAtFunctionBoundary(lines, edit.endLine);
+    const hasBufferBefore = edit.startLine > 1;
+    const hasBufferAfter = edit.endLine < lines.length;
+
+    // Check if edit starts at a boundary without including the line before
+    if (startsAtBoundary && hasBufferBefore && edit.startLine > 1) {
+      const prevLine = lines[edit.startLine - 2]?.trim() || "";
+      if (prevLine && !prevLine.startsWith("//")) {
+        warnings.push(
+          `Edit starts at line ${edit.startLine} (boundary: '${lines[edit.startLine - 1]?.trim()}') - consider including line ${edit.startLine - 1} for context.`,
+        );
+      }
+    }
+
+    // Check if edit ends at a boundary without including the line after
+    if (endsAtBoundary && hasBufferAfter && edit.endLine < lines.length) {
+      const nextLine = lines[edit.endLine]?.trim() || "";
+      if (nextLine && !nextLine.startsWith("//")) {
+        warnings.push(
+          `Edit ends at line ${edit.endLine} (boundary: '${lines[edit.endLine - 1]?.trim()}') - consider including line ${edit.endLine + 1} for context.`,
+        );
+      }
+    }
+  }
+
+  return warnings;
+}
 
 /**
  * Apply line-based edits to file content
@@ -164,6 +224,9 @@ export const createEditFileTool = (
         const document = await vscode.workspace.openTextDocument(fileUri);
         const originalContent = document.getText();
 
+        // Detect potential boundary issues before applying edits
+        const _boundaryWarnings = detectBoundaryIssues(originalContent, edits);
+
         // Apply line-based edits
         let newContent: string;
         try {
@@ -179,10 +242,39 @@ export const createEditFileTool = (
         // Process model-specific content fixes
         newContent = processModelContent(newContent, fileUri.fsPath);
 
-        // Register pending edit BEFORE writing (store original for revert)
-        registerPendingEditSync(
+        // Generate unique block ID for this edit
+        const blockId = `edit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+        // Calculate the line range for the combined edits
+        const sortedEdits = [...edits].sort(
+          (a, b) => a.startLine - b.startLine,
+        );
+        const firstEdit = sortedEdits[0];
+        const lastEdit = sortedEdits[sortedEdits.length - 1];
+        const startLine = firstEdit.startLine;
+        const endLine = lastEdit.endLine;
+
+        // Get original lines that will be replaced
+        const originalLines = originalContent.split("\n");
+        const originalLinesForBlock = originalLines.slice(
+          startLine - 1,
+          endLine,
+        );
+
+        // Calculate new line count
+        const newLines = newContent.split("\n");
+        const newLineCount =
+          newLines.length - originalLines.length + (endLine - startLine + 1);
+
+        // Register block BEFORE writing (store original for revert)
+        registerBlockSync(
           fileUri.fsPath,
-          originalContent,
+          blockId,
+          startLine,
+          startLine + newLineCount - 1, // Adjusted end line after edit
+          originalLinesForBlock,
+          newLineCount,
+          originalContent, // base content
           false, // not a new file
         );
 
@@ -191,7 +283,8 @@ export const createEditFileTool = (
         await vscode.workspace.fs.writeFile(fileUri, content);
 
         // Open the file in the editor to show changes
-        const updatedDocument = await vscode.workspace.openTextDocument(fileUri);
+        const updatedDocument =
+          await vscode.workspace.openTextDocument(fileUri);
         const editor = await vscode.window.showTextDocument(updatedDocument, {
           preview: false,
           preserveFocus: false,
@@ -225,14 +318,22 @@ export const createEditFileTool = (
           });
         }
 
-        const editSummary = edits.length === 1
-          ? `lines ${edits[0].startLine}-${edits[0].endLine}`
-          : `${edits.length} line ranges`;
+        const editSummary =
+          edits.length === 1
+            ? `lines ${edits[0].startLine}-${edits[0].endLine}`
+            : `${edits.length} line ranges`;
+
+        let message = `Edited ${editSummary} in ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`;
+
+        // Append boundary warnings if any
+        if (_boundaryWarnings.length > 0) {
+          message += `\n\n⚠️ Context Warnings:\n${_boundaryWarnings.map((w) => `- ${w}`).join("\n")}`;
+        }
 
         return {
           success: true,
           filePath: relativePath,
-          message: `Edited ${editSummary} in ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+          message,
         };
       } catch (error) {
         const errorMessage =

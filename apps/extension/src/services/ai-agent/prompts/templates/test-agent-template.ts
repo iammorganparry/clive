@@ -7,8 +7,6 @@ export const testAgentTemplate = `{{AGENT_ROLE}}
 
 {{KNOWLEDGE_BASE}}
 
-{{SCRATCHPAD}}
-
 {{WORKFLOW}}
 
 {{PATTERN_DISCOVERY}}

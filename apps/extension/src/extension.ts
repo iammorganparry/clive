@@ -18,6 +18,8 @@ import {
   EditCodeLensService,
   handleAcceptEdit,
   handleRejectEdit,
+  handleAcceptEditBlock,
+  handleRejectEditBlock,
   setEditCodeLensServiceInstance,
 } from "./services/edit-codelens-provider.js";
 import {
@@ -53,7 +55,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
 
   // Auto-detect debug mode from extension context
-  const isDev = __DEV__ || context.extensionMode === vscode.ExtensionMode.Development;
+  const isDev =
+    __DEV__ || context.extensionMode === vscode.ExtensionMode.Development;
   const loggerLayer = createLoggerLayer(outputChannel, isDev);
 
   // Migrate auth token from globalState to SecretStorage (one-time migration)
@@ -144,29 +147,34 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
   context.subscriptions.push(refreshCodeLensDisposable);
 
-  // Initialize PendingEditService (Effect service)
-  const pendingEditService = Runtime.runSync(Runtime.defaultRuntime)(
-    Effect.gen(function* () {
-      return yield* PendingEditService;
-    }).pipe(Effect.provide(PendingEditService.Default)),
+  // Initialize edit services with proper layer composition
+  // This ensures all services share the same PendingEditService and DiffDecorationService instances
+  const sharedServicesLayer = Layer.merge(
+    PendingEditService.Default,
+    DiffDecorationService.Default,
   );
+
+  const editServicesLayer = Layer.merge(
+    sharedServicesLayer,
+    EditCodeLensService.Default,
+  );
+
+  // Extract all services from the same composed layer
+  const { pendingEditService, diffDecorationService, editCodeLensService } =
+    Runtime.runSync(Runtime.defaultRuntime)(
+      Effect.gen(function* () {
+        return {
+          pendingEditService: yield* PendingEditService,
+          diffDecorationService: yield* DiffDecorationService,
+          editCodeLensService: yield* EditCodeLensService,
+        };
+      }).pipe(Effect.provide(editServicesLayer)),
+    );
+
+  // Set singletons for synchronous access from tools
   setPendingEditServiceInstance(pendingEditService);
-
-  // Initialize EditCodeLensService (Effect service with PendingEditService dependency)
-  const editCodeLensService = Runtime.runSync(Runtime.defaultRuntime)(
-    Effect.gen(function* () {
-      return yield* EditCodeLensService;
-    }).pipe(Effect.provide(EditCodeLensService.Default)),
-  );
-  setEditCodeLensServiceInstance(editCodeLensService);
-
-  // Initialize DiffDecorationService (Effect service for inline diff highlighting)
-  const diffDecorationService = Runtime.runSync(Runtime.defaultRuntime)(
-    Effect.gen(function* () {
-      return yield* DiffDecorationService;
-    }).pipe(Effect.provide(DiffDecorationService.Default)),
-  );
   setDiffDecorationServiceInstance(diffDecorationService);
+  setEditCodeLensServiceInstance(editCodeLensService);
 
   // Get the CodeLens provider and register it
   const editCodeLensProvider = Runtime.runSync(Runtime.defaultRuntime)(
@@ -194,6 +202,40 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
     },
   );
   context.subscriptions.push(rejectEditDisposable);
+
+  // Register block-level accept/reject commands
+  const acceptEditBlockDisposable = vscode.commands.registerCommand(
+    Commands.acceptEditBlock,
+    async (fileUri: vscode.Uri, blockId: string) => {
+      await handleAcceptEditBlock(fileUri, blockId);
+    },
+  );
+  context.subscriptions.push(acceptEditBlockDisposable);
+
+  const rejectEditBlockDisposable = vscode.commands.registerCommand(
+    Commands.rejectEditBlock,
+    async (fileUri: vscode.Uri, blockId: string) => {
+      await handleRejectEditBlock(fileUri, blockId);
+    },
+  );
+  context.subscriptions.push(rejectEditBlockDisposable);
+
+  // Register accept/reject all blocks commands (aliases for acceptEdit/rejectEdit)
+  const acceptAllBlocksDisposable = vscode.commands.registerCommand(
+    Commands.acceptAllBlocks,
+    async (fileUri: vscode.Uri) => {
+      await handleAcceptEdit(fileUri);
+    },
+  );
+  context.subscriptions.push(acceptAllBlocksDisposable);
+
+  const rejectAllBlocksDisposable = vscode.commands.registerCommand(
+    Commands.rejectAllBlocks,
+    async (fileUri: vscode.Uri) => {
+      await handleRejectEdit(fileUri);
+    },
+  );
+  context.subscriptions.push(rejectAllBlocksDisposable);
 
   // Clean up services when extension deactivates
   context.subscriptions.push({

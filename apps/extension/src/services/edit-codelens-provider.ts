@@ -36,38 +36,70 @@ class EditCodeLensProviderImpl implements vscode.CodeLensProvider {
 
   /**
    * Provide CodeLens for a document
+   * Shows accept/reject buttons for each edit block
    */
   provideCodeLenses(
     document: vscode.TextDocument,
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
-    // Check if this file has a pending edit
-    if (!this.pendingEditService.hasPendingEditSync(document.uri.fsPath)) {
+    const blocks = this.pendingEditService.getBlocksForFileSync(
+      document.uri.fsPath,
+    );
+
+    if (!blocks || blocks.length === 0) {
       return [];
     }
 
     const codeLenses: vscode.CodeLens[] = [];
 
-    // Position at the very first line
-    const range = new vscode.Range(0, 0, 0, 0);
+    // Add CodeLens for each block at its start line
+    for (const block of blocks) {
+      const range = new vscode.Range(
+        block.startLine - 1,
+        0,
+        block.startLine - 1,
+        0,
+      );
 
-    // Accept Changes button
-    const acceptCommand: vscode.Command = {
-      title: "$(check) Accept Changes",
-      command: Commands.acceptEdit,
-      arguments: [document.uri],
-      tooltip: "Keep the current changes made by the AI agent",
-    };
-    codeLenses.push(new vscode.CodeLens(range, acceptCommand));
+      // Accept Block button
+      const acceptCommand: vscode.Command = {
+        title: "$(check) Accept",
+        command: Commands.acceptEditBlock,
+        arguments: [document.uri, block.blockId],
+        tooltip: `Accept this edit block (lines ${block.startLine}-${block.startLine + block.newLineCount - 1})`,
+      };
+      codeLenses.push(new vscode.CodeLens(range, acceptCommand));
 
-    // Reject Changes button
-    const rejectCommand: vscode.Command = {
-      title: "$(x) Reject Changes",
-      command: Commands.rejectEdit,
-      arguments: [document.uri],
-      tooltip: "Revert to the original content before the AI edit",
-    };
-    codeLenses.push(new vscode.CodeLens(range, rejectCommand));
+      // Reject Block button
+      const rejectCommand: vscode.Command = {
+        title: "$(x) Reject",
+        command: Commands.rejectEditBlock,
+        arguments: [document.uri, block.blockId],
+        tooltip: `Reject this edit block and revert to original (${block.originalLines.length} lines)`,
+      };
+      codeLenses.push(new vscode.CodeLens(range, rejectCommand));
+    }
+
+    // Add "Accept All" / "Reject All" at line 0 if multiple blocks
+    if (blocks.length > 1) {
+      const range = new vscode.Range(0, 0, 0, 0);
+
+      const acceptAllCommand: vscode.Command = {
+        title: `$(check-all) Accept All (${blocks.length} blocks)`,
+        command: Commands.acceptAllBlocks,
+        arguments: [document.uri],
+        tooltip: "Accept all edit blocks in this file",
+      };
+      codeLenses.push(new vscode.CodeLens(range, acceptAllCommand));
+
+      const rejectAllCommand: vscode.Command = {
+        title: `$(close-all) Reject All (${blocks.length} blocks)`,
+        command: Commands.rejectAllBlocks,
+        arguments: [document.uri],
+        tooltip: "Reject all edit blocks and revert to original content",
+      };
+      codeLenses.push(new vscode.CodeLens(range, rejectAllCommand));
+    }
 
     return codeLenses;
   }
@@ -128,14 +160,31 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
             .clearDecorations(fileUri.fsPath)
             .pipe(Effect.catchAll(() => Effect.void));
 
-          const accepted = yield* pendingEditService.acceptEdit(
-            fileUri.fsPath,
-          );
+          const accepted = yield* pendingEditService.acceptEdit(fileUri.fsPath);
 
           if (accepted) {
             // Fire-and-forget notification (don't await - it hangs until dismissed)
             vscode.window.showInformationMessage(
               `Changes accepted for ${vscode.workspace.asRelativePath(fileUri)}`,
+            );
+          }
+
+          return accepted;
+        });
+
+      /**
+       * Accept a specific edit block
+       */
+      const acceptBlock = (fileUri: vscode.Uri, blockId: string) =>
+        Effect.gen(function* () {
+          const accepted = yield* pendingEditService.acceptBlock(
+            fileUri.fsPath,
+            blockId,
+          );
+
+          if (accepted) {
+            vscode.window.showInformationMessage(
+              `Edit block accepted in ${vscode.workspace.asRelativePath(fileUri)}`,
             );
           }
 
@@ -176,6 +225,33 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
         });
 
       /**
+       * Reject a specific edit block
+       */
+      const rejectBlock = (fileUri: vscode.Uri, blockId: string) =>
+        Effect.gen(function* () {
+          const rejected = yield* pendingEditService
+            .rejectBlock(fileUri.fsPath, blockId)
+            .pipe(
+              Effect.catchAll((error) =>
+                Effect.fail(
+                  new EditCodeLensError({
+                    message: `Failed to reject block: ${error.message}`,
+                    cause: error,
+                  }),
+                ),
+              ),
+            );
+
+          if (rejected) {
+            vscode.window.showInformationMessage(
+              `Edit block reverted in ${vscode.workspace.asRelativePath(fileUri)}`,
+            );
+          }
+
+          return rejected;
+        });
+
+      /**
        * Dispose of the service and provider
        */
       const dispose = () =>
@@ -187,7 +263,9 @@ export class EditCodeLensService extends Effect.Service<EditCodeLensService>()(
         getProvider,
         refresh,
         acceptEdit,
+        acceptBlock,
         rejectEdit,
+        rejectBlock,
         dispose,
       };
     }),
@@ -238,6 +316,25 @@ export async function handleAcceptEdit(fileUri: vscode.Uri): Promise<void> {
 }
 
 /**
+ * Handle accepting a specific block from CodeLens command
+ */
+export async function handleAcceptEditBlock(
+  fileUri: vscode.Uri,
+  blockId: string,
+): Promise<void> {
+  try {
+    const service = getEditCodeLensServiceInstance();
+    await Runtime.runPromise(Runtime.defaultRuntime)(
+      service.acceptBlock(fileUri, blockId),
+    );
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    vscode.window.showErrorMessage(`Failed to accept block: ${errorMessage}`);
+  }
+}
+
+/**
  * Handle rejecting changes from CodeLens command
  */
 export async function handleRejectEdit(fileUri: vscode.Uri): Promise<void> {
@@ -249,8 +346,25 @@ export async function handleRejectEdit(fileUri: vscode.Uri): Promise<void> {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    vscode.window.showErrorMessage(
-      `Failed to revert changes: ${errorMessage}`,
+    vscode.window.showErrorMessage(`Failed to revert changes: ${errorMessage}`);
+  }
+}
+
+/**
+ * Handle rejecting a specific block from CodeLens command
+ */
+export async function handleRejectEditBlock(
+  fileUri: vscode.Uri,
+  blockId: string,
+): Promise<void> {
+  try {
+    const service = getEditCodeLensServiceInstance();
+    await Runtime.runPromise(Runtime.defaultRuntime)(
+      service.rejectBlock(fileUri, blockId),
     );
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    vscode.window.showErrorMessage(`Failed to reject block: ${errorMessage}`);
   }
 }

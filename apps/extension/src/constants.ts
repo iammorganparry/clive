@@ -20,6 +20,14 @@ export const Commands = {
   acceptEdit: "clive.acceptEdit",
   /** Reject pending file edit (revert to original) */
   rejectEdit: "clive.rejectEdit",
+  /** Accept a specific edit block */
+  acceptEditBlock: "clive.acceptEditBlock",
+  /** Reject a specific edit block */
+  rejectEditBlock: "clive.rejectEditBlock",
+  /** Accept all blocks in a file */
+  acceptAllBlocks: "clive.acceptAllBlocks",
+  /** Reject all blocks in a file */
+  rejectAllBlocks: "clive.rejectAllBlocks",
 } as const;
 
 /**

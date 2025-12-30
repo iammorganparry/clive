@@ -2,17 +2,37 @@ import * as vscode from "vscode";
 import { Data, Effect, Ref, Runtime } from "effect";
 
 /**
- * Represents a pending edit that can be accepted or rejected
+ * Represents a single edit block within a file
  */
-export interface PendingEdit {
+export interface EditBlock {
+  /** Unique ID from tool call */
+  blockId: string;
   /** The file path being edited */
   filePath: string;
-  /** Original content before the edit (for revert) */
-  originalContent: string;
-  /** Whether this is a new file (no original content) */
-  isNewFile: boolean;
-  /** Timestamp when the edit was registered */
+  /** 1-based line number where this block starts */
+  startLine: number;
+  /** 1-based line number where this block ends */
+  endLine: number;
+  /** Original content of these lines before edit */
+  originalLines: string[];
+  /** How many lines the new content has */
+  newLineCount: number;
+  /** Timestamp when the block was registered */
   timestamp: number;
+}
+
+/**
+ * Represents all pending edits for a file
+ */
+export interface PendingFileEdits {
+  /** The file path */
+  filePath: string;
+  /** All edit blocks, ordered by startLine */
+  blocks: EditBlock[];
+  /** Content before ANY edits (for full revert) */
+  baseContent: string;
+  /** Whether this is a new file */
+  isNewFile: boolean;
 }
 
 /**
@@ -33,8 +53,8 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
   "PendingEditService",
   {
     effect: Effect.gen(function* () {
-      // Mutable state for pending edits
-      const pendingEditsRef = yield* Ref.make<Map<string, PendingEdit>>(
+      // Mutable state for pending file edits (block-based)
+      const pendingEditsRef = yield* Ref.make<Map<string, PendingFileEdits>>(
         new Map(),
       );
 
@@ -56,42 +76,204 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
         });
 
       /**
-       * Register a pending edit for a file
+       * Register an edit block for a file
        * Call this BEFORE writing new content to the file
        */
-      const registerPendingEdit = (
+      const _registerBlock = (
         filePath: string,
-        originalContent: string,
+        blockId: string,
+        startLine: number,
+        endLine: number,
+        originalLines: string[],
+        newLineCount: number,
+        baseContent?: string,
         isNewFile: boolean = false,
       ) =>
         Effect.gen(function* () {
           const pendingEdits = yield* Ref.get(pendingEditsRef);
+          const existing = pendingEdits.get(filePath);
 
-          // If we already have a pending edit for this file, keep the original
-          // (multiple edits to same file should revert to the FIRST original)
-          if (pendingEdits.has(filePath)) {
-            return;
-          }
-
-          const newEdit: PendingEdit = {
+          const newBlock: EditBlock = {
+            blockId,
             filePath,
-            originalContent,
-            isNewFile,
+            startLine,
+            endLine,
+            originalLines,
+            newLineCount,
             timestamp: Date.now(),
           };
 
-          yield* Ref.update(pendingEditsRef, (edits) => {
-            const newEdits = new Map(edits);
-            newEdits.set(filePath, newEdit);
-            return newEdits;
-          });
+          if (existing) {
+            // Add block to existing file edits
+            const updatedBlocks = [...existing.blocks, newBlock].sort(
+              (a, b) => a.startLine - b.startLine,
+            );
+
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.set(filePath, {
+                ...existing,
+                blocks: updatedBlocks,
+              });
+              return newEdits;
+            });
+          } else {
+            // Create new file edits entry
+            const fileEdits: PendingFileEdits = {
+              filePath,
+              blocks: [newBlock],
+              baseContent: baseContent || "",
+              isNewFile,
+            };
+
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.set(filePath, fileEdits);
+              return newEdits;
+            });
+          }
 
           yield* fireChangeEvent();
         });
 
       /**
-       * Accept the pending edit (keep current file content)
-       * Removes the edit from pending without reverting
+       * Accept a specific edit block
+       * Removes the block from tracking
+       */
+      const acceptBlock = (filePath: string, blockId: string) =>
+        Effect.gen(function* () {
+          const pendingEdits = yield* Ref.get(pendingEditsRef);
+          const fileEdits = pendingEdits.get(filePath);
+
+          if (!fileEdits) {
+            return false;
+          }
+
+          const remainingBlocks = fileEdits.blocks.filter(
+            (b) => b.blockId !== blockId,
+          );
+
+          if (remainingBlocks.length === 0) {
+            // No more blocks, remove file from tracking
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.delete(filePath);
+              return newEdits;
+            });
+          } else {
+            // Update with remaining blocks
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.set(filePath, {
+                ...fileEdits,
+                blocks: remainingBlocks,
+              });
+              return newEdits;
+            });
+          }
+
+          yield* fireChangeEvent();
+          return true;
+        });
+
+      /**
+       * Reject a specific edit block
+       * Reverts just that block's lines and updates subsequent block positions
+       */
+      const rejectBlock = (filePath: string, blockId: string) =>
+        Effect.gen(function* () {
+          const pendingEdits = yield* Ref.get(pendingEditsRef);
+          const fileEdits = pendingEdits.get(filePath);
+
+          if (!fileEdits) {
+            return false;
+          }
+
+          const blockToReject = fileEdits.blocks.find(
+            (b) => b.blockId === blockId,
+          );
+          if (!blockToReject) {
+            return false;
+          }
+
+          const fileUri = vscode.Uri.file(filePath);
+
+          // Read current file content
+          const document = yield* Effect.tryPromise({
+            try: () => vscode.workspace.openTextDocument(fileUri),
+            catch: (error) =>
+              new PendingEditError({
+                message: `Failed to open document: ${error instanceof Error ? error.message : "Unknown error"}`,
+                cause: error,
+              }),
+          });
+
+          const currentLines = document.getText().split("\n");
+
+          // Replace the block's lines with original lines
+          const newLines = [
+            ...currentLines.slice(0, blockToReject.startLine - 1),
+            ...blockToReject.originalLines,
+            ...currentLines.slice(
+              blockToReject.startLine - 1 + blockToReject.newLineCount,
+            ),
+          ];
+
+          // Calculate line shift for subsequent blocks
+          const lineShift =
+            blockToReject.originalLines.length - blockToReject.newLineCount;
+
+          // Update subsequent blocks' line numbers
+          const updatedBlocks = fileEdits.blocks
+            .filter((b) => b.blockId !== blockId)
+            .map((b) => {
+              if (b.startLine > blockToReject.startLine) {
+                return {
+                  ...b,
+                  startLine: b.startLine + lineShift,
+                  endLine: b.endLine + lineShift,
+                };
+              }
+              return b;
+            });
+
+          // Write the reverted content
+          const content = Buffer.from(newLines.join("\n"), "utf-8");
+          yield* Effect.tryPromise({
+            try: () => vscode.workspace.fs.writeFile(fileUri, content),
+            catch: (error) =>
+              new PendingEditError({
+                message: `Failed to write file: ${error instanceof Error ? error.message : "Unknown error"}`,
+                cause: error,
+              }),
+          });
+
+          if (updatedBlocks.length === 0) {
+            // No more blocks, remove file from tracking
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.delete(filePath);
+              return newEdits;
+            });
+          } else {
+            // Update with remaining blocks
+            yield* Ref.update(pendingEditsRef, (edits) => {
+              const newEdits = new Map(edits);
+              newEdits.set(filePath, {
+                ...fileEdits,
+                blocks: updatedBlocks,
+              });
+              return newEdits;
+            });
+          }
+
+          yield* fireChangeEvent();
+          return true;
+        });
+
+      /**
+       * Accept all blocks for a file (keep current file content)
+       * Removes all blocks from pending without reverting
        */
       const acceptEdit = (filePath: string) =>
         Effect.gen(function* () {
@@ -111,21 +293,21 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
         });
 
       /**
-       * Reject the pending edit (revert to original content)
+       * Reject all blocks for a file (revert to original content)
        * Restores the original content and removes from pending
        */
       const rejectEdit = (filePath: string) =>
         Effect.gen(function* () {
           const pendingEdits = yield* Ref.get(pendingEditsRef);
-          const pendingEdit = pendingEdits.get(filePath);
+          const fileEdits = pendingEdits.get(filePath);
 
-          if (!pendingEdit) {
+          if (!fileEdits) {
             return false;
           }
 
           const fileUri = vscode.Uri.file(filePath);
 
-          if (pendingEdit.isNewFile) {
+          if (fileEdits.isNewFile) {
             // Delete the new file
             yield* Effect.tryPromise({
               try: () => vscode.workspace.fs.delete(fileUri),
@@ -137,7 +319,7 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
             });
           } else {
             // Restore original content
-            const content = Buffer.from(pendingEdit.originalContent, "utf-8");
+            const content = Buffer.from(fileEdits.baseContent, "utf-8");
             yield* Effect.tryPromise({
               try: () => vscode.workspace.fs.writeFile(fileUri, content),
               catch: (error) =>
@@ -159,7 +341,7 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
         });
 
       /**
-       * Check if a file has a pending edit
+       * Check if a file has any pending edits
        */
       const hasPendingEdit = (filePath: string) =>
         Effect.gen(function* () {
@@ -179,13 +361,28 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
       };
 
       /**
-       * Get pending edit info for a file
+       * Get all blocks for a file
        */
-      const getPendingEdit = (filePath: string) =>
+      const getBlocksForFile = (filePath: string) =>
         Effect.gen(function* () {
           const pendingEdits = yield* Ref.get(pendingEditsRef);
-          return pendingEdits.get(filePath);
+          const fileEdits = pendingEdits.get(filePath);
+          return fileEdits?.blocks || [];
         });
+
+      /**
+       * Synchronous version of getBlocksForFile for CodeLens provider
+       */
+      const getBlocksForFileSync = (filePath: string): EditBlock[] => {
+        return Runtime.runSync(Runtime.defaultRuntime)(
+          Ref.get(pendingEditsRef).pipe(
+            Effect.map((edits) => {
+              const fileEdits = edits.get(filePath);
+              return fileEdits?.blocks || [];
+            }),
+          ),
+        );
+      };
 
       /**
        * Get all file paths with pending edits
@@ -223,12 +420,15 @@ export class PendingEditService extends Effect.Service<PendingEditService>()(
         });
 
       return {
-        registerPendingEdit,
+        registerBlock: _registerBlock,
+        acceptBlock,
+        rejectBlock,
         acceptEdit,
         rejectEdit,
         hasPendingEdit,
         hasPendingEditSync,
-        getPendingEdit,
+        getBlocksForFile,
+        getBlocksForFileSync,
         getPendingEditPaths,
         getPendingEditCount,
         clearAllPendingEdits,
@@ -272,7 +472,9 @@ export function getPendingEditServiceInstance(): PendingEditService {
  */
 export async function rejectEditAsync(filePath: string): Promise<boolean> {
   const service = getPendingEditServiceInstance();
-  return Runtime.runPromise(Runtime.defaultRuntime)(service.rejectEdit(filePath));
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    service.rejectEdit(filePath),
+  );
 }
 
 /**
@@ -280,19 +482,61 @@ export async function rejectEditAsync(filePath: string): Promise<boolean> {
  */
 export async function acceptEditAsync(filePath: string): Promise<boolean> {
   const service = getPendingEditServiceInstance();
-  return Runtime.runPromise(Runtime.defaultRuntime)(service.acceptEdit(filePath));
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    service.acceptEdit(filePath),
+  );
 }
 
 /**
- * Helper to register pending edit (sync wrapper for tools)
+ * Helper to accept a specific block
  */
-export function registerPendingEditSync(
+export async function acceptBlockAsync(
   filePath: string,
-  originalContent: string,
+  blockId: string,
+): Promise<boolean> {
+  const service = getPendingEditServiceInstance();
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    service.acceptBlock(filePath, blockId),
+  );
+}
+
+/**
+ * Helper to reject a specific block
+ */
+export async function rejectBlockAsync(
+  filePath: string,
+  blockId: string,
+): Promise<boolean> {
+  const service = getPendingEditServiceInstance();
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    service.rejectBlock(filePath, blockId),
+  );
+}
+
+/**
+ * Helper to register a block (sync wrapper for tools)
+ */
+export function registerBlockSync(
+  filePath: string,
+  blockId: string,
+  startLine: number,
+  endLine: number,
+  originalLines: string[],
+  newLineCount: number,
+  baseContent?: string,
   isNewFile: boolean = false,
 ): void {
   const service = getPendingEditServiceInstance();
   Runtime.runSync(Runtime.defaultRuntime)(
-    service.registerPendingEdit(filePath, originalContent, isNewFile),
+    service.registerBlock(
+      filePath,
+      blockId,
+      startLine,
+      endLine,
+      originalLines,
+      newLineCount,
+      baseContent,
+      isNewFile,
+    ),
   );
 }

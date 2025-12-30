@@ -9,13 +9,15 @@ import { applyDiffDecorationsSync } from "../../../diff-decoration-service.js";
 
 // Mock vscode module using shared factory
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../../../__tests__/mock-factories/index.js");
+  const { createVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories/index.js"
+  );
   return createVSCodeMock();
 });
 
 // Mock pending edit service
 vi.mock("../../../pending-edit-service.js", () => ({
-  registerPendingEditSync: vi.fn(),
+  registerBlockSync: vi.fn(),
 }));
 
 // Mock diff decoration service
@@ -411,10 +413,10 @@ describe("editFileTool", () => {
   });
 
   describe("Pending Edit Registration", () => {
-    it.effect("should register pending edit before writing", () =>
+    it.effect("should register block before writing", () =>
       Effect.gen(function* () {
-        const { registerPendingEditSync } = yield* Effect.promise(() =>
-          import("../../../pending-edit-service.js"),
+        const { registerBlockSync } = yield* Effect.promise(
+          () => import("../../../pending-edit-service.js"),
         );
 
         const tool = yield* Effect.sync(() => createEditFileTool());
@@ -423,8 +425,8 @@ describe("editFileTool", () => {
           targetPath: "test.ts",
           edits: [
             {
-              startLine: 1,
-              endLine: 1,
+              startLine: 2,
+              endLine: 3,
               content: "modified",
             },
           ],
@@ -434,10 +436,15 @@ describe("editFileTool", () => {
           executeTool(tool, input, {} as EditFileOutput),
         );
 
-        expect(registerPendingEditSync).toHaveBeenCalledWith(
+        expect(registerBlockSync).toHaveBeenCalledWith(
           "/test-workspace/test.ts",
-          "line 1\nline 2\nline 3\nline 4\nline 5",
-          false,
+          expect.stringMatching(/^edit-/), // blockId (generated)
+          2, // startLine
+          2, // endLine after edit (adjusted)
+          ["line 2", "line 3"], // originalLines
+          1, // newLineCount
+          "line 1\nline 2\nline 3\nline 4\nline 5", // baseContent
+          false, // not a new file
         );
       }),
     );

@@ -6,56 +6,84 @@
 import { Effect } from "effect";
 import type { Section } from "../types.js";
 
-export const workflow: Section = (_config) =>
-  Effect.succeed(
-    `<workflow>
-This is a conversational workflow where you analyze, propose, and write tests:
+export const workflow: Section = (config) => {
+  const isActMode = config.mode === "act";
 
-PHASE 0: RAPID CONTEXT (3-4 commands max)
+  if (isActMode) {
+    // Act mode: Focus on execution of approved plan
+    return Effect.succeed(
+      `<workflow>
+You are in execution mode with an approved test plan. Your focus is implementing tests for the current suite.
+
+**CONTEXT GATHERING** (if needed):
+  - If you need to understand the code better, quickly gather context (2-3 commands max)
+  - Read the target file(s) you're testing
+  - Check for existing tests to understand patterns: find . -name "*BASENAME.test.*" -o -name "*BASENAME.spec.*" 2>/dev/null
+  - Look for mock factories to reuse: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  - Get git diff if files were recently changed: git diff HEAD~1 -- path/to/file
+  - **Keep it brief** - you should already have context from the planning phase
+
+**ITERATIVE TEST IMPLEMENTATION**:
+  1. **Check if test file exists**: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
+  2. **Start with ONE test case** - Write the simplest test first to verify setup works
+     - Use writeTestFile to create the test file with just ONE test case
+     - This validates imports, mocks, and configuration before investing in more tests
+  3. **Verify immediately**: Run the test with bashExecute to ensure it passes
+     - If it fails, fix the issue (max 3 attempts) before adding more tests
+     - Use editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
+  4. **Add next test case**: Once first test passes, add ONE more test case using editFile
+  5. **Repeat**: Continue adding one test at a time, verifying each passes before the next
+
+**NATURAL CONVERSATION**:
+  - If the user asks a question or makes a comment, respond naturally and helpfully
+  - After answering, continue with the current test suite
+  - You don't need to re-propose or restart - just keep working on the task at hand
+
+**COMPLETION**:
+  - When all tests for the current suite are written and passing, use the completeTask tool
+  - The system will automatically advance to the next queued suite if there is one
+</workflow>`,
+    );
+  }
+
+  // Plan mode: Discovery and proposal flow
+  return Effect.succeed(
+    `<workflow>
+You are in planning mode. Your goal is to analyze code and propose a comprehensive test strategy.
+
+**RAPID CONTEXT GATHERING** (3-4 commands max):
   **Be efficient - don't over-explore. Get to your proposal quickly.**
   
-  REQUIRED (do these FIRST, in parallel if possible):
-  1. Read the target file(s): cat the files you need to test
-  2. Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. Find existing tests for target files AND mock factories:
+  Essential steps (do these in parallel if possible):
+  1. **Read the target file(s)**: cat the files you need to test
+  2. **Check test framework**: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
+  3. **Find existing tests and mocks**:
      - For each target file, search comprehensively using framework-agnostic patterns:
-       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts" or "auth" from "src/services/auth.py")
-       * Co-located tests (same directory): find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" -o -name "test_BASENAME.*" -o -name "BASENAME_test.*" 2>/dev/null
-       * Tests in __tests__ subdirectory: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
-       * Tests in tests/ or test/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
-       * Common test file patterns: find . ( -name "*BASENAME*.test.*" -o -name "*BASENAME*.spec.*" -o -name "test_*BASENAME*.*" -o -name "*BASENAME*_test.*" \) 2>/dev/null | head -10
-     - If files were changed, get git diff to understand modifications: git diff HEAD~1 -- path/to/changed/file (or git diff baseBranch...HEAD -- path/to/file for branch changes)
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" -o -path "*/test/*mock*" -o -path "*/tests/*mock*" | head -5
-  4. Read ONE similar test file to understand project patterns
+       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts")
+       * Co-located tests: find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" 2>/dev/null
+       * Tests in __tests__: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
+       * Tests in tests/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
+     - If files were changed, get git diff: git diff HEAD~1 -- path/to/changed/file
+     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
+  4. **Read ONE similar test file** to understand project patterns
   
-  **STOP exploring after 4 commands.** You have enough context. Move to Phase 1.
-  
-  Skip scratchpad for changesets with 1-5 files. Only use scratchpad for 6+ files.
+  **STOP exploring after 4 commands.** You have enough context.
 
-PHASE 1: ANALYSIS & PROPOSAL
-  - Read the target file(s) if not already read
+**ANALYSIS & PROPOSAL**:
+  - Analyze what you've gathered
   - Use proposeTestPlan tool to output structured test plan with YAML frontmatter
   - The plan will be displayed in a structured UI for user review
   - User will approve via UI buttons when ready
   
-  **Do NOT**: run additional discovery commands, create scratchpad files for small changesets, or over-analyze
-  **Do NOT**: write test files directly - wait for user approval of the plan
+  **Do NOT**: 
+  - Run excessive discovery commands or over-analyze
+  - Write test files directly - wait for user approval
 
-PHASE 2: EXECUTION (when user approves)
-  - When user approves the plan, start with ONE test case only
-  - Write the simplest test case first - this verifies your setup (imports, mocks, configuration) works
-  - Use writeTestFile to create the test file with just ONE test case
-  - Follow patterns from existing test files you discovered
-  - Create test files in appropriate locations based on project structure
-  - **CRITICAL**: Never write multiple test cases in a single writeTestFile call - start with ONE
-
-PHASE 3: VERIFICATION (MANDATORY after each test case)
-  - **IMMEDIATELY after writing ONE test case**: Use bashExecute to run the test command and verify it passes
-  - **If test fails**: Analyze error output, fix test code using editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes, re-run until passing
-  - **Maximum retries**: 3 fix attempts per test case before asking user for help
-  - **Once first test passes**: Add the next test case using editFile to insert at specific line position
-  - **Continue iteratively**: Add one test case → verify it passes → add next test case → verify → repeat
-  - **Never write all test cases at once**: Build up the test file incrementally, one test case at a time
+**NATURAL CONVERSATION**:
+  - If the user asks questions or provides feedback, respond naturally
+  - Revise your proposal based on their input
+  - You can iterate on the plan through conversation before they approve
 </workflow>`,
   );
+};
 
