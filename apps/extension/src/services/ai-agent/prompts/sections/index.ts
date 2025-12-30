@@ -15,7 +15,6 @@ import { knowledgeBase } from "./knowledge-base.js";
 import { patternDiscovery } from "./pattern-discovery.js";
 import { qualityRules } from "./quality-rules.js";
 import { sandbox } from "./sandbox.js";
-import { scratchpad } from "./scratchpad.js";
 import { taskInstructions } from "./task-instructions.js";
 import { testEvaluation } from "./test-evaluation.js";
 import { testExecution } from "./test-execution.js";
@@ -30,7 +29,6 @@ import { workspaceContext } from "./workspace-context.js";
 export const sectionRegistry: SectionRegistry = {
   [SectionId.AgentRole]: agentRole,
   [SectionId.KnowledgeBase]: knowledgeBase,
-  [SectionId.Scratchpad]: scratchpad,
   [SectionId.Workflow]: workflow,
   [SectionId.PatternDiscovery]: patternDiscovery,
   [SectionId.IterativeTesting]: iterativeTesting,
@@ -56,7 +54,6 @@ export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
   [
     SectionId.AgentRole,
     SectionId.KnowledgeBase,
-    SectionId.Scratchpad,
     SectionId.Workflow,
     SectionId.PatternDiscovery,
     SectionId.IterativeTesting,

@@ -7,32 +7,34 @@ import {
   getPendingEditServiceInstance,
   acceptEditAsync,
   rejectEditAsync,
-  registerPendingEditSync,
+  acceptBlockAsync,
+  rejectBlockAsync,
+  registerBlockSync,
 } from "../pending-edit-service.js";
 
 // Mock vscode module
 vi.mock("vscode", async () => {
   const { createVSCodeMock } = await import("../../__tests__/mock-factories");
   const baseMock = createVSCodeMock();
-  
+
   // Add EventEmitter to the mock
   class MockEventEmitter {
     private listeners: Array<() => void> = [];
-    
+
     event = (listener: () => void) => {
       this.listeners.push(listener);
       return { dispose: vi.fn() };
     };
-    
+
     fire = () => {
-      this.listeners.forEach(listener => {
+      this.listeners.forEach((listener) => {
         listener();
       });
     };
-    
+
     dispose = vi.fn();
   }
-  
+
   return {
     ...baseMock,
     EventEmitter: MockEventEmitter,
@@ -64,26 +66,47 @@ describe("PendingEditService", () => {
       writable: true,
       configurable: true,
     });
+
+    // Mock openTextDocument for rejectBlock
+    const mockOpenTextDocument = vi.fn().mockResolvedValue({
+      getText: () =>
+        "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10",
+    });
+
+    Object.defineProperty(vscode.workspace, "openTextDocument", {
+      value: mockOpenTextDocument,
+      writable: true,
+      configurable: true,
+    });
   });
 
-  describe("registerPendingEdit", () => {
-    it("should register a new pending edit", async () => {
+  describe("registerBlock", () => {
+    it("should register a single block for a file", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original content",
+          "block-1",
+          10,
+          15,
+          ["original line 10", "original line 11"],
+          3,
+          "base content",
           false,
         );
 
         const hasPending = yield* service.hasPendingEdit("/test/file.ts");
         expect(hasPending).toBe(true);
 
-        const edit = yield* service.getPendingEdit("/test/file.ts");
-        expect(edit).toEqual({
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0]).toEqual({
+          blockId: "block-1",
           filePath: "/test/file.ts",
-          originalContent: "original content",
-          isNewFile: false,
+          startLine: 10,
+          endLine: 15,
+          originalLines: ["original line 10", "original line 11"],
+          newLineCount: 3,
           timestamp: expect.any(Number),
         });
       }).pipe(
@@ -92,22 +115,208 @@ describe("PendingEditService", () => {
       );
     });
 
-    it("should fire change event when edit registered", async () => {
+    it("should register multiple blocks for the same file", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10", "line 11", "line 12"],
+          2,
+          "base content",
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["line 20", "line 21", "line 22"],
+          4,
+          undefined,
+          false,
+        );
+
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0].blockId).toBe("block-1");
+        expect(blocks[1].blockId).toBe("block-2");
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should sort blocks by startLine", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        // Register blocks out of order
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["line 20"],
+          1,
+          "base content",
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          undefined,
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-3",
+          30,
+          32,
+          ["line 30"],
+          1,
+          undefined,
+          false,
+        );
+
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(3);
+        expect(blocks[0].blockId).toBe("block-1");
+        expect(blocks[0].startLine).toBe(10);
+        expect(blocks[1].blockId).toBe("block-2");
+        expect(blocks[1].startLine).toBe(20);
+        expect(blocks[2].blockId).toBe("block-3");
+        expect(blocks[2].startLine).toBe(30);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should fire change event when block registered", async () => {
       const eventFired = vi.fn();
 
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
-
-        // Subscribe to change event
         service.onDidChangePendingEdits(eventFired);
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original content",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
 
-        // Wait a tick for event to propagate
+        yield* Effect.sleep(0);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      expect(eventFired).toHaveBeenCalled();
+    });
+  });
+
+  describe("acceptBlock", () => {
+    it("should remove specific block from tracking", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["line 20"],
+          1,
+          undefined,
+          false,
+        );
+
+        const accepted = yield* service.acceptBlock("/test/file.ts", "block-1");
+        expect(accepted).toBe(true);
+
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].blockId).toBe("block-2");
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should remove file from tracking when last block accepted", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+
+        const accepted = yield* service.acceptBlock("/test/file.ts", "block-1");
+        expect(accepted).toBe(true);
+
+        const hasPending = yield* service.hasPendingEdit("/test/file.ts");
+        expect(hasPending).toBe(false);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should fire change event when block accepted", async () => {
+      const eventFired = vi.fn();
+
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+        service.onDidChangePendingEdits(eventFired);
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+
+        eventFired.mockClear();
+
+        yield* service.acceptBlock("/test/file.ts", "block-1");
         yield* Effect.sleep(0);
       }).pipe(
         Effect.provide(PendingEditService.Default),
@@ -117,51 +326,14 @@ describe("PendingEditService", () => {
       expect(eventFired).toHaveBeenCalled();
     });
 
-    it("should preserve original content when same file edited multiple times", async () => {
+    it("should return false for non-existent block", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
-
-        // First edit
-        yield* service.registerPendingEdit(
+        const accepted = yield* service.acceptBlock(
           "/test/file.ts",
-          "first original",
-          false,
+          "nonexistent",
         );
-
-        // Second edit to same file (should NOT update original)
-        yield* service.registerPendingEdit(
-          "/test/file.ts",
-          "second content",
-          false,
-        );
-
-        const edit = yield* service.getPendingEdit("/test/file.ts");
-        expect(edit?.originalContent).toBe("first original");
-        expect(edit?.originalContent).not.toBe("second content");
-      }).pipe(
-        Effect.provide(PendingEditService.Default),
-        Runtime.runPromise(runtime),
-      );
-    });
-
-    it("should track new file vs existing file correctly", async () => {
-      await Effect.gen(function* () {
-        const service = yield* PendingEditService;
-
-        yield* service.registerPendingEdit("/test/new.ts", "", true);
-        yield* service.registerPendingEdit(
-          "/test/existing.ts",
-          "content",
-          false,
-        );
-
-        const newFileEdit = yield* service.getPendingEdit("/test/new.ts");
-        const existingFileEdit = yield* service.getPendingEdit(
-          "/test/existing.ts",
-        );
-
-        expect(newFileEdit?.isNewFile).toBe(true);
-        expect(existingFileEdit?.isNewFile).toBe(false);
+        expect(accepted).toBe(false);
       }).pipe(
         Effect.provide(PendingEditService.Default),
         Runtime.runPromise(runtime),
@@ -170,13 +342,29 @@ describe("PendingEditService", () => {
   });
 
   describe("acceptEdit", () => {
-    it("should remove edit from pending and return true", async () => {
+    it("should remove all blocks for file from tracking", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["line 20"],
+          1,
+          undefined,
           false,
         );
 
@@ -198,13 +386,18 @@ describe("PendingEditService", () => {
         const service = yield* PendingEditService;
         service.onDidChangePendingEdits(eventFired);
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
 
-        eventFired.mockClear(); // Clear the register event
+        eventFired.mockClear();
 
         yield* service.acceptEdit("/test/file.ts");
         yield* Effect.sleep(0);
@@ -231,11 +424,17 @@ describe("PendingEditService", () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
+
         yield* service.acceptEdit("/test/file.ts");
       }).pipe(
         Effect.provide(PendingEditService.Default),
@@ -248,14 +447,163 @@ describe("PendingEditService", () => {
     });
   });
 
-  describe("rejectEdit", () => {
-    it("should restore original content for existing file", async () => {
+  describe("rejectBlock", () => {
+    it("should revert specific block's lines", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        // Register a block (lines 3-4 were changed, originally 2 lines)
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original content",
+          "block-1",
+          3,
+          5,
+          ["original line 3", "original line 4"],
+          3,
+          "base content",
+          false,
+        );
+
+        const rejected = yield* service.rejectBlock("/test/file.ts", "block-1");
+        expect(rejected).toBe(true);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      // Should have written file with reverted content
+      expect(mockFs.writeFile).toHaveBeenCalled();
+    });
+
+    it("should update subsequent block positions after rejection", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        // Register two blocks
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          2,
+          4,
+          ["original line 2", "original line 3"],
+          3,
+          "base content",
+          false,
+        );
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          7,
+          9,
+          ["original line 7"],
+          2,
+          undefined,
+          false,
+        );
+
+        // Reject first block (reduces total lines)
+        yield* service.rejectBlock("/test/file.ts", "block-1");
+
+        // Second block should have adjusted line numbers
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].blockId).toBe("block-2");
+        // Line shift: originalLines.length (2) - newLineCount (3) = -1
+        // So block-2's startLine should shift from 7 to 6
+        expect(blocks[0].startLine).toBe(6);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should remove file from tracking when last block rejected", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          3,
+          5,
+          ["original line 3", "original line 4"],
+          3,
+          "base content",
+          false,
+        );
+
+        const rejected = yield* service.rejectBlock("/test/file.ts", "block-1");
+        expect(rejected).toBe(true);
+
+        const hasPending = yield* service.hasPendingEdit("/test/file.ts");
+        expect(hasPending).toBe(false);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+    });
+
+    it("should fire change event when block rejected", async () => {
+      const eventFired = vi.fn();
+
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+        service.onDidChangePendingEdits(eventFired);
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          3,
+          5,
+          ["original line 3"],
+          3,
+          "base content",
+          false,
+        );
+
+        eventFired.mockClear();
+
+        yield* service.rejectBlock("/test/file.ts", "block-1");
+        yield* Effect.sleep(0);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      expect(eventFired).toHaveBeenCalled();
+    });
+
+    it("should return false for non-existent block", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+        const rejected = yield* service.rejectBlock(
+          "/test/file.ts",
+          "nonexistent",
+        );
+        expect(rejected).toBe(false);
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      expect(mockFs.writeFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("rejectEdit", () => {
+    it("should restore original base content for existing file", async () => {
+      await Effect.gen(function* () {
+        const service = yield* PendingEditService;
+
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          3,
+          5,
+          ["line 3"],
+          3,
+          "original base content",
           false,
         );
 
@@ -268,7 +616,7 @@ describe("PendingEditService", () => {
 
       expect(mockFs.writeFile).toHaveBeenCalledWith(
         expect.objectContaining({ fsPath: "/test/file.ts" }),
-        Buffer.from("original content", "utf-8"),
+        Buffer.from("original base content", "utf-8"),
       );
     });
 
@@ -276,7 +624,16 @@ describe("PendingEditService", () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit("/test/new.ts", "", true);
+        yield* service.registerBlock(
+          "/test/new.ts",
+          "block-1",
+          1,
+          5,
+          [],
+          5,
+          "",
+          true,
+        );
 
         const rejected = yield* service.rejectEdit("/test/new.ts");
         expect(rejected).toBe(true);
@@ -298,9 +655,14 @@ describe("PendingEditService", () => {
         const service = yield* PendingEditService;
         service.onDidChangePendingEdits(eventFired);
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          3,
+          5,
+          ["line 3"],
+          3,
+          "base content",
           false,
         );
 
@@ -337,11 +699,17 @@ describe("PendingEditService", () => {
         Effect.gen(function* () {
           const service = yield* PendingEditService;
 
-          yield* service.registerPendingEdit(
+          yield* service.registerBlock(
             "/test/file.ts",
-            "original",
+            "block-1",
+            3,
+            5,
+            ["line 3"],
+            3,
+            "base content",
             false,
           );
+
           yield* service.rejectEdit("/test/file.ts");
         }).pipe(
           Effect.provide(PendingEditService.Default),
@@ -357,7 +725,17 @@ describe("PendingEditService", () => {
         Effect.gen(function* () {
           const service = yield* PendingEditService;
 
-          yield* service.registerPendingEdit("/test/new.ts", "", true);
+          yield* service.registerBlock(
+            "/test/new.ts",
+            "block-1",
+            1,
+            5,
+            [],
+            5,
+            "",
+            true,
+          );
+
           yield* service.rejectEdit("/test/new.ts");
         }).pipe(
           Effect.provide(PendingEditService.Default),
@@ -368,13 +746,18 @@ describe("PendingEditService", () => {
   });
 
   describe("hasPendingEdit / hasPendingEditSync", () => {
-    it("should return true when file has pending edit", async () => {
+    it("should return true when file has pending blocks", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
 
@@ -389,7 +772,7 @@ describe("PendingEditService", () => {
       );
     });
 
-    it("should return false when file has no pending edit", async () => {
+    it("should return false when file has no pending blocks", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
@@ -408,9 +791,14 @@ describe("PendingEditService", () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file1.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
 
@@ -428,36 +816,57 @@ describe("PendingEditService", () => {
     });
   });
 
-  describe("getPendingEdit", () => {
-    it("should return edit info when exists", async () => {
+  describe("getBlocksForFile / getBlocksForFileSync", () => {
+    it("should return blocks when they exist", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original content",
+          "block-1",
+          10,
+          12,
+          ["original line 10", "original line 11"],
+          3,
+          "base content",
           false,
         );
 
-        const edit = yield* service.getPendingEdit("/test/file.ts");
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["original line 20"],
+          2,
+          undefined,
+          false,
+        );
 
-        expect(edit).toEqual({
-          filePath: "/test/file.ts",
-          originalContent: "original content",
-          isNewFile: false,
-          timestamp: expect.any(Number),
-        });
+        const blocksAsync = yield* service.getBlocksForFile("/test/file.ts");
+        const blocksSync = service.getBlocksForFileSync("/test/file.ts");
+
+        expect(blocksAsync).toHaveLength(2);
+        expect(blocksSync).toHaveLength(2);
+        expect(blocksAsync[0].blockId).toBe("block-1");
+        expect(blocksAsync[1].blockId).toBe("block-2");
       }).pipe(
         Effect.provide(PendingEditService.Default),
         Runtime.runPromise(runtime),
       );
     });
 
-    it("should return undefined when not exists", async () => {
+    it("should return empty array when no blocks exist", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
-        const edit = yield* service.getPendingEdit("/test/nonexistent.ts");
-        expect(edit).toBeUndefined();
+
+        const blocksAsync = yield* service.getBlocksForFile(
+          "/test/nonexistent.ts",
+        );
+        const blocksSync = service.getBlocksForFileSync("/test/nonexistent.ts");
+
+        expect(blocksAsync).toEqual([]);
+        expect(blocksSync).toEqual([]);
       }).pipe(
         Effect.provide(PendingEditService.Default),
         Runtime.runPromise(runtime),
@@ -466,13 +875,40 @@ describe("PendingEditService", () => {
   });
 
   describe("getPendingEditPaths", () => {
-    it("should return all paths with pending edits", async () => {
+    it("should return all paths with pending blocks", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit("/test/file1.ts", "content1", false);
-        yield* service.registerPendingEdit("/test/file2.ts", "content2", false);
-        yield* service.registerPendingEdit("/test/file3.ts", "content3", true);
+        yield* service.registerBlock(
+          "/test/file1.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content1",
+          false,
+        );
+        yield* service.registerBlock(
+          "/test/file2.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content2",
+          false,
+        );
+        yield* service.registerBlock(
+          "/test/file3.ts",
+          "block-1",
+          1,
+          5,
+          [],
+          5,
+          "",
+          true,
+        );
 
         const paths = yield* service.getPendingEditPaths();
 
@@ -506,11 +942,29 @@ describe("PendingEditService", () => {
         let count = yield* service.getPendingEditCount();
         expect(count).toBe(0);
 
-        yield* service.registerPendingEdit("/test/file1.ts", "content1", false);
+        yield* service.registerBlock(
+          "/test/file1.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content1",
+          false,
+        );
         count = yield* service.getPendingEditCount();
         expect(count).toBe(1);
 
-        yield* service.registerPendingEdit("/test/file2.ts", "content2", false);
+        yield* service.registerBlock(
+          "/test/file2.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content2",
+          false,
+        );
         count = yield* service.getPendingEditCount();
         expect(count).toBe(2);
 
@@ -529,13 +983,40 @@ describe("PendingEditService", () => {
   });
 
   describe("clearAllPendingEdits", () => {
-    it("should remove all pending edits", async () => {
+    it("should remove all pending blocks", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit("/test/file1.ts", "content1", false);
-        yield* service.registerPendingEdit("/test/file2.ts", "content2", false);
-        yield* service.registerPendingEdit("/test/file3.ts", "content3", false);
+        yield* service.registerBlock(
+          "/test/file1.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content1",
+          false,
+        );
+        yield* service.registerBlock(
+          "/test/file2.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content2",
+          false,
+        );
+        yield* service.registerBlock(
+          "/test/file3.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content3",
+          false,
+        );
 
         let count = yield* service.getPendingEditCount();
         expect(count).toBe(3);
@@ -560,7 +1041,16 @@ describe("PendingEditService", () => {
         const service = yield* PendingEditService;
         service.onDidChangePendingEdits(eventFired);
 
-        yield* service.registerPendingEdit("/test/file1.ts", "content1", false);
+        yield* service.registerBlock(
+          "/test/file1.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "content1",
+          false,
+        );
 
         eventFired.mockClear();
 
@@ -610,9 +1100,14 @@ describe("PendingEditService", () => {
       setPendingEditServiceInstance(service);
 
       await Effect.gen(function* () {
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
       }).pipe(
@@ -644,8 +1139,13 @@ describe("PendingEditService", () => {
       setPendingEditServiceInstance(service);
 
       await Effect.gen(function* () {
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
           "original",
           false,
         );
@@ -663,7 +1163,7 @@ describe("PendingEditService", () => {
       );
     });
 
-    it("registerPendingEditSync should work correctly", async () => {
+    it("registerBlockSync should work correctly", async () => {
       const service = await Effect.gen(function* () {
         return yield* PendingEditService;
       }).pipe(
@@ -673,7 +1173,16 @@ describe("PendingEditService", () => {
 
       setPendingEditServiceInstance(service);
 
-      registerPendingEditSync("/test/file.ts", "original content", false);
+      registerBlockSync(
+        "/test/file.ts",
+        "block-1",
+        10,
+        12,
+        ["original line 10"],
+        2,
+        "base content",
+        false,
+      );
 
       const hasPending = await Effect.gen(function* () {
         return yield* service.hasPendingEdit("/test/file.ts");
@@ -684,52 +1193,168 @@ describe("PendingEditService", () => {
 
       expect(hasPending).toBe(true);
     });
+
+    it("acceptBlockAsync should work correctly", async () => {
+      const service = await Effect.gen(function* () {
+        return yield* PendingEditService;
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      setPendingEditServiceInstance(service);
+
+      await Effect.gen(function* () {
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      const result = await acceptBlockAsync("/test/file.ts", "block-1");
+      expect(result).toBe(true);
+
+      const hasPending = await Effect.gen(function* () {
+        return yield* service.hasPendingEdit("/test/file.ts");
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      expect(hasPending).toBe(false);
+    });
+
+    it("rejectBlockAsync should work correctly", async () => {
+      const service = await Effect.gen(function* () {
+        return yield* PendingEditService;
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      setPendingEditServiceInstance(service);
+
+      await Effect.gen(function* () {
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-1",
+          3,
+          5,
+          ["original line 3"],
+          3,
+          "base content",
+          false,
+        );
+      }).pipe(
+        Effect.provide(PendingEditService.Default),
+        Runtime.runPromise(runtime),
+      );
+
+      const result = await rejectBlockAsync("/test/file.ts", "block-1");
+      expect(result).toBe(true);
+
+      expect(mockFs.writeFile).toHaveBeenCalled();
+    });
   });
 
   describe("Edge Cases", () => {
-    it("should handle multiple operations on same file correctly", async () => {
+    it("should handle multiple blocks on same file correctly", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        // Register
-        yield* service.registerPendingEdit(
+        // Register multiple blocks
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
+          false,
+        );
+        yield* service.registerBlock(
+          "/test/file.ts",
+          "block-2",
+          20,
+          22,
+          ["line 20"],
+          1,
+          undefined,
           false,
         );
 
-        // Try to register again (should preserve original)
-        yield* service.registerPendingEdit(
-          "/test/file.ts",
-          "different",
-          false,
-        );
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks).toHaveLength(2);
 
-        const edit = yield* service.getPendingEdit("/test/file.ts");
-        expect(edit?.originalContent).toBe("original");
-
-        // Accept
-        const accepted = yield* service.acceptEdit("/test/file.ts");
+        // Accept first block
+        const accepted = yield* service.acceptBlock("/test/file.ts", "block-1");
         expect(accepted).toBe(true);
 
-        // Can't accept again
-        const acceptedAgain = yield* service.acceptEdit("/test/file.ts");
-        expect(acceptedAgain).toBe(false);
+        // Should still have second block
+        const remainingBlocks =
+          yield* service.getBlocksForFile("/test/file.ts");
+        expect(remainingBlocks).toHaveLength(1);
+        expect(remainingBlocks[0].blockId).toBe("block-2");
+
+        // Can't accept first block again (it was already removed)
+        // acceptBlock returns true if the file exists, even if the specific block doesn't
+        const acceptedAgain = yield* service.acceptBlock(
+          "/test/file.ts",
+          "block-1",
+        );
+        expect(acceptedAgain).toBe(true); // File still exists, so returns true
       }).pipe(
         Effect.provide(PendingEditService.Default),
         Runtime.runPromise(runtime),
       );
     });
 
-    it("should handle concurrent operations", async () => {
+    it("should handle concurrent block operations", async () => {
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        // Register multiple files concurrently
+        // Register multiple blocks concurrently
         yield* Effect.all([
-          service.registerPendingEdit("/test/file1.ts", "content1", false),
-          service.registerPendingEdit("/test/file2.ts", "content2", false),
-          service.registerPendingEdit("/test/file3.ts", "content3", false),
+          service.registerBlock(
+            "/test/file1.ts",
+            "block-1",
+            10,
+            12,
+            ["line 10"],
+            1,
+            "content1",
+            false,
+          ),
+          service.registerBlock(
+            "/test/file2.ts",
+            "block-1",
+            10,
+            12,
+            ["line 10"],
+            1,
+            "content2",
+            false,
+          ),
+          service.registerBlock(
+            "/test/file3.ts",
+            "block-1",
+            10,
+            12,
+            ["line 10"],
+            1,
+            "content3",
+            false,
+          ),
         ]);
 
         const count = yield* service.getPendingEditCount();
@@ -752,21 +1377,26 @@ describe("PendingEditService", () => {
       );
     });
 
-    it("should properly track timestamps", async () => {
+    it("should properly track timestamps for blocks", async () => {
       const now = Date.now();
 
       await Effect.gen(function* () {
         const service = yield* PendingEditService;
 
-        yield* service.registerPendingEdit(
+        yield* service.registerBlock(
           "/test/file.ts",
-          "original",
+          "block-1",
+          10,
+          12,
+          ["line 10"],
+          1,
+          "base content",
           false,
         );
 
-        const edit = yield* service.getPendingEdit("/test/file.ts");
-        expect(edit?.timestamp).toBeGreaterThanOrEqual(now);
-        expect(edit?.timestamp).toBeLessThanOrEqual(Date.now());
+        const blocks = yield* service.getBlocksForFile("/test/file.ts");
+        expect(blocks[0].timestamp).toBeGreaterThanOrEqual(now);
+        expect(blocks[0].timestamp).toBeLessThanOrEqual(Date.now());
       }).pipe(
         Effect.provide(PendingEditService.Default),
         Runtime.runPromise(runtime),

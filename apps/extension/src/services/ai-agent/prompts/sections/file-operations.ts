@@ -23,6 +23,14 @@ For targeted edits to existing test files, use editFile with line numbers:
 - Multiple edits can be batched in a single call - they apply from bottom to top
 - The system will highlight changed lines with diff decorations (green for additions, red for removals)
 
+**Line Buffer Best Practice:**
+When using editFile, ALWAYS include 1-2 lines of context before and after your change:
+- Include the line before (e.g., opening brace, previous statement)
+- Include the line after (e.g., closing brace, next statement)
+- This ensures proper function boundaries and prevents malformed code
+- Example: To change lines 10-12, include lines 9-13 in your edit range (startLine: 9, endLine: 13)
+- For function edits, include the opening brace and closing brace in your edit range
+
 **editFile Examples:**
 - Replace lines 10-15: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 10, endLine: 15, content: "new code here" }] })\\\`
 - Insert after line 5: \\\`editFile({ targetPath: "test.spec.ts", edits: [{ startLine: 6, endLine: 5, content: "new line" }] })\\\` (startLine > endLine = insert)
@@ -67,4 +75,3 @@ The system tracks consecutive mistakes:
 - You MUST fix all reported diagnostic problems before proceeding
 </file_operations>`,
   );
-

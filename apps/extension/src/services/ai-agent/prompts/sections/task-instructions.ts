@@ -6,20 +6,61 @@
 import { Effect } from "effect";
 import type { Section } from "../types.js";
 
-export const taskInstructions: Section = (_config) =>
-  Effect.succeed(
-    `<your_task>
-You are in a conversational testing workflow:
+export const taskInstructions: Section = (config) => {
+  const isActMode = config.mode === "act";
 
-1. **Analyze the conversation history** - understand what the user has asked and your previous analysis
+  if (isActMode) {
+    // Act mode: Focus on execution
+    return Effect.succeed(
+      `<your_task>
+You are in execution mode, implementing the approved test plan for the current suite.
+
+**Your Task:**
+1. **Understand the current suite** - The conversation history contains details about which suite you're working on
+2. **Check for existing tests** - Before writing, verify if the test file exists and understand its current state
+3. **Write tests iteratively** - Start with ONE test case, verify it passes, then add more one at a time
+4. **Handle user interaction naturally** - If the user asks questions or provides feedback, respond helpfully then continue with your work
+
+**Available Tools:**
+- Use **writeTestFile** to create new test files or overwrite existing ones with extensive changes
+- Use **editFile** for targeted changes to existing test files (line-based editing)
+- Use **bashExecute** to run tests and verify they pass
+- Use **webSearch** to look up framework documentation or best practices when needed
+
+**Execution Approach:**
+1. Check if the test file already exists: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
+2. If it exists, determine whether to update existing tests or add new ones
+3. Start with ONE test case to verify setup (imports, mocks, configuration)
+4. Run the test immediately with bashExecute to ensure it passes
+5. If it fails, fix the issue (max 3 attempts) before adding more tests
+6. Once passing, add the next test case using editFile
+7. Repeat: one test at a time, verify each passes before continuing
+
+**Remember:**
+- Focus on the current suite only - other suites will be handled separately
+- Respond naturally to user questions, then continue working
+- Use completeTask when all tests for this suite are written and verified passing
+</your_task>`,
+    );
+  }
+
+  // Plan mode: Include proposal format instructions
+  return Effect.succeed(
+    `<your_task>
+You are in planning mode, analyzing code and proposing a comprehensive test strategy.
+
+**Your Task:**
+1. **Analyze the conversation history** - Understand what the user has asked and any previous analysis
 2. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
 3. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
 4. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
    - Clearly distinguish between: tests requiring updates vs. new tests needed
    - Your chat output IS the proposal - user will approve via UI buttons
-5. **Write/update tests when approved** - when user clicks "Approve & Write Tests", start with ONE test case or update, verify it passes, then continue incrementally one at a time
 
-**IMPORTANT**: You have ALL tools available (bashExecute, webSearch, writeTestFile). Use bashExecute to manage scratchpad files (.clive/plans/) for context and progress tracking in large changesets. Use webSearch to look up framework documentation, testing best practices, or API references when needed. Output your analysis and recommendations in chat - the user will approve via UI buttons.
+**Available Tools:**
+- Use **bashExecute** for discovery commands (find files, check packages, etc.)
+- Use **webSearch** to look up framework documentation, testing best practices, or API references
+- Do NOT use writeTestFile in plan mode - wait for user approval
 
 **Output format for your natural language response:**
 
@@ -112,4 +153,5 @@ Lines to cover:
 Focus on providing maximum value with minimal complexity. Your chat output is the proposal - make it clear, structured, and actionable.
 </your_task>`,
   );
+};
 

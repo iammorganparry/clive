@@ -7,7 +7,6 @@ import type { PromptBuildError } from "./errors.js";
 export const SectionId = {
   AgentRole: "AGENT_ROLE",
   KnowledgeBase: "KNOWLEDGE_BASE",
-  Scratchpad: "SCRATCHPAD",
   Workflow: "WORKFLOW",
   PatternDiscovery: "PATTERN_DISCOVERY",
   IterativeTesting: "ITERATIVE_TESTING",

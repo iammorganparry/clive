@@ -14,7 +14,7 @@ import {
   formatFileEditWithoutUserChanges,
   formatFileEditError,
 } from "../response-formatter.js";
-import { registerPendingEditSync } from "../../../services/pending-edit-service.js";
+import { registerBlockSync } from "../../../services/pending-edit-service.js";
 import { applyDiffDecorationsSync } from "../../../services/diff-decoration-service.js";
 
 /**
@@ -31,7 +31,7 @@ export type StreamingFileOutputCallback = (chunk: {
  * Factory function to create writeTestFileTool
  * Writes files directly (non-blocking) and registers with PendingEditService
  * User can accept/reject via CodeLens in the editor
- * 
+ *
  * @param approvalRegistry Set of approved proposal IDs (auto-approved)
  * @param onStreamingOutput Optional callback for streaming file output
  */
@@ -126,10 +126,22 @@ export const createWriteTestFileTool = (
           ? relativePath
           : targetPath;
 
-        // Register pending edit BEFORE writing (store original for revert)
-        registerPendingEditSync(
+        // Generate unique block ID for this write operation
+        const blockId = `write-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+        // For write operations, the entire file is one block
+        const originalLines = fileExists ? originalContent.split("\n") : [];
+        const newLines = normalizedContent.split("\n");
+
+        // Register block BEFORE writing (store original for revert)
+        registerBlockSync(
           fileUri.fsPath,
-          originalContent,
+          blockId,
+          1, // Start from first line
+          newLines.length, // End at last line
+          originalLines,
+          newLines.length,
+          originalContent, // base content
           !fileExists, // isNewFile
         );
 
@@ -201,9 +213,10 @@ export const createWriteTestFileTool = (
             : undefined;
 
         // Detect auto-formatting changes
-        const autoFormattingEdits = actualContent !== normalizedContent
-          ? `Auto-formatting was applied to ${relativePath}`
-          : undefined;
+        const autoFormattingEdits =
+          actualContent !== normalizedContent
+            ? `Auto-formatting was applied to ${relativePath}`
+            : undefined;
 
         // Format response for AI
         const message = formatFileEditWithoutUserChanges(
