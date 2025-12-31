@@ -315,7 +315,7 @@ export const ChangesetChatPage: React.FC = () => {
     <PromptInputProvider>
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="px-4 py-2 border-b">
+        <div className="px-3 py-1.5 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" />
@@ -331,12 +331,12 @@ export const ChangesetChatPage: React.FC = () => {
             </div>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               onClick={handleNewChat}
               disabled={isLoading}
+              aria-label="New Chat"
             >
-              <Plus className="size-3" />
-              New Chat
+              <Plus className="size-4" />
             </Button>
           </div>
         </div>
@@ -378,7 +378,7 @@ export const ChangesetChatPage: React.FC = () => {
 
           {/* Test Suite Queue - shows progress when in act mode */}
           {agentMode === "act" && testSuiteQueue.length > 0 && (
-            <div className="border-t bg-background px-4 py-2">
+            <div className="border-t bg-background py-2">
               <TestSuiteQueue 
                 queue={testSuiteQueue} 
                 currentSuiteId={currentSuiteId}

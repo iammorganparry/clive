@@ -64,11 +64,11 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
   }
 
   return (
-    <Queue className="border-none py-1 px-0 m-0">
+    <Queue>
       {/* Completed Section */}
       {completedItems.length > 0 && (
         <QueueSection defaultOpen={false}>
-          <QueueSectionTrigger className="px-0">
+          <QueueSectionTrigger>
             <QueueSectionLabel
               icon={<CheckCircle className="h-4 w-4" />}
               count={completedItems.length}
@@ -80,7 +80,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
               {completedItems.map((item) => (
                 <Collapsible key={item.id} defaultOpen={false}>
                   <CollapsibleTrigger asChild>
-                    <QueueItem className="cursor-pointer flex-col items-start px-0">
+                    <QueueItem className="cursor-pointer flex-col items-start">
                       <div className="flex items-center flex-row w-full gap-2">
                       <QueueItemIndicator completed={item.status === "completed"} />
                         <QueueItemContent completed={item.status === "completed"}>
@@ -125,7 +125,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
       {/* In Progress Section */}
       {inProgressItem && (
         <QueueSection defaultOpen={true}>
-          <QueueSectionTrigger className="px-0">
+          <QueueSectionTrigger>
             <QueueSectionLabel
               icon={<Loader2 className="h-4 w-4 animate-spin" />}
               count={1}
@@ -134,7 +134,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
           </QueueSectionTrigger>
           <QueueSectionContent>
             <div className="space-y-2">
-              <QueueItem className="flex-col items-start px-0">
+              <QueueItem className="flex-col items-start">
                 <div className="flex items-center flex-row w-full gap-2">
                 <QueueItemIndicator />
                   <QueueItemContent>{inProgressItem.name}</QueueItemContent>
@@ -162,7 +162,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
       {/* Todo Section */}
       {pendingItems.length > 0 && (
         <QueueSection defaultOpen={true}>
-          <QueueSectionTrigger className="px-0">
+          <QueueSectionTrigger>
             <QueueSectionLabel
               icon={<Circle className="h-4 w-4" />}
               count={pendingItems.length}
@@ -172,7 +172,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
           <QueueSectionContent>
             <QueueList>
               {pendingItems.map((item) => (
-                <QueueItem key={item.id} className="flex-col items-start px-0">
+                <QueueItem key={item.id} className="flex-col items-start">
                   <div className="flex items-center flex-row w-full gap-2">
                   <QueueItemIndicator />
                     <QueueItemContent>{item.name}</QueueItemContent>
@@ -205,7 +205,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
       {/* Skipped Section */}
       {skippedItems.length > 0 && (
         <QueueSection defaultOpen={false}>
-          <QueueSectionTrigger className="px-0">
+          <QueueSectionTrigger>
             <QueueSectionLabel
               icon={<X className="h-4 w-4" />}
               count={skippedItems.length}
@@ -215,7 +215,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
           <QueueSectionContent>
             <QueueList>
               {skippedItems.map((item) => (
-                <QueueItem key={item.id} className="flex-col items-start px-0 opacity-50">
+                <QueueItem key={item.id} className="flex-col items-start opacity-50">
                   <div className="flex items-center flex-row w-full gap-2">
                     <QueueItemIndicator />
                     <QueueItemContent>{item.name}</QueueItemContent>

@@ -174,6 +174,52 @@ describe("ConversationRepository", () => {
     });
   });
 
+  describe("findByUserAndBranch", () => {
+    it("should find uncommitted conversation when commitHash matches", async () => {
+      const userId = "user-123";
+      const branchName = "feature/new-feature";
+      const baseBranch = "main";
+      const conversationType = "uncommitted" as const;
+      const commitHash = "abc123def456";
+
+      const mockConversation: Conversation = {
+        id: "conv-123",
+        userId,
+        sourceFile: null,
+        branchName,
+        baseBranch,
+        sourceFiles: JSON.stringify(["src/file1.ts", "src/file2.ts"]),
+        conversationType,
+        commitHash,
+        status: "planning",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockDb.query.conversation.findFirst.mockResolvedValue(
+        mockConversation as never,
+      );
+
+      const result = await Effect.gen(function* () {
+        const repo = yield* ConversationRepository;
+        return yield* repo.findByUserAndBranch(
+          userId,
+          branchName,
+          baseBranch,
+          conversationType,
+          commitHash,
+        );
+      }).pipe(
+        Effect.provide(createConversationRepositoryTestLayer(mockDb)),
+        Runtime.runPromise(runtime),
+      );
+
+      expect(result).toEqual(mockConversation);
+      expect(mockDb.query.conversation.findFirst).toHaveBeenCalled();
+    });
+  });
+
+
   describe("updateStatus", () => {
     it("should update and return conversation", async () => {
       const conversationId = "conv-123";

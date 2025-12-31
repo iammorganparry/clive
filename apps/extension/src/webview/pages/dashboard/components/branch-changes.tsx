@@ -1,8 +1,8 @@
 import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
-import { GitBranch, RefreshCw } from "lucide-react";
+import { GitBranch, Loader2, RefreshCw } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useEffect } from "react";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
 import { useComparisonMode } from "../../../contexts/comparison-mode-context.js";
 import { useRouter } from "../../../router/router-context.js";
@@ -66,7 +66,7 @@ const BranchHeader: React.FC<BranchHeaderProps> = ({
   const isOnBaseBranch = branchName === baseBranch;
 
   return (
-    <div className="px-4 py-2 border-b">
+    <div className="px-3 py-1.5 border-b">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4" />
@@ -149,8 +149,14 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   );
 
   // Get current commit hash for uncommitted conversations
-  const { data: currentCommit } = rpc.status.currentCommit.useQuery();
+  const { data: currentCommit, refetch: refetchCurrentCommit } = 
+    rpc.status.currentCommit.useQuery();
   const commitHash = currentCommit?.commitHash;
+  
+  // Always refetch currentCommit on mount - git commits can happen anytime
+  useEffect(() => {
+    refetchCurrentCommit();
+  }, [refetchCurrentCommit]);
 
   // Check if conversation exists for current mode
   const { data: branchConversation, isLoading: isLoadingConversation } =
@@ -189,10 +195,12 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   ]);
 
   const handleRefresh = useCallback(async () => {
+    // Refetch current commit hash (might have changed if user committed)
+    await refetchCurrentCommit();
     if (props.onRefresh) {
       await props.onRefresh();
     }
-  }, [props.onRefresh]);
+  }, [props.onRefresh, refetchCurrentCommit]);
 
   // Loading state
   if (props.isLoading) {
@@ -262,7 +270,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
 
       {/* File List */}
       <div className="flex-1 overflow-auto">
-        <div className="space-y-2 p-4">
+        <div className="space-y-1 p-3">
           {props.changes.files.map((file) => (
             <FileTestRow
               key={file.path}
@@ -280,24 +288,23 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
 
       {/* Generate Tests Button */}
       {eligibleCount > 0 && (
-        <div className="p-4 border-t">
+        <div className="p-3 border-t">
           <Button
             onClick={handleGenerateTests}
             className="w-full"
-            disabled={isLoadingConversation}
+            disabled={isLoadingConversation || (mode === "uncommitted" && !commitHash)}
           >
             {isLoadingConversation ? (
               <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Loading...
               </>
             ) : (
               <>
-                {branchConversation?.exists
-                  ? "Continue Conversation"
-                  : "Generate Tests"}{" "}
-                for {mode === "branch" ? "All Changes" : "Uncommitted Changes"}{" "}
-                ({eligibleCount} file{eligibleCount !== 1 ? "s" : ""})
+                {branchConversation?.exists ? "Continue" : "Generate Tests"}
+                <span className="ml-1.5 text-xs opacity-70">
+                  {eligibleCount} file{eligibleCount !== 1 ? "s" : ""}
+                </span>
               </>
             )}
           </Button>

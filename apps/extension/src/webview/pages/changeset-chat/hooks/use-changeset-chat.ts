@@ -4,7 +4,10 @@ import { Match } from "effect";
 import { useEffect, useRef } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ToolEvent } from "../../../types/chat.js";
-import { changesetChatMachine, type TestSuiteQueueItem } from "../machines/changeset-chat-machine.js";
+import {
+  changesetChatMachine,
+  type TestSuiteQueueItem,
+} from "../machines/changeset-chat-machine.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -31,25 +34,37 @@ export function useChangesetChat({
   });
 
   // Load conversation history from backend
-  const { data: historyData, isLoading: isHistoryLoading } = rpc.conversations.getBranchHistory.useQuery({
-    input: {
-      branchName,
-      baseBranch,
-      conversationType: mode,
-      commitHash,
-    },
-    enabled: branchName.length > 0,
-  });
+  const { data: historyData, isLoading: isHistoryLoading } =
+    rpc.conversations.getBranchHistory.useQuery({
+      input: {
+        branchName,
+        baseBranch,
+        conversationType: mode,
+        commitHash,
+      },
+      enabled:
+        branchName.length > 0 && (mode !== "uncommitted" || !!commitHash),
+    });
 
   // Send backend history when query completes
   useEffect(() => {
-    if (state.value === "idle" && !state.context.historyLoaded && !isHistoryLoading) {
+    if (
+      state.value === "idle" &&
+      !state.context.historyLoaded &&
+      !isHistoryLoading
+    ) {
       send({
         type: "RECEIVE_BACKEND_HISTORY",
         historyData: historyData ?? null,
       });
     }
-  }, [historyData, state.value, state.context.historyLoaded, send, isHistoryLoading]);
+  }, [
+    historyData,
+    state.value,
+    state.context.historyLoaded,
+    send,
+    isHistoryLoading,
+  ]);
 
   // Subscribe to planTests
   const planTestsSubscription = rpc.agents.planTests.useSubscription({
@@ -74,7 +89,10 @@ export function useChangesetChat({
 
       // Capture subscriptionId when received
       if (event.subscriptionId && !state.context.subscriptionId) {
-        send({ type: "SET_SUBSCRIPTION_ID", subscriptionId: event.subscriptionId });
+        send({
+          type: "SET_SUBSCRIPTION_ID",
+          subscriptionId: event.subscriptionId,
+        });
       }
 
       Match.value(event).pipe(
@@ -197,7 +215,11 @@ export function useChangesetChat({
         Match.when({ type: "plan-approved" }, (p) => {
           // Agent approved the plan - extract suites and dispatch APPROVE_PLAN
           const suites = (p.suites as TestSuiteQueueItem[]) || [];
-          console.log("[plan-approved] Agent approved plan with", suites.length, "suites");
+          console.log(
+            "[plan-approved] Agent approved plan with",
+            suites.length,
+            "suites",
+          );
           send({ type: "APPROVE_PLAN", suites });
         }),
         Match.when({ type: "error" }, (p) => {
@@ -218,9 +240,9 @@ export function useChangesetChat({
     onComplete: (data: unknown) => {
       console.log("[useChangesetChat] Subscription onComplete called");
       const completionData = data as { taskCompleted?: boolean } | undefined;
-      send({ 
-        type: "RESPONSE_COMPLETE", 
-        taskCompleted: completionData?.taskCompleted ?? false 
+      send({
+        type: "RESPONSE_COMPLETE",
+        taskCompleted: completionData?.taskCompleted ?? false,
       });
     },
     onError: (err) => {
@@ -286,7 +308,12 @@ export function useChangesetChat({
       }
     }
     previousSuiteId.current = state.context.currentSuiteId;
-  }, [state.context.currentSuiteId, state.context.agentMode, state.context.testSuiteQueue, send]);
+  }, [
+    state.context.currentSuiteId,
+    state.context.agentMode,
+    state.context.testSuiteQueue,
+    send,
+  ]);
 
   return {
     state,

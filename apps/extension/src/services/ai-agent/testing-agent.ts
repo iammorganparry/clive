@@ -82,7 +82,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
          * Conversational agent for planning and executing tests
          * Uses a single streamText call with all tools available
          * Agent iterates on proposals until user approves, then writes tests
-         * 
+         *
          * Mode behavior:
          * - "plan": Only read-only tools available (searchKnowledge, webSearch, bashExecute for reading)
          * - "act": All tools available including writeTestFile
@@ -264,10 +264,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // Stream execution
             const currentState = yield* Ref.get(agentState);
-            
+
             // Apply dynamic prompt caching to messages
             const model = anthropic(AIModels.testing.medium);
-            
+
             // Build all messages (system + conversation)
             const allMessages = [
               {
@@ -276,10 +276,13 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               },
               ...currentState.messages,
             ];
-            
+
             // Apply cache control to the last message (incremental caching)
-            const cachedMessages = addCacheControlToMessages(allMessages, model);
-            
+            const cachedMessages = addCacheControlToMessages(
+              allMessages,
+              model,
+            );
+
             const streamResult = yield* Effect.try({
               try: () =>
                 streamText({
@@ -334,35 +337,30 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
                   // Route events to handlers
                   yield* Match.value(event).pipe(
-                    Match.when(
-                      { type: "tool-call-streaming-start" },
-                      (e) =>
-                        handleToolCallStreamingStart(
-                          e,
-                          streamingState,
-                          correlationId,
-                        ),
+                    Match.when({ type: "tool-call-streaming-start" }, (e) =>
+                      handleToolCallStreamingStart(
+                        e,
+                        streamingState,
+                        progressCallback,
+                        correlationId,
+                      ),
                     ),
-                    Match.when(
-                      { type: "tool-call-delta" },
-                      (e) =>
-                        handleToolCallDelta(
-                          e,
-                          streamingState,
-                          progressCallback,
-                          correlationId,
-                        ),
+                    Match.when({ type: "tool-call-delta" }, (e) =>
+                      handleToolCallDelta(
+                        e,
+                        streamingState,
+                        progressCallback,
+                        correlationId,
+                      ),
                     ),
-                    Match.when(
-                      { type: "tool-call" },
-                      (e) =>
-                        handleToolCall(
-                          e,
-                          agentState,
-                          streamingState,
-                          progressCallback,
-                          correlationId,
-                        ),
+                    Match.when({ type: "tool-call" }, (e) =>
+                      handleToolCall(
+                        e,
+                        agentState,
+                        streamingState,
+                        progressCallback,
+                        correlationId,
+                      ),
                     ),
                     Match.when(
                       (e) => e.type === "text-delta" && !!e.content,
@@ -372,16 +370,14 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       (e) => e.type === "thinking" && !!e.content,
                       (e) => handleThinking(e, progressCallback, correlationId),
                     ),
-                    Match.when(
-                      { type: "tool-result" },
-                      (e) =>
-                        handleToolResult(
-                          e,
-                          agentState,
-                          streamingState,
-                          progressCallback,
-                          correlationId,
-                        ),
+                    Match.when({ type: "tool-result" }, (e) =>
+                      handleToolResult(
+                        e,
+                        agentState,
+                        streamingState,
+                        progressCallback,
+                        correlationId,
+                      ),
                     ),
                     Match.orElse(() => Effect.void),
                   );
@@ -497,7 +493,9 @@ const buildInitialMessages = (
       });
     } else {
       messages.push(...conversationHistory);
-      if (conversationHistory[conversationHistory.length - 1]?.role !== "user") {
+      if (
+        conversationHistory[conversationHistory.length - 1]?.role !== "user"
+      ) {
         messages.push({
           role: "user",
           content: initialPrompt,
@@ -543,7 +541,9 @@ const manageContext = (
           0,
           currentState.messages.length - messagesToKeep,
         );
-        const messagesToKeepArray = currentState.messages.slice(-messagesToKeep);
+        const messagesToKeepArray = currentState.messages.slice(
+          -messagesToKeep,
+        );
 
         const persistentContext = knowledgeContext.formatForPrompt();
 
@@ -595,8 +595,12 @@ const createBashStreamingCallback = (
     Effect.runSync(
       Effect.gen(function* () {
         const state = yield* Ref.get(streamingState);
-        const toolCallIdOption = HashMap.get(state.commandToToolCallId, chunk.command);
-        const toolCallId = toolCallIdOption._tag === "Some" ? toolCallIdOption.value : "";
+        const toolCallIdOption = HashMap.get(
+          state.commandToToolCallId,
+          chunk.command,
+        );
+        const toolCallId =
+          toolCallIdOption._tag === "Some" ? toolCallIdOption.value : "";
 
         yield* Effect.sync(() => {
           progressCallback?.(
@@ -621,13 +625,21 @@ const createFileStreamingCallback = (
   streamingState: Ref.Ref<StreamingState>,
   progressCallback: ProgressCallback | undefined,
 ) => {
-  return (chunk: { filePath: string; content: string; isComplete: boolean }) => {
+  return (chunk: {
+    filePath: string;
+    content: string;
+    isComplete: boolean;
+  }) => {
     // Run effect to get toolCallId
     Effect.runSync(
       Effect.gen(function* () {
         const state = yield* Ref.get(streamingState);
-        const toolCallIdOption = HashMap.get(state.fileToToolCallId, chunk.filePath);
-        const toolCallId = toolCallIdOption._tag === "Some" ? toolCallIdOption.value : "";
+        const toolCallIdOption = HashMap.get(
+          state.fileToToolCallId,
+          chunk.filePath,
+        );
+        const toolCallId =
+          toolCallIdOption._tag === "Some" ? toolCallIdOption.value : "";
 
         yield* Effect.sync(() => {
           if (chunk.content === "" && !chunk.isComplete) {
