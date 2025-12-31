@@ -179,9 +179,15 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             eq(conversation.conversationType, conversationType),
           ];
 
-          // For uncommitted, must match commit hash
-          if (conversationType === "uncommitted" && commitHash) {
-            conditions.push(eq(conversation.commitHash, commitHash));
+          // For uncommitted, ALWAYS filter by commit hash
+          // If no commitHash provided, match nothing (prevents loading wrong conversation)
+          if (conversationType === "uncommitted") {
+            if (commitHash) {
+              conditions.push(eq(conversation.commitHash, commitHash));
+            } else {
+              // No commitHash provided for uncommitted - match nothing
+              conditions.push(eq(conversation.commitHash, "__NO_MATCH__"));
+            }
           }
 
           // For branch, commit hash must be null
@@ -269,7 +275,7 @@ export class ConversationRepository extends Effect.Service<ConversationRepositor
             sourceFiles: JSON.stringify(sourceFiles),
             conversationType,
             commitHash:
-              conversationType === "uncommitted" ? commitHash ?? null : null,
+              conversationType === "uncommitted" ? (commitHash ?? null) : null,
             status: "planning" as const,
             createdAt: now,
             updatedAt: now,

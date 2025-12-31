@@ -1128,7 +1128,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const toolIcon = getToolIcon(toolName);
 
   return (
-    <Task defaultOpen={hasGroupedResults} className={cn("mb-1", hasError && "opacity-75")}>
+    <Task defaultOpen={hasGroupedResults} className={cn(hasError && "opacity-75")}>
       <TaskTrigger title={triggerTitle}>
         <div className="group flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
           {toolIcon}

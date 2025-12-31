@@ -60,6 +60,7 @@ const MAX_CONSECUTIVE_MISTAKES = 5;
 export const handleToolCallStreamingStart = (
   event: { toolName?: string; toolCallId?: string },
   streamingState: Ref.Ref<StreamingState>,
+  progressCallback: ProgressCallback | undefined,
   correlationId: string,
 ) =>
   Effect.gen(function* () {
@@ -77,6 +78,20 @@ export const handleToolCallStreamingStart = (
         `[TestingAgent:${correlationId}] Streaming proposeTestPlan started: ${event.toolCallId}`,
       );
       yield* setStreamingArgs(streamingState, event.toolCallId, "");
+
+      // Emit tool-call event immediately so UI shows the card
+      yield* Effect.sync(() => {
+        progressCallback?.(
+          "tool-call",
+          JSON.stringify({
+            type: "tool-call",
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            args: undefined, // Args not yet available
+            state: "input-streaming",
+          }),
+        );
+      });
     }
   });
 
@@ -130,7 +145,9 @@ const handleWriteTestFileDelta = (
     }
 
     // Append content chunk
-    yield* Effect.promise(() => appendStreamingContent(toolCallId, contentChunk));
+    yield* Effect.promise(() =>
+      appendStreamingContent(toolCallId, contentChunk),
+    );
   });
 
 /**
@@ -171,14 +188,14 @@ const handleProposeTestPlanDelta = (
             );
           }),
         ),
-        Effect.tap(() => trackPlanToolCall(streamingState, toolCallId, targetPath)),
-        Effect.tap(() => trackFileToolCall(streamingState, targetPath, toolCallId)),
         Effect.tap(() =>
-          setPlanInitStatus(
-            streamingState,
-            toolCallId,
-            Promise.resolve(true),
-          ),
+          trackPlanToolCall(streamingState, toolCallId, targetPath),
+        ),
+        Effect.tap(() =>
+          trackFileToolCall(streamingState, targetPath, toolCallId),
+        ),
+        Effect.tap(() =>
+          setPlanInitStatus(streamingState, toolCallId, Promise.resolve(true)),
         ),
         Effect.catchAll((error) =>
           Effect.gen(function* () {
@@ -345,7 +362,10 @@ export const handleToolCall = (
         yield* trackFileToolCall(streamingState, targetPath, event.toolCallId);
 
         // Finalize streaming write if it was active
-        const hasArgs = yield* hasStreamingArgs(streamingState, event.toolCallId);
+        const hasArgs = yield* hasStreamingArgs(
+          streamingState,
+          event.toolCallId,
+        );
         if (hasArgs) {
           const finalizeResult = yield* Effect.promise(() =>
             finalizeStreamingWrite(event.toolCallId || ""),
@@ -455,7 +475,7 @@ export const handleThinking = (
     yield* Effect.logDebug(
       `[TestingAgent:${correlationId}] Thinking event received`,
     );
-    
+
     yield* Effect.sync(() => {
       progressCallback?.(
         "reasoning",
@@ -497,8 +517,7 @@ export const handleToolResult = (
     // Check if tool was rejected
     const outputObj =
       actualOutput && typeof actualOutput === "object" ? actualOutput : {};
-    const wasRejected =
-      "rejected" in outputObj && outputObj.rejected === true;
+    const wasRejected = "rejected" in outputObj && outputObj.rejected === true;
 
     if (wasRejected) {
       yield* setToolRejected(agentState, true);
@@ -597,7 +616,10 @@ const handleProposeTestPlanResult = (
     }
 
     // Get file path from streaming state (fallback)
-    const streamingFilePath = yield* getFilePathForPlan(streamingState, toolCallId);
+    const streamingFilePath = yield* getFilePathForPlan(
+      streamingState,
+      toolCallId,
+    );
     const targetPath = finalFilePath || streamingFilePath;
 
     // Finalize streaming write if file was initialized
@@ -732,4 +754,3 @@ const trackMistakes = (
       yield* resetMistakes(agentState);
     }
   });
-

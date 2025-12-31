@@ -36,7 +36,7 @@ export type QueueItemProps = ComponentProps<"li">;
 export const QueueItem = ({ className, ...props }: QueueItemProps) => (
   <li
     className={cn(
-      "group flex flex-row items-center gap-2 px-2 py-0.5 text-sm",
+      "group flex flex-row items-center gap-1.5 py-0.5 text-sm",
       className,
     )}
     {...props}
@@ -258,7 +258,7 @@ export const QueueSectionContent = ({
   className,
   ...props
 }: QueueSectionContentProps) => (
-  <CollapsibleContent className={cn("divide-y divide-border", className)} {...props} />
+  <CollapsibleContent className={cn(className)} {...props} />
 );
 
 export type QueueProps = ComponentProps<"div">;
@@ -266,7 +266,7 @@ export type QueueProps = ComponentProps<"div">;
 export const Queue = ({ className, ...props }: QueueProps) => (
   <div
     className={cn(
-      "flex flex-col divide-y divide-border",
+      "flex flex-col gap-1",
       className,
     )}
     {...props}

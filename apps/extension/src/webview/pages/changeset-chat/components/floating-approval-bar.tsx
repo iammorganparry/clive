@@ -18,31 +18,28 @@ export const FloatingApprovalBar: React.FC<FloatingApprovalBarProps> = ({
     return null;
   }
 
-  const suiteText = suiteCount === 1 ? "1 suite" : `${suiteCount} suites`;
+  const suiteText = suiteCount === 1 ? "suite" : "suites";
 
   return (
     <div
       className={cn(
         "sticky bottom-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60",
-        "px-4 py-3 shadow-lg",
+        "px-3 py-2 shadow-lg",
       )}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex-1 text-sm text-muted-foreground">
-          Review the test strategy above. Click approve to queue {suiteText} for test generation, or type
-          below to request changes.
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="default"
-            onClick={onApprove}
-            className="gap-1.5"
-          >
-            <Check className="size-3" />
-            Approve & Write Tests{suiteCount > 0 && ` (${suiteText})`}
-          </Button>
-        </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          {suiteCount} test {suiteText} ready
+        </span>
+        <Button
+          size="sm"
+          variant="default"
+          onClick={onApprove}
+          className="gap-1.5"
+        >
+          <Check className="size-3" />
+          Write Tests
+        </Button>
       </div>
     </div>
   );

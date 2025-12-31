@@ -21,7 +21,7 @@ const FileTestRow: React.FC<FileTestRowProps> = ({
 
   return (
     <div
-      className={`flex items-center gap-2 ${!isEligible ? "opacity-50" : ""}`}
+      className={`flex items-center gap-1.5 ${!isEligible ? "opacity-50" : ""}`}
       title={tooltipText}
     >
       <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />

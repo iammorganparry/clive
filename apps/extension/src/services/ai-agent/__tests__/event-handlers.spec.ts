@@ -18,12 +18,16 @@ import {
 
 // Mock the streaming tools using factory - use async import to avoid hoisting issues
 vi.mock("../tools/write-test-file", async () => {
-  const { createMockStreamingWrite } = await import("../../../__tests__/mock-factories");
+  const { createMockStreamingWrite } = await import(
+    "../../../__tests__/mock-factories"
+  );
   return createMockStreamingWrite();
 });
 
 vi.mock("../tools/propose-test-plan", async () => {
-  const { createMockPlanStreaming } = await import("../../../__tests__/mock-factories");
+  const { createMockPlanStreaming } = await import(
+    "../../../__tests__/mock-factories"
+  );
   return createMockPlanStreaming();
 });
 
@@ -37,6 +41,7 @@ describe("Event Handlers", () => {
         yield* handleToolCallStreamingStart(
           { toolName: "writeTestFile", toolCallId: "tool-abc" },
           streamingState,
+          undefined,
           correlationId,
         );
 
@@ -53,6 +58,7 @@ describe("Event Handlers", () => {
         yield* handleToolCallStreamingStart(
           { toolName: "proposeTestPlan", toolCallId: "tool-def" },
           streamingState,
+          undefined,
           correlationId,
         );
 
@@ -69,6 +75,7 @@ describe("Event Handlers", () => {
         yield* handleToolCallStreamingStart(
           { toolName: "bashExecute", toolCallId: "tool-ghi" },
           streamingState,
+          undefined,
           correlationId,
         );
 
@@ -86,12 +93,60 @@ describe("Event Handlers", () => {
         yield* handleToolCallStreamingStart(
           { toolName: "writeTestFile", toolCallId: undefined },
           streamingState,
+          undefined,
           correlationId,
         );
 
         // State should be unchanged
         const state = yield* Ref.get(streamingState);
         expect(HashMap.size(state.streamingArgsText)).toBe(0);
+      }),
+    );
+
+    it.effect("should emit tool-call event for proposeTestPlan", () =>
+      Effect.gen(function* () {
+        const streamingState = yield* createStreamingState();
+        const correlationId = "test-123";
+        const events: Array<{ status: string; message: string }> = [];
+        const progressCallback = (status: string, message: string) => {
+          events.push({ status, message });
+        };
+
+        yield* handleToolCallStreamingStart(
+          { toolName: "proposeTestPlan", toolCallId: "tool-plan-123" },
+          streamingState,
+          progressCallback,
+          correlationId,
+        );
+
+        const toolCallEvent = events.find((e) => e.status === "tool-call");
+        expect(toolCallEvent).toBeDefined();
+        const parsed = toolCallEvent ? JSON.parse(toolCallEvent.message) : null;
+        expect(parsed?.type).toBe("tool-call");
+        expect(parsed?.toolName).toBe("proposeTestPlan");
+        expect(parsed?.toolCallId).toBe("tool-plan-123");
+        expect(parsed?.state).toBe("input-streaming");
+      }),
+    );
+
+    it.effect("should not emit tool-call event for writeTestFile", () =>
+      Effect.gen(function* () {
+        const streamingState = yield* createStreamingState();
+        const correlationId = "test-123";
+        const events: Array<{ status: string; message: string }> = [];
+        const progressCallback = (status: string, message: string) => {
+          events.push({ status, message });
+        };
+
+        yield* handleToolCallStreamingStart(
+          { toolName: "writeTestFile", toolCallId: "tool-write-123" },
+          streamingState,
+          progressCallback,
+          correlationId,
+        );
+
+        const toolCallEvent = events.find((e) => e.status === "tool-call");
+        expect(toolCallEvent).toBeUndefined();
       }),
     );
   });
@@ -167,7 +222,11 @@ describe("Event Handlers", () => {
         };
 
         yield* handleThinking({ content: "" }, progressCallback, "test-123");
-        yield* handleThinking({ content: undefined }, progressCallback, "test-123");
+        yield* handleThinking(
+          { content: undefined },
+          progressCallback,
+          "test-123",
+        );
 
         expect(events.length).toBe(0);
       }),
@@ -185,7 +244,11 @@ describe("Event Handlers", () => {
         };
 
         yield* handleToolCall(
-          { toolName: "bashExecute", toolCallId: "call-123", toolArgs: { command: "echo test" } },
+          {
+            toolName: "bashExecute",
+            toolCallId: "call-123",
+            toolArgs: { command: "echo test" },
+          },
           agentState,
           streamingState,
           progressCallback,
@@ -239,7 +302,11 @@ describe("Event Handlers", () => {
         };
 
         yield* handleToolCall(
-          { toolName: "bashExecute", toolCallId: "call-789", toolArgs: { command: "npm run vitest" } },
+          {
+            toolName: "bashExecute",
+            toolCallId: "call-789",
+            toolArgs: { command: "npm run vitest" },
+          },
           agentState,
           streamingState,
           progressCallback,
@@ -336,7 +403,9 @@ describe("Event Handlers", () => {
           {
             toolName: "completeTask",
             toolCallId: "complete-789",
-            toolResult: { output: { success: true, completed: true, message: "Done" } },
+            toolResult: {
+              output: { success: true, completed: true, message: "Done" },
+            },
           },
           agentState,
           streamingState,
@@ -358,7 +427,9 @@ describe("Event Handlers", () => {
           {
             toolName: "bashExecute",
             toolCallId: "fail-123",
-            toolResult: { output: { success: false, message: "Command failed" } },
+            toolResult: {
+              output: { success: false, message: "Command failed" },
+            },
           },
           agentState,
           streamingState,
@@ -377,7 +448,10 @@ describe("Event Handlers", () => {
         const streamingState = yield* createStreamingState();
 
         // First increment mistakes
-        yield* Ref.update(agentState, (s) => ({ ...s, consecutiveMistakes: 3 }));
+        yield* Ref.update(agentState, (s) => ({
+          ...s,
+          consecutiveMistakes: 3,
+        }));
 
         // Then succeed
         yield* handleToolResult(
@@ -413,7 +487,8 @@ describe("Event Handlers", () => {
             toolResult: {
               output: {
                 success: true,
-                message: "File saved. New diagnostic problems introduced: Line 5 error",
+                message:
+                  "File saved. New diagnostic problems introduced: Line 5 error",
               },
             },
           },
@@ -423,7 +498,9 @@ describe("Event Handlers", () => {
           "corr-123",
         );
 
-        const diagEvent = events.find((e) => e.status === "diagnostic-problems");
+        const diagEvent = events.find(
+          (e) => e.status === "diagnostic-problems",
+        );
         expect(diagEvent).toBeDefined();
 
         const state = yield* Ref.get(agentState);
@@ -441,7 +518,10 @@ describe("Event Handlers", () => {
         };
 
         // Pre-set to 4 mistakes
-        yield* Ref.update(agentState, (s) => ({ ...s, consecutiveMistakes: 4 }));
+        yield* Ref.update(agentState, (s) => ({
+          ...s,
+          consecutiveMistakes: 4,
+        }));
 
         // Fail once more to hit limit of 5
         yield* handleToolResult(
@@ -503,19 +583,28 @@ describe("Event Handlers", () => {
         yield* handleToolCallStreamingStart(
           { toolName: "writeTestFile", toolCallId: "delta-123" },
           streamingState,
+          undefined,
           correlationId,
         );
 
         // Send deltas
         yield* handleToolCallDelta(
-          { toolName: "writeTestFile", toolCallId: "delta-123", argsTextDelta: '{"target' },
+          {
+            toolName: "writeTestFile",
+            toolCallId: "delta-123",
+            argsTextDelta: '{"target',
+          },
           streamingState,
           undefined,
           correlationId,
         );
 
         yield* handleToolCallDelta(
-          { toolName: "writeTestFile", toolCallId: "delta-123", argsTextDelta: 'Path": "test.ts"}' },
+          {
+            toolName: "writeTestFile",
+            toolCallId: "delta-123",
+            argsTextDelta: 'Path": "test.ts"}',
+          },
           streamingState,
           undefined,
           correlationId,
@@ -533,7 +622,11 @@ describe("Event Handlers", () => {
 
         // Should not throw
         yield* handleToolCallDelta(
-          { toolName: "writeTestFile", toolCallId: "delta-456", argsTextDelta: undefined },
+          {
+            toolName: "writeTestFile",
+            toolCallId: "delta-456",
+            argsTextDelta: undefined,
+          },
           streamingState,
           undefined,
           correlationId,
@@ -542,4 +635,3 @@ describe("Event Handlers", () => {
     );
   });
 });
-

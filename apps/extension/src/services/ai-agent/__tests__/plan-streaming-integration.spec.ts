@@ -1,6 +1,6 @@
 import { expect, vi, beforeEach } from "vitest";
 import { describe, it } from "@effect/vitest";
-import { Effect, } from "effect";
+import { Effect } from "effect";
 import {
   handleToolCallStreamingStart,
   handleToolCallDelta,
@@ -52,6 +52,7 @@ describe("Plan Streaming Integration", () => {
           yield* handleToolCallStreamingStart(
             { toolName: "proposeTestPlan", toolCallId },
             streamingState,
+            progressCallback,
             correlationId,
           );
 
@@ -99,6 +100,7 @@ describe("Plan Streaming Integration", () => {
           yield* handleToolCallStreamingStart(
             { toolName: "proposeTestPlan", toolCallId },
             streamingState,
+            progressCallback,
             correlationId,
           );
 
@@ -163,6 +165,7 @@ describe("Plan Streaming Integration", () => {
           yield* handleToolCallStreamingStart(
             { toolName: "proposeTestPlan", toolCallId },
             streamingState,
+            progressCallback,
             correlationId,
           );
 
@@ -217,49 +220,48 @@ describe("Plan Streaming Integration", () => {
         }),
     );
 
-    it.effect(
-      "should create plan file path in .clive/plans/ directory",
-      () =>
-        Effect.gen(function* () {
-          const streamingState = yield* createStreamingState();
-          const correlationId = "test-plan-dir";
-          const toolCallId = "propose-plan-dir";
-          const events: Array<{ status: string; message: string }> = [];
-          const progressCallback = (status: string, message: string) => {
-            events.push({ status, message });
-          };
+    it.effect("should create plan file path in .clive/plans/ directory", () =>
+      Effect.gen(function* () {
+        const streamingState = yield* createStreamingState();
+        const correlationId = "test-plan-dir";
+        const toolCallId = "propose-plan-dir";
+        const events: Array<{ status: string; message: string }> = [];
+        const progressCallback = (status: string, message: string) => {
+          events.push({ status, message });
+        };
 
-          // Initialize streaming
-          yield* handleToolCallStreamingStart(
-            { toolName: "proposeTestPlan", toolCallId },
-            streamingState,
-            correlationId,
-          );
+        // Initialize streaming
+        yield* handleToolCallStreamingStart(
+          { toolName: "proposeTestPlan", toolCallId },
+          streamingState,
+          progressCallback,
+          correlationId,
+        );
 
-          // Send delta with name
-          yield* handleToolCallDelta(
-            {
-              toolName: "proposeTestPlan",
-              toolCallId,
-              argsTextDelta: '{"name": "Directory Test Plan"',
-            },
-            streamingState,
-            progressCallback,
-            correlationId,
-          );
+        // Send delta with name
+        yield* handleToolCallDelta(
+          {
+            toolName: "proposeTestPlan",
+            toolCallId,
+            argsTextDelta: '{"name": "Directory Test Plan"',
+          },
+          streamingState,
+          progressCallback,
+          correlationId,
+        );
 
-          // Verify file path is in .clive/plans/
-          const fileCreatedEvent = events.find(
-            (e) => e.status === "file-created",
-          );
-          expect(fileCreatedEvent).toBeDefined();
+        // Verify file path is in .clive/plans/
+        const fileCreatedEvent = events.find(
+          (e) => e.status === "file-created",
+        );
+        expect(fileCreatedEvent).toBeDefined();
 
-          const parsed = fileCreatedEvent
-            ? JSON.parse(fileCreatedEvent.message)
-            : null;
-          expect(parsed?.filePath).toMatch(/^\.clive\/plans\/test-plan-/);
-          expect(parsed?.filePath).toMatch(/\.md$/);
-        }),
+        const parsed = fileCreatedEvent
+          ? JSON.parse(fileCreatedEvent.message)
+          : null;
+        expect(parsed?.filePath).toMatch(/^\.clive\/plans\/test-plan-/);
+        expect(parsed?.filePath).toMatch(/\.md$/);
+      }),
     );
   });
 
@@ -369,4 +371,3 @@ describe("Plan Streaming Integration", () => {
     );
   });
 });
-
