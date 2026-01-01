@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { Data, Effect, Ref, Runtime } from "effect";
+import { computeLineDiff } from "./ai-agent/tools/diff-engine.js";
 
 /**
  * Represents decoration state for a file
@@ -29,7 +30,9 @@ export interface DiffChange {
 /**
  * Error types for diff decoration operations
  */
-export class DiffDecorationError extends Data.TaggedError("DiffDecorationError")<{
+export class DiffDecorationError extends Data.TaggedError(
+  "DiffDecorationError",
+)<{
   message: string;
   cause?: unknown;
 }> {}
@@ -48,118 +51,55 @@ export class DiffDecorationService extends Effect.Service<DiffDecorationService>
         isWholeLine: true,
       });
 
-      const removedLineDecoration = vscode.window.createTextEditorDecorationType({
-        backgroundColor: "rgba(248, 81, 73, 0.2)", // red with transparency
-        textDecoration: "line-through",
-        isWholeLine: true,
-      });
+      const removedLineDecoration =
+        vscode.window.createTextEditorDecorationType({
+          backgroundColor: "rgba(248, 81, 73, 0.2)", // red with transparency
+          textDecoration: "line-through",
+          isWholeLine: true,
+        });
 
       // Track decorations per file
-      const fileDecorationsRef = yield* Ref.make<Map<string, FileDecorationState>>(
-        new Map(),
-      );
+      const fileDecorationsRef = yield* Ref.make<
+        Map<string, FileDecorationState>
+      >(new Map());
 
       /**
-       * Calculate diff between two contents (line-by-line comparison)
+       * Calculate diff between two contents using Myers algorithm
+       * Returns line-level changes for decoration
        */
       const calculateDiff = (
         originalContent: string,
         newContent: string,
       ): DiffChange[] => {
-        const originalLines = originalContent.split("\n");
-        const newLines = newContent.split("\n");
+        // Use Myers diff algorithm for accurate line-level changes
+        const diffResult = computeLineDiff(originalContent, newContent);
+
+        // Convert LineChange[] to DiffChange[] format expected by decoration service
         const changes: DiffChange[] = [];
+        let _currentNewLineIndex = 0;
+        let _currentOriginalLineIndex = 0;
 
-        let oldIndex = 0;
-        let newIndex = 0;
-
-        while (oldIndex < originalLines.length || newIndex < newLines.length) {
-          if (oldIndex >= originalLines.length) {
-            // Only new lines remain
-            const startLine = newIndex;
-            while (newIndex < newLines.length) {
-              newIndex++;
-            }
+        for (const change of diffResult.changes) {
+          if (change.type === "added") {
+            // Lines added in new content
             changes.push({
               type: "added",
-              startLine,
-              endLine: newIndex - 1,
+              startLine: change.lineStart,
+              endLine: change.lineStart + change.lineCount - 1,
             });
-          } else if (newIndex >= newLines.length) {
-            // Only old lines remain (removed)
-            const startLine = oldIndex;
-            while (oldIndex < originalLines.length) {
-              oldIndex++;
-            }
+            _currentNewLineIndex = change.lineStart + change.lineCount;
+          } else if (change.type === "removed") {
+            // Lines removed from original content
             changes.push({
               type: "removed",
-              startLine,
-              endLine: oldIndex - 1,
+              startLine: change.lineStart,
+              endLine: change.lineStart + change.lineCount - 1,
             });
-          } else if (originalLines[oldIndex] === newLines[newIndex]) {
-            // Lines match
-            oldIndex++;
-            newIndex++;
+            _currentOriginalLineIndex = change.lineStart + change.lineCount;
           } else {
-            // Lines differ - try to find next match
-            let foundMatch = false;
-            const lookAhead = 10;
-
-            // Look ahead in new lines for a match with current old line
-            for (
-              let searchNew = newIndex + 1;
-              searchNew < Math.min(newIndex + lookAhead, newLines.length);
-              searchNew++
-            ) {
-              if (originalLines[oldIndex] === newLines[searchNew]) {
-                // Found match - lines from newIndex to searchNew-1 are added
-                changes.push({
-                  type: "added",
-                  startLine: newIndex,
-                  endLine: searchNew - 1,
-                });
-                newIndex = searchNew;
-                foundMatch = true;
-                break;
-              }
-            }
-
-            if (!foundMatch) {
-              // Look ahead in old lines for a match with current new line
-              for (
-                let searchOld = oldIndex + 1;
-                searchOld < Math.min(oldIndex + lookAhead, originalLines.length);
-                searchOld++
-              ) {
-                if (originalLines[searchOld] === newLines[newIndex]) {
-                  // Found match - lines from oldIndex to searchOld-1 are removed
-                  changes.push({
-                    type: "removed",
-                    startLine: oldIndex,
-                    endLine: searchOld - 1,
-                  });
-                  oldIndex = searchOld;
-                  foundMatch = true;
-                  break;
-                }
-              }
-            }
-
-            if (!foundMatch) {
-              // No match found - treat as both removed and added
-              changes.push({
-                type: "removed",
-                startLine: oldIndex,
-                endLine: oldIndex,
-              });
-              changes.push({
-                type: "added",
-                startLine: newIndex,
-                endLine: newIndex,
-              });
-              oldIndex++;
-              newIndex++;
-            }
+            // Unchanged lines - skip for decorations
+            _currentNewLineIndex = change.lineStart + change.lineCount;
+            _currentOriginalLineIndex = change.lineStart + change.lineCount;
           }
         }
 
@@ -170,7 +110,7 @@ export class DiffDecorationService extends Effect.Service<DiffDecorationService>
        * Apply diff decorations to an editor
        * For new files, all lines are marked as added (green background)
        * For edited files, calculates diff and applies appropriate decorations
-       * 
+       *
        * @param editor The TextEditor to apply decorations to (obtained from showTextDocument)
        * @param originalContent The original content before the edit
        * @param newContent The new content after the edit (for state tracking)
@@ -191,7 +131,10 @@ export class DiffDecorationService extends Effect.Service<DiffDecorationService>
             const addedRanges = [
               new vscode.Range(
                 new vscode.Position(0, 0),
-                new vscode.Position(Math.max(0, lineCount - 1), Number.MAX_SAFE_INTEGER),
+                new vscode.Position(
+                  Math.max(0, lineCount - 1),
+                  Number.MAX_SAFE_INTEGER,
+                ),
               ),
             ];
 
@@ -221,7 +164,10 @@ export class DiffDecorationService extends Effect.Service<DiffDecorationService>
                 addedRanges.push(
                   new vscode.Range(
                     new vscode.Position(change.startLine, 0),
-                    new vscode.Position(change.endLine, Number.MAX_SAFE_INTEGER),
+                    new vscode.Position(
+                      change.endLine,
+                      Number.MAX_SAFE_INTEGER,
+                    ),
                   ),
                 );
               } else if (change.type === "removed") {
@@ -231,7 +177,10 @@ export class DiffDecorationService extends Effect.Service<DiffDecorationService>
                 removedRanges.push(
                   new vscode.Range(
                     new vscode.Position(change.startLine, 0),
-                    new vscode.Position(change.endLine, Number.MAX_SAFE_INTEGER),
+                    new vscode.Position(
+                      change.endLine,
+                      Number.MAX_SAFE_INTEGER,
+                    ),
                   ),
                 );
               }
@@ -362,7 +311,7 @@ export function getDiffDecorationServiceInstance(): DiffDecorationService {
 
 /**
  * Helper to apply diff decorations (sync wrapper for tools)
- * 
+ *
  * @param editor The TextEditor to apply decorations to (obtained from showTextDocument)
  * @param originalContent The original content before the edit
  * @param newContent The new content after the edit
@@ -376,7 +325,12 @@ export function applyDiffDecorationsSync(
 ): void {
   const service = getDiffDecorationServiceInstance();
   Runtime.runSync(Runtime.defaultRuntime)(
-    service.applyDiffDecorations(editor, originalContent, newContent, isNewFile),
+    service.applyDiffDecorations(
+      editor,
+      originalContent,
+      newContent,
+      isNewFile,
+    ),
   );
 }
 

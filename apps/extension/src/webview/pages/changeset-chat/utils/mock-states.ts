@@ -1,6 +1,9 @@
 import type { LanguageModelUsage } from "ai";
-import type { ChatMessage, } from "../../../types/chat.js";
-import type { ChangesetChatError, TestSuiteQueueItem } from "../machines/changeset-chat-machine.js";
+import type { ChatMessage } from "../../../types/chat.js";
+import type {
+  ChangesetChatError,
+  TestSuiteQueueItem,
+} from "../machines/changeset-chat-machine.js";
 import type { TestFileExecution } from "./parse-test-output.js";
 
 /**
@@ -333,7 +336,8 @@ export function createMockBashExecuteMessage(): ChatMessage {
         state: "output-available",
         input: { command: "npm test -- auth.test.ts" },
         output: {
-          stdout: "PASS src/auth/__tests__/auth.test.ts\n  ✓ validates credentials (12ms)\n  ✓ handles login (45ms)\n\nTests: 2 passed, 2 total",
+          stdout:
+            "PASS src/auth/__tests__/auth.test.ts\n  ✓ validates credentials (12ms)\n  ✓ handles login (45ms)\n\nTests: 2 passed, 2 total",
           stderr: "",
           exitCode: 0,
           command: "npm test -- auth.test.ts",
@@ -360,7 +364,8 @@ export function createMockWriteTestFileMessage(): ChatMessage {
         state: "output-available",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
-          content: "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
+          content:
+            "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
         },
         output: {
           success: true,
@@ -381,7 +386,10 @@ export function createMockWriteTestFilePendingApproval(): ChatMessage {
     id: `msg-write-pending-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "I've prepared a test file for your review. Please approve or reject the changes in the diff view." },
+      {
+        type: "text",
+        text: "I've prepared a test file for your review. Please approve or reject the changes in the diff view.",
+      },
       {
         type: "tool-writeTestFile",
         toolName: "writeTestFile",
@@ -389,7 +397,8 @@ export function createMockWriteTestFilePendingApproval(): ChatMessage {
         state: "approval-requested",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
-          content: "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
+          content:
+            "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
         },
       },
     ],
@@ -413,12 +422,14 @@ export function createMockWriteTestFileRejected(): ChatMessage {
         state: "output-denied",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
-          content: "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
+          content:
+            "import { validateCredentials } from '../auth';\n\ndescribe('Authentication', () => {\n  it('should validate credentials', () => {\n    expect(validateCredentials('user', 'pass')).toBe(true);\n  });\n});",
         },
         output: {
           success: false,
           filePath: "src/auth/__tests__/auth.test.ts",
-          message: "Changes to src/auth/__tests__/auth.test.ts were rejected by user.",
+          message:
+            "Changes to src/auth/__tests__/auth.test.ts were rejected by user.",
         },
       },
     ],
@@ -434,7 +445,10 @@ export function createMockSearchKnowledgeMessage(): ChatMessage {
     id: `msg-search-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "Searching knowledge base for authentication patterns..." },
+      {
+        type: "text",
+        text: "Searching knowledge base for authentication patterns...",
+      },
       {
         type: "tool-searchKnowledge",
         toolName: "searchKnowledge",
@@ -446,13 +460,15 @@ export function createMockSearchKnowledgeMessage(): ChatMessage {
             {
               category: "testing",
               title: "Authentication Testing Best Practices",
-              content: "Use jest.mock() to mock authentication providers. Test both success and failure cases. Verify token generation and validation.",
+              content:
+                "Use jest.mock() to mock authentication providers. Test both success and failure cases. Verify token generation and validation.",
               path: ".clive/knowledge/testing/auth-patterns.md",
             },
             {
               category: "security",
               title: "Security Testing Guidelines",
-              content: "Always test edge cases like empty passwords, SQL injection attempts, and session timeout handling.",
+              content:
+                "Always test edge cases like empty passwords, SQL injection attempts, and session timeout handling.",
               path: ".clive/knowledge/security/testing.md",
             },
           ],
@@ -464,7 +480,7 @@ export function createMockSearchKnowledgeMessage(): ChatMessage {
 }
 
 /**
- * Create mock message with replaceInFile tool call
+ * Create mock message with editFileContent tool call
  */
 export function createMockReplaceInFileMessage(): ChatMessage {
   return {
@@ -473,14 +489,15 @@ export function createMockReplaceInFileMessage(): ChatMessage {
     parts: [
       { type: "text", text: "Updating test file with improved assertions..." },
       {
-        type: "tool-replaceInFile",
-        toolName: "replaceInFile",
+        type: "tool-editFileContent",
+        toolName: "editFileContent",
         toolCallId: `tool-replace-${Date.now()}`,
         state: "output-available",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
           oldText: "expect(result).toBe(true);",
-          newText: "expect(result).toEqual({ success: true, token: expect.any(String) });",
+          newText:
+            "expect(result).toEqual({ success: true, token: expect.any(String) });",
         },
         output: {
           success: true,
@@ -494,23 +511,27 @@ export function createMockReplaceInFileMessage(): ChatMessage {
 }
 
 /**
- * Create mock message with replaceInFile awaiting approval
+ * Create mock message with editFileContent awaiting approval
  */
 export function createMockReplaceInFilePendingApproval(): ChatMessage {
   return {
     id: `msg-replace-pending-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "I've prepared changes to improve the test assertions. Please review and approve or reject." },
       {
-        type: "tool-replaceInFile",
-        toolName: "replaceInFile",
+        type: "text",
+        text: "I've prepared changes to improve the test assertions. Please review and approve or reject.",
+      },
+      {
+        type: "tool-editFileContent",
+        toolName: "editFileContent",
         toolCallId: `tool-replace-pending-${Date.now()}`,
         state: "approval-requested",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
           oldText: "expect(result).toBe(true);",
-          newText: "expect(result).toEqual({ success: true, token: expect.any(String) });",
+          newText:
+            "expect(result).toEqual({ success: true, token: expect.any(String) });",
         },
       },
     ],
@@ -519,28 +540,33 @@ export function createMockReplaceInFilePendingApproval(): ChatMessage {
 }
 
 /**
- * Create mock message with replaceInFile rejected by user
+ * Create mock message with editFileContent rejected by user
  */
 export function createMockReplaceInFileRejected(): ChatMessage {
   return {
     id: `msg-replace-rejected-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "I've prepared changes to improve the test assertions." },
       {
-        type: "tool-replaceInFile",
-        toolName: "replaceInFile",
+        type: "text",
+        text: "I've prepared changes to improve the test assertions.",
+      },
+      {
+        type: "tool-editFileContent",
+        toolName: "editFileContent",
         toolCallId: `tool-replace-rejected-${Date.now()}`,
         state: "output-denied",
         input: {
           filePath: "src/auth/__tests__/auth.test.ts",
           oldText: "expect(result).toBe(true);",
-          newText: "expect(result).toEqual({ success: true, token: expect.any(String) });",
+          newText:
+            "expect(result).toEqual({ success: true, token: expect.any(String) });",
         },
         output: {
           success: false,
           filePath: "src/auth/__tests__/auth.test.ts",
-          message: "Changes to src/auth/__tests__/auth.test.ts were rejected by user.",
+          message:
+            "Changes to src/auth/__tests__/auth.test.ts were rejected by user.",
         },
       },
     ],
@@ -556,7 +582,10 @@ export function createMockWebSearchMessage(): ChatMessage {
     id: `msg-web-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "Searching web for Jest authentication testing examples..." },
+      {
+        type: "text",
+        text: "Searching web for Jest authentication testing examples...",
+      },
       {
         type: "tool-webSearch",
         toolName: "webSearch",
@@ -568,12 +597,14 @@ export function createMockWebSearchMessage(): ChatMessage {
             {
               title: "Testing Authentication in Jest - Complete Guide",
               url: "https://jestjs.io/docs/auth-testing",
-              snippet: "Learn how to test authentication flows in Jest with mocking strategies and best practices for secure testing.",
+              snippet:
+                "Learn how to test authentication flows in Jest with mocking strategies and best practices for secure testing.",
             },
             {
               title: "Mock Authentication for Testing | Jest Documentation",
               url: "https://jestjs.io/docs/mock-functions",
-              snippet: "Use jest.mock() to simulate authentication providers and test various scenarios without real credentials.",
+              snippet:
+                "Use jest.mock() to simulate authentication providers and test various scenarios without real credentials.",
             },
           ],
         },
@@ -586,7 +617,10 @@ export function createMockWebSearchMessage(): ChatMessage {
 /**
  * Create mock reasoning state
  */
-export function createMockReasoningState(): { reasoningContent: string; isReasoningStreaming: boolean } {
+export function createMockReasoningState(): {
+  reasoningContent: string;
+  isReasoningStreaming: boolean;
+} {
   return {
     reasoningContent: `Let me analyze the authentication module to identify test coverage gaps...
 
@@ -626,18 +660,21 @@ export function createMockUsage(): LanguageModelUsage {
 /**
  * Create mock error
  */
-export function createMockError(type: "subscription" | "analysis"): ChangesetChatError {
+export function createMockError(
+  type: "subscription" | "analysis",
+): ChangesetChatError {
   if (type === "subscription") {
     return {
       type: "SUBSCRIPTION_FAILED",
-      message: "Failed to connect to AI service. Please check your network connection and try again.",
+      message:
+        "Failed to connect to AI service. Please check your network connection and try again.",
       retryable: true,
     };
   }
   return {
     type: "ANALYSIS_FAILED",
-    message: "Analysis failed due to context length exceeded. Try analyzing fewer files at once.",
+    message:
+      "Analysis failed due to context length exceeded. Try analyzing fewer files at once.",
     retryable: true,
   };
 }
-

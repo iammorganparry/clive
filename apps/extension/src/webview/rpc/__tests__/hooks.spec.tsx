@@ -51,9 +51,10 @@ describe("useRpcQuery", () => {
   });
 
   const simulateResponse = (id: string, data: unknown, success = true) => {
-    if (messageHandler) {
+    const handler = messageHandler;
+    if (handler) {
       act(() => {
-        messageHandler(
+        handler(
           new MessageEvent("message", {
             data: {
               id,
@@ -153,9 +154,10 @@ describe("useRpcMutation", () => {
   });
 
   const simulateResponse = (id: string, data: unknown, success = true) => {
-    if (messageHandler) {
+    const handler = messageHandler;
+    if (handler) {
       act(() => {
-        messageHandler(
+        handler(
           new MessageEvent("message", {
             data: {
               id,
@@ -263,9 +265,10 @@ describe("useRpcSubscription", () => {
     data?: unknown,
     error?: { message: string },
   ) => {
-    if (messageHandler) {
+    const handler = messageHandler;
+    if (handler) {
       act(() => {
-        messageHandler(
+        handler(
           new MessageEvent("message", {
             data: {
               id,
