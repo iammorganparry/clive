@@ -9,55 +9,82 @@ import type { Section } from "../types.js";
 export const patternDiscovery: Section = (_config) =>
   Effect.succeed(
     `<pattern_discovery>
-**MANDATORY: Research Before Writing**
+**MANDATORY CHECKLIST: Complete Before Proposing Tests**
 
-Before writing ANY test file, you MUST:
+This is a REQUIRED checklist for plan mode. You MUST complete all steps and document findings in proposeTestPlan.
 
-1. **Find similar test files** (same test type) - framework-agnostic search:
-   - **Unit tests**: Search comprehensively using multiple patterns (adapt based on detected framework):
-     * Co-located tests (same directory as source): \\\`find src/services \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
-     * Tests in __tests__ subdirectories (JS/TS): \\\`find . -path "*/__tests__/*" | head -5\\\`
-     * Tests in tests/ or test/ directories (universal): \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -5\\\`
-     * Any location with test patterns: \\\`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
-   - **Integration tests**: Search for files containing "integration" in path or filename
-   - **E2E tests**: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
-   - **For specific source file**: If testing \\\`src/components/Button.tsx\\\` (or Button.py, Button.js, etc.), check for:
-     * Co-located: \\\`src/components/Button.test.*\\\`, \\\`src/components/Button.spec.*\\\`, \\\`src/components/test_Button.*\\\`
-     * __tests__ subdirectory: \\\`src/components/__tests__/Button.*\\\`
-     * tests directory: \\\`tests/components/Button.*\\\` or \\\`test/components/test_Button.*\\\`
-   
-2. **Read 1-2 similar test files** to understand:
-   - Import patterns and module paths
-   - Test structure (describe/it organization)
-   - Setup/teardown patterns (beforeEach, afterEach)
-   - Mock setup and dependency injection
-   - Assertion patterns and helpers
+**1. FIND SIMILAR TEST FILES** (MANDATORY):
+   - **Unit tests**: Search comprehensively using multiple patterns:
+     * Co-located tests: \\\`find src \\( -name "*.test.*" -o -name "*.spec.*" \\) | head -10\\\`
+     * Tests in __tests__: \\\`find . -path "*/__tests__/*" | head -10\\\`
+     * Tests in tests/ directories: \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -10\\\`
+   - **Integration tests**: Search for files with "integration" in path or filename
+   - **E2E tests**: Search in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
+   - **Document**: List paths of 2-3 similar test files in discoveredPatterns.testPatterns
 
-3. **Search for existing mock factories**:
-   - Check \\\`__tests__/mock-factories/\\\` or \\\`test/helpers/\\\`
-   - Search for \\\`createMock\\\` or \\\`MockFactory\\\` patterns: \\\`find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5\\\`
-   - Look for shared test utilities and helper files
+**2. READ SIMILAR TEST FILES** (MANDATORY):
+   - Read at least 1-2 similar test files completely
+   - Document patterns found:
+     * Import patterns and module paths
+     * Test structure (describe/it, test suites)
+     * Setup/teardown patterns (beforeEach, afterEach, beforeAll)
+     * Mock setup and dependency injection
+     * Assertion patterns and helpers
+   - **Document**: Add patterns to discoveredPatterns.testPatterns
 
-4. **REUSE existing mocks** - Never duplicate mock code:
-   - Import from centralized mock factories
-   - Use existing mock creation functions
-   - If a mock doesn't exist, ADD it to the factory (see rule 5)
-   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\` (or \\\`from "../test/mock_factories"\\\` for Python, etc.)
+**3. DISCOVER ALL MOCK FACTORIES** (MANDATORY):
+   - Search comprehensively:
+     * \\\`find . -path "*mock-factor*" -o -path "*/__mocks__/*"\\\`
+     * \\\`ls -la __tests__/mock-factories/ test/helpers/ 2>/dev/null\\\`
+   - List all mock factory files found
+   - Read existing mock factory files to understand patterns
+   - **Document**: Add ALL paths to discoveredPatterns.mockFactoryPaths
+   - **Map**: For each dependency, check if mock factory exists and document in mockDependencies
 
-5. **EXTEND mock factories** when new mocks are needed:
-   - Add to existing factory file rather than creating inline
-   - Follow the factory's naming conventions (e.g., \\\`createMockXXX\\\`)
-   - Export the new mock for future reuse
-   - Use configurable overrides pattern for flexibility
+**4. IDENTIFY DATABASE/CONNECTION PATTERNS** (MANDATORY):
+   - **Database connections**:
+     * Search: \\\`grep -r "createClient\\|new.*Client\\|connect.*database\\|supabase" --include="*.ts" --include="*.tsx" src | head -15\\\`
+     * Check for: PostgreSQL, MySQL, MongoDB, Supabase, Prisma clients
+     * Document connection initialization patterns
+   - **Database test patterns**:
+     * Search: \\\`grep -r "beforeAll\\|beforeEach" --include="*.test.*" --include="*.spec.*" | grep -i "database\\|db\\|client" | head -10\\\`
+     * Check for setup/teardown patterns with DB
+     * Look for test database configuration
+   - **Document**: Add to externalDependencies with type="database"
 
-**Mock Factory Pattern (Reference - framework-agnostic):**
+**5. IDENTIFY API/EXTERNAL SERVICE PATTERNS** (MANDATORY):
+   - **API calls**:
+     * Search: \\\`grep -r "fetch\\|axios\\|http\\.get\\|http\\.post" --include="*.ts" --include="*.tsx" src | head -15\\\`
+     * Check for REST APIs, GraphQL, external services
+   - **File system operations**:
+     * Search: \\\`grep -r "fs\\.\\|readFile\\|writeFile\\|existsSync" --include="*.ts" | head -10\\\`
+   - **Network operations**:
+     * Search: \\\`grep -r "WebSocket\\|socket\\.io\\|net\\.connect" --include="*.ts" | head -10\\\`
+   - **Document**: Add to externalDependencies with appropriate type
 
-\\\`\\\`\\\`
-// GOOD: Centralized mock factory with overrides (adapt syntax to your framework)
+**6. CHECK TEST ENVIRONMENT SETUP** (MANDATORY):
+   - Check for Docker/sandbox: \\\`ls docker-compose.yml .env.test .clive/.env.test 2>/dev/null\\\`
+   - Check for test database: \\\`cat .env.test 2>/dev/null | grep DATABASE\\\`
+   - Check for test configuration files
+   - **Document**: Note sandbox requirements in externalDependencies.testStrategy
+
+**7. MAP DEPENDENCIES TO MOCK STRATEGIES** (MANDATORY):
+   - For EACH dependency in target files:
+     * Check if mock factory already exists (from step 3)
+     * Determine mock strategy: "factory" (use/create), "inline" (simple), "spy" (wrap real)
+     * Document in mockDependencies array
+   - For EACH external dependency (from steps 4-5):
+     * Determine test strategy: "sandbox" (Docker), "mock" (fake), "skip" (not testing)
+     * Document in externalDependencies array
+
+**Mock Factory Pattern (Reference):**
+
+\\\`\\\`\\\`typescript
+// GOOD: Centralized mock factory with overrides
 function createMockService(overrides = {}) {
   return {
-    method1: overrides.method1 ?? mockFn().mockResolvedValue("default"),
-    method2: overrides.method2 ?? mockFn(),
+    method1: overrides.method1 ?? vi.fn().mockResolvedValue("default"),
+    method2: overrides.method2 ?? vi.fn(),
     ...overrides
   };
 }
@@ -65,36 +92,25 @@ function createMockService(overrides = {}) {
 // GOOD: Using the factory in tests
 import { createMockService } from "../__tests__/mock-factories";
 const mockService = createMockService({
-  method1: mockFn().mockResolvedValue("custom"),
+  method1: vi.fn().mockResolvedValue("custom"),
 });
 \\\`\\\`\\\`
 
-\\\`\\\`\\\`
+\\\`\\\`\\\`typescript
 // BAD: Inline mock duplication
 const mockService = {
-  method1: mockFn().mockResolvedValue("value"),
-  method2: mockFn(),
+  method1: vi.fn().mockResolvedValue("value"),
+  method2: vi.fn(),
 };
 // This should be in a factory instead!
 \\\`\\\`\\\`
 
-**Pattern Research Workflow:**
+**CRITICAL: Act Mode Depends on This**
 
-1. **Before writing tests**:
-   - Run \\\`find\\\` commands to locate similar test files and mock factories
-   - Read 1-2 similar test files to understand project conventions
-   - Check if mock factories exist for dependencies you need to mock
-
-2. **While writing tests**:
-   - Import mocks from factories, don't recreate them
-   - Follow the test structure patterns you discovered
-   - Match the import style and organization you observed
-
-3. **When you need a new mock**:
-   - Don't create it inline in your test file
-   - Add it to the appropriate mock factory file
-   - Export it so future tests can reuse it
-   - Follow the naming pattern: \\\`createMockXXX\\\`
+- Act mode will NOT rediscover this information
+- All mock strategies, patterns, and dependencies must be documented NOW
+- Incomplete discovery leads to failures in act mode
+- Take the time to complete this checklist thoroughly
 
 **Why This Matters:**
 
@@ -102,6 +118,6 @@ const mockService = {
 - **Consistency**: All tests use the same mocking patterns
 - **Maintainability**: Changes to mocks happen in one place
 - **Discoverability**: Future developers find existing mocks easily
+- **Prevents Re-planning**: Act mode has everything it needs
 </pattern_discovery>`,
   );
-
