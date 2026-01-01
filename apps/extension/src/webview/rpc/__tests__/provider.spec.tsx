@@ -159,25 +159,30 @@ describe("Client proxy", () => {
   it("should return hook factories for procedures", () => {
     const QueryWrapper = createQueryWrapper();
 
-    const { result } = renderHook(() => useRpc(), {
-      wrapper: ({ children }) => (
-        <QueryWrapper>
-          <RpcProvider vscode={mockVscode}>{children}</RpcProvider>
-        </QueryWrapper>
-      ),
-    });
+    // Test calling hooks inside a proper component
+    const TestComponent = () => {
+      const client = useRpc();
+      
+      // Query procedure should have useQuery
+      const queryHook = client.status.cypress.useQuery();
+      expect(queryHook).toBeDefined();
+      expect(queryHook).toHaveProperty('data'); // Hook returns object with data property
+      
+      // Subscription procedure should have useSubscription
+      const planTestsHook = client.agents.planTests.useSubscription();
+      expect(planTestsHook).toBeDefined();
+      expect(typeof planTestsHook.subscribe).toBe("function");
+      
+      return null;
+    };
 
-    const client = result.current;
-
-    // Query procedure should have useQuery
-    const queryHook = client.status.cypress.useQuery();
-    expect(queryHook).toBeDefined();
-    expect(typeof queryHook.data).toBeDefined(); // Hook returns object with data
-
-    // Subscription procedure should have useSubscription
-    const planTestsHook = client.agents.planTests.useSubscription();
-    expect(planTestsHook).toBeDefined();
-    expect(typeof planTestsHook.subscribe).toBe("function");
+    render(
+      <QueryWrapper>
+        <RpcProvider vscode={mockVscode}>
+          <TestComponent />
+        </RpcProvider>
+      </QueryWrapper>,
+    );
   });
 
   it("should handle deeply nested routers", () => {

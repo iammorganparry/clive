@@ -128,7 +128,11 @@ const BranchHeader: React.FC<BranchHeaderProps> = ({
 const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   const rpc = useRpc();
   const { navigate } = useRouter();
-  const { mode } = useComparisonMode();
+  const { mode: contextMode } = useComparisonMode();
+
+  // When on base branch, force uncommitted mode (no branch changes to compare)
+  const isOnBaseBranch = props.changes?.branchName === props.changes?.baseBranch;
+  const mode = isOnBaseBranch ? "uncommitted" : contextMode;
 
   // Get branch name from changes or use fallback
   const branchName =
@@ -172,8 +176,13 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
         (mode === "branch" || !!commitHash),
     });
 
-  const handleGenerateTests = useCallback(() => {
+  const handleGenerateTests = useCallback(async () => {
     if (eligibleFilePaths.length === 0) return;
+    
+    // Refetch to get fresh commit hash before navigating
+    const { data: freshCommit } = await refetchCurrentCommit();
+    const freshCommitHash = freshCommit?.commitHash;
+    
     const filesJson = JSON.stringify(eligibleFilePaths);
     const params: Record<string, string> = {
       files: filesJson,
@@ -181,8 +190,8 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
       baseBranch: props.changes?.baseBranch ?? "main",
       mode,
     };
-    if (mode === "uncommitted" && commitHash) {
-      params.commitHash = commitHash;
+    if (mode === "uncommitted" && freshCommitHash) {
+      params.commitHash = freshCommitHash;
     }
     navigate(Routes.changesetChat, params);
   }, [
@@ -191,7 +200,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
     props.changes?.baseBranch,
     navigate,
     mode,
-    commitHash,
+    refetchCurrentCommit,
   ]);
 
   const handleRefresh = useCallback(async () => {
