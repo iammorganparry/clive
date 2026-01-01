@@ -48,7 +48,7 @@ describe('TestPlanPreview', () => {
   it('should render plan summary', () => {
     render(<TestPlanPreview plan={mockPlan} />);
     
-    expect(screen.getByText(/Testing gaps identified/)).toBeDefined();
+    expect(screen.getByText(/3 gaps identified/)).toBeDefined();
   });
 
   it('should show Read More button when filePath is provided', () => {
@@ -131,8 +131,8 @@ describe('TestPlanPreview', () => {
         <TestPlanPreview plan={mockPlan} filePath="/path/to/file.ts" />
       );
       
-      // Find the card header element
-      const header = container.querySelector('[data-slot="card-header"]');
+      // Find the plan header element
+      const header = container.querySelector('[data-slot="plan-header"]');
       expect(header).toBeDefined();
       
       // Find the Read More button's parent (PlanAction)
@@ -150,9 +150,9 @@ describe('TestPlanPreview', () => {
       
       // Verify all required data-slot attributes exist
       expect(container.querySelector('[data-slot="plan"]')).toBeDefined();
-      expect(container.querySelector('[data-slot="card-header"]')).toBeDefined();
-      expect(container.querySelector('[data-slot="card-title"]')).toBeDefined();
-      expect(container.querySelector('[data-slot="card-description"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="plan-header"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="plan-title"]')).toBeDefined();
+      expect(container.querySelector('[data-slot="plan-description"]')).toBeDefined();
       expect(container.querySelector('[data-slot="plan-action"]')).toBeDefined();
       expect(container.querySelector('[data-slot="plan-trigger"]')).toBeDefined();
     });

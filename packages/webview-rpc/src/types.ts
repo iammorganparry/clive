@@ -115,6 +115,7 @@ export type InferClientProcedure<TProcedure> =
             input?: TInput;
             enabled?: boolean;
             refetchInterval?: number | false;
+            staleTime?: number;
           }) => QueryHookReturn<TOutput>;
         }
       : TType extends "mutation"

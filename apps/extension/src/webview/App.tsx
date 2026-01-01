@@ -77,7 +77,7 @@ const createMessagePromise = (
 const App: React.FC<AppProps> = ({ vscode }) => {
   logger.component.render("App", { vscodeAvailable: !!vscode });
   const { isAuthenticated } = useAuth();
-  const { route, isInitializing } = useRouter();
+  const { route, routeParams, isInitializing } = useRouter();
 
   // Notify extension that webview is ready
   useEffect(() => {
@@ -114,7 +114,8 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     }
 
     if (route === Routes.changesetChat) {
-      return <ChangesetChatPage />;
+      const chatKey = `${routeParams.mode}-${routeParams.branchName}-${routeParams.commitHash ?? "branch"}`;
+      return <ChangesetChatPage key={chatKey} />;
     }
 
     // Default to dashboard
