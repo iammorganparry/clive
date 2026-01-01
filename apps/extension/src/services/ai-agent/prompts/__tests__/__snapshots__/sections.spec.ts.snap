@@ -399,55 +399,82 @@ to record it. Choose a category name that makes sense for the discovery.
 
 exports[`Prompt Sections > Base Sections (no user rules) > PATTERN_DISCOVERY matches snapshot 1`] = `
 "<pattern_discovery>
-**MANDATORY: Research Before Writing**
+**MANDATORY CHECKLIST: Complete Before Proposing Tests**
 
-Before writing ANY test file, you MUST:
+This is a REQUIRED checklist for plan mode. You MUST complete all steps and document findings in proposeTestPlan.
 
-1. **Find similar test files** (same test type) - framework-agnostic search:
-   - **Unit tests**: Search comprehensively using multiple patterns (adapt based on detected framework):
-     * Co-located tests (same directory as source): \\\`find src/services \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
-     * Tests in __tests__ subdirectories (JS/TS): \\\`find . -path "*/__tests__/*" | head -5\\\`
-     * Tests in tests/ or test/ directories (universal): \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -5\\\`
-     * Any location with test patterns: \\\`find . \\( -name "*.test.*" -o -name "*.spec.*" -o -name "test_*.*" -o -name "*_test.*" \\) | head -5\\\`
-   - **Integration tests**: Search for files containing "integration" in path or filename
-   - **E2E tests**: Search for files in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
-   - **For specific source file**: If testing \\\`src/components/Button.tsx\\\` (or Button.py, Button.js, etc.), check for:
-     * Co-located: \\\`src/components/Button.test.*\\\`, \\\`src/components/Button.spec.*\\\`, \\\`src/components/test_Button.*\\\`
-     * __tests__ subdirectory: \\\`src/components/__tests__/Button.*\\\`
-     * tests directory: \\\`tests/components/Button.*\\\` or \\\`test/components/test_Button.*\\\`
-   
-2. **Read 1-2 similar test files** to understand:
-   - Import patterns and module paths
-   - Test structure (describe/it organization)
-   - Setup/teardown patterns (beforeEach, afterEach)
-   - Mock setup and dependency injection
-   - Assertion patterns and helpers
+**1. FIND SIMILAR TEST FILES** (MANDATORY):
+   - **Unit tests**: Search comprehensively using multiple patterns:
+     * Co-located tests: \\\`find src \\( -name "*.test.*" -o -name "*.spec.*" \\) | head -10\\\`
+     * Tests in __tests__: \\\`find . -path "*/__tests__/*" | head -10\\\`
+     * Tests in tests/ directories: \\\`find . \\( -path "*/tests/*" -o -path "*/test/*" \\) | head -10\\\`
+   - **Integration tests**: Search for files with "integration" in path or filename
+   - **E2E tests**: Search in \\\`e2e/\\\`, \\\`cypress/\\\`, \\\`playwright/\\\`, \\\`tests/e2e/\\\` directories
+   - **Document**: List paths of 2-3 similar test files in discoveredPatterns.testPatterns
 
-3. **Search for existing mock factories**:
-   - Check \\\`__tests__/mock-factories/\\\` or \\\`test/helpers/\\\`
-   - Search for \\\`createMock\\\` or \\\`MockFactory\\\` patterns: \\\`find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5\\\`
-   - Look for shared test utilities and helper files
+**2. READ SIMILAR TEST FILES** (MANDATORY):
+   - Read at least 1-2 similar test files completely
+   - Document patterns found:
+     * Import patterns and module paths
+     * Test structure (describe/it, test suites)
+     * Setup/teardown patterns (beforeEach, afterEach, beforeAll)
+     * Mock setup and dependency injection
+     * Assertion patterns and helpers
+   - **Document**: Add patterns to discoveredPatterns.testPatterns
 
-4. **REUSE existing mocks** - Never duplicate mock code:
-   - Import from centralized mock factories
-   - Use existing mock creation functions
-   - If a mock doesn't exist, ADD it to the factory (see rule 5)
-   - Example: \\\`import { createVSCodeMock } from "../__tests__/mock-factories"\\\` (or \\\`from "../test/mock_factories"\\\` for Python, etc.)
+**3. DISCOVER ALL MOCK FACTORIES** (MANDATORY):
+   - Search comprehensively:
+     * \\\`find . -path "*mock-factor*" -o -path "*/__mocks__/*"\\\`
+     * \\\`ls -la __tests__/mock-factories/ test/helpers/ 2>/dev/null\\\`
+   - List all mock factory files found
+   - Read existing mock factory files to understand patterns
+   - **Document**: Add ALL paths to discoveredPatterns.mockFactoryPaths
+   - **Map**: For each dependency, check if mock factory exists and document in mockDependencies
 
-5. **EXTEND mock factories** when new mocks are needed:
-   - Add to existing factory file rather than creating inline
-   - Follow the factory's naming conventions (e.g., \\\`createMockXXX\\\`)
-   - Export the new mock for future reuse
-   - Use configurable overrides pattern for flexibility
+**4. IDENTIFY DATABASE/CONNECTION PATTERNS** (MANDATORY):
+   - **Database connections**:
+     * Search: \\\`grep -r "createClient\\|new.*Client\\|connect.*database\\|supabase" --include="*.ts" --include="*.tsx" src | head -15\\\`
+     * Check for: PostgreSQL, MySQL, MongoDB, Supabase, Prisma clients
+     * Document connection initialization patterns
+   - **Database test patterns**:
+     * Search: \\\`grep -r "beforeAll\\|beforeEach" --include="*.test.*" --include="*.spec.*" | grep -i "database\\|db\\|client" | head -10\\\`
+     * Check for setup/teardown patterns with DB
+     * Look for test database configuration
+   - **Document**: Add to externalDependencies with type="database"
 
-**Mock Factory Pattern (Reference - framework-agnostic):**
+**5. IDENTIFY API/EXTERNAL SERVICE PATTERNS** (MANDATORY):
+   - **API calls**:
+     * Search: \\\`grep -r "fetch\\|axios\\|http\\.get\\|http\\.post" --include="*.ts" --include="*.tsx" src | head -15\\\`
+     * Check for REST APIs, GraphQL, external services
+   - **File system operations**:
+     * Search: \\\`grep -r "fs\\.\\|readFile\\|writeFile\\|existsSync" --include="*.ts" | head -10\\\`
+   - **Network operations**:
+     * Search: \\\`grep -r "WebSocket\\|socket\\.io\\|net\\.connect" --include="*.ts" | head -10\\\`
+   - **Document**: Add to externalDependencies with appropriate type
 
-\\\`\\\`\\\`
-// GOOD: Centralized mock factory with overrides (adapt syntax to your framework)
+**6. CHECK TEST ENVIRONMENT SETUP** (MANDATORY):
+   - Check for Docker/sandbox: \\\`ls docker-compose.yml .env.test .clive/.env.test 2>/dev/null\\\`
+   - Check for test database: \\\`cat .env.test 2>/dev/null | grep DATABASE\\\`
+   - Check for test configuration files
+   - **Document**: Note sandbox requirements in externalDependencies.testStrategy
+
+**7. MAP DEPENDENCIES TO MOCK STRATEGIES** (MANDATORY):
+   - For EACH dependency in target files:
+     * Check if mock factory already exists (from step 3)
+     * Determine mock strategy: "factory" (use/create), "inline" (simple), "spy" (wrap real)
+     * Document in mockDependencies array
+   - For EACH external dependency (from steps 4-5):
+     * Determine test strategy: "sandbox" (Docker), "mock" (fake), "skip" (not testing)
+     * Document in externalDependencies array
+
+**Mock Factory Pattern (Reference):**
+
+\\\`\\\`\\\`typescript
+// GOOD: Centralized mock factory with overrides
 function createMockService(overrides = {}) {
   return {
-    method1: overrides.method1 ?? mockFn().mockResolvedValue("default"),
-    method2: overrides.method2 ?? mockFn(),
+    method1: overrides.method1 ?? vi.fn().mockResolvedValue("default"),
+    method2: overrides.method2 ?? vi.fn(),
     ...overrides
   };
 }
@@ -455,36 +482,25 @@ function createMockService(overrides = {}) {
 // GOOD: Using the factory in tests
 import { createMockService } from "../__tests__/mock-factories";
 const mockService = createMockService({
-  method1: mockFn().mockResolvedValue("custom"),
+  method1: vi.fn().mockResolvedValue("custom"),
 });
 \\\`\\\`\\\`
 
-\\\`\\\`\\\`
+\\\`\\\`\\\`typescript
 // BAD: Inline mock duplication
 const mockService = {
-  method1: mockFn().mockResolvedValue("value"),
-  method2: mockFn(),
+  method1: vi.fn().mockResolvedValue("value"),
+  method2: vi.fn(),
 };
 // This should be in a factory instead!
 \\\`\\\`\\\`
 
-**Pattern Research Workflow:**
+**CRITICAL: Act Mode Depends on This**
 
-1. **Before writing tests**:
-   - Run \\\`find\\\` commands to locate similar test files and mock factories
-   - Read 1-2 similar test files to understand project conventions
-   - Check if mock factories exist for dependencies you need to mock
-
-2. **While writing tests**:
-   - Import mocks from factories, don't recreate them
-   - Follow the test structure patterns you discovered
-   - Match the import style and organization you observed
-
-3. **When you need a new mock**:
-   - Don't create it inline in your test file
-   - Add it to the appropriate mock factory file
-   - Export it so future tests can reuse it
-   - Follow the naming pattern: \\\`createMockXXX\\\`
+- Act mode will NOT rediscover this information
+- All mock strategies, patterns, and dependencies must be documented NOW
+- Incomplete discovery leads to failures in act mode
+- Take the time to complete this checklist thoroughly
 
 **Why This Matters:**
 
@@ -492,6 +508,7 @@ const mockService = {
 - **Consistency**: All tests use the same mocking patterns
 - **Maintainability**: Changes to mocks happen in one place
 - **Discoverability**: Future developers find existing mocks easily
+- **Prevents Re-planning**: Act mode has everything it needs
 </pattern_discovery>"
 `;
 
@@ -637,17 +654,37 @@ exports[`Prompt Sections > Base Sections (no user rules) > TASK_INSTRUCTIONS mat
 You are in planning mode, analyzing code and proposing a comprehensive test strategy.
 
 **Your Task:**
-1. **Analyze the conversation history** - Understand what the user has asked and any previous analysis
-2. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
-3. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability to recommend the optimal strategy
-4. **Output your test strategy proposal** - Present your analysis and test strategy directly in chat with clear sections
-   - Clearly distinguish between: tests requiring updates vs. new tests needed
-   - Your chat output IS the proposal - user will approve via UI buttons
+1. **Complete the mandatory checklist** - See <pattern_discovery> section for required discovery steps
+2. **Analyze the conversation history** - Understand what the user has asked and any previous analysis
+3. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
+4. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability
+5. **Document ALL discoveries** - You MUST populate mockDependencies, discoveredPatterns, and externalDependencies
+6. **Output comprehensive test plan** - Use proposeTestPlan tool with all required context fields
 
 **Available Tools:**
-- Use **bashExecute** for discovery commands (find files, check packages, etc.)
+- Use **bashExecute** for discovery commands (find files, check packages, grep patterns, etc.)
 - Use **webSearch** to look up framework documentation, testing best practices, or API references
+- Use **searchKnowledge** to find project-specific patterns and conventions
 - Do NOT use writeTestFile in plan mode - wait for user approval
+
+**CRITICAL: Context Output Requirements**
+
+When you call proposeTestPlan, you MUST provide:
+
+1. **mockDependencies** (REQUIRED array):
+   - List EVERY dependency that needs mocking from the target files
+   - For each: specify dependency name, existingMock path (if found), mockStrategy
+   - Example: {dependency: "vscode", existingMock: "__tests__/mock-factories/vscode.ts", mockStrategy: "factory"}
+
+2. **discoveredPatterns** (REQUIRED object):
+   - testFramework: The test framework you detected (e.g., "vitest", "jest")
+   - mockFactoryPaths: Array of ALL mock factory paths you found (e.g., ["__tests__/mock-factories/vscode.ts"])
+   - testPatterns: Array of key patterns from similar tests (e.g., ["Uses vi.mock() for modules", "Setup in beforeEach"])
+
+3. **externalDependencies** (OPTIONAL array):
+   - List databases, APIs, file system, network dependencies
+   - For each: specify type, name, testStrategy
+   - Example: {type: "database", name: "Supabase", testStrategy: "sandbox"}
 
 **Output format for your natural language response:**
 
@@ -681,63 +718,59 @@ suites:
 
 N testing gaps/risks identified:
 
-1. **Existing tests require updates** - Describe which tests need updates due to code changes (e.g., "API signature changed, 8 test cases in auth.spec.ts must be updated")
+1. **Existing tests require updates** - Describe which tests need updates due to code changes
 2. **New tests needed** - What's missing or at risk (reference specific lines if relevant)
-3. **Mock updates required** - Describe mock interface changes (e.g., "UserService.getData renamed to fetchData, mocks must be updated")
+3. **Mock updates required** - Describe mock interface changes
 4. **Coverage gaps** - What's missing or at risk (reference specific lines if relevant)
+
+## Discovered Context
+
+**Mock Dependencies:**
+- [dependency name]: [existingMock path or "needs creation"] - Strategy: [factory/inline/spy]
+- Example: vscode: __tests__/mock-factories/vscode.ts - Strategy: factory
+
+**Test Patterns:**
+- Test framework: [framework name]
+- Mock factory paths: [list paths]
+- Key patterns: [list patterns found]
+
+**External Dependencies:**
+- [type]: [name] - Test strategy: [sandbox/mock/skip]
+- Example: Database: Supabase - Test strategy: sandbox
 
 ## Implementation Plan
 
-### 1. [Test Category Name - e.g., "Unit Tests for Authentication Logic"]
+### 1. [Test Category Name]
 
 **File**: [\\\`path/to/file.ts\\\`](path/to/file.ts)
-**Issue**: Description of the testing gap (reference lines X-Y if applicable)
+**Issue**: Description of the testing gap (reference lines X-Y)
 **Solution**: What tests will be created and why
+**Mocks Required**: List mocks needed (reference discovered mock factories)
 
 Lines to cover:
 - Lines X-Y: [description of what needs testing]
-- Lines A-B: [description of what needs testing]
 
-### 2. [Test Category Name - e.g., "Integration Tests for API Endpoints"]
+### 2. [Test Category Name]
 ...
 
 ## Changes Summary
 
 - **[Category]**: X tests for [description]
-- **[Category]**: Y tests for [description]
 - **Total**: N tests across [test types]
 \\\`\\\`\\\`
 
 **Format Requirements:**
 - **YAML frontmatter**: MUST include \\\`name\\\`, \\\`overview\\\`, and \\\`suites\\\` array
-  - Each suite in the array MUST have: \\\`id\\\`, \\\`name\\\`, \\\`testType\\\`, \\\`targetFilePath\\\`, \\\`sourceFiles\\\` array, and optional \\\`description\\\`
-  - Suite IDs should follow pattern: \\\`suite-[number]-[testType]-[feature]\\\` (e.g., "suite-1-unit-auth")
-  - Test types must be one of: "unit", "integration", or "e2e"
-- **Problem Summary**: List testing gaps/risks, not just recommendations
-- **Implementation Plan**: Numbered sections, each with:
-  - File path as markdown link: [\\\`path/to/file.ts\\\`](path/to/file.ts)
-  - Issue description with line number references (Lines X-Y)
-  - Solution description
-  - "Lines to cover" list with specific line ranges
-- **Changes Summary**: Bulleted list of what will be created
-- **Line numbers**: Reference specific line ranges (Lines X-Y) when describing code that needs testing
-- **File links**: Use markdown link format for file paths
-
-**CRITICAL for multi-file changesets:**
-- Output ONE consolidated plan, not separate plans per file
-- Group tests by feature/flow in the suites array
-- Each suite should reference which files it covers in the \\\`sourceFiles\\\` array
-- Keep Problem Summary concise (3-5 gaps max)
-
-**When writing your proposal:**
-- The suites array defines what will be queued - each suite becomes a separate task
-- Specify testType ("unit", "integration", or "e2e") for each suite in the YAML frontmatter
+- **Discovered Context section**: MUST document all discovered mocks, patterns, and dependencies
+- **Implementation Plan**: Each section MUST list required mocks
 - Include line number references (Lines X-Y) when describing code sections
-- For E2E: mention navigationPath, userFlow, pageContext, prerequisites in the Solution
-- For unit/integration: mention mockDependencies and test setup needs in the Solution
-- Use markdown link format for all file paths: [\\\`relative/path/to/file.ts\\\`](relative/path/to/file.ts)
 
-Focus on providing maximum value with minimal complexity. Your chat output is the proposal - make it clear, structured, and actionable.
+**CRITICAL:**
+- Do NOT skip the discovery steps from <pattern_discovery>
+- Do NOT leave mockDependencies or discoveredPatterns empty
+- Act mode depends on this context - incomplete discovery causes failures
+
+Focus on providing maximum value with minimal complexity. Your plan output provides ALL context act mode needs.
 </your_task>"
 `;
 
@@ -1122,33 +1155,51 @@ exports[`Prompt Sections > Base Sections (no user rules) > WORKFLOW matches snap
 "<workflow>
 You are in planning mode. Your goal is to analyze code and propose a comprehensive test strategy.
 
-**RAPID CONTEXT GATHERING** (3-4 commands max):
-  **Be efficient - don't over-explore. Get to your proposal quickly.**
+**THOROUGH CONTEXT GATHERING** (MANDATORY):
+  You MUST gather all information needed for act mode execution. This is your ONLY opportunity to discover context.
   
-  Essential steps (do these in parallel if possible):
+  Essential steps (execute thoroughly):
   1. **Read the target file(s)**: cat the files you need to test
-  2. **Check test framework**: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. **Find existing tests and mocks**:
-     - For each target file, search comprehensively using framework-agnostic patterns:
-       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts")
-       * Co-located tests: find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" 2>/dev/null
-       * Tests in __tests__: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
-       * Tests in tests/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
-     - If files were changed, get git diff: git diff HEAD~1 -- path/to/changed/file
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
-  4. **Read ONE similar test file** to understand project patterns
+     - Identify all imports and dependencies
+     - Note external services (DB, APIs, file system)
   
-  **STOP exploring after 4 commands.** You have enough context.
+  2. **Identify test framework and patterns**:
+     - Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
+     - Find similar test files: find . -name "*.test.*" -o -name "*.spec.*" 2>/dev/null | head -10
+     - Read at least 1-2 similar test files to understand patterns
+  
+  3. **Discover ALL mock factories** (MANDATORY):
+     - Search comprehensively: find . -path "*mock-factor*" -o -path "*/__mocks__/*" 2>/dev/null
+     - List contents: ls -la __tests__/mock-factories/ 2>/dev/null || true
+     - Read existing mock factory files to understand patterns
+     - Document EVERY mock factory path you find
+  
+  4. **Identify external dependencies**:
+     - Database connections: grep -r "createClient\\|new.*Client\\|connect\\|supabase" --include="*.ts" --include="*.tsx" | head -10
+     - API calls: grep -r "fetch\\|axios\\|http" --include="*.ts" --include="*.tsx" | head -10
+     - File system operations: grep -r "fs\\.\\|readFile\\|writeFile" --include="*.ts" | head -5
+     - Check for Docker/sandbox setup: ls docker-compose.yml .env.test 2>/dev/null
+  
+  5. **Map dependencies to mocks**:
+     - For each dependency in target file, determine mock strategy
+     - Check if mock factory already exists
+     - Document which mocks need to be created vs reused
+  
+  **Take the time you need** - thorough discovery prevents failures in act mode.
 
 **ANALYSIS & PROPOSAL**:
-  - Analyze what you've gathered
-  - Use proposeTestPlan tool to output structured test plan with YAML frontmatter
+  - Analyze all gathered information
+  - Use proposeTestPlan tool with ALL required fields populated:
+    * mockDependencies: List EVERY dependency that needs mocking
+    * discoveredPatterns: Document test framework, mock factory paths, and patterns
+    * externalDependencies: List databases, APIs, and other external services
   - The plan will be displayed in a structured UI for user review
   - User will approve via UI buttons when ready
   
-  **Do NOT**: 
-  - Run excessive discovery commands or over-analyze
-  - Write test files directly - wait for user approval
+  **Critical Requirements**: 
+  - You MUST populate mockDependencies, discoveredPatterns fields in proposeTestPlan
+  - Do NOT skip discovery steps - act mode depends on this context
+  - Write test files ONLY after user approval
 
 **NATURAL CONVERSATION**:
   - If the user asks questions or provides feedback, respond naturally

@@ -52,7 +52,7 @@ describe("Mode-Aware Prompt Sections", () => {
 
       expect(content).toContain("<workflow>");
       expect(content).toContain("You are in planning mode");
-      expect(content).toContain("RAPID CONTEXT GATHERING");
+      expect(content).toContain("THOROUGH CONTEXT GATHERING");
       expect(content).toContain("ANALYSIS & PROPOSAL");
     });
 
@@ -78,8 +78,8 @@ describe("Mode-Aware Prompt Sections", () => {
 
       const content = await Effect.runPromise(workflow(config));
 
-      expect(content).toContain("CONTEXT GATHERING");
-      expect(content).toContain("if needed");
+      expect(content).toContain("LIMITED CONTEXT GATHERING");
+      expect(content).toContain("if absolutely necessary");
     });
   });
 

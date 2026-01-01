@@ -40,9 +40,7 @@ describe("cache-control", () => {
       });
 
       it("should pass through messages unchanged for generic model", () => {
-        const messages = [
-          { role: "user" as const, content: "Test message" },
-        ];
+        const messages = [{ role: "user" as const, content: "Test message" }];
         const model: LanguageModel = {
           provider: "google",
           modelId: "gemini-pro",
@@ -55,9 +53,7 @@ describe("cache-control", () => {
       });
 
       it("should handle string model that is not Anthropic", () => {
-        const messages = [
-          { role: "user" as const, content: "Hello" },
-        ];
+        const messages = [{ role: "user" as const, content: "Hello" }];
         const model = "openai:gpt-4" as unknown as LanguageModel;
 
         const result = addCacheControlToMessages(messages, model);
@@ -68,11 +64,11 @@ describe("cache-control", () => {
     });
 
     describe("Anthropic models - provider detection", () => {
-      it("should add cache control to last message when provider is 'anthropic'", () => {
+      it("should add cache control to first message (system prompt) when provider is 'anthropic'", () => {
         const messages = [
+          { role: "system" as const, content: "You are a helpful assistant" },
           { role: "user" as const, content: "First message" },
           { role: "assistant" as const, content: "Second message" },
-          { role: "user" as const, content: "Third message" },
         ];
         const model: LanguageModel = {
           provider: "anthropic",
@@ -82,17 +78,19 @@ describe("cache-control", () => {
         const result = addCacheControlToMessages(messages, model);
 
         expect(result).toHaveLength(3);
-        expect(result[0]).not.toHaveProperty("providerOptions");
-        expect(result[1]).not.toHaveProperty("providerOptions");
-        expect(result[2]).toHaveProperty("providerOptions");
-        expect(result[2].providerOptions).toEqual({
+        // First message (system prompt) should have cache control
+        expect(result[0]).toHaveProperty("providerOptions");
+        expect(result[0].providerOptions).toEqual({
           anthropic: { cacheControl: { type: "ephemeral" } },
         });
+        // Other messages should not have cache control
+        expect(result[1]).not.toHaveProperty("providerOptions");
+        expect(result[2]).not.toHaveProperty("providerOptions");
       });
 
       it("should detect Anthropic when provider contains 'anthropic'", () => {
         const messages = [
-          { role: "user" as const, content: "Message" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model: LanguageModel = {
           provider: "custom-anthropic-proxy",
@@ -111,7 +109,7 @@ describe("cache-control", () => {
     describe("Anthropic models - modelId detection", () => {
       it("should detect Anthropic when modelId contains 'claude'", () => {
         const messages = [
-          { role: "user" as const, content: "Test" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model: LanguageModel = {
           provider: "custom-provider",
@@ -128,7 +126,7 @@ describe("cache-control", () => {
 
       it("should detect Anthropic when modelId contains 'anthropic'", () => {
         const messages = [
-          { role: "user" as const, content: "Test" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model: LanguageModel = {
           provider: "custom-provider",
@@ -145,7 +143,7 @@ describe("cache-control", () => {
 
       it("should detect Anthropic from string model with 'claude'", () => {
         const messages = [
-          { role: "user" as const, content: "Test" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model = "claude-3-opus" as unknown as LanguageModel;
 
@@ -159,7 +157,7 @@ describe("cache-control", () => {
 
       it("should detect Anthropic from string model with 'anthropic'", () => {
         const messages = [
-          { role: "user" as const, content: "Test" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model = "anthropic/claude-3" as unknown as LanguageModel;
 
@@ -173,9 +171,9 @@ describe("cache-control", () => {
     });
 
     describe("single message array", () => {
-      it("should add cache control to single message for Anthropic model", () => {
+      it("should add cache control to first message for Anthropic model", () => {
         const messages = [
-          { role: "user" as const, content: "Single message" },
+          { role: "system" as const, content: "System prompt" },
         ];
         const model: LanguageModel = {
           provider: "anthropic",
@@ -185,16 +183,16 @@ describe("cache-control", () => {
         const result = addCacheControlToMessages(messages, model);
 
         expect(result).toHaveLength(1);
-        expect(result[0].role).toBe("user");
-        expect(result[0].content).toBe("Single message");
+        expect(result[0].role).toBe("system");
+        expect(result[0].content).toBe("System prompt");
         expect(result[0].providerOptions).toEqual({
           anthropic: { cacheControl: { type: "ephemeral" } },
         });
       });
     });
 
-    describe("multiple messages - only last gets cache control", () => {
-      it("should only add cache control to the last message", () => {
+    describe("selective caching strategy", () => {
+      it("should only add cache control to system prompt (first message)", () => {
         const messages = [
           { role: "system" as const, content: "You are a helpful assistant" },
           { role: "user" as const, content: "What is 2+2?" },
@@ -209,12 +207,16 @@ describe("cache-control", () => {
         const result = addCacheControlToMessages(messages, model);
 
         expect(result).toHaveLength(4);
-        
-        // First three messages should not have cache control
-        expect(result[0]).not.toHaveProperty("providerOptions");
+
+        // First message (system prompt) should have cache control
+        expect(result[0]).toHaveProperty("providerOptions");
         expect(result[0].role).toBe("system");
         expect(result[0].content).toBe("You are a helpful assistant");
+        expect(result[0].providerOptions).toEqual({
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        });
 
+        // Other messages should not have cache control
         expect(result[1]).not.toHaveProperty("providerOptions");
         expect(result[1].role).toBe("user");
         expect(result[1].content).toBe("What is 2+2?");
@@ -223,17 +225,14 @@ describe("cache-control", () => {
         expect(result[2].role).toBe("assistant");
         expect(result[2].content).toBe("4");
 
-        // Last message should have cache control
-        expect(result[3]).toHaveProperty("providerOptions");
+        expect(result[3]).not.toHaveProperty("providerOptions");
         expect(result[3].role).toBe("user");
         expect(result[3].content).toBe("Thanks!");
-        expect(result[3].providerOptions).toEqual({
-          anthropic: { cacheControl: { type: "ephemeral" } },
-        });
       });
 
       it("should preserve message properties while adding cache control", () => {
         const messages = [
+          { role: "system" as const, content: "System prompt", id: "msg-sys" },
           { role: "user" as const, content: "Message 1", id: "msg-1" },
           { role: "assistant" as const, content: "Message 2", id: "msg-2" },
         ];
@@ -244,16 +243,80 @@ describe("cache-control", () => {
 
         const result = addCacheControlToMessages(messages, model);
 
-        expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({ role: "user", content: "Message 1", id: "msg-1" });
-        expect(result[1]).toMatchObject({
-          role: "assistant",
-          content: "Message 2",
-          id: "msg-2",
+        expect(result).toHaveLength(3);
+        // System prompt should have cache control
+        expect(result[0]).toMatchObject({
+          role: "system",
+          content: "System prompt",
+          id: "msg-sys",
           providerOptions: {
             anthropic: { cacheControl: { type: "ephemeral" } },
           },
         });
+        // Other messages should not have cache control
+        expect(result[1]).toEqual({
+          role: "user",
+          content: "Message 1",
+          id: "msg-1",
+        });
+        expect(result[2]).toEqual({
+          role: "assistant",
+          content: "Message 2",
+          id: "msg-2",
+        });
+      });
+
+      it("should cache proposeTestPlan tool results", () => {
+        const messages = [
+          { role: "system" as const, content: "System prompt" },
+          { role: "user" as const, content: "Create a test plan" },
+          {
+            role: "assistant" as const,
+            content:
+              '{"success": true, "planId": "plan-123", "name": "Test Plan"}',
+          },
+        ];
+        const model: LanguageModel = {
+          provider: "anthropic",
+          modelId: "claude-3-opus",
+        } as LanguageModel;
+
+        const result = addCacheControlToMessages(messages, model);
+
+        expect(result).toHaveLength(3);
+        // System prompt should have cache control
+        expect(result[0]).toHaveProperty("providerOptions");
+        // User message should not
+        expect(result[1]).not.toHaveProperty("providerOptions");
+        // proposeTestPlan result should have cache control
+        expect(result[2]).toHaveProperty("providerOptions");
+        expect(result[2].providerOptions).toEqual({
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        });
+      });
+
+      it("should not cache other tool results", () => {
+        const messages = [
+          { role: "system" as const, content: "System prompt" },
+          { role: "user" as const, content: "Write a test" },
+          {
+            role: "assistant" as const,
+            content: '{"success": true, "filePath": "/test.ts"}',
+          },
+        ];
+        const model: LanguageModel = {
+          provider: "anthropic",
+          modelId: "claude-3-opus",
+        } as LanguageModel;
+
+        const result = addCacheControlToMessages(messages, model);
+
+        expect(result).toHaveLength(3);
+        // System prompt should have cache control
+        expect(result[0]).toHaveProperty("providerOptions");
+        // Other messages should not
+        expect(result[1]).not.toHaveProperty("providerOptions");
+        expect(result[2]).not.toHaveProperty("providerOptions");
       });
     });
 
@@ -275,17 +338,19 @@ describe("cache-control", () => {
 
         const systemResult = addCacheControlToMessages(systemMessages, model);
         const userResult = addCacheControlToMessages(userMessages, model);
-        const assistantResult = addCacheControlToMessages(assistantMessages, model);
+        const assistantResult = addCacheControlToMessages(
+          assistantMessages,
+          model,
+        );
 
+        // All should have cache control when they're the first (and only) message
         expect(systemResult[0].providerOptions).toBeDefined();
         expect(userResult[0].providerOptions).toBeDefined();
         expect(assistantResult[0].providerOptions).toBeDefined();
       });
 
       it("should handle messages with empty content", () => {
-        const messages = [
-          { role: "user" as const, content: "" },
-        ];
+        const messages = [{ role: "system" as const, content: "" }];
         const model: LanguageModel = {
           provider: "anthropic",
           modelId: "claude-3-5-sonnet-20241022",

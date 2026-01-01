@@ -1,6 +1,6 @@
 /**
  * Dynamic Prompt Caching Utility
- * 
+ *
  * Adds provider-specific cache control to messages.
  * Anthropic: marks last message with ephemeral cache control.
  * Extensible to other providers/strategies.
@@ -37,11 +37,16 @@ function isAnthropicModel(model: LanguageModel): boolean {
 }
 
 /**
- * Add cache control to the last message for incremental caching
- * 
- * Per Anthropic's best practice: "Mark the final block of the final message 
- * with cache_control so the conversation can be incrementally cached."
- * 
+ * Add cache control to stable messages for efficient caching
+ *
+ * Caches only:
+ * 1. System prompt (first message) - Stable across conversation
+ * 2. proposeTestPlan tool results - Referenced in subsequent turns
+ *
+ * This avoids expensive cache writes on frequently changing content
+ * (user messages, other assistant responses) while maximizing cache hits
+ * on stable, reusable content.
+ *
  * For non-Anthropic models, messages pass through unchanged.
  */
 export function addCacheControlToMessages<
@@ -51,7 +56,16 @@ export function addCacheControlToMessages<
   if (!isAnthropicModel(model)) return messages as MessageWithCache[];
 
   return messages.map((message, index) => {
-    if (index === messages.length - 1) {
+    // Cache the system prompt (first message)
+    const isSystemPrompt = index === 0;
+
+    // Cache proposeTestPlan tool results (contain stable plan data)
+    const isProposeTestPlanOutput =
+      typeof message.content === "string" &&
+      message.content.includes('"planId"') &&
+      message.content.includes('"success"');
+
+    if (isSystemPrompt || isProposeTestPlanOutput) {
       return {
         ...message,
         providerOptions: {

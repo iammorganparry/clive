@@ -14,7 +14,9 @@ import { executeTool } from "./test-helpers";
 
 // Mock vscode module using shared factory
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../../../__tests__/mock-factories");
+  const { createVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories"
+  );
   return createVSCodeMock();
 });
 
@@ -29,7 +31,8 @@ describe("proposeTestPlanTool", () => {
 
   // Counter for unique toolCallIds to avoid state conflicts between tests
   let testCounter = 0;
-  const getUniqueToolCallId = () => `test-tool-call-${++testCounter}-${Date.now()}`;
+  const getUniqueToolCallId = () =>
+    `test-tool-call-${++testCounter}-${Date.now()}`;
 
   beforeEach(() => {
     mockFs = vscode.workspace.fs as unknown as {
@@ -57,17 +60,17 @@ describe("proposeTestPlanTool", () => {
     // Default: createDirectory succeeds
     mockFs.createDirectory.mockResolvedValue(undefined);
     // Default: openTextDocument succeeds
-    (vscode.workspace.openTextDocument as unknown as ReturnType<
-      typeof vi.fn
-    >).mockResolvedValue(mockDocument);
+    (
+      vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockDocument);
     // Default: showTextDocument succeeds
-    (vscode.window.showTextDocument as unknown as ReturnType<
-      typeof vi.fn
-    >).mockResolvedValue(mockEditor);
+    (
+      vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockEditor);
     // Default: applyEdit succeeds
-    (vscode.workspace.applyEdit as unknown as ReturnType<
-      typeof vi.fn
-    >).mockResolvedValue(true);
+    (
+      vscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(true);
   });
 
   describe("Tool Execution", () => {
@@ -93,21 +96,43 @@ describe("proposeTestPlanTool", () => {
             sourceFiles: ["src/auth/middleware.ts"],
           },
         ],
+        mockDependencies: [
+          {
+            dependency: "AuthService",
+            existingMock: "__tests__/mock-factories/auth.ts",
+            mockStrategy: "factory",
+          },
+        ],
+        discoveredPatterns: {
+          testFramework: "vitest",
+          mockFactoryPaths: ["__tests__/mock-factories/auth.ts"],
+          testPatterns: ["Uses vi.mock() for modules", "Setup in beforeEach"],
+        },
+        externalDependencies: [
+          {
+            type: "database",
+            name: "Supabase",
+            testStrategy: "mock",
+          },
+        ],
         planContent: "# Test Plan\n\n## Overview\nTest authentication",
       };
 
-      const result = await executeTool(
-        tool,
-        input,
-        {
-          success: false,
-          planId: "",
-          name: "",
-          overview: "",
-          suites: [] as ProposeTestPlanOutput["suites"],
-          message: "No result returned",
-        } satisfies ProposeTestPlanOutput,
-      );
+      const result = await executeTool(tool, input, {
+        success: false,
+        planId: "",
+        name: "",
+        overview: "",
+        suites: [] as ProposeTestPlanOutput["suites"],
+        message: "No result returned",
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        externalDependencies: [],
+      } satisfies ProposeTestPlanOutput);
 
       expect(result.success).toBe(true);
       expect(result.planId).toBeDefined();
@@ -135,28 +160,38 @@ describe("proposeTestPlanTool", () => {
             sourceFiles: ["src/file.ts"],
           },
         ],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "vitest",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
         planContent: "# Plan",
       };
 
-      const result = await executeTool(
-        tool,
-        input,
-        {
-          success: false,
-          planId: "",
-          name: "",
-          overview: "",
-          suites: [] as ProposeTestPlanOutput["suites"],
-          message: "No result returned",
-        } satisfies ProposeTestPlanOutput,
-      );
+      const result = await executeTool(tool, input, {
+        success: false,
+        planId: "",
+        name: "",
+        overview: "",
+        suites: [] as ProposeTestPlanOutput["suites"],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        message: "No result returned",
+      } satisfies ProposeTestPlanOutput);
 
       expect(result.success).toBe(true);
       expect(result.suites).toHaveLength(1);
       expect(result.suites[0].id).toBe("unit-tests");
       expect(result.suites[0].name).toBe("Unit Tests");
       expect(result.suites[0].testType).toBe("unit");
-      expect(result.suites[0].targetFilePath).toBe("src/__tests__/unit.test.ts");
+      expect(result.suites[0].targetFilePath).toBe(
+        "src/__tests__/unit.test.ts",
+      );
       expect(result.suites[0].sourceFiles).toEqual(["src/file.ts"]);
     });
   });
@@ -197,7 +232,9 @@ describe("proposeTestPlanTool", () => {
     it("should return error when no workspace folder exists", async () => {
       // Temporarily override workspaceFolders
       const originalFolders = vscode.workspace.workspaceFolders;
-      (vscode.workspace as unknown as { workspaceFolders: unknown }).workspaceFolders = [];
+      (
+        vscode.workspace as unknown as { workspaceFolders: unknown }
+      ).workspaceFolders = [];
 
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
@@ -208,7 +245,9 @@ describe("proposeTestPlanTool", () => {
       expect(result.error).toContain("No workspace folder found");
 
       // Restore
-      (vscode.workspace as unknown as { workspaceFolders: unknown }).workspaceFolders = originalFolders;
+      (
+        vscode.workspace as unknown as { workspaceFolders: unknown }
+      ).workspaceFolders = originalFolders;
     });
 
     it("should append content chunks to streaming write", async () => {
@@ -216,13 +255,16 @@ describe("proposeTestPlanTool", () => {
       const targetPath = ".clive/plans/test-plan.md";
 
       // Initialize first
-      const initResult = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const initResult = await initializePlanStreamingWrite(
+        targetPath,
+        toolCallId,
+      );
       expect(initResult.success).toBe(true);
 
       // Ensure mocks return the document when openTextDocument is called again (for reload)
-      (vscode.workspace.openTextDocument as unknown as ReturnType<
-        typeof vi.fn
-      >).mockResolvedValue(mockDocument);
+      (
+        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockDocument);
 
       // Append content
       const result = await appendPlanStreamingContent(
@@ -241,10 +283,7 @@ describe("proposeTestPlanTool", () => {
     it("should return error if streaming write not initialized", async () => {
       const toolCallId = "uninitialized-id";
 
-      const result = await appendPlanStreamingContent(
-        toolCallId,
-        "content",
-      );
+      const result = await appendPlanStreamingContent(toolCallId, "content");
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Streaming write not initialized");
@@ -279,18 +318,30 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const initResult = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const initResult = await initializePlanStreamingWrite(
+        targetPath,
+        toolCallId,
+      );
       expect(initResult.success).toBe(true);
 
       // Ensure mocks return the document when openTextDocument is called again (for reload)
-      (vscode.workspace.openTextDocument as unknown as ReturnType<
-        typeof vi.fn
-      >).mockResolvedValue(mockDocument);
+      (
+        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockDocument);
 
       // Append multiple chunks
-      const result1 = await appendPlanStreamingContent(toolCallId, "# Test Plan\n");
-      const result2 = await appendPlanStreamingContent(toolCallId, "## Section 1\n");
-      const result3 = await appendPlanStreamingContent(toolCallId, "Content here\n");
+      const result1 = await appendPlanStreamingContent(
+        toolCallId,
+        "# Test Plan\n",
+      );
+      const result2 = await appendPlanStreamingContent(
+        toolCallId,
+        "## Section 1\n",
+      );
+      const result3 = await appendPlanStreamingContent(
+        toolCallId,
+        "Content here\n",
+      );
 
       if (!result1.success) {
         console.error("Append 1 failed with error:", result1.error);
@@ -338,7 +389,8 @@ describe("proposeTestPlanTool", () => {
       await initializePlanStreamingWrite(targetPath, toolCallId);
 
       // Simulate streaming only planContent (not name, overview, todos)
-      const planContent = "# Test Plan\n\n## Overview\nThis is the plan content.";
+      const planContent =
+        "# Test Plan\n\n## Overview\nThis is the plan content.";
       await appendPlanStreamingContent(toolCallId, planContent);
 
       const result = await finalizePlanStreamingWrite(toolCallId);
@@ -385,9 +437,9 @@ describe("proposeTestPlanTool", () => {
     });
 
     it("should handle editor opening errors gracefully", async () => {
-      (vscode.workspace.openTextDocument as unknown as ReturnType<
-        typeof vi.fn
-      >).mockRejectedValue(new Error("Cannot open document"));
+      (
+        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      ).mockRejectedValue(new Error("Cannot open document"));
 
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
@@ -404,14 +456,11 @@ describe("proposeTestPlanTool", () => {
 
       await initializePlanStreamingWrite(targetPath, toolCallId);
 
-      (vscode.workspace.applyEdit as unknown as ReturnType<
-        typeof vi.fn
-      >).mockRejectedValue(new Error("Edit failed"));
+      (
+        vscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
+      ).mockRejectedValue(new Error("Edit failed"));
 
-      const result = await appendPlanStreamingContent(
-        toolCallId,
-        "content",
-      );
+      const result = await appendPlanStreamingContent(toolCallId, "content");
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -432,7 +481,8 @@ describe("proposeTestPlanTool", () => {
 
     it("should handle long plan names", async () => {
       const toolCallId = getUniqueToolCallId();
-      const targetPath = ".clive/plans/test-plan-very-long-name-that-should-still-work.md";
+      const targetPath =
+        ".clive/plans/test-plan-very-long-name-that-should-still-work.md";
 
       const result = await initializePlanStreamingWrite(targetPath, toolCallId);
 
@@ -440,4 +490,3 @@ describe("proposeTestPlanTool", () => {
     });
   });
 });
-

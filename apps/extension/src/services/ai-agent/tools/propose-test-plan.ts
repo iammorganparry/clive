@@ -33,9 +33,7 @@ export class StreamingNotInitializedError extends Data.TaggedError(
  * Enforces YAML frontmatter structure for plan output
  */
 const ProposeTestPlanInputSchema = z.object({
-  name: z
-    .string()
-    .describe("Plan name (e.g., 'Test Plan for Authentication')"),
+  name: z.string().describe("Plan name (e.g., 'Test Plan for Authentication')"),
   overview: z
     .string()
     .describe("Brief description of what tests will cover (1-2 sentences)"),
@@ -72,6 +70,73 @@ const ProposeTestPlanInputSchema = z.object({
     .describe(
       "Array of test suites to be created. Each suite will be processed individually in the queue.",
     ),
+  mockDependencies: z
+    .array(
+      z.object({
+        dependency: z
+          .string()
+          .describe(
+            "Name of the dependency to mock (e.g., 'vscode', 'Database', 'AuthService')",
+          ),
+        existingMock: z
+          .string()
+          .optional()
+          .describe(
+            "Path to existing mock factory if found (e.g., '__tests__/mock-factories/vscode.ts')",
+          ),
+        mockStrategy: z
+          .enum(["factory", "inline", "spy"])
+          .describe(
+            "How to mock: 'factory' (use/create centralized factory), 'inline' (simple inline mock), 'spy' (spy on real implementation)",
+          ),
+      }),
+    )
+    .describe(
+      "All mock dependencies identified during planning. REQUIRED: Agent must identify all dependencies that need mocking.",
+    ),
+  externalDependencies: z
+    .array(
+      z.object({
+        type: z
+          .enum(["database", "api", "filesystem", "network"])
+          .describe("Type of external dependency"),
+        name: z
+          .string()
+          .describe(
+            "Name or description of the dependency (e.g., 'PostgreSQL', 'Supabase', 'REST API')",
+          ),
+        testStrategy: z
+          .string()
+          .describe(
+            "How to handle in tests: 'sandbox' (Docker/test env), 'mock' (mock the calls), 'skip' (not testing this)",
+          ),
+      }),
+    )
+    .optional()
+    .describe(
+      "External dependencies requiring special test setup (databases, APIs, etc.)",
+    ),
+  discoveredPatterns: z
+    .object({
+      testFramework: z
+        .string()
+        .describe(
+          "Detected test framework (e.g., 'vitest', 'jest', 'playwright')",
+        ),
+      mockFactoryPaths: z
+        .array(z.string())
+        .describe(
+          "Paths to existing mock factories found in codebase (e.g., ['__tests__/mock-factories/vscode.ts'])",
+        ),
+      testPatterns: z
+        .array(z.string())
+        .describe(
+          "Key patterns found in similar tests (e.g., 'Uses vi.mock() for modules', 'Setup in beforeEach')",
+        ),
+    })
+    .describe(
+      "Patterns discovered during code analysis. REQUIRED: Agent must document patterns found in existing tests.",
+    ),
   planContent: z
     .string()
     .describe(
@@ -98,6 +163,21 @@ export interface ProposeTestPlanOutput {
     sourceFiles: string[];
     description?: string;
   }>;
+  mockDependencies: Array<{
+    dependency: string;
+    existingMock?: string;
+    mockStrategy: "factory" | "inline" | "spy";
+  }>;
+  externalDependencies?: Array<{
+    type: "database" | "api" | "filesystem" | "network";
+    name: string;
+    testStrategy: string;
+  }>;
+  discoveredPatterns: {
+    testFramework: string;
+    mockFactoryPaths: string[];
+    testPatterns: string[];
+  };
   message: string;
   filePath?: string;
 }
@@ -195,8 +275,7 @@ const createEmptyFile = (
   fileUri: vscode.Uri,
 ): Effect.Effect<void, PlanStreamingError> =>
   Effect.tryPromise({
-    try: () =>
-      vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8")),
+    try: () => vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8")),
     catch: (error) =>
       new PlanStreamingError({
         message: "Failed to create empty file",
@@ -292,7 +371,9 @@ export const appendPlanStreamingContentEffect = (
 
     yield* pipe(
       Option.fromNullable(
-        state.editor && state.document ? { editor: state.editor, document: state.document } : null,
+        state.editor && state.document
+          ? { editor: state.editor, document: state.document }
+          : null,
       ),
       Option.match({
         onNone: () =>
@@ -484,12 +565,14 @@ const createOutputResult = (
   name: input.name,
   overview: input.overview,
   suites: input.suites,
+  mockDependencies: input.mockDependencies,
+  externalDependencies: input.externalDependencies,
+  discoveredPatterns: input.discoveredPatterns,
   message: approved
     ? `Test plan proposal created: ${input.name}`
     : `Test plan proposal rejected: ${input.name}`,
   filePath,
 });
-
 
 // ============================================================
 // Tool Factory
@@ -550,13 +633,16 @@ export const createProposeTestPlanTool = (
       "This tool should be used in PLAN MODE to present a comprehensive test strategy " +
       "for user review before writing any test files. The plan must follow the structured " +
       "format defined in the system prompt with YAML frontmatter, Problem Summary, " +
-      "Implementation Plan sections, and Changes Summary.",
+      "Implementation Plan sections, and Changes Summary. " +
+      "CRITICAL: You MUST populate mockDependencies, discoveredPatterns, and externalDependencies " +
+      "based on your thorough discovery phase. These fields ensure act mode has all required context.",
     inputSchema: ProposeTestPlanInputSchema,
     execute: (input, options): Promise<ProposeTestPlanOutput> =>
       pipe(
         Effect.gen(function* () {
           const planId = yield* generatePlanId();
-          const toolCallId = options?.toolCallId ?? (yield* generateToolCallId());
+          const toolCallId =
+            options?.toolCallId ?? (yield* generateToolCallId());
 
           // Write plan to file
           const filePath = yield* pipe(
@@ -590,4 +676,3 @@ export const createProposeTestPlanTool = (
  * Default proposeTestPlanTool without streaming callback
  */
 export const proposeTestPlanTool = createProposeTestPlanTool();
-

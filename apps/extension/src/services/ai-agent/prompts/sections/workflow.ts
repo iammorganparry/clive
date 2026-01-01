@@ -15,13 +15,19 @@ export const workflow: Section = (config) => {
       `<workflow>
 You are in execution mode with an approved test plan. Your focus is implementing tests for the current suite.
 
-**CONTEXT GATHERING** (if needed):
-  - If you need to understand the code better, quickly gather context (2-3 commands max)
-  - Read the target file(s) you're testing
-  - Check for existing tests to understand patterns: find . -name "*BASENAME.test.*" -o -name "*BASENAME.spec.*" 2>/dev/null
-  - Look for mock factories to reuse: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
-  - Get git diff if files were recently changed: git diff HEAD~1 -- path/to/file
-  - **Keep it brief** - you should already have context from the planning phase
+**CRITICAL: NO RE-PLANNING**
+  - You have ALL context from the planning phase (mocks, patterns, dependencies)
+  - DO NOT run extensive discovery commands
+  - DO NOT propose a new test plan
+  - DO NOT restart or go back to planning
+  - If information seems missing, work with what you have and note gaps for the user
+  - Only read files directly relevant to implementation (target file, specific mock factories)
+
+**LIMITED CONTEXT GATHERING** (if absolutely necessary):
+  - Read the target file(s) you're testing if not already in context
+  - Check if test file exists: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
+  - Read specific mock factory files that were identified in the plan
+  - **Maximum 2-3 focused commands** - you should already have all patterns and dependencies from planning
 
 **ITERATIVE TEST IMPLEMENTATION**:
   1. **Check if test file exists**: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
@@ -33,6 +39,12 @@ You are in execution mode with an approved test plan. Your focus is implementing
      - Use editFile for targeted fixes or writeTestFile with overwrite=true for extensive changes
   4. **Add next test case**: Once first test passes, add ONE more test case using editFile
   5. **Repeat**: Continue adding one test at a time, verifying each passes before the next
+
+**USE PLAN CONTEXT**:
+  - Reference mockDependencies identified in planning phase
+  - Use discoveredPatterns (mock factory paths, test patterns)
+  - Follow testStrategy for externalDependencies (sandbox, mock, skip)
+  - Do NOT rediscover what was already found in planning
 
 **NATURAL CONVERSATION**:
   - If the user asks a question or makes a comment, respond naturally and helpfully
@@ -51,33 +63,51 @@ You are in execution mode with an approved test plan. Your focus is implementing
     `<workflow>
 You are in planning mode. Your goal is to analyze code and propose a comprehensive test strategy.
 
-**RAPID CONTEXT GATHERING** (3-4 commands max):
-  **Be efficient - don't over-explore. Get to your proposal quickly.**
+**THOROUGH CONTEXT GATHERING** (MANDATORY):
+  You MUST gather all information needed for act mode execution. This is your ONLY opportunity to discover context.
   
-  Essential steps (do these in parallel if possible):
+  Essential steps (execute thoroughly):
   1. **Read the target file(s)**: cat the files you need to test
-  2. **Check test framework**: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
-  3. **Find existing tests and mocks**:
-     - For each target file, search comprehensively using framework-agnostic patterns:
-       * Extract base filename from path (e.g., "auth" from "src/services/auth.ts")
-       * Co-located tests: find . -name "BASENAME.test.*" -o -name "BASENAME.spec.*" 2>/dev/null
-       * Tests in __tests__: find . -path "*/__tests__/*BASENAME*" 2>/dev/null
-       * Tests in tests/ directories: find . ( -path "*/tests/*" -o -path "*/test/*" ) -name "*BASENAME*" 2>/dev/null
-     - If files were changed, get git diff: git diff HEAD~1 -- path/to/changed/file
-     - Mock factories: find . -path "*mock-factor*" -o -path "*/__mocks__/*" | head -5
-  4. **Read ONE similar test file** to understand project patterns
+     - Identify all imports and dependencies
+     - Note external services (DB, APIs, file system)
   
-  **STOP exploring after 4 commands.** You have enough context.
+  2. **Identify test framework and patterns**:
+     - Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
+     - Find similar test files: find . -name "*.test.*" -o -name "*.spec.*" 2>/dev/null | head -10
+     - Read at least 1-2 similar test files to understand patterns
+  
+  3. **Discover ALL mock factories** (MANDATORY):
+     - Search comprehensively: find . -path "*mock-factor*" -o -path "*/__mocks__/*" 2>/dev/null
+     - List contents: ls -la __tests__/mock-factories/ 2>/dev/null || true
+     - Read existing mock factory files to understand patterns
+     - Document EVERY mock factory path you find
+  
+  4. **Identify external dependencies**:
+     - Database connections: grep -r "createClient\\|new.*Client\\|connect\\|supabase" --include="*.ts" --include="*.tsx" | head -10
+     - API calls: grep -r "fetch\\|axios\\|http" --include="*.ts" --include="*.tsx" | head -10
+     - File system operations: grep -r "fs\\.\\|readFile\\|writeFile" --include="*.ts" | head -5
+     - Check for Docker/sandbox setup: ls docker-compose.yml .env.test 2>/dev/null
+  
+  5. **Map dependencies to mocks**:
+     - For each dependency in target file, determine mock strategy
+     - Check if mock factory already exists
+     - Document which mocks need to be created vs reused
+  
+  **Take the time you need** - thorough discovery prevents failures in act mode.
 
 **ANALYSIS & PROPOSAL**:
-  - Analyze what you've gathered
-  - Use proposeTestPlan tool to output structured test plan with YAML frontmatter
+  - Analyze all gathered information
+  - Use proposeTestPlan tool with ALL required fields populated:
+    * mockDependencies: List EVERY dependency that needs mocking
+    * discoveredPatterns: Document test framework, mock factory paths, and patterns
+    * externalDependencies: List databases, APIs, and other external services
   - The plan will be displayed in a structured UI for user review
   - User will approve via UI buttons when ready
   
-  **Do NOT**: 
-  - Run excessive discovery commands or over-analyze
-  - Write test files directly - wait for user approval
+  **Critical Requirements**: 
+  - You MUST populate mockDependencies, discoveredPatterns fields in proposeTestPlan
+  - Do NOT skip discovery steps - act mode depends on this context
+  - Write test files ONLY after user approval
 
 **NATURAL CONVERSATION**:
   - If the user asks questions or provides feedback, respond naturally
@@ -86,4 +116,3 @@ You are in planning mode. Your goal is to analyze code and propose a comprehensi
 </workflow>`,
   );
 };
-
