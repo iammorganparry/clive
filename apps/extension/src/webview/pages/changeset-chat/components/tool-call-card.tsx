@@ -129,13 +129,13 @@ interface ReadFileArgs {
 const isReadFileArgs = (input: unknown): input is ReadFileArgs =>
   typeof input === "object" && input !== null;
 
-interface ReplaceInFileArgs {
+interface EditFileContentArgs {
   targetPath?: string;
   filePath?: string;
   diff?: string;
 }
 
-const isReplaceInFileArgs = (input: unknown): input is ReplaceInFileArgs =>
+const isEditFileContentArgs = (input: unknown): input is EditFileContentArgs =>
   typeof input === "object" && input !== null;
 
 /**
@@ -285,9 +285,9 @@ const generateToolSummary = (
     return "Searching web";
   }
 
-  // replaceInFile: Show "Edit <filename>"
-  if (toolName === "replaceInFile") {
-    if (isReplaceInFileArgs(input)) {
+  // editFileContent: Show "Edit <filename>"
+  if (toolName === "editFileContent") {
+    if (isEditFileContentArgs(input)) {
       const path = input.targetPath || input.filePath;
       if (path) {
         const filename = extractFilename(path);
@@ -324,7 +324,7 @@ const getToolIcon = (toolName: string): React.ReactNode => {
       return <FileCheckIcon className={iconClass} />;
     case "webSearch":
       return <GlobeIcon className={iconClass} />;
-    case "replaceInFile":
+    case "editFileContent":
       return <FileTextIcon className={iconClass} />;
     default:
       return <CodeIcon className={iconClass} />;
@@ -514,7 +514,7 @@ const extractFilePaths = (
     if (isWriteKnowledgeFileArgs(input) && input.filePath) {
       paths.push(input.filePath);
     }
-    if (isReplaceInFileArgs(input)) {
+    if (isEditFileContentArgs(input)) {
       const path = input.targetPath || input.filePath;
       if (path) paths.push(path);
     }
@@ -1153,9 +1153,9 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
             )}
           </div>
           {/* Inline Approval Buttons for approval-requested state */}
-          {/* File edit tools (writeTestFile, replaceInFile) use CodeLens in editor instead */}
+          {/* File edit tools (writeTestFile, editFileContent) use CodeLens in editor instead */}
           {state === "approval-requested" && toolCallId && subscriptionId && 
-           !["writeTestFile", "replaceInFile"].includes(toolName) && (
+           !["writeTestFile", "editFileContent"].includes(toolName) && (
             <div className="flex items-center gap-1">
               <Button onClick={handleApprove} variant="default" size="sm" className="h-6 px-2 text-xs">
                 Approve

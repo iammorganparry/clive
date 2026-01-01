@@ -19,7 +19,7 @@ import {
   createProposeTestPlanTool,
   createCompleteTaskTool,
   createApprovePlanTool,
-  createEditFileTool,
+  createEditFileContentTool,
 } from "./tools/index.js";
 import type { LanguageModel } from "ai";
 
@@ -99,9 +99,7 @@ const createBaseTools = (config: ToolConfig) =>
       config.fileStreamingCallback,
     );
 
-    const approvePlan = createApprovePlanTool(
-      config.progressCallback,
-    );
+    const approvePlan = createApprovePlanTool(config.progressCallback);
 
     const completeTask = createCompleteTaskTool();
 
@@ -147,12 +145,14 @@ const createWriteTools = (config: ToolConfig) =>
       config.knowledgeFileService,
     );
 
-    const editFile = createEditFileTool(config.fileStreamingCallback);
+    const editFileContent = createEditFileContentTool(
+      config.fileStreamingCallback,
+    );
 
     return {
       writeTestFile,
       writeKnowledgeFile,
-      editFile,
+      editFileContent,
     };
   });
 

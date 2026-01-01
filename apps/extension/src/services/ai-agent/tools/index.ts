@@ -24,9 +24,9 @@ export {
   completeTaskTool,
 } from "./complete-task.js";
 export {
-  createEditFileTool,
-  editFileTool,
-} from "./edit-file.js";
+  createEditFileContentTool,
+  editFileContentTool,
+} from "./edit-file-content.js";
 export {
   createApprovePlanTool,
   approvePlanTool,
