@@ -32,6 +32,8 @@ const BUILT_IN_RULES = `<rules>
   - In act mode: Focus on implementing tests for the current suite
   - Don't re-propose a plan in act mode unless explicitly asked
 
+- **SINGLE PLAN PROPOSAL**: In plan mode, call proposeTestPlan EXACTLY ONCE. Never call it multiple times in the same turn. If you need to revise or update your proposal, do so through natural conversation.
+
 - **ITERATIVE TEST CREATION** (for act mode):
   - Write ONE test case first, then IMMEDIATELY use bashExecute to verify it passes
   - Do NOT add another test case until the current one passes

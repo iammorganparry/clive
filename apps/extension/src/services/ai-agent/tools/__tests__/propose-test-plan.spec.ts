@@ -373,11 +373,12 @@ describe("proposeTestPlanTool", () => {
       const result = await finalizePlanStreamingWrite(toolCallId);
 
       expect(result.success).toBe(true);
-      // Verify final writeFile was called with accumulated content
+      // Verify final writeFile was called with replaced content (not accumulated)
       const writeCalls = mockFs.writeFile.mock.calls;
       const lastCall = writeCalls[writeCalls.length - 1];
       const writtenContent = lastCall[1].toString();
-      expect(writtenContent).toContain("Chunk 1");
+      // Content is replaced, not accumulated - only last chunk should be present
+      expect(writtenContent).not.toContain("Chunk 1");
       expect(writtenContent).toContain("Chunk 2");
     });
   });

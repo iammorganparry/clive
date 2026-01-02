@@ -379,7 +379,7 @@ export const appendPlanStreamingContentEffect = (
     );
 
     // Append content chunk to accumulated content
-    state.accumulatedContent += contentChunk;
+    state.accumulatedContent = contentChunk;
 
     yield* pipe(
       Option.fromNullable(
@@ -612,6 +612,62 @@ export const createProposeTestPlanTool = (
     execute: (input, options): Promise<ProposeTestPlanOutput> =>
       pipe(
         Effect.gen(function* () {
+          const planId = yield* generatePlanId();
+          const toolCallId =
+            options?.toolCallId ?? (yield* generateToolCallId());
+
+          // File writing is handled by streaming event handlers
+          // Get filePath from streaming state (set by event handlers during streaming)
+          const filePath = getStreamingFilePath(toolCallId);
+
+          return createOutputResult(input, planId, true, filePath);
+        }),
+        Runtime.runPromise(runtime),
+      ),
+  });
+
+/**
+ * Factory function to create proposeTestPlanTool with duplicate call guard
+ * Prevents the tool from being called more than once per session
+ */
+export const createProposeTestPlanToolWithGuard = (
+  _fileStreamingCallback?: StreamingFileOutputCallback,
+  calledRef?: { value: boolean },
+) =>
+  tool({
+    description:
+      "Output a structured test plan proposal in markdown format with YAML frontmatter. " +
+      "This tool should be used in PLAN MODE to present a comprehensive test strategy " +
+      "for user review before writing any test files. The plan must follow the structured " +
+      "format defined in the system prompt with YAML frontmatter, Problem Summary, " +
+      "Implementation Plan sections, and Changes Summary. " +
+      "CRITICAL: You MUST populate mockDependencies, discoveredPatterns, and externalDependencies " +
+      "based on your thorough discovery phase. These fields ensure act mode has all required context. " +
+      "IMPORTANT: This tool can only be called ONCE per planning session. If you need to revise, respond with changes in natural language.",
+    inputSchema: ProposeTestPlanInputSchema,
+    execute: (input, options): Promise<ProposeTestPlanOutput> =>
+      pipe(
+        Effect.gen(function* () {
+          // Check if already called this session
+          if (calledRef?.value) {
+            return {
+              success: false,
+              planId: "",
+              name: input.name,
+              overview: input.overview,
+              suites: [],
+              mockDependencies: [],
+              discoveredPatterns: input.discoveredPatterns,
+              message:
+                "ERROR: proposeTestPlan can only be called once per session. If you need to revise, respond with the changes in natural language.",
+            };
+          }
+
+          // Mark as called
+          if (calledRef) {
+            calledRef.value = true;
+          }
+
           const planId = yield* generatePlanId();
           const toolCallId =
             options?.toolCallId ?? (yield* generateToolCallId());

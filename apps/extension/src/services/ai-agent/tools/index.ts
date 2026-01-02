@@ -17,6 +17,7 @@ export { createWriteKnowledgeFileTool } from "./write-knowledge-file.js";
 export { createSearchKnowledgeTool } from "./search-knowledge.js";
 export {
   createProposeTestPlanTool,
+  createProposeTestPlanToolWithGuard,
   proposeTestPlanTool,
 } from "./propose-test-plan.js";
 export {

@@ -203,7 +203,11 @@ export type ChangesetChatEvent =
   | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
   | { type: "START_NEXT_SUITE" }
   | { type: "SKIP_SUITE"; suiteId: string }
-  | { type: "MARK_SUITE_COMPLETED"; suiteId: string; results: TestFileExecution }
+  | {
+      type: "MARK_SUITE_COMPLETED";
+      suiteId: string;
+      results: TestFileExecution;
+    }
   | {
       type: "MARK_SUITE_FAILED";
       suiteId: string;
@@ -279,6 +283,32 @@ export const changesetChatMachine = setup({
       };
     }),
     clearStreamingContent: assign({ streamingContent: () => "" }),
+    closeActiveReasoningPart: assign(({ context, event }) => {
+      // Only close reasoning parts when non-reasoning content arrives
+      if (
+        event.type !== "RESPONSE_CHUNK" ||
+        event.chunkType === "reasoning" ||
+        event.chunkType === "usage"
+      ) {
+        return {};
+      }
+
+      // Find and close any active (streaming) reasoning parts
+      const updatedMessages = context.messages.map((msg) => {
+        if (msg.role !== "assistant") return msg;
+
+        const updatedParts = msg.parts.map((part) => {
+          if (part.type === "reasoning" && part.isStreaming) {
+            return { ...part, isStreaming: false };
+          }
+          return part;
+        });
+
+        return { ...msg, parts: updatedParts };
+      });
+
+      return { messages: updatedMessages };
+    }),
     appendReasoningContent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "reasoning")
         return {};
@@ -286,24 +316,24 @@ export const changesetChatMachine = setup({
 
       // Add reasoning as a message part to current assistant message
       const lastMessage = context.messages[context.messages.length - 1];
-      
+
       if (lastMessage && lastMessage.role === "assistant") {
-        // Find existing reasoning part or create new one
+        // Find existing reasoning part - only append if it's still streaming
         const lastPart = lastMessage.parts[lastMessage.parts.length - 1];
         const updatedParts =
-          lastPart && lastPart.type === "reasoning"
+          lastPart && lastPart.type === "reasoning" && lastPart.isStreaming
             ? [
                 ...lastMessage.parts.slice(0, -1),
-                { 
-                  ...lastPart, 
+                {
+                  ...lastPart,
                   content: lastPart.content + event.content,
                   isStreaming: true,
                 },
               ]
             : [
                 ...lastMessage.parts,
-                { 
-                  type: "reasoning" as const, 
+                {
+                  type: "reasoning" as const,
                   content: event.content,
                   isStreaming: true,
                 },
@@ -323,14 +353,16 @@ export const changesetChatMachine = setup({
       const newMessage: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: "assistant",
-        parts: [{ 
-          type: "reasoning" as const, 
-          content: event.content,
-          isStreaming: true,
-        }],
+        parts: [
+          {
+            type: "reasoning" as const,
+            content: event.content,
+            isStreaming: true,
+          },
+        ],
         timestamp: new Date(),
       };
-      
+
       return {
         messages: [...context.messages, newMessage],
         reasoningContent: context.reasoningContent + event.content, // Keep for backwards compatibility
@@ -345,17 +377,17 @@ export const changesetChatMachine = setup({
       // Mark all reasoning parts as no longer streaming
       const updatedMessages = context.messages.map((msg) => {
         if (msg.role !== "assistant") return msg;
-        
+
         const updatedParts = msg.parts.map((part) => {
           if (part.type === "reasoning" && part.isStreaming) {
             return { ...part, isStreaming: false };
           }
           return part;
         });
-        
+
         return { ...msg, parts: updatedParts };
       });
-      
+
       return {
         isReasoningStreaming: false,
         messages: updatedMessages,
@@ -387,12 +419,12 @@ export const changesetChatMachine = setup({
       if (!event.toolResult) return {};
       const toolResult = event.toolResult;
       const toolCallId = toolResult.toolCallId;
-      
+
       // Find the tool event to check tool name
       const toolEvent = context.toolEvents.find(
         (t) => t.toolCallId === toolCallId,
       );
-      
+
       // Detect successful proposeTestPlan completion
       const updates: Partial<ChangesetChatContext> = {
         toolEvents: context.toolEvents.map((t) =>
@@ -405,7 +437,7 @@ export const changesetChatMachine = setup({
             : t,
         ),
       };
-      
+
       // Set hasPendingPlanApproval when proposeTestPlan succeeds
       if (
         toolEvent?.toolName === "proposeTestPlan" &&
@@ -414,7 +446,7 @@ export const changesetChatMachine = setup({
       ) {
         updates.hasPendingPlanApproval = true;
       }
-      
+
       return updates;
     }),
     updateScratchpadTodos: assign(({ context, event }) => {
@@ -646,7 +678,11 @@ export const changesetChatMachine = setup({
             const existing = context.testExecutions.find(
               (te) => te.filePath === filePath,
             );
-            const updated = updateTestExecution(existing || null, command, output);
+            const updated = updateTestExecution(
+              existing || null,
+              command,
+              output,
+            );
 
             if (!updated) {
               // Clear accumulated output for this toolCallId
@@ -903,10 +939,10 @@ export const changesetChatMachine = setup({
         return {};
       if (!event.streamingPlanContent) return {};
       const { content, isComplete, filePath } = event.streamingPlanContent;
-      
+
       // Accumulate content during streaming, replace only when complete
       const updates: Partial<ChangesetChatContext> = {};
-      
+
       if (isComplete) {
         // Final content - use it as-is
         updates.planContent = content || null;
@@ -918,12 +954,12 @@ export const changesetChatMachine = setup({
           updates.planContent = content;
         }
       }
-      
+
       // Capture file path if provided
       if (filePath) {
         updates.planFilePath = filePath;
       }
-      
+
       return updates;
     }),
     updateFileStreamingContent: assign(({ context, event }) => {
@@ -1060,19 +1096,15 @@ export const changesetChatMachine = setup({
     skipSuite: assign(({ context, event }) => {
       if (event.type !== "SKIP_SUITE") return {};
       const { suiteId } = event;
-      
+
       // Mark suite as skipped
       let updatedQueue = context.testSuiteQueue.map((suite) =>
-        suite.id === suiteId
-          ? { ...suite, status: "skipped" as const }
-          : suite,
+        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
       );
-      
+
       // Find next pending suite
-      const nextPendingSuite = updatedQueue.find(
-        (s) => s.status === "pending",
-      );
-      
+      const nextPendingSuite = updatedQueue.find((s) => s.status === "pending");
+
       if (nextPendingSuite) {
         // Mark next pending suite as in_progress
         updatedQueue = updatedQueue.map((suite) =>
@@ -1085,7 +1117,7 @@ export const changesetChatMachine = setup({
           currentSuiteId: nextPendingSuite.id,
         };
       }
-      
+
       // No more pending suites
       return {
         testSuiteQueue: updatedQueue,
@@ -1226,6 +1258,7 @@ export const changesetChatMachine = setup({
         RESPONSE_CHUNK: {
           target: "streaming",
           actions: [
+            "closeActiveReasoningPart",
             "appendStreamingContent",
             "appendReasoningContent",
             "addToolEvent",
@@ -1276,6 +1309,7 @@ export const changesetChatMachine = setup({
       on: {
         RESPONSE_CHUNK: {
           actions: [
+            "closeActiveReasoningPart",
             "appendStreamingContent",
             "appendReasoningContent",
             "addToolEvent",
