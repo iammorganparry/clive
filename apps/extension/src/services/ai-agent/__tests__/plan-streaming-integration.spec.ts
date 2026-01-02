@@ -13,6 +13,7 @@ import {
   trackPlanToolCall,
   setPlanInitStatus,
 } from "../agent-state";
+import * as proposeTestPlan from "../tools/propose-test-plan";
 
 // Mock the plan streaming tools
 vi.mock("../tools/propose-test-plan", async () => {
@@ -61,7 +62,7 @@ describe("Plan Streaming Integration", () => {
             {
               toolName: "proposeTestPlan",
               toolCallId,
-              argsTextDelta: '{"name": "Test Plan for Auth"',
+              inputTextDelta: '{"name": "Test Plan for Auth"',
             },
             streamingState,
             progressCallback,
@@ -125,7 +126,7 @@ describe("Plan Streaming Integration", () => {
             {
               toolName: "proposeTestPlan",
               toolCallId,
-              argsTextDelta: "}",
+              inputTextDelta: "}",
             },
             streamingState,
             progressCallback,
@@ -190,7 +191,7 @@ describe("Plan Streaming Integration", () => {
             {
               toolName: "proposeTestPlan",
               toolCallId,
-              argsTextDelta: ", more content",
+              inputTextDelta: ", more content",
             },
             streamingState,
             progressCallback,
@@ -201,7 +202,7 @@ describe("Plan Streaming Integration", () => {
             {
               toolName: "proposeTestPlan",
               toolCallId,
-              argsTextDelta: ", even more content",
+              inputTextDelta: ", even more content",
             },
             streamingState,
             progressCallback,
@@ -243,7 +244,7 @@ describe("Plan Streaming Integration", () => {
           {
             toolName: "proposeTestPlan",
             toolCallId,
-            argsTextDelta: '{"name": "Directory Test Plan"',
+            inputTextDelta: '{"name": "Directory Test Plan"',
           },
           streamingState,
           progressCallback,
@@ -287,6 +288,11 @@ describe("Plan Streaming Integration", () => {
             '{"name": "Result Test", "planContent": "# Final Plan Content\\n\\nThis is complete."}',
           );
           yield* trackPlanToolCall(streamingState, toolCallId, targetPath);
+
+          // Override mock to return the expected path
+          vi.mocked(
+            proposeTestPlan.finalizePlanStreamingWriteEffect,
+          ).mockReturnValue(Effect.succeed(targetPath));
 
           // Handle tool result
           yield* handleToolResult(

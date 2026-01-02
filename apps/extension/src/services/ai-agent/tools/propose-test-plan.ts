@@ -3,7 +3,6 @@ import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { Data, Effect, Option, pipe, Runtime } from "effect";
-import { sanitizePlanName } from "../testing-agent-helpers.js";
 
 // ============================================================
 // Error Types
@@ -286,7 +285,7 @@ const createEmptyFile = (
 /**
  * Open file in editor
  */
-const openFileInEditor = (
+export const openFileInEditor = (
   fileUri: vscode.Uri,
 ): Effect.Effect<
   { document: vscode.TextDocument; editor: vscode.TextEditor },
@@ -315,6 +314,19 @@ const getStreamingState = (
   toolCallId: string,
 ): Option.Option<PlanStreamingWriteState> =>
   Option.fromNullable(planStreamingStates.get(toolCallId));
+
+/**
+ * Get file path from streaming state for a given toolCallId
+ * Returns undefined if streaming state doesn't exist or file hasn't been initialized
+ */
+export const getStreamingFilePath = (
+  toolCallId: string,
+): string | undefined => {
+  const state = planStreamingStates.get(toolCallId);
+  return state?.fileUri && state.isInitialized
+    ? vscode.workspace.asRelativePath(state.fileUri, false)
+    : undefined;
+};
 
 // ============================================================
 // Effect-based Public API
@@ -366,7 +378,7 @@ export const appendPlanStreamingContentEffect = (
       }),
     );
 
-    // Update accumulated content
+    // Append content chunk to accumulated content
     state.accumulatedContent += contentChunk;
 
     yield* pipe(
@@ -394,10 +406,12 @@ export const appendPlanStreamingContentEffect = (
           Effect.tryPromise({
             try: async () => {
               const edit = new vscode.WorkspaceEdit();
-              const endPosition = document.positionAt(
-                state.accumulatedContent.length - contentChunk.length,
+              // Replace entire document with full content
+              const fullRange = new vscode.Range(
+                document.positionAt(0),
+                document.positionAt(document.getText().length),
               );
-              edit.insert(state.fileUri, endPosition, contentChunk);
+              edit.replace(state.fileUri, fullRange, state.accumulatedContent);
               await vscode.workspace.applyEdit(edit);
 
               // Reload document
@@ -579,53 +593,11 @@ const createOutputResult = (
 // ============================================================
 
 /**
- * Write plan content to file
- * Creates the file, writes content, and opens it in VS Code editor
- */
-const writePlanToFile = (
-  input: ProposeTestPlanInput,
-  _toolCallId: string,
-): Effect.Effect<string, NoWorkspaceError | PlanStreamingError> =>
-  Effect.gen(function* () {
-    // Generate file path
-    const sanitizedName = sanitizePlanName(input.name);
-    const timestamp = Date.now();
-    const targetPath = `.clive/plans/test-plan-${sanitizedName}-${timestamp}.md`;
-
-    // Get workspace root
-    const workspaceRoot = yield* getWorkspaceRoot();
-    const fileUri = resolveFilePath(targetPath, workspaceRoot);
-
-    // Ensure parent directory exists
-    yield* ensureParentDirectory(fileUri);
-
-    // Write plan content to file
-    yield* Effect.tryPromise({
-      try: () =>
-        vscode.workspace.fs.writeFile(
-          fileUri,
-          Buffer.from(input.planContent, "utf-8"),
-        ),
-      catch: (error) =>
-        new PlanStreamingError({
-          message: "Failed to write plan content",
-          cause: error,
-        }),
-    });
-
-    // Open file in editor
-    yield* openFileInEditor(fileUri);
-
-    // Return relative path
-    return vscode.workspace.asRelativePath(fileUri, false);
-  });
-
-/**
  * Factory function to create proposeTestPlanTool
  * Creates a markdown plan file and opens it in the editor
  */
 export const createProposeTestPlanTool = (
-  fileStreamingCallback?: StreamingFileOutputCallback,
+  _fileStreamingCallback?: StreamingFileOutputCallback,
 ) =>
   tool({
     description:
@@ -644,27 +616,9 @@ export const createProposeTestPlanTool = (
           const toolCallId =
             options?.toolCallId ?? (yield* generateToolCallId());
 
-          // Write plan to file
-          const filePath = yield* pipe(
-            writePlanToFile(input, toolCallId),
-            Effect.tap((path) =>
-              Effect.sync(() => {
-                // Emit file-created event
-                fileStreamingCallback?.({
-                  filePath: path,
-                  content: "",
-                  isComplete: false,
-                });
-                // Emit final content event
-                fileStreamingCallback?.({
-                  filePath: path,
-                  content: input.planContent,
-                  isComplete: true,
-                });
-              }),
-            ),
-            Effect.catchAll(() => Effect.succeed(undefined)),
-          );
+          // File writing is handled by streaming event handlers
+          // Get filePath from streaming state (set by event handlers during streaming)
+          const filePath = getStreamingFilePath(toolCallId);
 
           return createOutputResult(input, planId, true, filePath);
         }),

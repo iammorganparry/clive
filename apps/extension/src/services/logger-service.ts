@@ -35,6 +35,8 @@ export const createLoggerLayer = (
 
   return Layer.merge(
     Logger.replace(Logger.defaultLogger, cliveLogger),
+    // Set minimum log level based on dev mode
+    // In production, filter out debug logs; in dev, show all logs
     Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info),
   );
 };

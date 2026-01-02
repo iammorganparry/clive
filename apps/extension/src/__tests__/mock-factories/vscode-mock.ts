@@ -135,6 +135,7 @@ export function createVSCodeMock(
       overrides.WorkspaceEdit ??
       class MockWorkspaceEdit {
         insert = vi.fn();
+        replace = vi.fn();
       },
     languages: {
       getDiagnostics: overrides.languages?.getDiagnostics ?? vi.fn(() => []),

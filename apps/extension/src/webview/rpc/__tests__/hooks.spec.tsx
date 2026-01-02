@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
@@ -91,8 +91,9 @@ describe("useRpcQuery", () => {
     // Simulate response
     simulateResponse(messageCall.id, { result: "success" });
 
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(result.current.data).toEqual({ result: "success" });
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ result: "success" });
+    });
   });
 
   it("should handle loading and error states", async () => {

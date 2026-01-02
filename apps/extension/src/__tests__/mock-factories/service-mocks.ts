@@ -36,7 +36,8 @@ export function createMockTokenBudgetService(
     consume: overrides?.consume ?? vi.fn(() => Effect.void),
     remaining: overrides?.remaining ?? vi.fn(() => Effect.succeed(100000)),
     getConsumed: overrides?.getConsumed ?? vi.fn(() => Effect.succeed(0)),
-    getMaxBudget: overrides?.getMaxBudget ?? vi.fn(() => Effect.succeed(120000)),
+    getMaxBudget:
+      overrides?.getMaxBudget ?? vi.fn(() => Effect.succeed(120000)),
   } as unknown as TokenBudgetService;
 }
 
@@ -111,8 +112,7 @@ export function createMockKnowledgeFileService(
           },
         ]),
       ),
-    grepKnowledge:
-      overrides?.grepKnowledge ?? vi.fn(() => Effect.succeed([])),
+    grepKnowledge: overrides?.grepKnowledge ?? vi.fn(() => Effect.succeed([])),
     knowledgeBaseExists:
       overrides?.knowledgeBaseExists ?? vi.fn(() => Effect.succeed(true)),
   } as unknown as KnowledgeFileService;
@@ -146,8 +146,7 @@ export function createMockDiffContentProvider(
         } as unknown as ReturnType<DiffContentProvider["getUri"]>;
       }),
     provideTextDocumentContent:
-      overrides?.provideTextDocumentContent ??
-      vi.fn(() => ""),
+      overrides?.provideTextDocumentContent ?? vi.fn(() => ""),
     onDidChange: {
       // Mock EventEmitter-like interface
       // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -162,15 +161,24 @@ export function createMockDiffContentProvider(
  * Streaming write tool mock overrides
  */
 export interface StreamingWriteMockOverrides {
-  initializeStreamingWrite?: () => Promise<{ success: boolean; error?: string }>;
+  initializeStreamingWrite?: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
   appendStreamingContent?: () => Promise<{ success: boolean; error?: string }>;
-  finalizeStreamingWrite?: () => Promise<{ success: boolean; filePath: string; error?: string }>;
+  finalizeStreamingWrite?: () => Promise<{
+    success: boolean;
+    filePath: string;
+    error?: string;
+  }>;
 }
 
 /**
  * Create mock streaming write functions for writeTestFile tool
  */
-export function createMockStreamingWrite(overrides?: StreamingWriteMockOverrides) {
+export function createMockStreamingWrite(
+  overrides?: StreamingWriteMockOverrides,
+) {
   return {
     initializeStreamingWrite:
       overrides?.initializeStreamingWrite ??
@@ -196,17 +204,17 @@ export interface PlanStreamingMockOverrides {
 /**
  * Create mock plan streaming functions for proposeTestPlan tool
  */
-export function createMockPlanStreaming(overrides?: PlanStreamingMockOverrides) {
+export function createMockPlanStreaming(
+  overrides?: PlanStreamingMockOverrides,
+) {
   return {
     initializePlanStreamingWriteEffect:
-      overrides?.initializePlanStreamingWriteEffect ??
-      vi.fn(() => Effect.void),
+      overrides?.initializePlanStreamingWriteEffect ?? vi.fn(() => Effect.void),
     appendPlanStreamingContentEffect:
-      overrides?.appendPlanStreamingContentEffect ??
-      vi.fn(() => Effect.void),
+      overrides?.appendPlanStreamingContentEffect ?? vi.fn(() => Effect.void),
     finalizePlanStreamingWriteEffect:
       overrides?.finalizePlanStreamingWriteEffect ??
-      vi.fn(() => Effect.succeed("/test-plan.md")),
+      vi.fn(() => Effect.succeed(".clive/plans/test-plan.md")),
   };
 }
 

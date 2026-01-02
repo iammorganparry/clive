@@ -592,7 +592,7 @@ describe("Event Handlers", () => {
           {
             toolName: "writeTestFile",
             toolCallId: "delta-123",
-            argsTextDelta: '{"target',
+            inputTextDelta: '{"target',
           },
           streamingState,
           undefined,
@@ -603,7 +603,7 @@ describe("Event Handlers", () => {
           {
             toolName: "writeTestFile",
             toolCallId: "delta-123",
-            argsTextDelta: 'Path": "test.ts"}',
+            inputTextDelta: 'Path": "test.ts"}',
           },
           streamingState,
           undefined,
@@ -615,7 +615,7 @@ describe("Event Handlers", () => {
       }),
     );
 
-    it.effect("should handle missing argsTextDelta", () =>
+    it.effect("should handle missing inputTextDelta", () =>
       Effect.gen(function* () {
         const streamingState = yield* createStreamingState();
         const correlationId = "test-123";
@@ -625,7 +625,7 @@ describe("Event Handlers", () => {
           {
             toolName: "writeTestFile",
             toolCallId: "delta-456",
-            argsTextDelta: undefined,
+            inputTextDelta: undefined,
           },
           streamingState,
           undefined,

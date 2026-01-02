@@ -87,6 +87,9 @@ export function useChangesetChat({
         subscriptionId?: string;
       };
 
+      // Log all events received in webview for debugging
+      console.log("[useChangesetChat] Received event:", event.type, event);
+
       // Capture subscriptionId when received
       if (event.subscriptionId && !state.context.subscriptionId) {
         send({
@@ -281,6 +284,7 @@ export function useChangesetChat({
         conversationType: mode,
         commitHash,
         mode: state.context.agentMode, // Pass agent mode (plan or act)
+        planFilePath: state.context.planFilePath || undefined, // Pass plan file path for act mode context
         conversationHistory:
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
@@ -300,10 +304,13 @@ export function useChangesetChat({
         (s) => s.id === state.context.currentSuiteId,
       );
       if (currentSuite && currentSuite.status === "in_progress") {
-        // Send focused message for next suite
+        // Send focused message for next suite with plan reference
+        const planRef = state.context.planFilePath
+          ? `\n\nRefer to the approved test plan at: ${state.context.planFilePath}`
+          : "";
         send({
           type: "SEND_MESSAGE",
-          content: `Write tests for: ${currentSuite.name}\nTarget file: ${currentSuite.targetFilePath}\nTest type: ${currentSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.`,
+          content: `Write tests for: ${currentSuite.name}\nTarget file: ${currentSuite.targetFilePath}\nTest type: ${currentSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.${planRef}`,
         });
       }
     }
@@ -312,6 +319,7 @@ export function useChangesetChat({
     state.context.currentSuiteId,
     state.context.agentMode,
     state.context.testSuiteQueue,
+    state.context.planFilePath,
     send,
   ]);
 

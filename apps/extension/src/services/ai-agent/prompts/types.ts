@@ -34,6 +34,7 @@ export interface BuildConfig {
   readonly workspaceRoot?: string;
   readonly mode?: "plan" | "act";
   readonly includeUserRules?: boolean;
+  readonly planFilePath?: string; // Path to approved test plan file (for act mode context)
 }
 
 /**
@@ -47,4 +48,3 @@ export type Section = (
  * Registry mapping section IDs to their implementations
  */
 export type SectionRegistry = Record<SectionId, Section>;
-

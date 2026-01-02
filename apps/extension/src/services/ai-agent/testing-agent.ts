@@ -44,6 +44,7 @@ import {
 } from "./event-handlers.js";
 import { createToolSet } from "./tool-factory.js";
 import { generateCorrelationId } from "./testing-agent-helpers.js";
+import { logToOutput } from "../../utils/logger.js";
 
 class TestingAgentError extends Data.TaggedError("TestingAgentError")<{
   message: string;
@@ -91,6 +92,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
           filePaths: string | string[],
           options?: {
             mode?: "plan" | "act";
+            planFilePath?: string; // Path to approved test plan file (for act mode context)
             conversationHistory?: Array<{
               role: "user" | "assistant" | "system";
               content: string;
@@ -103,6 +105,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
           Effect.gen(function* () {
             const files = Array.isArray(filePaths) ? filePaths : [filePaths];
             const mode = options?.mode ?? "plan";
+            const planFilePath = options?.planFilePath;
             const conversationHistory = options?.conversationHistory ?? [];
             const progressCallback = options?.progressCallback;
             const signal = options?.signal;
@@ -137,6 +140,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const initialMessages = yield* buildInitialMessages(
               files,
               conversationHistory,
+              mode,
             );
             const agentState = yield* createAgentState(initialMessages);
             const streamingState = yield* createStreamingState();
@@ -226,6 +230,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const baseSystemPrompt = yield* promptService.buildTestAgentPrompt({
               workspaceRoot,
               mode,
+              planFilePath, // Include plan file path for act mode context
               includeUserRules: true,
             });
 
@@ -293,13 +298,19 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                   abortSignal: signal,
                   messages: cachedMessages,
                   providerOptions: {
-                    anthropic: {
-                      thinking: { type: "enabled", budgetTokens: 5000 },
-                    } satisfies AnthropicProviderOptions,
+                    anthropic:
+                      mode === "plan"
+                        ? ({
+                            thinking: { type: "enabled", budgetTokens: 5000 },
+                          } satisfies AnthropicProviderOptions)
+                        : {}, // No thinking in act mode - just execute the plan
                   },
-                  headers: {
-                    "anthropic-beta": "interleaved-thinking-2025-05-14",
-                  },
+                  headers:
+                    mode === "plan"
+                      ? {
+                          "anthropic-beta": "interleaved-thinking-2025-05-14",
+                        }
+                      : {}, // No thinking headers in act mode
                 }),
               catch: (error) => {
                 emitError(error);
@@ -334,6 +345,11 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                       }),
                     );
                   }
+
+                  // Log event before routing
+                  logToOutput(
+                    `[testing-agent] Routing event.type: ${event.type}`,
+                  );
 
                   // Route events to handlers
                   yield* Match.value(event).pipe(
@@ -468,13 +484,15 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
 /**
  * Build initial messages from conversation history
+ * Exported for testing purposes
  */
-const buildInitialMessages = (
+export const buildInitialMessages = (
   files: string[],
   conversationHistory: Array<{
     role: "user" | "assistant" | "system";
     content: string;
   }>,
+  mode: "plan" | "act" = "plan",
 ) =>
   Effect.gen(function* () {
     const workspaceRootUri = yield* getWorkspaceRoot();
@@ -487,13 +505,17 @@ const buildInitialMessages = (
 
     const messages: Message[] = [];
     if (conversationHistory.length === 0) {
+      // First message ever - use planning prompt regardless of mode
+      // (act mode should never start with empty history)
       messages.push({
         role: "user",
         content: initialPrompt,
       });
     } else {
       messages.push(...conversationHistory);
+      // Only add planning prompt in plan mode
       if (
+        mode === "plan" &&
         conversationHistory[conversationHistory.length - 1]?.role !== "user"
       ) {
         messages.push({

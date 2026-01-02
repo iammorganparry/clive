@@ -31,6 +31,7 @@ import {
   unescapeJsonString,
   sanitizePlanName,
 } from "./testing-agent-helpers.js";
+import { logToOutput } from "../../utils/logger.js";
 import {
   initializeStreamingWrite,
   appendStreamingContent,
@@ -42,7 +43,6 @@ import {
   finalizePlanStreamingWriteEffect,
 } from "./tools/propose-test-plan.js";
 import type { WriteTestFileOutput } from "./types.js";
-
 /**
  * Progress callback type
  */
@@ -64,6 +64,9 @@ export const handleToolCallStreamingStart = (
   correlationId: string,
 ) =>
   Effect.gen(function* () {
+    logToOutput(
+      `[handleToolCallStreamingStart] toolName=${event.toolName}, toolCallId=${event.toolCallId}`,
+    );
     if (!event.toolCallId) return;
 
     if (event.toolName === "writeTestFile") {
@@ -271,19 +274,19 @@ export const handleToolCallDelta = (
   event: {
     toolName?: string;
     toolCallId?: string;
-    argsTextDelta?: string;
+    inputTextDelta?: string; // AI SDK v6 renamed from argsTextDelta
   },
   streamingState: Ref.Ref<StreamingState>,
   progressCallback: ProgressCallback | undefined,
   correlationId: string,
 ) =>
   Effect.gen(function* () {
-    if (!event.toolCallId || !event.argsTextDelta) return;
+    if (!event.toolCallId || !event.inputTextDelta) return;
 
     if (event.toolName === "writeTestFile") {
       yield* handleWriteTestFileDelta(
         event.toolCallId,
-        event.argsTextDelta,
+        event.inputTextDelta,
         streamingState,
         correlationId,
       );
@@ -292,7 +295,7 @@ export const handleToolCallDelta = (
     if (event.toolName === "proposeTestPlan") {
       yield* handleProposeTestPlanDelta(
         event.toolCallId,
-        event.argsTextDelta,
+        event.inputTextDelta,
         streamingState,
         progressCallback,
         correlationId,
@@ -316,6 +319,9 @@ export const handleToolCall = (
   correlationId: string,
 ) =>
   Effect.gen(function* () {
+    logToOutput(
+      `[handleToolCall] toolName=${event.toolName}, toolCallId=${event.toolCallId}`,
+    );
     if (!event.toolCallId) {
       yield* Effect.logDebug(
         `[TestingAgent:${correlationId}] Skipping tool call due to missing toolCallId`,
@@ -615,17 +621,11 @@ const handleProposeTestPlanResult = (
       finalFilePath = toolOutput.filePath;
     }
 
-    // Get file path from streaming state (fallback)
-    const streamingFilePath = yield* getFilePathForPlan(
-      streamingState,
-      toolCallId,
-    );
-    const targetPath = finalFilePath || streamingFilePath;
-
     // Finalize streaming write if file was initialized
     const hasPlan = yield* hasPlanToolCall(streamingState, toolCallId);
+    let finalizedFilePath: string | undefined;
     if (hasPlan) {
-      yield* pipe(
+      const finalizeResult = yield* pipe(
         finalizePlanStreamingWriteEffect(toolCallId),
         Effect.tap((filePath) =>
           Effect.logDebug(
@@ -634,12 +634,24 @@ const handleProposeTestPlanResult = (
         ),
         Effect.tap(() => deletePlanToolCall(streamingState, toolCallId)),
         Effect.catchAll((error) =>
-          Effect.logError(
-            `[TestingAgent:${correlationId}] Failed to finalize plan streaming write: ${error.message ?? "Unknown error"}`,
-          ),
+          Effect.gen(function* () {
+            yield* Effect.logError(
+              `[TestingAgent:${correlationId}] Failed to finalize plan streaming write: ${error.message ?? "Unknown error"}`,
+            );
+            return undefined;
+          }),
         ),
       );
+      finalizedFilePath = finalizeResult;
     }
+
+    // Get file path from streaming state (fallback)
+    const streamingFilePath = yield* getFilePathForPlan(
+      streamingState,
+      toolCallId,
+    );
+    // Prefer finalized file path, then tool output, then streaming state
+    const targetPath = finalizedFilePath || finalFilePath || streamingFilePath;
 
     // Always emit final plan content using robust extraction
     if (accumulated) {

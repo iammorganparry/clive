@@ -50,6 +50,7 @@ export const agentsRouter = {
         conversationType: z.enum(["branch", "uncommitted"]).default("branch"),
         commitHash: z.string().optional(), // For uncommitted conversations
         mode: z.enum(["plan", "act"]).optional().default("plan"), // Agent mode: plan or act
+        planFilePath: z.string().optional(), // Path to approved test plan file (for act mode context)
         conversationHistory: z
           .array(
             z.object({
@@ -65,7 +66,6 @@ export const agentsRouter = {
       ctx,
       signal,
       onProgress,
-      waitForApproval,
       subscriptionId,
     }: {
       input: {
@@ -75,6 +75,7 @@ export const agentsRouter = {
         conversationType: "branch" | "uncommitted";
         commitHash?: string;
         mode?: "plan" | "act";
+        planFilePath?: string;
         conversationHistory?: Array<{
           role: "user" | "assistant" | "system";
           content: string;
@@ -186,6 +187,7 @@ export const agentsRouter = {
           // File edits are non-blocking and registered with PendingEditService
           const result = yield* testingAgent.planAndExecuteTests(input.files, {
             mode: input.mode || "plan",
+            planFilePath: input.planFilePath, // Pass plan file path for act mode context
             conversationHistory: input.conversationHistory,
             outputChannel: ctx.outputChannel,
             progressCallback,
@@ -481,9 +483,7 @@ export const agentsRouter = {
    * Get list of files with pending edits
    * Used by the webview to show pending edit status
    */
-  getPendingEdits: procedure
-    .input(z.void())
-    .query(() =>
+  getPendingEdits: procedure.input(z.void()).query(() =>
     Effect.gen(function* () {
       try {
         const service = getPendingEditServiceInstance();
