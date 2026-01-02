@@ -3,7 +3,7 @@
   "publisher": "iammorganparry",
   "displayName": "Clive - AI Test Writer",
   "description": "Your AI-powered test writer for automated testing across all languages and frameworks",
-  "version": "0.0.1-dev.13c7b8a.1767370228",
+  "version": "0.0.1-dev.159998a.1767377618",
   "repository": {
     "type": "git",
     "url": "https://github.com/iammorganparry/clive.git"
@@ -11,6 +11,9 @@
   "engines": {
     "vscode": "^1.105.0"
   },
+  "enabledApiProposals": [
+    "editorInsets"
+  ],
   "categories": [
     "Other"
   ],
@@ -125,6 +128,7 @@
     "@ai-sdk/xai": "^3.0.1",
     "@clerk/clerk-react": "5.57.0",
     "@clive/api": "*",
+    "@clive/core": "*",
     "@clive/db": "*",
     "@clive/ui": "*",
     "@clive/webview-rpc": "*",

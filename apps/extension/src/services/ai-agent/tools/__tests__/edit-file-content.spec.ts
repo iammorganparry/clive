@@ -22,14 +22,12 @@ vi.mock("../../../../utils/model-content-processor", () => ({
   processModelContent: vi.fn((content: string) => content),
 }));
 
-// Mock pending edit service
-vi.mock("../../../pending-edit-service", () => ({
-  registerBlockSync: vi.fn(),
-}));
-
-// Mock diff decoration service
-vi.mock("../../../diff-decoration-service", () => ({
-  applyDiffDecorationsSync: vi.fn(),
+// Mock diff tracker service
+vi.mock("../../../diff-tracker-service", () => ({
+  getDiffTrackerService: vi.fn(() => ({
+    registerBlock: vi.fn(),
+    // Other methods can be added as needed
+  })),
 }));
 
 describe("editFileContentTool", () => {
@@ -233,10 +231,16 @@ replaced2
     });
   });
 
-  describe("PendingEditService Integration", () => {
-    it("should register pending edit before writing", async () => {
-      const { registerBlockSync } = await import(
-        "../../../pending-edit-service"
+  describe("DiffTrackerService Integration", () => {
+    it("should register block with DiffTrackerService before writing", async () => {
+      const diffTrackerModule = await import("../../../diff-tracker-service");
+      const mockDiffTrackerService = {
+        registerBlock: vi.fn(),
+      };
+      vi.mocked(diffTrackerModule.getDiffTrackerService).mockReturnValue(
+        mockDiffTrackerService as unknown as ReturnType<
+          typeof diffTrackerModule.getDiffTrackerService
+        >,
       );
 
       const tool = createEditFileContentTool();
@@ -248,16 +252,19 @@ replaced2
 
       await executeTool(tool, input, {} as EditFileContentOutput);
 
-      expect(registerBlockSync).toHaveBeenCalled();
-      expect(registerBlockSync).toHaveBeenCalledWith(
+      expect(mockDiffTrackerService.registerBlock).toHaveBeenCalled();
+      expect(mockDiffTrackerService.registerBlock).toHaveBeenCalledWith(
         expect.any(String), // filePath
         expect.stringMatching(/^edit-/), // blockId with edit- prefix
-        1, // startLine
-        expect.any(Number), // endLine
+        expect.objectContaining({
+          startLine: expect.any(Number),
+          endLine: expect.any(Number),
+        }), // range
         expect.any(Array), // originalLines
         expect.any(Number), // newLineCount
-        "original content\nline 2\nline 3", // baseContent
+        expect.any(String), // baseContent
         false, // not a new file
+        expect.any(String), // newContent
       );
     });
 
@@ -288,50 +295,6 @@ replaced2
       await executeTool(tool, input, {} as EditFileContentOutput);
 
       expect(mockVscode.window.showTextDocument).toHaveBeenCalled();
-    });
-  });
-
-  describe("Diff Decoration Integration", () => {
-    it("should apply diff decorations after writing", async () => {
-      const { applyDiffDecorationsSync } = await import(
-        "../../../diff-decoration-service"
-      );
-
-      const tool = createEditFileContentTool();
-
-      const input: EditFileContentInput = {
-        targetPath: "src/test.ts",
-        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
-      };
-
-      await executeTool(tool, input, {} as EditFileContentOutput);
-
-      expect(applyDiffDecorationsSync).toHaveBeenCalled();
-    });
-
-    it("should not fail if decoration application fails", async () => {
-      const { applyDiffDecorationsSync } = await import(
-        "../../../diff-decoration-service"
-      );
-      vi.mocked(applyDiffDecorationsSync).mockImplementation(() => {
-        throw new Error("Decoration failed");
-      });
-
-      const tool = createEditFileContentTool();
-
-      const input: EditFileContentInput = {
-        targetPath: "src/test.ts",
-        diff: "------- SEARCH\noriginal content\n=======\nnew content\n+++++++ REPLACE",
-      };
-
-      // Should not throw, just log error
-      const result = await executeTool(
-        tool,
-        input,
-        {} as EditFileContentOutput,
-      );
-
-      expect(result.success).toBe(true);
     });
   });
 

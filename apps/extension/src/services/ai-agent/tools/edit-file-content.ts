@@ -5,8 +5,8 @@ import { Runtime, Effect, pipe } from "effect";
 import { VSCodeService } from "../../vs-code.js";
 import { processModelContent } from "../../../utils/model-content-processor.js";
 import { formatFileEditError } from "../response-formatter.js";
-import { registerBlockSync } from "../../pending-edit-service.js";
-import { applyDiffDecorationsSync } from "../../diff-decoration-service.js";
+import { getDiffTrackerService } from "../../diff-tracker-service.js";
+import type { LineRange } from "@clive/core";
 
 /**
  * SEARCH/REPLACE block interface
@@ -295,13 +295,24 @@ export type StreamingFileOutputCallback = (chunk: {
 }) => void;
 
 /**
+ * Block application result with position information
+ */
+interface BlockApplication {
+  blockId: string;
+  range: LineRange;
+  originalLines: string[];
+  newLineCount: number;
+}
+
+/**
  * Construct new file content by applying SEARCH/REPLACE blocks
  * Processes blocks sequentially and tracks position to ensure order
+ * Returns content and block positions for tracking
  */
 function constructNewFileContent(
   originalContent: string,
   diff: string,
-): { content: string; error?: string } {
+): { content: string; error?: string; blockApplications?: BlockApplication[] } {
   const blocks = parseSearchReplaceBlocks(diff);
 
   if (blocks.length === 0) {
@@ -321,8 +332,12 @@ function constructNewFileContent(
     search: string;
     replace: string;
   }> = [];
+  const blockApplications: BlockApplication[] = [];
+  let blockCounter = 0;
 
   for (const block of blocks) {
+    blockCounter++;
+    const blockId = `block-${blockCounter}`;
     // Handle empty SEARCH block
     if (block.search.trim() === "") {
       if (originalContent.length === 0) {
@@ -364,12 +379,37 @@ function constructNewFileContent(
       };
     }
 
+    // Calculate line positions before replacement
+    const startLineIndex = getLineIndexAtPosition(newContent, match.index);
+    const _endLineIndex = getLineIndexAtPosition(
+      newContent,
+      match.index + match.matchedContent.length,
+    );
+    const originalLines = match.matchedContent.split("\n");
+    const newLines = block.replace.split("\n");
+    const newLineCount = newLines.length;
+
     // Perform replacement
     const beforeMatch = newContent.slice(0, match.index);
     const afterMatch = newContent.slice(
       match.index + match.matchedContent.length,
     );
     newContent = beforeMatch + block.replace + afterMatch;
+
+    // Calculate final line positions after replacement
+    const finalStartLine = startLineIndex + 1; // Convert to 1-based
+    const finalEndLine = startLineIndex + newLineCount; // 1-based, inclusive
+
+    // Track block application
+    blockApplications.push({
+      blockId,
+      range: {
+        startLine: finalStartLine,
+        endLine: finalEndLine,
+      },
+      originalLines,
+      newLineCount,
+    });
 
     // Update last processed index
     lastProcessedIndex = match.index + block.replace.length;
@@ -394,14 +434,14 @@ function constructNewFileContent(
     }
   }
 
-  return { content: newContent };
+  return { content: newContent, blockApplications };
 }
 
 /**
  * Factory function to create editFileContentTool
  * Edits files using SEARCH/REPLACE blocks for token-efficient edits
- * Changes are written directly and registered with PendingEditService
- * User can accept/reject via CodeLens in the editor
+ * Changes are written directly and registered with DiffTrackerService
+ * User can accept/reject via inline editor insets
  *
  * @param onStreamingOutput Optional streaming callback
  */
@@ -476,25 +516,6 @@ export const createEditFileContentTool = (
               fileUri.fsPath,
             );
 
-            // Generate unique block ID for this replace operation
-            const blockId = `edit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-
-            // For replace operations, the entire file is treated as one block
-            const originalLines = originalContent.split("\n");
-            const newLines = newContent.split("\n");
-
-            // Register block BEFORE writing (store original for revert)
-            registerBlockSync(
-              fileUri.fsPath,
-              blockId,
-              1, // Start from first line
-              newLines.length, // End at last line
-              originalLines,
-              newLines.length,
-              originalContent, // base content
-              false, // not a new file
-            );
-
             // Write the file directly
             const content = Buffer.from(newContent, "utf-8");
             yield* vsCodeService.writeFile(fileUri, content);
@@ -502,28 +523,52 @@ export const createEditFileContentTool = (
             // Open the file in the editor to show changes
             const updatedDocument =
               yield* vsCodeService.openTextDocument(fileUri);
-            const editor = yield* vsCodeService.showTextDocument(
-              updatedDocument,
-              {
-                preview: false,
-                preserveFocus: false,
-              },
-            );
+            yield* vsCodeService.showTextDocument(updatedDocument, {
+              preview: false,
+              preserveFocus: false,
+            });
 
             // Get the actual content after opening (may be auto-formatted)
             const actualContent = updatedDocument.getText();
 
-            // Apply diff decorations to show changes (uses Myers diff internally)
-            try {
-              applyDiffDecorationsSync(
-                editor,
+            // Register blocks with their actual positions
+            const diffTrackerService = getDiffTrackerService();
+            const blockApplications = result.blockApplications || [];
+
+            if (blockApplications.length > 0) {
+              // Register each block at its actual position
+              for (const blockApp of blockApplications) {
+                const blockId = `edit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+                diffTrackerService.registerBlock(
+                  fileUri.fsPath,
+                  blockId,
+                  blockApp.range,
+                  blockApp.originalLines,
+                  blockApp.newLineCount,
+                  originalContent, // base content
+                  false, // not a new file
+                  actualContent,
+                );
+              }
+            } else {
+              // Fallback: if no block applications (single block or entire file replace)
+              // Treat entire file as one block
+              const blockId = `edit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+              const originalLines = originalContent.split("\n");
+              const newLines = actualContent.split("\n");
+              diffTrackerService.registerBlock(
+                fileUri.fsPath,
+                blockId,
+                {
+                  startLine: 1,
+                  endLine: newLines.length,
+                },
+                originalLines,
+                newLines.length,
                 originalContent,
+                false,
                 actualContent,
-                false, // not a new file
               );
-            } catch (error) {
-              // Log error but don't fail the operation
-              console.error("Failed to apply diff decorations:", error);
             }
 
             // Emit streaming callback
@@ -538,14 +583,15 @@ export const createEditFileContentTool = (
               });
             }
 
-            const blockCount = parseSearchReplaceBlocks(diff).length;
+            const blockCount =
+              blockApplications.length || parseSearchReplaceBlocks(diff).length;
             const blockSummary =
               blockCount === 1 ? "1 edit block" : `${blockCount} edit blocks`;
 
             return {
               success: true,
               filePath: relativePath,
-              message: `Applied ${blockSummary} to ${relativePath}. Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+              message: `Applied ${blockSummary} to ${relativePath}. Changes are pending user review. User can accept or reject via inline buttons in the editor.`,
             };
           }),
           Effect.catchAll((error) =>
