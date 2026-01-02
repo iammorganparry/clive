@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
+import * as vscodeModule from "vscode";
 import { Runtime } from "effect";
 import {
   getDiagnostics,
@@ -11,28 +12,46 @@ import {
   createMockDiagnosticWithRange,
   createPrePostDiagnosticScenario,
 } from "../../__tests__/mock-factories";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../__tests__/mock-factories/index.js";
 
-// Mock vscode module using shared factory
+// Mock vscode globally for diagnostics-service which uses vscode.* directly
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../__tests__/mock-factories");
+  const { createVSCodeMock } = await import(
+    "../../__tests__/mock-factories/vscode-mock.js"
+  );
   return createVSCodeMock();
 });
 
 describe("DiagnosticsService", () => {
+  let _mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let mockVscode: ReturnType<typeof createVSCodeMock>;
   let mockLanguages: {
     getDiagnostics: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLanguages = vscode.languages as unknown as {
+
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    _mockVSCodeServiceLayer = layer;
+    mockVscode = vsMock;
+
+    // Use the global mock's languages.getDiagnostics (the actual code uses vscode.languages.getDiagnostics)
+    mockLanguages = (vscodeModule as unknown as typeof mockVscode)
+      .languages as unknown as {
       getDiagnostics: ReturnType<typeof vi.fn>;
     };
   });
 
   describe("getDiagnostics", () => {
     it("should return diagnostics for a given URI", async () => {
-      const testUri = vscode.Uri.file("/test/file.ts");
+      const testUri = mockVscode.Uri.file("/test/file.ts");
       const expectedDiagnostics = [
         createMockDiagnosticWithRange(5, "Test error"),
       ];
@@ -47,13 +66,11 @@ describe("DiagnosticsService", () => {
     });
 
     it("should wait for diagnostics to settle before returning", async () => {
-      const testUri = vscode.Uri.file("/test/file.ts");
+      const testUri = mockVscode.Uri.file("/test/file.ts");
       mockLanguages.getDiagnostics.mockReturnValue([]);
 
       const startTime = Date.now();
-      await Runtime.runPromise(Runtime.defaultRuntime)(
-        getDiagnostics(testUri),
-      );
+      await Runtime.runPromise(Runtime.defaultRuntime)(getDiagnostics(testUri));
       const endTime = Date.now();
 
       // Should wait approximately 3500ms (allow some tolerance)
@@ -61,7 +78,7 @@ describe("DiagnosticsService", () => {
     });
 
     it("should return empty array when no diagnostics exist", async () => {
-      const testUri = vscode.Uri.file("/test/file.ts");
+      const testUri = mockVscode.Uri.file("/test/file.ts");
       mockLanguages.getDiagnostics.mockReturnValue([]);
 
       const result = await Runtime.runPromise(Runtime.defaultRuntime)(
@@ -217,4 +234,3 @@ describe("DiagnosticsService", () => {
     });
   });
 });
-

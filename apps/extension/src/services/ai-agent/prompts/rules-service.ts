@@ -71,6 +71,7 @@ export class RulesService extends Effect.Service<RulesService>()(
 
       return { loadUserRules };
     }),
+    dependencies: [VSCodeService.Default],
   },
 ) {}
 

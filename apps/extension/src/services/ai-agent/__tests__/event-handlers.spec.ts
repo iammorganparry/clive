@@ -15,6 +15,7 @@ import {
   hasStreamingArgs,
   getStreamingArgs,
 } from "../agent-state";
+import { createMockVSCodeServiceLayer } from "../../../__tests__/mock-factories/index.js";
 
 // Mock the streaming tools using factory - use async import to avoid hoisting issues
 vi.mock("../tools/write-test-file", async () => {
@@ -32,6 +33,9 @@ vi.mock("../tools/propose-test-plan", async () => {
 });
 
 describe("Event Handlers", () => {
+  // Provide VSCodeService for all tests since some handlers may require it
+  const vscodeLayer = createMockVSCodeServiceLayer().layer;
+
   describe("handleToolCallStreamingStart", () => {
     it.effect("should initialize streaming args for writeTestFile", () =>
       Effect.gen(function* () {
@@ -369,7 +373,7 @@ describe("Event Handlers", () => {
         const parsed = resultEvent ? JSON.parse(resultEvent.message) : null;
         expect(parsed?.toolName).toBe("bashExecute");
         expect(parsed?.state).toBe("output-available");
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should detect tool rejection and set flag", () =>
@@ -391,7 +395,7 @@ describe("Event Handlers", () => {
 
         const state = yield* Ref.get(agentState);
         expect(state.didRejectTool).toBe(true);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should detect completeTask completion", () =>
@@ -415,7 +419,7 @@ describe("Event Handlers", () => {
 
         const state = yield* Ref.get(agentState);
         expect(state.taskCompleted).toBe(true);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should increment mistakes on failure", () =>
@@ -439,7 +443,7 @@ describe("Event Handlers", () => {
 
         const state = yield* Ref.get(agentState);
         expect(state.consecutiveMistakes).toBe(1);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should reset mistakes on success", () =>
@@ -468,7 +472,7 @@ describe("Event Handlers", () => {
 
         const state = yield* Ref.get(agentState);
         expect(state.consecutiveMistakes).toBe(0);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should detect new diagnostic problems", () =>
@@ -505,7 +509,7 @@ describe("Event Handlers", () => {
 
         const state = yield* Ref.get(agentState);
         expect(state.consecutiveMistakes).toBe(1);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should emit mistake-limit when limit reached", () =>
@@ -540,7 +544,7 @@ describe("Event Handlers", () => {
         expect(limitEvent).toBeDefined();
         const parsed = limitEvent ? JSON.parse(limitEvent.message) : null;
         expect(parsed?.count).toBe(5);
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should add execution for successful writeTestFile", () =>
@@ -569,7 +573,7 @@ describe("Event Handlers", () => {
         const state = yield* Ref.get(agentState);
         expect(state.executions.length).toBe(1);
         expect(state.executions[0].filePath).toBe("/tests/my-test.spec.ts");
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
   });
 
@@ -612,7 +616,7 @@ describe("Event Handlers", () => {
 
         const args = yield* getStreamingArgs(streamingState, "delta-123");
         expect(args).toBe('{"targetPath": "test.ts"}');
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
 
     it.effect("should handle missing inputTextDelta", () =>
@@ -631,7 +635,7 @@ describe("Event Handlers", () => {
           undefined,
           correlationId,
         );
-      }),
+      }).pipe(Effect.provide(vscodeLayer)),
     );
   });
 });

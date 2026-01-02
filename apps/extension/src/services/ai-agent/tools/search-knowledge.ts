@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { Effect, Runtime, pipe } from "effect";
-import { KnowledgeFileService } from "../../knowledge-file-service.js";
+import type { KnowledgeFileService } from "../../knowledge-file-service.js";
+import { VSCodeService } from "../../vs-code.js";
 
 /**
  * Critical categories that should return full content instead of truncated
@@ -71,9 +72,10 @@ export const createSearchKnowledgeTool = (
         pipe(
           Effect.gen(function* () {
             // List all knowledge files
+            // Provide VSCodeService since KnowledgeFileService methods require it
             const files = yield* knowledgeFileService
               .listKnowledgeFiles()
-              .pipe(Effect.provide(KnowledgeFileService.Default));
+              .pipe(Effect.provide(VSCodeService.Default));
 
             if (files.length === 0) {
               return {
@@ -84,11 +86,12 @@ export const createSearchKnowledgeTool = (
             }
 
             // Read all knowledge files
+            // Provide VSCodeService since KnowledgeFileService methods require it
             const articles = yield* Effect.all(
               files.map((file) =>
                 knowledgeFileService
                   .readKnowledgeFile(file.relativePath)
-                  .pipe(Effect.provide(KnowledgeFileService.Default)),
+                  .pipe(Effect.provide(VSCodeService.Default)),
               ),
               { concurrency: 10 },
             );

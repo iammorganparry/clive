@@ -1,17 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ApiUrls,
-  Commands,
-  ConfigFile,
-  GlobalStateKeys,
-  IndexingConfig,
-  KnowledgeBaseCategorySchema,
-  LoggerConfig,
-  SecretKeys,
-  SuggestedKnowledgeCategories,
-  Views,
-  WebviewMessages,
-} from "../constants";
+import { ApiUrls, Commands, GlobalStateKeys } from "../constants";
 
 describe("Constants", () => {
   describe("ApiUrls", () => {

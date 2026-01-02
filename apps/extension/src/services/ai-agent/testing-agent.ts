@@ -2,7 +2,7 @@ import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import { type LanguageModel, streamText } from "ai";
 import { Data, Effect, HashMap, Match, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
-import { VSCodeService } from "../../vs-code.js";
+import { VSCodeService } from "../vs-code.js";
 import { createUsageEvent, stringifyEvent } from "../../utils/json-utils.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
 import { AIModels } from "../ai-models.js";

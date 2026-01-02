@@ -151,7 +151,9 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
           pipe(
             Effect.gen(function* () {
               const vsCodeService = yield* VSCodeService;
-              const fileUri = yield* vsCodeService.resolveFileUri(message.filePath);
+              const fileUri = yield* vsCodeService.resolveFileUri(
+                message.filePath,
+              );
               const document = yield* vsCodeService.openTextDocument(fileUri);
               return yield* vsCodeService.showTextDocument(document);
             }),

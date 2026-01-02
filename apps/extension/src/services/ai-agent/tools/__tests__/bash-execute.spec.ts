@@ -2,7 +2,6 @@ import { expect, vi } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect, Exit, Cause } from "effect";
 import type { ChildProcess } from "node:child_process";
-import type * as vscode from "vscode";
 import type { BashExecuteInput, BashExecuteOutput } from "../../types";
 import { createBashExecuteTool, type SpawnFn } from "../bash-execute";
 import { executeTool } from "./test-helpers";
@@ -10,17 +9,24 @@ import {
   createMockChildProcess,
   createMockTokenBudgetService,
 } from "../../../../__tests__/mock-factories";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../../../__tests__/mock-factories/index.js";
 
-// Mock VSCodeService
-vi.mock("../../../vs-code.js", () => ({
-  VSCodeService: {
-    Default: {
-      pipe: vi.fn(),
-    },
-  },
-}));
+// Mock vscode globally for tools that use VSCodeService.Default internally
+vi.mock("vscode", async () => {
+  const { createVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories/vscode-mock.js"
+  );
+  return createVSCodeMock();
+});
 
 describe("bashExecuteTool", () => {
+  let _mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let _mockVscode: ReturnType<typeof createVSCodeMock>;
   let mockSpawn: ReturnType<typeof vi.fn<SpawnFn>>;
   let streamingCallback:
     | ((chunk: { command: string; output: string }) => void)
@@ -31,13 +37,10 @@ describe("bashExecuteTool", () => {
     streamingCallback = undefined;
     mockSpawn = vi.fn<SpawnFn>();
 
-    // Mock VSCodeService
-    const _mockGetWorkspaceRoot = vi.fn().mockReturnValue(
-      Effect.succeed({
-        fsPath: "/test-workspace",
-        scheme: "file",
-      } as vscode.Uri),
-    );
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    _mockVSCodeServiceLayer = layer;
+    _mockVscode = vsMock;
   });
 
   afterEach(() => {
@@ -125,6 +128,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "echo test" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate stdout data
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("test output\n"));
@@ -165,6 +171,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "command-with-error" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate stderr
         if (stderrHandler) {
           stderrHandler(Buffer.from("error message\n"));
@@ -196,6 +205,9 @@ describe("bashExecuteTool", () => {
 
         const input: BashExecuteInput = { command: "invalid-command" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
 
         // Simulate process error
         if (errorHandler) {
@@ -301,6 +313,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "echo line1 && echo line2" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate streaming output
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("line1\n"));
@@ -351,6 +366,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "printf 'partial'" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate partial output (no newline)
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("partial"));
@@ -400,6 +418,9 @@ describe("bashExecuteTool", () => {
           const testCommand = "vitest run test.spec.ts";
           const input: BashExecuteInput = { command: testCommand };
           const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+          // Wait for handlers to be registered
+          yield* Effect.promise(() => Promise.resolve());
 
           // Simulate test output streaming
           if (stdoutHandler) {
@@ -458,6 +479,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: testCommand };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate realistic vitest output with incremental streaming
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("✓ should validate input (50ms)\n"));
@@ -514,6 +538,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: testCommand };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate jest output
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("PASS tests/auth.test.js\n"));
@@ -568,6 +595,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "generate-large-output" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate large output
         if (stdoutHandler) {
           stdoutHandler(Buffer.from(largeOutput));
@@ -605,6 +635,9 @@ describe("bashExecuteTool", () => {
         const input: BashExecuteInput = { command: "echo test" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
+
         // Simulate output
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("test output\n"));
@@ -639,6 +672,9 @@ describe("bashExecuteTool", () => {
 
         const input: BashExecuteInput = { command: "pwd" };
         const promise = executeTool(tool, input, {} as BashExecuteOutput);
+
+        // Wait for handlers to be registered
+        yield* Effect.promise(() => Promise.resolve());
 
         // Simulate process completion
         if (closeHandler) {

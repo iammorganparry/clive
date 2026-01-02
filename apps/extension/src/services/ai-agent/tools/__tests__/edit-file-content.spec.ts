@@ -6,13 +6,15 @@ import type {
   EditFileContentOutput,
 } from "../edit-file-content";
 import { executeTool } from "./test-helpers";
+import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 
-// Mock vscode module using shared factory
+// Mock vscode globally for tools that use VSCodeService.Default internally
+// Use setupVSCodeMock to ensure singleton pattern - same instance used everywhere
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import(
-    "../../../../__tests__/mock-factories"
+  const { setupVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories/vscode-mock.js"
   );
-  return createVSCodeMock();
+  return setupVSCodeMock();
 });
 
 // Mock model content processor
@@ -31,6 +33,7 @@ vi.mock("../../../diff-decoration-service", () => ({
 }));
 
 describe("editFileContentTool", () => {
+  let mockVscode: typeof vscode;
   let mockFs: {
     stat: ReturnType<typeof vi.fn>;
     writeFile: ReturnType<typeof vi.fn>;
@@ -51,7 +54,11 @@ describe("editFileContentTool", () => {
     vi.clearAllMocks();
     streamingCallback = undefined;
 
-    mockFs = vscode.workspace.fs as unknown as {
+    // Get the singleton mock instance that vi.mock("vscode") created
+    // This is the same instance used by VSCodeService.Default
+    mockVscode = getVSCodeMock() ?? vscode;
+
+    mockFs = mockVscode.workspace.fs as unknown as {
       stat: ReturnType<typeof vi.fn>;
       writeFile: ReturnType<typeof vi.fn>;
       readFile: ReturnType<typeof vi.fn>;
@@ -71,7 +78,9 @@ describe("editFileContentTool", () => {
 
     // Default: openTextDocument succeeds
     (
-      vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      mockVscode.workspace.openTextDocument as unknown as ReturnType<
+        typeof vi.fn
+      >
     ).mockResolvedValue(mockDocument as unknown as vscode.TextDocument);
 
     // Default: writeFile succeeds
@@ -218,7 +227,9 @@ replaced2
       );
 
       expect(result.success).toBe(true);
-      expect(vscode.Uri.file).toHaveBeenCalledWith("/absolute/path/test.ts");
+      expect(mockVscode.Uri.file).toHaveBeenCalledWith(
+        "/absolute/path/test.ts",
+      );
     });
   });
 
@@ -276,7 +287,7 @@ replaced2
 
       await executeTool(tool, input, {} as EditFileContentOutput);
 
-      expect(vscode.window.showTextDocument).toHaveBeenCalled();
+      expect(mockVscode.window.showTextDocument).toHaveBeenCalled();
     });
   });
 
@@ -353,7 +364,9 @@ replaced2
   describe("Error Handling", () => {
     it("should handle file read errors gracefully", async () => {
       (
-        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+        mockVscode.workspace.openTextDocument as unknown as ReturnType<
+          typeof vi.fn
+        >
       ).mockRejectedValue(new Error("Cannot read file"));
 
       const tool = createEditFileContentTool();

@@ -1,12 +1,12 @@
 import { describe, expect, vi, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
-import * as vscode from "vscode";
+import { Effect, Either, Runtime } from "effect";
+import type * as vscode from "vscode";
 import {
   createProposeTestPlanTool,
-  initializePlanStreamingWrite,
-  appendPlanStreamingContent,
-  finalizePlanStreamingWrite,
+  initializePlanStreamingWriteEffect,
+  appendPlanStreamingContentEffect,
+  finalizePlanStreamingWriteEffect,
   renamePlanFileEffect,
 } from "../propose-test-plan";
 import type {
@@ -14,14 +14,11 @@ import type {
   ProposeTestPlanOutput,
 } from "../propose-test-plan";
 import { executeTool } from "./test-helpers";
-
-// Mock vscode module using shared factory
-vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import(
-    "../../../../__tests__/mock-factories"
-  );
-  return createVSCodeMock();
-});
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../../../__tests__/mock-factories/index.js";
+import type { VSCodeService } from "../../../vs-code.js";
 
 describe("proposeTestPlanTool", () => {
   let mockFs: {
@@ -31,21 +28,38 @@ describe("proposeTestPlanTool", () => {
   };
   let mockDocument: vscode.TextDocument;
   let mockEditor: vscode.TextEditor;
+  let mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let mockVscode: ReturnType<typeof createVSCodeMock>;
 
   // Counter for unique toolCallIds to avoid state conflicts between tests
   let testCounter = 0;
   const getUniqueToolCallId = () =>
     `test-tool-call-${++testCounter}-${Date.now()}`;
 
+  // Helper to run streaming Effect functions
+  const runStreamingEffect = <A, E>(
+    effect: Effect.Effect<A, E, VSCodeService>,
+  ) =>
+    Runtime.runPromise(Runtime.defaultRuntime)(
+      effect.pipe(Effect.provide(mockVSCodeServiceLayer)),
+    );
+
   beforeEach(() => {
-    mockFs = vscode.workspace.fs as unknown as {
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    mockVSCodeServiceLayer = layer;
+    mockVscode = vsMock;
+
+    mockFs = mockVscode.workspace.fs as unknown as {
       stat: ReturnType<typeof vi.fn>;
       writeFile: ReturnType<typeof vi.fn>;
       createDirectory: ReturnType<typeof vi.fn>;
     };
 
     mockDocument = {
-      uri: vscode.Uri.file("/test-workspace/.clive/plans/test-plan.md"),
+      uri: mockVscode.Uri.file("/test-workspace/.clive/plans/test-plan.md"),
       positionAt: vi.fn(() => ({ line: 0, character: 0 })),
       getText: vi.fn(() => ""),
     } as unknown as vscode.TextDocument;
@@ -65,15 +79,17 @@ describe("proposeTestPlanTool", () => {
     mockFs.createDirectory.mockResolvedValue(undefined);
     // Default: openTextDocument succeeds
     (
-      vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+      mockVscode.workspace.openTextDocument as unknown as ReturnType<
+        typeof vi.fn
+      >
     ).mockResolvedValue(mockDocument);
     // Default: showTextDocument succeeds
     (
-      vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>
+      mockVscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValue(mockEditor);
     // Default: applyEdit succeeds
     (
-      vscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
+      mockVscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValue(true);
   });
 
@@ -336,20 +352,23 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
 
-      expect(result.success).toBe(true);
       expect(mockFs.createDirectory).toHaveBeenCalled();
       expect(mockFs.writeFile).toHaveBeenCalled();
-      expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
-      expect(vscode.window.showTextDocument).toHaveBeenCalled();
+      expect(mockVscode.workspace.openTextDocument).toHaveBeenCalled();
+      expect(mockVscode.window.showTextDocument).toHaveBeenCalled();
     });
 
     it("should create parent directory if it doesn't exist", async () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      await initializePlanStreamingWrite(targetPath, toolCallId);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
 
       expect(mockFs.createDirectory).toHaveBeenCalled();
     });
@@ -358,30 +377,38 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = "/absolute/path/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
 
-      expect(result.success).toBe(true);
-      expect(vscode.Uri.file).toHaveBeenCalledWith(targetPath);
+      expect(mockVscode.Uri.file).toHaveBeenCalledWith(targetPath);
     });
 
     it("should return error when no workspace folder exists", async () => {
       // Temporarily override workspaceFolders
-      const originalFolders = vscode.workspace.workspaceFolders;
+      const originalFolders = mockVscode.workspace.workspaceFolders;
       (
-        vscode.workspace as unknown as { workspaceFolders: unknown }
+        mockVscode.workspace as unknown as { workspaceFolders: unknown }
       ).workspaceFolders = [];
 
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId).pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("No workspace folder found");
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        expect(result.left.message).toContain("No workspace folder found");
+      }
 
       // Restore
       (
-        vscode.workspace as unknown as { workspaceFolders: unknown }
+        mockVscode.workspace as unknown as { workspaceFolders: unknown }
       ).workspaceFolders = originalFolders;
     });
 
@@ -390,38 +417,45 @@ describe("proposeTestPlanTool", () => {
       const targetPath = ".clive/plans/test-plan.md";
 
       // Initialize first
-      const initResult = await initializePlanStreamingWrite(
-        targetPath,
-        toolCallId,
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
       );
-      expect(initResult.success).toBe(true);
 
       // Ensure mocks return the document when openTextDocument is called again (for reload)
       (
-        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+        mockVscode.workspace.openTextDocument as unknown as ReturnType<
+          typeof vi.fn
+        >
       ).mockResolvedValue(mockDocument);
 
       // Append content
-      const result = await appendPlanStreamingContent(
-        toolCallId,
-        "# Test Plan\n",
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "# Test Plan\n"),
       );
 
-      if (!result.success) {
-        console.error("Append failed with error:", result.error);
-      }
-
-      expect(result.success).toBe(true);
-      expect(vscode.workspace.applyEdit).toHaveBeenCalled();
+      expect(mockVscode.workspace.applyEdit).toHaveBeenCalled();
     });
 
     it("should return error if streaming write not initialized", async () => {
       const toolCallId = "uninitialized-id";
 
-      const result = await appendPlanStreamingContent(toolCallId, "content");
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        appendPlanStreamingContentEffect(toolCallId, "content").pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("Streaming write not initialized");
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        if (result.left._tag === "StreamingNotInitializedError") {
+          expect(result.left.toolCallId).toBe(toolCallId);
+        } else {
+          expect(result.left.message).toContain(
+            "Streaming write not initialized",
+          );
+        }
+      }
     });
 
     it("should finalize streaming write and return file path", async () => {
@@ -429,84 +463,90 @@ describe("proposeTestPlanTool", () => {
       const targetPath = ".clive/plans/test-plan.md";
 
       // Initialize and append some content
-      await initializePlanStreamingWrite(targetPath, toolCallId);
-      await appendPlanStreamingContent(toolCallId, "# Test Plan\n");
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "# Test Plan\n"),
+      );
 
       // Finalize
-      const result = await finalizePlanStreamingWrite(toolCallId);
+      const filePath = await runStreamingEffect(
+        finalizePlanStreamingWriteEffect(toolCallId),
+      );
 
-      expect(result.success).toBe(true);
-      expect(result.filePath).toBeDefined();
+      expect(filePath).toBeDefined();
       expect(mockFs.writeFile).toHaveBeenCalled();
     });
 
     it("should return error if finalizing non-existent streaming write", async () => {
       const toolCallId = "non-existent-id";
 
-      const result = await finalizePlanStreamingWrite(toolCallId);
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        finalizePlanStreamingWriteEffect(toolCallId).pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("Streaming write not found");
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        if (result.left._tag === "StreamingNotInitializedError") {
+          expect(result.left.toolCallId).toBe(toolCallId);
+        } else {
+          expect(result.left.message).toContain(
+            "Streaming write not initialized",
+          );
+        }
+      }
     });
 
     it("should stream content incrementally", async () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const initResult = await initializePlanStreamingWrite(
-        targetPath,
-        toolCallId,
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
       );
-      expect(initResult.success).toBe(true);
 
       // Ensure mocks return the document when openTextDocument is called again (for reload)
       (
-        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+        mockVscode.workspace.openTextDocument as unknown as ReturnType<
+          typeof vi.fn
+        >
       ).mockResolvedValue(mockDocument);
 
       // Append multiple chunks
-      const result1 = await appendPlanStreamingContent(
-        toolCallId,
-        "# Test Plan\n",
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "# Test Plan\n"),
       );
-      const result2 = await appendPlanStreamingContent(
-        toolCallId,
-        "## Section 1\n",
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "## Section 1\n"),
       );
-      const result3 = await appendPlanStreamingContent(
-        toolCallId,
-        "Content here\n",
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "Content here\n"),
       );
-
-      if (!result1.success) {
-        console.error("Append 1 failed with error:", result1.error);
-      }
-      if (!result2.success) {
-        console.error("Append 2 failed with error:", result2.error);
-      }
-      if (!result3.success) {
-        console.error("Append 3 failed with error:", result3.error);
-      }
-
-      expect(result1.success).toBe(true);
-      expect(result2.success).toBe(true);
-      expect(result3.success).toBe(true);
 
       // Verify applyEdit was called for each chunk
-      expect(vscode.workspace.applyEdit).toHaveBeenCalledTimes(3);
+      expect(mockVscode.workspace.applyEdit).toHaveBeenCalledTimes(3);
     });
 
     it("should write accumulated content on finalize", async () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      await initializePlanStreamingWrite(targetPath, toolCallId);
-      await appendPlanStreamingContent(toolCallId, "Chunk 1");
-      await appendPlanStreamingContent(toolCallId, "Chunk 2");
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "Chunk 1"),
+      );
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, "Chunk 2"),
+      );
 
-      const result = await finalizePlanStreamingWrite(toolCallId);
+      await runStreamingEffect(finalizePlanStreamingWriteEffect(toolCallId));
 
-      expect(result.success).toBe(true);
       // Verify final writeFile was called with replaced content (not accumulated)
       const writeCalls = mockFs.writeFile.mock.calls;
       const lastCall = writeCalls[writeCalls.length - 1];
@@ -522,16 +562,19 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      await initializePlanStreamingWrite(targetPath, toolCallId);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
 
       // Simulate streaming only planContent (not name, overview, todos)
       const planContent =
         "# Test Plan\n\n## Overview\nThis is the plan content.";
-      await appendPlanStreamingContent(toolCallId, planContent);
+      await runStreamingEffect(
+        appendPlanStreamingContentEffect(toolCallId, planContent),
+      );
 
-      const result = await finalizePlanStreamingWrite(toolCallId);
+      await runStreamingEffect(finalizePlanStreamingWriteEffect(toolCallId));
 
-      expect(result.success).toBe(true);
       // Verify the file contains only planContent
       const writeCalls = mockFs.writeFile.mock.calls;
       const lastCall = writeCalls[writeCalls.length - 1];
@@ -551,11 +594,18 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId).pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      // Effect-based implementation wraps errors with descriptive messages
-      expect(result.error).toContain("Failed to create empty file");
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        // Effect-based implementation wraps errors with descriptive messages
+        expect(result.left.message).toContain("Failed to create empty file");
+      }
     });
 
     it("should handle directory creation errors gracefully", async () => {
@@ -566,40 +616,65 @@ describe("proposeTestPlanTool", () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId).pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        expect(result.left.message).toBeDefined();
+      }
     });
 
     it("should handle editor opening errors gracefully", async () => {
       (
-        vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>
+        mockVscode.workspace.openTextDocument as unknown as ReturnType<
+          typeof vi.fn
+        >
       ).mockRejectedValue(new Error("Cannot open document"));
 
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId).pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        expect(result.left.message).toBeDefined();
+      }
     });
 
     it("should handle append errors gracefully", async () => {
       const toolCallId = getUniqueToolCallId();
       const targetPath = ".clive/plans/test-plan.md";
 
-      await initializePlanStreamingWrite(targetPath, toolCallId);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
 
       (
-        vscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
+        mockVscode.workspace.applyEdit as unknown as ReturnType<typeof vi.fn>
       ).mockRejectedValue(new Error("Edit failed"));
 
-      const result = await appendPlanStreamingContent(toolCallId, "content");
+      const result = await Runtime.runPromise(Runtime.defaultRuntime)(
+        appendPlanStreamingContentEffect(toolCallId, "content").pipe(
+          Effect.provide(mockVSCodeServiceLayer),
+          Effect.either,
+        ),
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      expect(Either.isLeft(result)).toBe(true);
+      if (Either.isLeft(result)) {
+        expect(result.left.message).toBeDefined();
+      }
     });
   });
 
@@ -610,9 +685,9 @@ describe("proposeTestPlanTool", () => {
       // by verifying paths with special characters work
       const targetPath = ".clive/plans/test-plan-auth-flow.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
-
-      expect(result.success).toBe(true);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
     });
 
     it("should handle long plan names", async () => {
@@ -620,9 +695,9 @@ describe("proposeTestPlanTool", () => {
       const targetPath =
         ".clive/plans/test-plan-very-long-name-that-should-still-work.md";
 
-      const result = await initializePlanStreamingWrite(targetPath, toolCallId);
-
-      expect(result.success).toBe(true);
+      await runStreamingEffect(
+        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+      );
     });
   });
 
@@ -634,9 +709,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Wait for initialization
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks for rename operation
         yield* Effect.sync(() => {
@@ -647,13 +720,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -670,11 +743,11 @@ describe("proposeTestPlanTool", () => {
         // Assert
         yield* Effect.sync(() => {
           expect(result).toBe(newPath);
-          expect(vscode.workspace.fs.readFile).toHaveBeenCalled();
+          expect(mockVscode.workspace.fs.readFile).toHaveBeenCalled();
           expect(mockFs.writeFile).toHaveBeenCalled();
-          expect(vscode.workspace.fs.delete).toHaveBeenCalled();
+          expect(mockVscode.workspace.fs.delete).toHaveBeenCalled();
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should fail when streaming state not found", () =>
@@ -695,7 +768,7 @@ describe("proposeTestPlanTool", () => {
             expect(result.left.message).toContain("Streaming state not found");
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle read file errors gracefully", () =>
@@ -705,9 +778,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mock to fail on readFile
         yield* Effect.sync(() => {
@@ -715,7 +786,7 @@ describe("proposeTestPlanTool", () => {
             .fn()
             .mockRejectedValue(new Error("File not found"));
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
@@ -730,10 +801,10 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(result._tag).toBe("Left");
           if (result._tag === "Left") {
-            expect(result.left.message).toContain("Failed to rename plan file");
+            expect(result.left.message).toContain("Failed to read old file");
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle write file errors gracefully", () =>
@@ -743,9 +814,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks - readFile succeeds, writeFile fails
         yield* Effect.sync(() => {
@@ -753,7 +822,7 @@ describe("proposeTestPlanTool", () => {
             .fn()
             .mockResolvedValue(Buffer.from("content"));
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
@@ -771,10 +840,12 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(result._tag).toBe("Left");
           if (result._tag === "Left") {
-            expect(result.left.message).toContain("Failed to rename plan file");
+            expect(result.left.message).toContain(
+              "Failed to write to new location",
+            );
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle delete file errors gracefully", () =>
@@ -784,9 +855,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks - readFile and writeFile succeed, delete fails
         yield* Effect.sync(() => {
@@ -798,13 +867,13 @@ describe("proposeTestPlanTool", () => {
             .mockRejectedValue(new Error("Cannot delete"));
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -823,10 +892,10 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(result._tag).toBe("Left");
           if (result._tag === "Left") {
-            expect(result.left.message).toContain("Failed to rename plan file");
+            expect(result.left.message).toContain("Failed to delete old file");
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should update streaming state with new file URI", () =>
@@ -836,9 +905,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks
         yield* Effect.sync(() => {
@@ -849,13 +916,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -874,10 +941,10 @@ describe("proposeTestPlanTool", () => {
         // Assert - document and editor should be updated
         yield* Effect.sync(() => {
           expect(result).toBe(newPath);
-          expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
-          expect(vscode.window.showTextDocument).toHaveBeenCalled();
+          expect(mockVscode.workspace.openTextDocument).toHaveBeenCalled();
+          expect(mockVscode.window.showTextDocument).toHaveBeenCalled();
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should create parent directory if it doesn't exist", () =>
@@ -887,9 +954,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/subfolder/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks - stat fails for parent directory (doesn't exist)
         yield* Effect.sync(() => {
@@ -909,13 +974,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -938,7 +1003,7 @@ describe("proposeTestPlanTool", () => {
           expect(mockFs.createDirectory).toHaveBeenCalled();
           expect(mockFs.writeFile).toHaveBeenCalled();
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle absolute paths correctly", () =>
@@ -948,9 +1013,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = "/absolute/path/new.md";
 
         // Initialize streaming state with absolute path
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks
         yield* Effect.sync(() => {
@@ -961,13 +1024,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -986,10 +1049,10 @@ describe("proposeTestPlanTool", () => {
         // Assert
         yield* Effect.sync(() => {
           expect(result).toBe(newPath);
-          expect(vscode.Uri.file).toHaveBeenCalledWith(oldPath);
-          expect(vscode.Uri.file).toHaveBeenCalledWith(newPath);
+          expect(mockVscode.Uri.file).toHaveBeenCalledWith(oldPath);
+          expect(mockVscode.Uri.file).toHaveBeenCalledWith(newPath);
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should preserve file content during rename", () =>
@@ -1000,9 +1063,7 @@ describe("proposeTestPlanTool", () => {
         const testContent = "# Test Plan\n\nThis is the plan content.";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks with specific content
         const capturedContent: Buffer[] = [];
@@ -1014,13 +1075,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1042,7 +1103,7 @@ describe("proposeTestPlanTool", () => {
             capturedContent[capturedContent.length - 1].toString();
           expect(writtenContent).toBe(testContent);
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should delete old file after successful rename", () =>
@@ -1052,9 +1113,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks
         const deleteCallArgs: unknown[] = [];
@@ -1069,13 +1128,13 @@ describe("proposeTestPlanTool", () => {
           });
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1090,9 +1149,9 @@ describe("proposeTestPlanTool", () => {
         // Assert - old file should be deleted
         yield* Effect.sync(() => {
           expect(deleteCallArgs.length).toBe(1);
-          expect(vscode.workspace.fs.delete).toHaveBeenCalledTimes(1);
+          expect(mockVscode.workspace.fs.delete).toHaveBeenCalledTimes(1);
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle editor opening errors gracefully", () =>
@@ -1102,9 +1161,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks - file operations succeed, but editor opening fails
         yield* Effect.sync(() => {
@@ -1115,13 +1172,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1131,7 +1188,7 @@ describe("proposeTestPlanTool", () => {
 
           // Mock openTextDocument to fail
           (
-            vscode.workspace.openTextDocument as unknown as ReturnType<
+            mockVscode.workspace.openTextDocument as unknown as ReturnType<
               typeof vi.fn
             >
           ).mockRejectedValue(new Error("Cannot open document"));
@@ -1146,10 +1203,12 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(result._tag).toBe("Left");
           if (result._tag === "Left") {
-            expect(result.left.message).toContain("Failed to rename plan file");
+            expect(result.left.message).toContain(
+              "Failed to open new document",
+            );
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should read from old path and write to new path", () =>
@@ -1159,9 +1218,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-final.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Track which URIs were accessed
         const readUris: string[] = [];
@@ -1177,13 +1234,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1204,7 +1261,7 @@ describe("proposeTestPlanTool", () => {
           expect(readUris[0]).toContain("placeholder");
           expect(writeUris.some((uri) => uri.includes("final"))).toBe(true);
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should handle directory creation errors gracefully", () =>
@@ -1214,9 +1271,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/newfolder/test-plan.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks - directory creation fails
         yield* Effect.sync(() => {
@@ -1231,13 +1286,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1253,10 +1308,12 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(result._tag).toBe("Left");
           if (result._tag === "Left") {
-            expect(result.left.message).toContain("Failed to rename plan file");
+            expect(result.left.message).toContain(
+              "Failed to create new directory",
+            );
           }
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
 
     it.effect("should open new document and show new editor", () =>
@@ -1266,9 +1323,7 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() =>
-          initializePlanStreamingWrite(oldPath, toolCallId),
-        );
+        yield* initializePlanStreamingWriteEffect(oldPath, toolCallId);
 
         // Setup mocks
         yield* Effect.sync(() => {
@@ -1279,13 +1334,13 @@ describe("proposeTestPlanTool", () => {
           const mockDelete = vi.fn().mockResolvedValue(undefined);
 
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
           ).readFile = mockReadFile;
           (
-            vscode.workspace.fs as unknown as {
+            mockVscode.workspace.fs as unknown as {
               readFile: ReturnType<typeof vi.fn>;
               delete: ReturnType<typeof vi.fn>;
             }
@@ -1296,12 +1351,12 @@ describe("proposeTestPlanTool", () => {
           // Track calls to openTextDocument and showTextDocument
           vi.clearAllMocks();
           (
-            vscode.workspace.openTextDocument as unknown as ReturnType<
+            mockVscode.workspace.openTextDocument as unknown as ReturnType<
               typeof vi.fn
             >
           ).mockResolvedValue(mockDocument);
           (
-            vscode.window.showTextDocument as unknown as ReturnType<
+            mockVscode.window.showTextDocument as unknown as ReturnType<
               typeof vi.fn
             >
           ).mockResolvedValue(mockEditor);
@@ -1313,20 +1368,20 @@ describe("proposeTestPlanTool", () => {
         // Assert - should open and show new document
         yield* Effect.sync(() => {
           const openDocumentCalls = (
-            vscode.workspace.openTextDocument as unknown as ReturnType<
+            mockVscode.workspace.openTextDocument as unknown as ReturnType<
               typeof vi.fn
             >
           ).mock.calls;
           expect(openDocumentCalls.length).toBeGreaterThan(0);
 
           const showDocumentCalls = (
-            vscode.window.showTextDocument as unknown as ReturnType<
+            mockVscode.window.showTextDocument as unknown as ReturnType<
               typeof vi.fn
             >
           ).mock.calls;
           expect(showDocumentCalls.length).toBeGreaterThan(0);
         });
-      }),
+      }).pipe(Effect.provide(mockVSCodeServiceLayer)),
     );
   });
 });

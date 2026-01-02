@@ -25,7 +25,10 @@ import { Layer, Effect } from "effect";
 import { vi, type Mock } from "vitest";
 import type * as vscode from "vscode";
 
-import { VSCodeService, SecretStorageService } from "../services/vs-code.js";
+import {
+  type VSCodeService,
+  SecretStorageService,
+} from "../services/vs-code.js";
 import { createLoggerLayer } from "../services/logger-service.js";
 import { ConfigService } from "../services/config-service.js";
 import { ApiKeyService } from "../services/api-key-service.js";
@@ -37,6 +40,7 @@ import { GitServiceLive } from "../services/git-service.js";
 import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
 import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 import { KnowledgeFileService } from "../services/knowledge-file-service.js";
+import { createMockVSCodeServiceLayer } from "./mock-factories/service-mocks.js";
 
 // =============================================================================
 // Types
@@ -155,15 +159,14 @@ export function createSecretStorageTestLayer(
 
 /**
  * Create VSCodeService test layer
+ * Uses the mock factory from service-mocks.ts to ensure all properties are included
  */
 export function createVSCodeServiceTestLayer(
-  mockWorkspace?: ReturnType<typeof createMockWorkspace>,
+  _mockWorkspace?: ReturnType<typeof createMockWorkspace>,
 ): Layer.Layer<VSCodeService> {
-  const workspace = mockWorkspace ?? createMockWorkspace();
-  return Layer.succeed(VSCodeService, {
-    _tag: "VSCodeService",
-    workspace,
-  });
+  // Use the createMockVSCodeServiceLayer from service-mocks.ts which provides a complete mock
+  const { layer } = createMockVSCodeServiceLayer();
+  return layer;
 }
 
 /**

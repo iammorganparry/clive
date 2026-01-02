@@ -3,112 +3,126 @@
  * Tests user rules loading from .clive/rules/*.md files
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Effect } from "effect";
-import * as vscode from "vscode";
+import { expect, beforeEach, vi } from "vitest";
+import { describe, it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import type * as vscode from "vscode";
 import { RulesService } from "../rules-service.js";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../../../__tests__/mock-factories/index.js";
 
-// Mock vscode module using shared factory
+// Mock vscode globally for code that uses vscode.* directly (e.g., new vscode.RelativePattern())
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../../../__tests__/mock-factories");
+  const { createVSCodeMock } = await import(
+    "../../../../__tests__/mock-factories/vscode-mock.js"
+  );
   return createVSCodeMock();
 });
 
 describe("RulesService", () => {
+  let mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let mockVscode: ReturnType<typeof createVSCodeMock>;
+  let testLayer: Layer.Layer<RulesService>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-  });
 
-  it("returns empty string when no rule files exist", async () => {
-    vi.mocked(vscode.workspace.findFiles).mockResolvedValue([]);
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    mockVSCodeServiceLayer = layer;
+    mockVscode = vsMock;
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* RulesService;
-        return yield* service.loadUserRules();
-      }).pipe(Effect.provide(RulesService.Default)),
+    // Provide VSCodeService to RulesService
+    // This creates a layer that provides RulesService without requiring VSCodeService
+    testLayer = RulesService.Default.pipe(
+      Layer.provide(mockVSCodeServiceLayer),
     );
-
-    expect(result).toBe("");
   });
 
-  it("loads and combines multiple rule files", async () => {
+  it.effect("returns empty string when no rule files exist", () => {
+    (
+      mockVscode.workspace.findFiles as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([]);
+
+    return Effect.gen(function* () {
+      const service = yield* RulesService;
+      const result = yield* service.loadUserRules();
+      expect(result).toBe("");
+    }).pipe(Effect.provide(testLayer)) as Effect.Effect<void, never, never>;
+  });
+
+  it.effect("loads and combines multiple rule files", () => {
     const mockFiles = [
       { fsPath: "/test/workspace/.clive/rules/rule1.md" },
       { fsPath: "/test/workspace/.clive/rules/rule2.md" },
     ] as vscode.Uri[];
 
-    vi.mocked(vscode.workspace.findFiles).mockResolvedValue(mockFiles);
-    vi.mocked(vscode.workspace.fs.readFile)
-      .mockResolvedValueOnce(
-        new TextEncoder().encode("Content of rule 1"),
-      )
-      .mockResolvedValueOnce(
-        new TextEncoder().encode("Content of rule 2"),
-      );
+    (
+      mockVscode.workspace.findFiles as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockFiles);
+    (mockVscode.workspace.fs.readFile as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(new TextEncoder().encode("Content of rule 1"))
+      .mockResolvedValueOnce(new TextEncoder().encode("Content of rule 2"));
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* RulesService;
-        return yield* service.loadUserRules();
-      }).pipe(Effect.provide(RulesService.Default)),
-    );
-
-    expect(result).toContain("## rule1");
-    expect(result).toContain("Content of rule 1");
-    expect(result).toContain("## rule2");
-    expect(result).toContain("Content of rule 2");
+    return Effect.gen(function* () {
+      const service = yield* RulesService;
+      const result = yield* service.loadUserRules();
+      expect(result).toContain("## rule1");
+      expect(result).toContain("Content of rule 1");
+      expect(result).toContain("## rule2");
+      expect(result).toContain("Content of rule 2");
+    }).pipe(Effect.provide(testLayer)) as Effect.Effect<void, never, never>;
   });
 
-  it("gracefully handles read errors for individual files", async () => {
+  it.effect("gracefully handles read errors for individual files", () => {
     const mockFiles = [
       { fsPath: "/test/workspace/.clive/rules/good.md" },
       { fsPath: "/test/workspace/.clive/rules/bad.md" },
     ] as vscode.Uri[];
 
-    vi.mocked(vscode.workspace.findFiles).mockResolvedValue(mockFiles);
-    vi.mocked(vscode.workspace.fs.readFile)
-      .mockResolvedValueOnce(
-        new TextEncoder().encode("Good content"),
-      )
+    (
+      mockVscode.workspace.findFiles as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockFiles);
+    (mockVscode.workspace.fs.readFile as unknown as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(new TextEncoder().encode("Good content"))
       .mockRejectedValueOnce(new Error("Read failed"));
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* RulesService;
-        return yield* service.loadUserRules();
-      }).pipe(Effect.provide(RulesService.Default)),
-    );
-
-    // Should include the good file but skip the bad one
-    expect(result).toContain("## good");
-    expect(result).toContain("Good content");
-    expect(result).not.toContain("## bad");
+    return Effect.gen(function* () {
+      const service = yield* RulesService;
+      const result = yield* service.loadUserRules();
+      // Should include the good file but skip the bad one
+      expect(result).toContain("## good");
+      expect(result).toContain("Good content");
+      expect(result).not.toContain("## bad");
+    }).pipe(Effect.provide(testLayer)) as Effect.Effect<void, never, never>;
   });
 
-  it("gracefully handles missing .clive/rules directory", async () => {
-    vi.mocked(vscode.workspace.findFiles).mockRejectedValue(
-      new Error("Directory not found"),
-    );
+  it.effect("gracefully handles missing .clive/rules directory", () => {
+    (
+      mockVscode.workspace.findFiles as unknown as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error("Directory not found"));
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* RulesService;
-        return yield* service.loadUserRules();
-      }).pipe(Effect.provide(RulesService.Default)),
-    );
-
-    expect(result).toBe("");
+    return Effect.gen(function* () {
+      const service = yield* RulesService;
+      const result = yield* service.loadUserRules();
+      expect(result).toBe("");
+    }).pipe(Effect.provide(testLayer)) as Effect.Effect<void, never, never>;
   });
 
-  it("formats multiple rules with proper sections", async () => {
+  it.effect("formats multiple rules with proper sections", () => {
     const mockFiles = [
       { fsPath: "/test/workspace/.clive/rules/auth-rules.md" },
       { fsPath: "/test/workspace/.clive/rules/testing-rules.md" },
     ] as vscode.Uri[];
 
-    vi.mocked(vscode.workspace.findFiles).mockResolvedValue(mockFiles);
-    vi.mocked(vscode.workspace.fs.readFile)
+    (
+      mockVscode.workspace.findFiles as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(mockFiles);
+    (mockVscode.workspace.fs.readFile as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(
         new TextEncoder().encode("Always authenticate users"),
       )
@@ -116,20 +130,14 @@ describe("RulesService", () => {
         new TextEncoder().encode("Write comprehensive tests"),
       );
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const service = yield* RulesService;
-        return yield* service.loadUserRules();
-      }).pipe(Effect.provide(RulesService.Default)),
-    );
-
-    // Should have both rules formatted as sections
-    expect(result).toMatch(/## auth-rules\s+Always authenticate users/);
-    expect(result).toMatch(
-      /## testing-rules\s+Write comprehensive tests/,
-    );
-    // Should be separated by blank lines
-    expect(result).toContain("\n\n");
+    return Effect.gen(function* () {
+      const service = yield* RulesService;
+      const result = yield* service.loadUserRules();
+      // Should have both rules formatted as sections
+      expect(result).toMatch(/## auth-rules\s+Always authenticate users/);
+      expect(result).toMatch(/## testing-rules\s+Write comprehensive tests/);
+      // Should be separated by blank lines
+      expect(result).toContain("\n\n");
+    }).pipe(Effect.provide(testLayer)) as Effect.Effect<void, never, never>;
   });
 });
-

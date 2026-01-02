@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import * as path from "node:path";
 import { Effect, Data } from "effect";
 import { VSCodeService } from "./vs-code.js";
-import { ensureDirectoryExists } from "../utils/fs-effects.js";
 import {
   parseFrontmatter,
   generateFrontmatter,
@@ -37,41 +36,52 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
         never
       > =>
         Effect.gen(function* () {
-          const workspaceFolders = vscodeService.workspace.workspaceFolders;
-          if (!workspaceFolders || workspaceFolders.length === 0) {
-            return yield* Effect.fail(
-              new PlanFileError({
-                message: "No workspace folder found",
-              }),
+          const workspaceRoot = yield* vscodeService.getWorkspaceRoot().pipe(
+            Effect.mapError(
+              (_error): PlanFileError =>
+                new PlanFileError({
+                  message: "No workspace folder found",
+                }),
+            ),
+          );
+
+          const cliveDir = vscodeService.joinPath(workspaceRoot, ".clive");
+          const plansDir = vscodeService.joinPath(cliveDir, "plans");
+
+          // Ensure directories exist
+          // Check if .clive directory exists, create if not
+          const cliveExists = yield* vscodeService
+            .isDirectory(cliveDir)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+          if (!cliveExists) {
+            yield* vscodeService.createDirectory(cliveDir).pipe(
+              Effect.mapError(
+                (error) =>
+                  new PlanFileError({
+                    message: `Failed to create .clive directory: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+              ),
             );
           }
 
-          const workspaceRoot = workspaceFolders[0].uri;
-          const cliveDir = vscode.Uri.joinPath(workspaceRoot, ".clive");
-          const plansDir = vscode.Uri.joinPath(cliveDir, "plans");
+          // Check if plans directory exists, create if not
+          const plansExists = yield* vscodeService
+            .isDirectory(plansDir)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
-          // Ensure directories exist
-          yield* ensureDirectoryExists(cliveDir).pipe(
-            Effect.catchAll((error) =>
-              Effect.fail(
-                new PlanFileError({
-                  message: `Failed to create .clive directory: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
+          if (!plansExists) {
+            yield* vscodeService.createDirectory(plansDir).pipe(
+              Effect.mapError(
+                (error) =>
+                  new PlanFileError({
+                    message: `Failed to create .clive/plans directory: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
               ),
-            ),
-          );
-
-          yield* ensureDirectoryExists(plansDir).pipe(
-            Effect.catchAll((error) =>
-              Effect.fail(
-                new PlanFileError({
-                  message: `Failed to create .clive/plans directory: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-              ),
-            ),
-          );
+            );
+          }
 
           return plansDir;
         });
@@ -104,7 +114,7 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
           Effect.gen(function* () {
             const plansDir = yield* ensurePlansDirectory();
             const fileName = generatePlanFileName(sourceFile);
-            const planUri = vscode.Uri.joinPath(plansDir, fileName);
+            const planUri = vscodeService.joinPath(plansDir, fileName);
 
             const frontmatterContent = generateFrontmatter({
               proposalId: metadata.proposalId,
@@ -119,17 +129,17 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
 
 `;
 
-            yield* Effect.tryPromise({
-              try: async () => {
-                const content = Buffer.from(frontmatter, "utf-8");
-                await vscodeService.workspace.fs.writeFile(planUri, content);
-              },
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to create plan file: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
+            yield* vscodeService
+              .writeFile(planUri, Buffer.from(frontmatter, "utf-8"))
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanFileError({
+                      message: `Failed to create plan file: ${extractErrorMessage(error)}`,
+                      cause: error,
+                    }),
+                ),
+              );
 
             return planUri;
           }),
@@ -143,35 +153,31 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
         ): Effect.Effect<void, PlanFileError> =>
           Effect.gen(function* () {
             // Read existing content
-            const existingContent = yield* Effect.tryPromise({
-              try: async () => {
-                const fileData =
-                  await vscodeService.workspace.fs.readFile(planUri);
-                return Buffer.from(fileData).toString("utf-8");
-              },
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to read plan file: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
+            const existingContent = yield* vscodeService
+              .readFileAsString(planUri)
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanFileError({
+                      message: `Failed to read plan file: ${extractErrorMessage(error)}`,
+                      cause: error,
+                    }),
+                ),
+              );
 
             // Append new content
             const newContent = existingContent + content;
-            yield* Effect.tryPromise({
-              try: async () => {
-                const contentBuffer = Buffer.from(newContent, "utf-8");
-                await vscodeService.workspace.fs.writeFile(
-                  planUri,
-                  contentBuffer,
-                );
-              },
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to append content: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
+            yield* vscodeService
+              .writeFile(planUri, Buffer.from(newContent, "utf-8"))
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanFileError({
+                      message: `Failed to append content: ${extractErrorMessage(error)}`,
+                      cause: error,
+                    }),
+                ),
+              );
           }),
 
         /**
@@ -203,16 +209,15 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
           status: "pending" | "approved" | "rejected",
         ): Effect.Effect<void, PlanFileError> =>
           Effect.gen(function* () {
-            const fileData = yield* Effect.tryPromise({
-              try: () => vscodeService.workspace.fs.readFile(planUri),
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to read plan file: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
-
-            const content = Buffer.from(fileData).toString("utf-8");
+            const content = yield* vscodeService.readFileAsString(planUri).pipe(
+              Effect.mapError(
+                (error) =>
+                  new PlanFileError({
+                    message: `Failed to read plan file: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+              ),
+            );
 
             // Update status in frontmatter
             const updatedContent = content.replace(
@@ -220,20 +225,17 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
               `status: "${status}"`,
             );
 
-            yield* Effect.tryPromise({
-              try: async () => {
-                const contentBuffer = Buffer.from(updatedContent, "utf-8");
-                await vscodeService.workspace.fs.writeFile(
-                  planUri,
-                  contentBuffer,
-                );
-              },
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to update plan status: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
+            yield* vscodeService
+              .writeFile(planUri, Buffer.from(updatedContent, "utf-8"))
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanFileError({
+                      message: `Failed to update plan status: ${extractErrorMessage(error)}`,
+                      cause: error,
+                    }),
+                ),
+              );
           }),
 
         /**
@@ -253,16 +255,16 @@ export class PlanFileService extends Effect.Service<PlanFileService>()(
           PlanFileError
         > =>
           Effect.gen(function* () {
-            const fileData = yield* Effect.tryPromise({
-              try: () => vscodeService.workspace.fs.readFile(planUri),
-              catch: (error) =>
-                new PlanFileError({
-                  message: `Failed to read plan file: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            });
+            const content = yield* vscodeService.readFileAsString(planUri).pipe(
+              Effect.mapError(
+                (error) =>
+                  new PlanFileError({
+                    message: `Failed to read plan file: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+              ),
+            );
 
-            const content = Buffer.from(fileData).toString("utf-8");
             const { frontmatter } = parseFrontmatter(content);
 
             if (

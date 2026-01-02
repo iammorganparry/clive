@@ -6,6 +6,8 @@
 export {
   createVSCodeMock,
   setupVSCodeMock,
+  resetVSCodeMock,
+  getVSCodeMock,
   type VSCodeMockOverrides,
 } from "./vscode-mock.js";
 
@@ -24,6 +26,7 @@ export {
   createMockDiffContentProvider,
   createMockStreamingWrite,
   createMockPlanStreaming,
+  createMockVSCodeServiceLayer,
   type StreamingWriteMockOverrides,
   type PlanStreamingMockOverrides,
 } from "./service-mocks.js";
@@ -33,4 +36,3 @@ export {
   createMockDiagnosticWithRange,
   createPrePostDiagnosticScenario,
 } from "./diagnostics-mock.js";
-

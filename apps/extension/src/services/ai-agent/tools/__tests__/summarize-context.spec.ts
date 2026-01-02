@@ -1,6 +1,7 @@
 import { describe, expect, vi, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
+import type { LanguageModel } from "ai";
 import { createSummarizeContextTool } from "../summarize-context";
 import type { SummaryService } from "../../summary-service";
 import type { Message } from "../../context-tracker";
@@ -18,7 +19,7 @@ type SummarizeResult = {
 
 describe("summarizeContextTool", () => {
   let mockSummaryService: SummaryService;
-  let mockModel: { generateText: ReturnType<typeof vi.fn> };
+  let mockModel: LanguageModel;
   let mockGetMessages: Effect.Effect<Message[]>;
   let mockUpdateMessages: (messages: Message[]) => Effect.Effect<void>;
   let progressCallback: ((status: string, message: string) => void) | undefined;
@@ -35,7 +36,7 @@ describe("summarizeContextTool", () => {
     // Mock LanguageModel
     mockModel = {
       generateText: vi.fn(),
-    } as unknown as { generateText: ReturnType<typeof vi.fn> };
+    } as unknown as LanguageModel;
 
     // Mock getMessages Effect
     mockGetMessages = Effect.succeed([
@@ -61,16 +62,20 @@ describe("summarizeContextTool", () => {
   describe("Success Cases", () => {
     it.effect("should summarize messages successfully", () =>
       Effect.gen(function* () {
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+          ),
+        );
 
-        const result = yield* Effect.promise(() => executeTool(tool, { focus: undefined }, {
-          success: false,
-        } as SummarizeResult));
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(result.success).toBe(true);
@@ -92,34 +97,50 @@ describe("summarizeContextTool", () => {
           };
         });
 
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-          progressCallback,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+            progressCallback,
+          ),
+        );
 
-        yield* Effect.promise(() => executeTool(tool, { focus: undefined }, { success: false } as SummarizeResult));
+        yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(progressCalls.length).toBeGreaterThan(0);
-          expect(progressCalls.some(([status]) => status === "summarizing")).toBe(true);
-          expect(progressCalls.some(([status]) => status === "summarized")).toBe(true);
+          expect(
+            progressCalls.some(([status]) => status === "summarizing"),
+          ).toBe(true);
+          expect(
+            progressCalls.some(([status]) => status === "summarized"),
+          ).toBe(true);
         });
       }),
     );
 
     it.effect("should use focus parameter when provided", () =>
       Effect.gen(function* () {
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+          ),
+        );
 
-        yield* Effect.promise(() => executeTool(tool, { focus: "test strategies" }, { success: false } as SummarizeResult));
+        yield* Effect.promise(() =>
+          executeTool(tool, { focus: "test strategies" }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(mockSummaryService.summarizeMessages).toHaveBeenCalledWith(
@@ -134,18 +155,26 @@ describe("summarizeContextTool", () => {
 
     it.effect("should use persistent context when provided", () =>
       Effect.gen(function* () {
-        const mockGetPersistentContext = Effect.succeed("Persistent knowledge context");
+        const mockGetPersistentContext = Effect.succeed(
+          "Persistent knowledge context",
+        );
 
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-          undefined,
-          mockGetPersistentContext,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+            undefined,
+            mockGetPersistentContext,
+          ),
+        );
 
-        yield* Effect.promise(() => executeTool(tool, { focus: undefined }, { success: false } as SummarizeResult));
+        yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(mockSummaryService.summarizeMessages).toHaveBeenCalledWith(
@@ -169,16 +198,20 @@ describe("summarizeContextTool", () => {
           return spy;
         });
 
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+          ),
+        );
 
-        const result = yield* Effect.promise(() => executeTool(tool, { focus: undefined }, {
-          success: false,
-        } as SummarizeResult));
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(result.success).toBe(false);
@@ -194,11 +227,14 @@ describe("summarizeContextTool", () => {
   describe("Error Handling", () => {
     it.effect("should handle summary service errors", () =>
       Effect.gen(function* () {
-        const errorSummaryService = yield* Effect.sync(() => ({
-          summarizeMessages: vi.fn(() =>
-            Effect.fail(new Error("Summary service failed")),
-          ),
-        } as unknown as SummaryService));
+        const errorSummaryService = yield* Effect.sync(
+          () =>
+            ({
+              summarizeMessages: vi.fn(() =>
+                Effect.fail(new Error("Summary service failed")),
+              ),
+            }) as unknown as SummaryService,
+        );
 
         const errorProgressCalls: Array<[string, string]> = [];
         yield* Effect.sync(() => {
@@ -207,45 +243,55 @@ describe("summarizeContextTool", () => {
           };
         });
 
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          errorSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-          progressCallback,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            errorSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+            progressCallback,
+          ),
+        );
 
-        const result = yield* Effect.promise(() => executeTool(tool, { focus: undefined }, {
-          success: false,
-        } as SummarizeResult));
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(result.success).toBe(false);
           expect(result.error).toContain("Summary service failed");
-          expect(errorProgressCalls.some(([status]) => status === "summarize_error")).toBe(
-            true,
-          );
+          expect(
+            errorProgressCalls.some(([status]) => status === "summarize_error"),
+          ).toBe(true);
         });
       }),
     );
 
     it.effect("should handle persistent context errors gracefully", () =>
       Effect.gen(function* () {
-        const mockGetPersistentContextError = Effect.fail(new Error("Context error")) as unknown as Effect.Effect<string>;
+        const mockGetPersistentContextError = Effect.fail(
+          new Error("Context error"),
+        ) as unknown as Effect.Effect<string>;
 
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-          undefined,
-          mockGetPersistentContextError,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+            undefined,
+            mockGetPersistentContextError,
+          ),
+        );
 
         // Should still succeed, just without persistent context
-        const result = yield* Effect.promise(() => executeTool(tool, { focus: undefined }, {
-          success: false,
-        } as SummarizeResult));
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(result.success).toBe(true);
@@ -263,21 +309,29 @@ describe("summarizeContextTool", () => {
   describe("Message Updates", () => {
     it.effect("should update messages with summary and recent messages", () =>
       Effect.gen(function* () {
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+          ),
+        );
 
-        yield* Effect.promise(() => executeTool(tool, { focus: undefined }, { success: false } as SummarizeResult));
+        yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(updatedMessages).toBeDefined();
           expect(updatedMessages?.length).toBeGreaterThan(0);
           // First message should be the summary
           expect(updatedMessages?.[0].role).toBe("system");
-          expect(updatedMessages?.[0].content).toContain("Previous conversation summary");
+          expect(updatedMessages?.[0].content).toContain(
+            "Previous conversation summary",
+          );
         });
       }),
     );
@@ -286,16 +340,20 @@ describe("summarizeContextTool", () => {
   describe("Token Calculation", () => {
     it.effect("should calculate tokens freed correctly", () =>
       Effect.gen(function* () {
-        const tool = yield* Effect.sync(() => createSummarizeContextTool(
-          mockSummaryService,
-          mockModel as any,
-          mockGetMessages,
-          mockUpdateMessages,
-        ));
+        const tool = yield* Effect.sync(() =>
+          createSummarizeContextTool(
+            mockSummaryService,
+            mockModel,
+            mockGetMessages,
+            mockUpdateMessages,
+          ),
+        );
 
-        const result = yield* Effect.promise(() => executeTool(tool, { focus: undefined }, {
-          success: false,
-        } as SummarizeResult));
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, { focus: undefined }, {
+            success: false,
+          } as SummarizeResult),
+        );
 
         yield* Effect.sync(() => {
           expect(result.tokensFreed).toBeDefined();
@@ -307,4 +365,3 @@ describe("summarizeContextTool", () => {
     );
   });
 });
-

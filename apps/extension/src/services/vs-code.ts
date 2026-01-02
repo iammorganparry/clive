@@ -1,5 +1,5 @@
 import { Data, Effect, Layer, Option, pipe } from "effect";
-import vscode from "vscode";
+import * as vscode from "vscode";
 
 // ============================================================
 // Error Types
@@ -190,9 +190,7 @@ export class VSCodeService extends Effect.Service<VSCodeService>()(
             Effect.map((stat) => stat.type === vscode.FileType.Directory),
           ),
 
-        isFile: (
-          uri: vscode.Uri,
-        ): Effect.Effect<boolean, FileSystemError> =>
+        isFile: (uri: vscode.Uri): Effect.Effect<boolean, FileSystemError> =>
           pipe(
             Effect.tryPromise({
               try: () => vscode.workspace.fs.stat(uri),

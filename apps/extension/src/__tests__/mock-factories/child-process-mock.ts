@@ -3,7 +3,7 @@
  * Provides reusable mocks for Node.js child_process.spawn operations
  */
 
-import { vi, type Mock } from "vitest";
+import { vi } from "vitest";
 import type { ChildProcess } from "node:child_process";
 import type { SpawnOptions } from "node:child_process";
 import type { SpawnFn } from "../../services/ai-agent/tools/bash-execute.js";
@@ -28,16 +28,10 @@ export interface ChildProcessHandlers {
 export function createMockChildProcess(
   handlers: ChildProcessHandlers = {},
 ): MockChildProcess {
-  let stdoutHandler: ((data: Buffer) => void) | undefined;
-  let stderrHandler: ((data: Buffer) => void) | undefined;
-  let closeHandler: ((code: number) => void) | undefined;
-  let errorHandler: ((error: Error) => void) | undefined;
-
   return {
     stdout: {
       on: vi.fn((event: string, handler: (data: Buffer) => void) => {
         if (event === "data") {
-          stdoutHandler = handler;
           handlers.onStdoutData?.(handler);
         }
       }),
@@ -45,17 +39,14 @@ export function createMockChildProcess(
     stderr: {
       on: vi.fn((event: string, handler: (data: Buffer) => void) => {
         if (event === "data") {
-          stderrHandler = handler;
           handlers.onStderrData?.(handler);
         }
       }),
     },
     on: vi.fn((event: string, handler: (code: number | Error) => void) => {
       if (event === "close") {
-        closeHandler = handler as (code: number) => void;
         handlers.onClose?.(handler as (code: number) => void);
       } else if (event === "error") {
-        errorHandler = handler as (error: Error) => void;
         handlers.onError?.(handler as (error: Error) => void);
       }
     }),
@@ -77,13 +68,10 @@ export function createMockSpawn(): SpawnFn {
 /**
  * Helper to create a spawn mock with a pre-configured child process
  */
-export function createMockSpawnWithChild(
-  child: MockChildProcess,
-): SpawnFn {
+export function createMockSpawnWithChild(child: MockChildProcess): SpawnFn {
   return vi.fn<SpawnFn>(
     (_command: string, _options: SpawnOptions): ChildProcess => {
       return child as unknown as ChildProcess;
     },
   );
 }
-
