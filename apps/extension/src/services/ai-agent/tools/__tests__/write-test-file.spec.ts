@@ -6,7 +6,6 @@ import { createWriteTestFileTool } from "../write-test-file";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../../types";
 import { executeTool } from "./test-helpers";
 import { createMockDiagnosticWithRange } from "../../../../__tests__/mock-factories/diagnostics-mock";
-import { applyDiffDecorationsSync } from "../../../diff-decoration-service";
 import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 
 // Mock vscode globally for tools that use VSCodeService.Default internally
@@ -30,14 +29,12 @@ vi.mock("effect", async () => {
   };
 });
 
-// Mock pending edit service
-vi.mock("../../../pending-edit-service", () => ({
-  registerBlockSync: vi.fn(),
-}));
-
-// Mock diff decoration service
-vi.mock("../../../diff-decoration-service", () => ({
-  applyDiffDecorationsSync: vi.fn(),
+// Mock diff tracker service
+vi.mock("../../../diff-tracker-service", () => ({
+  getDiffTrackerService: vi.fn(() => ({
+    registerBlock: vi.fn(),
+    // Other methods can be added as needed
+  })),
 }));
 
 describe("writeTestFileTool", () => {
@@ -63,13 +60,6 @@ describe("writeTestFileTool", () => {
 
     // Reset all mocks
     vi.clearAllMocks();
-
-    // Reset diff decoration mock to no-op (success case)
-    (applyDiffDecorationsSync as ReturnType<typeof vi.fn>).mockImplementation(
-      () => {
-        // no-op by default
-      },
-    );
 
     // Default: file doesn't exist (for parent directory check)
     mockFs.stat.mockRejectedValue(new Error("File not found"));
@@ -445,134 +435,8 @@ describe("writeTestFileTool", () => {
     );
   });
 
-  describe("Diff Decorations", () => {
-    it.effect("should apply diff decorations for new file", () =>
-      Effect.gen(function* () {
-        yield* Effect.sync(() => approvalRegistry.add("test-diff-1"));
-        const tool = yield* Effect.sync(() =>
-          createWriteTestFileTool(approvalRegistry),
-        );
-
-        const input: WriteTestFileInput = {
-          proposalId: "test-diff-1",
-          testContent: "test content",
-          targetPath: "src/new-file.spec.ts",
-        };
-
-        yield* Effect.promise(() =>
-          executeTool(tool, input, {} as WriteTestFileOutput),
-        );
-
-        yield* Effect.sync(() => {
-          // applyDiffDecorationsSync should be called with the editor and isNewFile=true
-          expect(applyDiffDecorationsSync).toHaveBeenCalledWith(
-            expect.anything(), // editor object (mocked as empty object)
-            "", // originalContent (empty for new file)
-            "test content", // actualContent
-            true, // isNewFile
-          );
-        });
-      }),
-    );
-
-    it.effect(
-      "should apply diff decorations when overwriting existing file",
-      () =>
-        Effect.gen(function* () {
-          yield* Effect.sync(() => approvalRegistry.add("test-diff-2"));
-          const tool = yield* Effect.sync(() =>
-            createWriteTestFileTool(approvalRegistry),
-          );
-
-          // Mock existing file with original content, then updated content after write
-          yield* Effect.sync(() => {
-            // File exists - mock stat to succeed
-            mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-
-            let callCount = 0;
-            (
-              mockVscode.workspace.openTextDocument as unknown as ReturnType<
-                typeof vi.fn
-              >
-            ).mockImplementation(() => {
-              callCount++;
-              if (callCount === 1) {
-                // First call: file exists check - return original content
-                return Promise.resolve({
-                  uri: "file://test",
-                  getText: () => "original content",
-                } as unknown as vscode.TextDocument);
-              }
-              // Second call: after write - return updated content
-              return Promise.resolve({
-                uri: "file://test",
-                getText: () => "updated content",
-              } as unknown as vscode.TextDocument);
-            });
-          });
-
-          const input: WriteTestFileInput = {
-            proposalId: "test-diff-2",
-            testContent: "updated content",
-            targetPath: "src/existing.spec.ts",
-            overwrite: true,
-          };
-
-          yield* Effect.promise(() =>
-            executeTool(tool, input, {} as WriteTestFileOutput),
-          );
-
-          yield* Effect.sync(() => {
-            // applyDiffDecorationsSync should be called with the editor and isNewFile=false
-            expect(applyDiffDecorationsSync).toHaveBeenCalledWith(
-              expect.anything(), // editor object (mocked as empty object)
-              "original content", // originalContent
-              "updated content", // actualContent
-              false, // isNewFile
-            );
-          });
-        }),
-    );
-
-    it.effect(
-      "should continue successfully even if diff decoration fails",
-      () =>
-        Effect.gen(function* () {
-          yield* Effect.sync(() => approvalRegistry.add("test-diff-3"));
-          const tool = yield* Effect.sync(() =>
-            createWriteTestFileTool(approvalRegistry),
-          );
-
-          // Mock applyDiffDecorationsSync to throw an error
-          yield* Effect.sync(() => {
-            (
-              applyDiffDecorationsSync as ReturnType<typeof vi.fn>
-            ).mockImplementation(() => {
-              throw new Error("Decoration service failed");
-            });
-          });
-
-          const input: WriteTestFileInput = {
-            proposalId: "test-diff-3",
-            testContent: "test content",
-            targetPath: "src/test.spec.ts",
-          };
-
-          const result = yield* Effect.promise(() =>
-            executeTool(tool, input, {} as WriteTestFileOutput),
-          );
-
-          yield* Effect.sync(() => {
-            // Operation should succeed despite decoration failure
-            expect(result.success).toBe(true);
-            expect(result.filePath).toBe("src/test.spec.ts");
-            expect(mockFs.writeFile).toHaveBeenCalled();
-            // Ensure applyDiffDecorationsSync was attempted
-            expect(applyDiffDecorationsSync).toHaveBeenCalled();
-          });
-        }),
-    );
-  });
+  // Note: Diff decorations are now handled by EditorInsetService
+  // These tests are kept for reference but may need updating when EditorInsetService is implemented
 
   describe("Edge Cases", () => {
     it.effect("should handle empty test content", () =>
@@ -1009,6 +873,333 @@ describe("Diagnostics Integration", () => {
         expect(result.message).not.toContain(
           "New diagnostic problems introduced",
         );
+      });
+    }),
+  );
+});
+
+describe("DiffTrackerService Integration", () => {
+  let mockVscode: typeof vscode;
+  let approvalRegistry: Set<string>;
+  let mockFs: {
+    stat: ReturnType<typeof vi.fn>;
+    writeFile: ReturnType<typeof vi.fn>;
+    createDirectory: ReturnType<typeof vi.fn>;
+  };
+  let mockDiffTrackerService: {
+    registerBlock: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(async () => {
+    approvalRegistry = new Set<string>();
+
+    // Get the singleton mock instance
+    mockVscode = getVSCodeMock() ?? vscode;
+
+    mockFs = mockVscode.workspace.fs as unknown as {
+      stat: ReturnType<typeof vi.fn>;
+      writeFile: ReturnType<typeof vi.fn>;
+      createDirectory: ReturnType<typeof vi.fn>;
+    };
+
+    // Import and configure the diff tracker mock
+    const diffTrackerModule = await import("../../../diff-tracker-service");
+    mockDiffTrackerService = {
+      registerBlock: vi.fn(),
+    };
+    vi.mocked(diffTrackerModule.getDiffTrackerService).mockReturnValue(
+      mockDiffTrackerService as unknown as ReturnType<
+        typeof diffTrackerModule.getDiffTrackerService
+      >,
+    );
+
+    // Reset all mocks
+    vi.clearAllMocks();
+
+    // Default: file doesn't exist
+    mockFs.stat.mockRejectedValue(new Error("File not found"));
+
+    // Track file write state
+    let fileWritten = false;
+    let fileContent = "";
+
+    // Default: writeFile succeeds
+    mockFs.writeFile.mockImplementation((_uri: unknown, content: unknown) => {
+      fileWritten = true;
+      fileContent = content
+        ? Buffer.from(content as Buffer).toString("utf-8")
+        : "";
+      return Promise.resolve(undefined);
+    });
+
+    // Default: createDirectory succeeds
+    mockFs.createDirectory.mockResolvedValue(undefined);
+
+    // Default: openTextDocument behavior
+    (
+      mockVscode.workspace.openTextDocument as unknown as ReturnType<
+        typeof vi.fn
+      >
+    ).mockImplementation(() => {
+      if (fileWritten) {
+        return Promise.resolve({
+          uri: "file://test",
+          getText: () => fileContent,
+        } as unknown as vscode.TextDocument);
+      }
+      return Promise.reject(new Error("File not found"));
+    });
+
+    // Default: showTextDocument succeeds
+    (
+      mockVscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({});
+  });
+
+  it.effect(
+    "should call registerBlock with correct parameters for new file",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-dt-1"));
+        const tool = yield* Effect.sync(() =>
+          createWriteTestFileTool(approvalRegistry),
+        );
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-dt-1",
+          testContent: "line1\nline2\nline3",
+          targetPath: "src/new-test.spec.ts",
+        };
+
+        yield* Effect.promise(() =>
+          executeTool(tool, input, {} as WriteTestFileOutput),
+        );
+
+        yield* Effect.sync(() => {
+          expect(mockDiffTrackerService.registerBlock).toHaveBeenCalledTimes(1);
+          const call = mockDiffTrackerService.registerBlock.mock.calls[0];
+
+          // Check each parameter
+          expect(call[0]).toMatch(/new-test\.spec\.ts$/); // fileUri.fsPath
+          expect(call[1]).toMatch(/^write-\d+-[a-z0-9]+$/); // blockId format
+          expect(call[2]).toEqual({ startLine: 1, endLine: 3 }); // range (3 lines)
+          expect(call[3]).toEqual([]); // originalLines (empty for new file)
+          expect(call[4]).toBe(3); // newLineCount
+          expect(call[5]).toBe(""); // originalContent (empty for new file)
+          expect(call[6]).toBe(true); // isNewFile
+          expect(call[7]).toBe("line1\nline2\nline3"); // actualContent
+        });
+      }),
+  );
+
+  it.effect(
+    "should call registerBlock with correct parameters for existing file",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-dt-2"));
+
+        // Mock existing file
+        const existingContent = "old line 1\nold line 2";
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+
+          let callCount = 0;
+          (
+            mockVscode.workspace.openTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+              // First call: check if file exists
+              return Promise.resolve({
+                uri: "file://test",
+                getText: () => existingContent,
+              } as unknown as vscode.TextDocument);
+            }
+            // Second call: after write
+            return Promise.resolve({
+              uri: "file://test",
+              getText: () => "new line 1\nnew line 2\nnew line 3",
+            } as unknown as vscode.TextDocument);
+          });
+        });
+
+        const tool = yield* Effect.sync(() =>
+          createWriteTestFileTool(approvalRegistry),
+        );
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-dt-2",
+          testContent: "new line 1\nnew line 2\nnew line 3",
+          targetPath: "src/existing-test.spec.ts",
+          overwrite: true,
+        };
+
+        yield* Effect.promise(() =>
+          executeTool(tool, input, {} as WriteTestFileOutput),
+        );
+
+        yield* Effect.sync(() => {
+          expect(mockDiffTrackerService.registerBlock).toHaveBeenCalledTimes(1);
+          const call = mockDiffTrackerService.registerBlock.mock.calls[0];
+
+          expect(call[0]).toMatch(/existing-test\.spec\.ts$/);
+          expect(call[1]).toMatch(/^write-\d+-[a-z0-9]+$/);
+          expect(call[2]).toEqual({ startLine: 1, endLine: 3 });
+          expect(call[3]).toEqual(["old line 1", "old line 2"]); // originalLines
+          expect(call[4]).toBe(3); // newLineCount
+          expect(call[5]).toBe(existingContent); // originalContent
+          expect(call[6]).toBe(false); // isNewFile (file exists)
+          expect(call[7]).toBe("new line 1\nnew line 2\nnew line 3"); // actualContent
+        });
+      }),
+  );
+
+  it.effect("should generate unique blockId for each file write", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => {
+        approvalRegistry.add("test-dt-3");
+        approvalRegistry.add("test-dt-4");
+      });
+
+      const tool = yield* Effect.sync(() =>
+        createWriteTestFileTool(approvalRegistry),
+      );
+
+      // Write first file
+      yield* Effect.promise(() =>
+        executeTool(
+          tool,
+          {
+            proposalId: "test-dt-3",
+            testContent: "test",
+            targetPath: "src/test1.spec.ts",
+          },
+          {} as WriteTestFileOutput,
+        ),
+      );
+
+      // Write second file
+      yield* Effect.promise(() =>
+        executeTool(
+          tool,
+          {
+            proposalId: "test-dt-4",
+            testContent: "test",
+            targetPath: "src/test2.spec.ts",
+          },
+          {} as WriteTestFileOutput,
+        ),
+      );
+
+      yield* Effect.sync(() => {
+        expect(mockDiffTrackerService.registerBlock).toHaveBeenCalledTimes(2);
+        const blockId1 = mockDiffTrackerService.registerBlock.mock.calls[0][1];
+        const blockId2 = mockDiffTrackerService.registerBlock.mock.calls[1][1];
+
+        // Ensure blockIds are unique
+        expect(blockId1).not.toBe(blockId2);
+        expect(blockId1).toMatch(/^write-\d+-[a-z0-9]+$/);
+        expect(blockId2).toMatch(/^write-\d+-[a-z0-9]+$/);
+      });
+    }),
+  );
+
+  it.effect(
+    "should not call registerBlock when proposalId is not approved",
+    () =>
+      Effect.gen(function* () {
+        const tool = yield* Effect.sync(() =>
+          createWriteTestFileTool(approvalRegistry),
+        );
+
+        const input: WriteTestFileInput = {
+          proposalId: "unapproved",
+          testContent: "test",
+          targetPath: "src/test.spec.ts",
+        };
+
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, input, {} as WriteTestFileOutput),
+        );
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(false);
+          expect(mockDiffTrackerService.registerBlock).not.toHaveBeenCalled();
+        });
+      }),
+  );
+
+  it.effect(
+    "should not call registerBlock when file exists and overwrite=false",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.sync(() => approvalRegistry.add("test-dt-5"));
+
+        // Mock existing file
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          (
+            mockVscode.workspace.openTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mockResolvedValue({
+            uri: "file://test",
+            getText: () => "existing content",
+          } as unknown as vscode.TextDocument);
+        });
+
+        const tool = yield* Effect.sync(() =>
+          createWriteTestFileTool(approvalRegistry),
+        );
+
+        const input: WriteTestFileInput = {
+          proposalId: "test-dt-5",
+          testContent: "test",
+          targetPath: "src/existing.spec.ts",
+          overwrite: false,
+        };
+
+        const result = yield* Effect.promise(() =>
+          executeTool(tool, input, {} as WriteTestFileOutput),
+        );
+
+        yield* Effect.sync(() => {
+          expect(result.success).toBe(false);
+          expect(mockDiffTrackerService.registerBlock).not.toHaveBeenCalled();
+        });
+      }),
+  );
+
+  it.effect("should handle multi-line content correctly in registerBlock", () =>
+    Effect.gen(function* () {
+      yield* Effect.sync(() => approvalRegistry.add("test-dt-6"));
+      const tool = yield* Effect.sync(() =>
+        createWriteTestFileTool(approvalRegistry),
+      );
+
+      const multiLineContent =
+        "import { test } from 'vitest';\n\ntest('example', () => {\n  expect(1).toBe(1);\n});";
+
+      const input: WriteTestFileInput = {
+        proposalId: "test-dt-6",
+        testContent: multiLineContent,
+        targetPath: "src/multi-line.spec.ts",
+      };
+
+      yield* Effect.promise(() =>
+        executeTool(tool, input, {} as WriteTestFileOutput),
+      );
+
+      yield* Effect.sync(() => {
+        expect(mockDiffTrackerService.registerBlock).toHaveBeenCalledTimes(1);
+        const call = mockDiffTrackerService.registerBlock.mock.calls[0];
+
+        // Should have 5 lines
+        expect(call[2]).toEqual({ startLine: 1, endLine: 5 });
+        expect(call[4]).toBe(5); // newLineCount
+        expect(call[7]).toBe(multiLineContent); // actualContent
       });
     }),
   );

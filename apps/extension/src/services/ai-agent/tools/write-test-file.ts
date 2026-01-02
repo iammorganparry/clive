@@ -15,8 +15,7 @@ import {
   formatFileEditWithoutUserChanges,
   formatFileEditError,
 } from "../response-formatter.js";
-import { registerBlockSync } from "../../../services/pending-edit-service.js";
-import { applyDiffDecorationsSync } from "../../../services/diff-decoration-service.js";
+import { getDiffTrackerService } from "../../diff-tracker-service.js";
 
 /**
  * Streaming file output callback type
@@ -30,8 +29,8 @@ export type StreamingFileOutputCallback = (chunk: {
 
 /**
  * Factory function to create writeTestFileTool
- * Writes files directly (non-blocking) and registers with PendingEditService
- * User can accept/reject via CodeLens in the editor
+ * Writes files directly (non-blocking) and registers with DiffTrackerService
+ * User can accept/reject via inline editor insets
  *
  * @param approvalRegistry Set of approved proposal IDs (auto-approved)
  * @param onStreamingOutput Optional callback for streaming file output
@@ -42,7 +41,7 @@ export const createWriteTestFileTool = (
 ) =>
   tool({
     description:
-      "Write or update a test file. Creates directories if needed. Can overwrite existing files. Use any unique string as proposalId - it will be auto-approved. Changes are written immediately and user can accept/reject via CodeLens in the editor.",
+      "Write or update a test file. Creates directories if needed. Can overwrite existing files. Use any unique string as proposalId - it will be auto-approved. Changes are written immediately and user can accept/reject via inline buttons in the editor.",
     inputSchema: z.object({
       proposalId: z
         .string()
@@ -126,25 +125,6 @@ export const createWriteTestFileTool = (
               ? relativePath
               : targetPath;
 
-            // Generate unique block ID for this write operation
-            const blockId = `write-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-
-            // For write operations, the entire file is one block
-            const originalLines = fileExists ? originalContent.split("\n") : [];
-            const newLines = normalizedContent.split("\n");
-
-            // Register block BEFORE writing (store original for revert)
-            registerBlockSync(
-              fileUri.fsPath,
-              blockId,
-              1, // Start from first line
-              newLines.length, // End at last line
-              originalLines,
-              newLines.length,
-              originalContent, // base content
-              !fileExists, // isNewFile
-            );
-
             // Capture pre-edit diagnostics
             const preEditDiagnostics = yield* getDiagnostics(fileUri);
 
@@ -165,7 +145,7 @@ export const createWriteTestFileTool = (
 
             // Open the file in the editor
             const document = yield* vsCodeService.openTextDocument(fileUri);
-            const editor = yield* vsCodeService.showTextDocument(document, {
+            yield* vsCodeService.showTextDocument(document, {
               preview: false,
               preserveFocus: false,
             });
@@ -173,20 +153,26 @@ export const createWriteTestFileTool = (
             // Get the actual content after opening (may be auto-formatted)
             const actualContent = document.getText();
 
-            // Apply diff decorations to show what's new
-            // For new files, all content is highlighted green
-            // For existing files (overwrite), show changes
-            try {
-              applyDiffDecorationsSync(
-                editor,
-                originalContent,
-                actualContent,
-                !fileExists, // isNewFile
-              );
-            } catch (error) {
-              // Log error but don't fail the operation
-              console.error("Failed to apply diff decorations:", error);
-            }
+            // Register block with DiffTrackerService
+            const diffTrackerService = getDiffTrackerService();
+            const blockId = `write-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+            const originalLines = fileExists ? originalContent.split("\n") : [];
+            const newLines = actualContent.split("\n");
+            const isNewFile = !fileExists;
+
+            diffTrackerService.registerBlock(
+              fileUri.fsPath,
+              blockId,
+              {
+                startLine: 1,
+                endLine: newLines.length,
+              },
+              originalLines,
+              newLines.length,
+              originalContent,
+              isNewFile,
+              actualContent,
+            );
 
             // Emit streaming callback with final content
             if (onStreamingOutput) {
@@ -227,7 +213,7 @@ export const createWriteTestFileTool = (
             return {
               success: true,
               filePath: relativePath,
-              message: `${message}\n\nNote: Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+              message: `${message}\n\nNote: Changes are pending user review. User can accept or reject via inline buttons in the editor.`,
             };
           }),
           Effect.catchAll((error) =>

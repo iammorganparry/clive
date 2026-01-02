@@ -24,7 +24,7 @@ import {
 import { PromptFactory, PromptService } from "./prompts/index.js";
 import { makeTokenBudget } from "./token-budget.js";
 import { KnowledgeContext } from "./knowledge-context.js";
-// DiffContentProvider import removed - file edits now use PendingEditService
+// DiffContentProvider import removed - file edits now use DiffTrackerService
 import { addCacheControlToMessages } from "./utils/cache-control.js";
 import {
   createAgentState,

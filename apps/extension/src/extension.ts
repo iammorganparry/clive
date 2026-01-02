@@ -16,22 +16,9 @@ import {
   handleRejectPlan,
 } from "./services/plan-codelens-provider.js";
 import {
-  EditCodeLensService,
-  handleAcceptEdit,
-  handleRejectEdit,
-  handleAcceptEditBlock,
-  handleRejectEditBlock,
-  setEditCodeLensServiceInstance,
-} from "./services/edit-codelens-provider.js";
-import {
-  PendingEditService,
-  setPendingEditServiceInstance,
-  getFileEditsSync,
-} from "./services/pending-edit-service.js";
-import {
-  DiffDecorationService,
-  setDiffDecorationServiceInstance,
-} from "./services/diff-decoration-service.js";
+  getDiffTrackerService,
+  initializeDiffTrackerService,
+} from "./services/diff-tracker-service.js";
 
 // Build-time constant injected by esbuild
 declare const __DEV__: boolean;
@@ -96,6 +83,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   // Register the diff content provider
   const diffProvider = DiffContentProvider.register(context);
 
+  // Initialize diff tracker service with extension URI for inset support
+  const _diffTrackerService = initializeDiffTrackerService(
+    context.extensionUri,
+  );
+
   // Register plan CodeLens provider
   const planCodeLensProvider = new PlanCodeLensProvider();
   const codeLensDisposable = vscode.languages.registerCodeLensProvider(
@@ -150,52 +142,19 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   );
   context.subscriptions.push(refreshCodeLensDisposable);
 
-  // Initialize edit services with proper layer composition
-  // This ensures all services share the same PendingEditService and DiffDecorationService instances
-  const sharedServicesLayer = Layer.merge(
-    PendingEditService.Default,
-    DiffDecorationService.Default,
-  );
+  // Initialize diff tracker service (replaces old PendingEditService + DiffDecorationService + EditCodeLensService)
+  const diffTrackerService = getDiffTrackerService();
 
-  // Provide the shared services to EditCodeLensService to ensure single instances
-  const editServicesLayer = EditCodeLensService.Default.pipe(
-    Layer.provide(sharedServicesLayer),
-  );
-
-  // Extract all services from the same composed layer
-  const { pendingEditService, diffDecorationService, editCodeLensService } =
-    Runtime.runSync(Runtime.defaultRuntime)(
-      Effect.gen(function* () {
-        return {
-          pendingEditService: yield* PendingEditService,
-          diffDecorationService: yield* DiffDecorationService,
-          editCodeLensService: yield* EditCodeLensService,
-        };
-      }).pipe(
-        Effect.provide(Layer.merge(sharedServicesLayer, editServicesLayer)),
-      ),
-    );
-
-  // Set singletons for synchronous access from tools
-  setPendingEditServiceInstance(pendingEditService);
-  setDiffDecorationServiceInstance(diffDecorationService);
-  setEditCodeLensServiceInstance(editCodeLensService);
-
-  // Get the CodeLens provider and register it
-  const editCodeLensProvider = Runtime.runSync(Runtime.defaultRuntime)(
-    editCodeLensService.getProvider(),
-  );
-  const editCodeLensDisposable = vscode.languages.registerCodeLensProvider(
-    { scheme: "file" },
-    editCodeLensProvider,
-  );
-  context.subscriptions.push(editCodeLensDisposable);
-
-  // Register accept/reject edit commands
+  // Register accept/reject edit commands (using DiffTrackerService)
   const acceptEditDisposable = vscode.commands.registerCommand(
     Commands.acceptEdit,
     async (fileUri: vscode.Uri) => {
-      await handleAcceptEdit(fileUri);
+      const accepted = await diffTrackerService.acceptAll(fileUri.fsPath);
+      if (accepted) {
+        vscode.window.showInformationMessage(
+          `Changes accepted for ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(acceptEditDisposable);
@@ -203,7 +162,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const rejectEditDisposable = vscode.commands.registerCommand(
     Commands.rejectEdit,
     async (fileUri: vscode.Uri) => {
-      await handleRejectEdit(fileUri);
+      const rejected = await diffTrackerService.rejectAll(fileUri.fsPath);
+      if (rejected) {
+        vscode.window.showInformationMessage(
+          `Changes reverted for ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(rejectEditDisposable);
@@ -212,7 +176,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const acceptEditBlockDisposable = vscode.commands.registerCommand(
     Commands.acceptEditBlock,
     async (fileUri: vscode.Uri, blockId: string) => {
-      await handleAcceptEditBlock(fileUri, blockId);
+      const accepted = await diffTrackerService.acceptBlock(
+        fileUri.fsPath,
+        blockId,
+      );
+      if (accepted) {
+        vscode.window.showInformationMessage(
+          `Edit block accepted in ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(acceptEditBlockDisposable);
@@ -220,7 +192,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const rejectEditBlockDisposable = vscode.commands.registerCommand(
     Commands.rejectEditBlock,
     async (fileUri: vscode.Uri, blockId: string) => {
-      await handleRejectEditBlock(fileUri, blockId);
+      const rejected = await diffTrackerService.rejectBlock(
+        fileUri.fsPath,
+        blockId,
+      );
+      if (rejected) {
+        vscode.window.showInformationMessage(
+          `Edit block reverted in ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(rejectEditBlockDisposable);
@@ -229,7 +209,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const acceptAllBlocksDisposable = vscode.commands.registerCommand(
     Commands.acceptAllBlocks,
     async (fileUri: vscode.Uri) => {
-      await handleAcceptEdit(fileUri);
+      const accepted = await diffTrackerService.acceptAll(fileUri.fsPath);
+      if (accepted) {
+        vscode.window.showInformationMessage(
+          `All changes accepted for ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(acceptAllBlocksDisposable);
@@ -237,46 +222,22 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const rejectAllBlocksDisposable = vscode.commands.registerCommand(
     Commands.rejectAllBlocks,
     async (fileUri: vscode.Uri) => {
-      await handleRejectEdit(fileUri);
+      const rejected = await diffTrackerService.rejectAll(fileUri.fsPath);
+      if (rejected) {
+        vscode.window.showInformationMessage(
+          `All changes reverted for ${vscode.workspace.asRelativePath(fileUri)}`,
+        );
+      }
     },
   );
   context.subscriptions.push(rejectAllBlocksDisposable);
 
   // Clean up services when extension deactivates
   context.subscriptions.push({
-    dispose: () => {
-      Runtime.runSync(Runtime.defaultRuntime)(diffDecorationService.dispose());
-      Runtime.runSync(Runtime.defaultRuntime)(editCodeLensService.dispose());
-      Runtime.runSync(Runtime.defaultRuntime)(pendingEditService.dispose());
+    dispose: async () => {
+      await diffTrackerService.dispose();
     },
   });
-
-  // Reapply decorations when files with pending edits become active
-  // This ensures decorations persist when tabs are closed and reopened
-  const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(
-    async (editor) => {
-      if (!editor) return;
-
-      const filePath = editor.document.uri.fsPath;
-
-      // Check if this file has pending edits
-      const fileEdits = getFileEditsSync(filePath);
-
-      if (fileEdits) {
-        // Reapply decorations using base content and current content
-        const currentContent = editor.document.getText();
-        Runtime.runSync(Runtime.defaultRuntime)(
-          diffDecorationService.applyDiffDecorations(
-            editor,
-            fileEdits.baseContent,
-            currentContent,
-            fileEdits.isNewFile,
-          ),
-        );
-      }
-    },
-  );
-  context.subscriptions.push(activeEditorListener);
 
   // Register sendApproval command (used by CodeLens to send approval to RPC)
   const sendApprovalDisposable = vscode.commands.registerCommand(

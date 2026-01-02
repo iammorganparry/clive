@@ -8,11 +8,7 @@ import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
 import { handleSubscriptionMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
-import {
-  acceptEditAsync,
-  rejectEditAsync,
-  getPendingEditServiceInstance,
-} from "../../services/pending-edit-service.js";
+import { getDiffTrackerService } from "../../services/diff-tracker-service.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
@@ -426,7 +422,10 @@ export const agentsRouter = {
         );
 
         const accepted = yield* Effect.tryPromise({
-          try: () => acceptEditAsync(input.filePath),
+          try: async () => {
+            const service = getDiffTrackerService();
+            return await service.acceptAll(input.filePath);
+          },
           catch: (error) =>
             new Error(
               `Failed to accept edit: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -461,7 +460,10 @@ export const agentsRouter = {
         );
 
         const rejected = yield* Effect.tryPromise({
-          try: () => rejectEditAsync(input.filePath),
+          try: async () => {
+            const service = getDiffTrackerService();
+            return await service.rejectAll(input.filePath);
+          },
           catch: (error) =>
             new Error(
               `Failed to reject edit: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -484,10 +486,10 @@ export const agentsRouter = {
    * Used by the webview to show pending edit status
    */
   getPendingEdits: procedure.input(z.void()).query(() =>
-    Effect.gen(function* () {
+    Effect.sync(() => {
       try {
-        const service = getPendingEditServiceInstance();
-        const paths = yield* service.getPendingEditPaths();
+        const service = getDiffTrackerService();
+        const paths = service.getPendingFilePaths();
         return { paths };
       } catch {
         // Service not initialized yet

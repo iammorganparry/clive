@@ -27,10 +27,13 @@ export interface VSCodeMockOverrides {
     showErrorMessage?: Mock;
     showTextDocument?: Mock;
     visibleTextEditors?: vscode.TextEditor[];
+    onDidChangeActiveTextEditor?: Mock;
+    createTextEditorDecorationType?: Mock;
   };
   WorkspaceEdit?: typeof vscode.WorkspaceEdit;
   languages?: {
     getDiagnostics?: Mock;
+    registerInlayHintsProvider?: Mock;
   };
   DiagnosticSeverity?: typeof vscode.DiagnosticSeverity;
   Range?: typeof vscode.Range;
@@ -179,6 +182,9 @@ export function createVSCodeMock(
           positionAt: (offset: number) => ({ line: 0, character: offset }),
         } as unknown as vscode.TextDocument),
       applyEdit: overrides.applyEdit ?? vi.fn().mockResolvedValue(true),
+      onDidChangeTextDocument: vi.fn((_callback) => ({
+        dispose: vi.fn(),
+      })),
       findFiles: overrides.findFiles ?? vi.fn(),
     },
     Uri: {
@@ -208,12 +214,15 @@ export function createVSCodeMock(
       showInformationMessage:
         overrides.window?.showInformationMessage ?? vi.fn(),
       showErrorMessage: overrides.window?.showErrorMessage ?? vi.fn(),
+      onDidChangeActiveTextEditor:
+        overrides.window?.onDidChangeActiveTextEditor ??
+        vi.fn(() => ({ dispose: vi.fn() })),
+      createTextEditorDecorationType:
+        overrides.window?.createTextEditorDecorationType ??
+        vi.fn(() => ({ dispose: vi.fn() })),
       showTextDocument:
         overrides.window?.showTextDocument ?? vi.fn().mockResolvedValue({}),
       visibleTextEditors: overrides.window?.visibleTextEditors ?? [],
-      createTextEditorDecorationType: vi.fn(() => ({
-        dispose: vi.fn(),
-      })),
     },
     WorkspaceEdit:
       overrides.WorkspaceEdit ??
@@ -223,6 +232,9 @@ export function createVSCodeMock(
       },
     languages: {
       getDiagnostics: overrides.languages?.getDiagnostics ?? vi.fn(() => []),
+      registerInlayHintsProvider:
+        overrides.languages?.registerInlayHintsProvider ??
+        vi.fn(() => ({ dispose: vi.fn() })),
     },
     DiagnosticSeverity: overrides.DiagnosticSeverity ?? {
       Error: 0,
