@@ -1,8 +1,9 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
-import { Runtime } from "effect";
+import { Runtime, Effect, pipe } from "effect";
+import { VSCodeService } from "../../vs-code.js";
 import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 import {
@@ -81,181 +82,194 @@ export const createWriteTestFileTool = (
         };
       }
 
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      if (!workspaceFolders || workspaceFolders.length === 0) {
-        throw new Error("No workspace folder found");
-      }
+      return Runtime.runPromise(Runtime.defaultRuntime)(
+        pipe(
+          Effect.gen(function* () {
+            const vsCodeService = yield* VSCodeService;
+            const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
 
-      const workspaceRoot = workspaceFolders[0].uri;
+            // Resolve path relative to workspace root if not absolute
+            const fileUri = path.isAbsolute(targetPath)
+              ? vsCodeService.fileUri(targetPath)
+              : vsCodeService.joinPath(workspaceRoot, targetPath);
 
-      // Resolve path relative to workspace root if not absolute
-      let fileUri: vscode.Uri;
-      if (path.isAbsolute(targetPath)) {
-        fileUri = vscode.Uri.file(targetPath);
-      } else {
-        fileUri = vscode.Uri.joinPath(workspaceRoot, targetPath);
-      }
+            const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
-      const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+            // Check if file exists and get original content
+            let fileExists = false;
+            let originalContent = "";
+            const fileExistsResult = yield* vsCodeService.stat(fileUri).pipe(
+              Effect.map(() => true),
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
 
-      try {
-        // Check if file exists and get original content
-        let fileExists = false;
-        let originalContent = "";
-        try {
-          const existingDoc = await vscode.workspace.openTextDocument(fileUri);
-          originalContent = existingDoc.getText();
-          fileExists = true;
-        } catch {
-          // File doesn't exist, that's okay
-        }
+            if (fileExistsResult) {
+              const existingDoc =
+                yield* vsCodeService.openTextDocument(fileUri);
+              originalContent = existingDoc.getText();
+              fileExists = true;
+            }
 
-        if (fileExists && !overwrite) {
-          return {
-            success: false,
-            filePath: relativePath,
-            message: `File already exists at ${relativePath}. To modify existing tests, read the file first and then use writeTestFile with overwrite=true to include your changes. Existing file content:\n\n<existing_file_content>\n${originalContent}\n</existing_file_content>\n\nSet overwrite=true to update this file with your changes.`,
-          };
-        }
+            if (fileExists && !overwrite) {
+              return {
+                success: false,
+                filePath: relativePath,
+                message: `File already exists at ${relativePath}. To modify existing tests, read the file first and then use writeTestFile with overwrite=true to include your changes. Existing file content:\n\n<existing_file_content>\n${originalContent}\n</existing_file_content>\n\nSet overwrite=true to update this file with your changes.`,
+              };
+            }
 
-        // Normalize escaped characters
-        const normalizedContent = normalizeEscapedChars(testContent);
+            // Normalize escaped characters
+            const normalizedContent = normalizeEscapedChars(testContent);
 
-        // Use targetPath for consistency with tool args (for streaming callback lookup)
-        const callbackPath = path.isAbsolute(targetPath)
-          ? relativePath
-          : targetPath;
+            // Use targetPath for consistency with tool args (for streaming callback lookup)
+            const callbackPath = path.isAbsolute(targetPath)
+              ? relativePath
+              : targetPath;
 
-        // Generate unique block ID for this write operation
-        const blockId = `write-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+            // Generate unique block ID for this write operation
+            const blockId = `write-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-        // For write operations, the entire file is one block
-        const originalLines = fileExists ? originalContent.split("\n") : [];
-        const newLines = normalizedContent.split("\n");
+            // For write operations, the entire file is one block
+            const originalLines = fileExists ? originalContent.split("\n") : [];
+            const newLines = normalizedContent.split("\n");
 
-        // Register block BEFORE writing (store original for revert)
-        registerBlockSync(
-          fileUri.fsPath,
-          blockId,
-          1, // Start from first line
-          newLines.length, // End at last line
-          originalLines,
-          newLines.length,
-          originalContent, // base content
-          !fileExists, // isNewFile
-        );
+            // Register block BEFORE writing (store original for revert)
+            registerBlockSync(
+              fileUri.fsPath,
+              blockId,
+              1, // Start from first line
+              newLines.length, // End at last line
+              originalLines,
+              newLines.length,
+              originalContent, // base content
+              !fileExists, // isNewFile
+            );
 
-        // Capture pre-edit diagnostics
-        const preEditDiagnostics = await Runtime.runPromise(
-          Runtime.defaultRuntime,
-        )(getDiagnostics(fileUri));
+            // Capture pre-edit diagnostics
+            const preEditDiagnostics = yield* getDiagnostics(fileUri);
 
-        // Ensure parent directory exists
-        const parentDir = vscode.Uri.joinPath(fileUri, "..");
-        try {
-          await vscode.workspace.fs.stat(parentDir);
-        } catch {
-          // Directory doesn't exist, create it
-          await vscode.workspace.fs.createDirectory(parentDir);
-        }
+            // Ensure parent directory exists
+            const parentDir = vsCodeService.joinPath(fileUri, "..");
+            const parentExists = yield* vsCodeService.stat(parentDir).pipe(
+              Effect.map(() => true),
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
 
-        // Write the file directly
-        const content = Buffer.from(normalizedContent, "utf-8");
-        await vscode.workspace.fs.writeFile(fileUri, content);
+            if (!parentExists) {
+              yield* vsCodeService.createDirectory(parentDir);
+            }
 
-        // Open the file in the editor
-        const document = await vscode.workspace.openTextDocument(fileUri);
-        const editor = await vscode.window.showTextDocument(document, {
-          preview: false,
-          preserveFocus: false,
-        });
+            // Write the file directly
+            const content = Buffer.from(normalizedContent, "utf-8");
+            yield* vsCodeService.writeFile(fileUri, content);
 
-        // Get the actual content after opening (may be auto-formatted)
-        const actualContent = document.getText();
+            // Open the file in the editor
+            const document = yield* vsCodeService.openTextDocument(fileUri);
+            const editor = yield* vsCodeService.showTextDocument(document, {
+              preview: false,
+              preserveFocus: false,
+            });
 
-        // Apply diff decorations to show what's new
-        // For new files, all content is highlighted green
-        // For existing files (overwrite), show changes
-        try {
-          applyDiffDecorationsSync(
-            editor,
-            originalContent,
-            actualContent,
-            !fileExists, // isNewFile
-          );
-        } catch (error) {
-          // Log error but don't fail the operation
-          console.error("Failed to apply diff decorations:", error);
-        }
+            // Get the actual content after opening (may be auto-formatted)
+            const actualContent = document.getText();
 
-        // Emit streaming callback with final content
-        if (onStreamingOutput) {
-          onStreamingOutput({
-            filePath: callbackPath,
-            content: actualContent,
-            isComplete: true,
-          });
-        }
+            // Apply diff decorations to show what's new
+            // For new files, all content is highlighted green
+            // For existing files (overwrite), show changes
+            try {
+              applyDiffDecorationsSync(
+                editor,
+                originalContent,
+                actualContent,
+                !fileExists, // isNewFile
+              );
+            } catch (error) {
+              // Log error but don't fail the operation
+              console.error("Failed to apply diff decorations:", error);
+            }
 
-        // Get post-edit diagnostics
-        const postEditDiagnostics = await Runtime.runPromise(
-          Runtime.defaultRuntime,
-        )(getDiagnostics(fileUri));
+            // Emit streaming callback with final content
+            if (onStreamingOutput) {
+              onStreamingOutput({
+                filePath: callbackPath,
+                content: actualContent,
+                isComplete: true,
+              });
+            }
 
-        const newProblems = getNewProblems(
-          preEditDiagnostics,
-          postEditDiagnostics,
-        );
+            // Get post-edit diagnostics
+            const postEditDiagnostics = yield* getDiagnostics(fileUri);
 
-        const newProblemsMessage =
-          newProblems.length > 0
-            ? formatDiagnosticsMessage(newProblems)
-            : undefined;
+            const newProblems = getNewProblems(
+              preEditDiagnostics,
+              postEditDiagnostics,
+            );
 
-        // Detect auto-formatting changes
-        const autoFormattingEdits =
-          actualContent !== normalizedContent
-            ? `Auto-formatting was applied to ${relativePath}`
-            : undefined;
+            const newProblemsMessage =
+              newProblems.length > 0
+                ? formatDiagnosticsMessage(newProblems)
+                : undefined;
 
-        // Format response for AI
-        const message = formatFileEditWithoutUserChanges(
-          relativePath,
-          actualContent, // Use actual content, not normalized content
-          autoFormattingEdits,
-          newProblemsMessage,
-        );
+            // Detect auto-formatting changes
+            const autoFormattingEdits =
+              actualContent !== normalizedContent
+                ? `Auto-formatting was applied to ${relativePath}`
+                : undefined;
 
-        return {
-          success: true,
-          filePath: relativePath,
-          message: `${message}\n\nNote: Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
-        };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
+            // Format response for AI
+            const message = formatFileEditWithoutUserChanges(
+              relativePath,
+              actualContent, // Use actual content, not normalized content
+              autoFormattingEdits,
+              newProblemsMessage,
+            );
 
-        // Try to read current file content for error context
-        let currentContent: string | undefined;
-        try {
-          const doc = await vscode.workspace.openTextDocument(fileUri);
-          currentContent = doc.getText();
-        } catch {
-          // Ignore errors reading file
-        }
+            return {
+              success: true,
+              filePath: relativePath,
+              message: `${message}\n\nNote: Changes are pending user review. User can accept or reject via CodeLens in the editor.`,
+            };
+          }),
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              const vsCodeService = yield* VSCodeService;
+              const errorMessage =
+                error instanceof Error ? error.message : "Unknown error";
 
-        const errorResponse = formatFileEditError(
-          relativePath,
-          errorMessage,
-          currentContent,
-        );
+              // Try to read current file content for error context
+              let currentContent: string | undefined;
+              const fileUri = path.isAbsolute(targetPath)
+                ? vsCodeService.fileUri(targetPath)
+                : vsCodeService.joinPath(
+                    yield* vsCodeService.getWorkspaceRoot(),
+                    targetPath,
+                  );
+              const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
-        return {
-          success: false,
-          filePath: relativePath,
-          message: errorResponse,
-        };
-      }
+              const readResult = yield* vsCodeService
+                .openTextDocument(fileUri)
+                .pipe(
+                  Effect.map((doc) => doc.getText()),
+                  Effect.catchAll(() => Effect.succeed(undefined)),
+                );
+              currentContent = readResult;
+
+              const errorResponse = formatFileEditError(
+                relativePath,
+                errorMessage,
+                currentContent,
+              );
+
+              return {
+                success: false,
+                filePath: relativePath,
+                message: errorResponse,
+              };
+            }),
+          ),
+          Effect.provide(VSCodeService.Default),
+        ),
+      );
     },
   });
 
@@ -280,55 +294,61 @@ export async function initializeStreamingWrite(
   targetPath: string,
   toolCallId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders || workspaceFolders.length === 0) {
-    return { success: false, error: "No workspace folder found" };
-  }
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    pipe(
+      Effect.gen(function* () {
+        const vsCodeService = yield* VSCodeService;
+        const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
 
-  const workspaceRoot = workspaceFolders[0].uri;
+        // Resolve path
+        const fileUri = path.isAbsolute(targetPath)
+          ? vsCodeService.fileUri(targetPath)
+          : vsCodeService.joinPath(workspaceRoot, targetPath);
 
-  // Resolve path
-  let fileUri: vscode.Uri;
-  if (path.isAbsolute(targetPath)) {
-    fileUri = vscode.Uri.file(targetPath);
-  } else {
-    fileUri = vscode.Uri.joinPath(workspaceRoot, targetPath);
-  }
+        // Ensure parent directory exists
+        const parentDir = vsCodeService.joinPath(fileUri, "..");
+        const parentExists = yield* vsCodeService.stat(parentDir).pipe(
+          Effect.map(() => true),
+          Effect.catchAll(() => Effect.succeed(false)),
+        );
 
-  try {
-    // Ensure parent directory exists
-    const parentDir = vscode.Uri.joinPath(fileUri, "..");
-    try {
-      await vscode.workspace.fs.stat(parentDir);
-    } catch {
-      await vscode.workspace.fs.createDirectory(parentDir);
-    }
+        if (!parentExists) {
+          yield* vsCodeService.createDirectory(parentDir);
+        }
 
-    // Create empty file
-    await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+        // Create empty file
+        yield* vsCodeService.writeFile(fileUri, Buffer.from("", "utf-8"));
 
-    // Open file in editor
-    const document = await vscode.workspace.openTextDocument(fileUri);
-    const editor = await vscode.window.showTextDocument(document, {
-      preview: false,
-      preserveFocus: false,
-    });
+        // Open file in editor
+        const document = yield* vsCodeService.openTextDocument(fileUri);
+        const editor = yield* vsCodeService.showTextDocument(document, {
+          preview: false,
+          preserveFocus: false,
+        });
 
-    streamingStates.set(toolCallId, {
-      fileUri,
-      document,
-      editor,
-      accumulatedContent: "",
-      isInitialized: true,
-    });
+        yield* Effect.sync(() => {
+          streamingStates.set(toolCallId, {
+            fileUri,
+            document,
+            editor,
+            accumulatedContent: "",
+            isInitialized: true,
+          });
+        });
 
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
+        return { success: true };
+      }),
+      Effect.mapError((error) => ({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      })),
+      Effect.match({
+        onSuccess: (result) => result,
+        onFailure: (error) => error,
+      }),
+      Effect.provide(VSCodeService.Default),
+    ),
+  );
 }
 
 /**
@@ -343,35 +363,44 @@ export async function appendStreamingContent(
     return { success: false, error: "Streaming write not initialized" };
   }
 
-  try {
-    // Replace accumulated content (we receive full content, not a delta)
-    state.accumulatedContent = contentChunk;
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    pipe(
+      Effect.gen(function* () {
+        const vsCodeService = yield* VSCodeService;
+        // Replace accumulated content (we receive full content, not a delta)
+        state.accumulatedContent = contentChunk;
 
-    if (state.editor && state.document) {
-      const edit = new vscode.WorkspaceEdit();
-      // Replace entire document with full content
-      const fullRange = new vscode.Range(
-        state.document.positionAt(0),
-        state.document.positionAt(state.document.getText().length),
-      );
-      edit.replace(state.fileUri, fullRange, contentChunk);
-      await vscode.workspace.applyEdit(edit);
+        if (state.editor && state.document) {
+          const edit = vsCodeService.createWorkspaceEdit();
+          // Replace entire document with full content
+          const fullRange = vsCodeService.createRange(
+            state.document.positionAt(0),
+            state.document.positionAt(state.document.getText().length),
+          );
+          edit.replace(state.fileUri, fullRange, contentChunk);
+          yield* vsCodeService.applyEdit(edit);
 
-      // Reload document
-      state.document = await vscode.workspace.openTextDocument(state.fileUri);
-    } else {
-      // Fallback: write accumulated content
-      const buffer = Buffer.from(state.accumulatedContent, "utf-8");
-      await vscode.workspace.fs.writeFile(state.fileUri, buffer);
-    }
+          // Reload document
+          state.document = yield* vsCodeService.openTextDocument(state.fileUri);
+        } else {
+          // Fallback: write accumulated content
+          const buffer = Buffer.from(state.accumulatedContent, "utf-8");
+          yield* vsCodeService.writeFile(state.fileUri, buffer);
+        }
 
-    return { success: true };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
+        return { success: true };
+      }),
+      Effect.mapError((error) => ({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      })),
+      Effect.match({
+        onSuccess: (result) => result,
+        onFailure: (error) => error,
+      }),
+      Effect.provide(VSCodeService.Default),
+    ),
+  );
 }
 
 /**
@@ -385,25 +414,38 @@ export async function finalizeStreamingWrite(
     return { success: false, filePath: "", error: "Streaming write not found" };
   }
 
-  try {
-    // Ensure final content is written
-    const buffer = Buffer.from(state.accumulatedContent, "utf-8");
-    await vscode.workspace.fs.writeFile(state.fileUri, buffer);
+  return Runtime.runPromise(Runtime.defaultRuntime)(
+    pipe(
+      Effect.gen(function* () {
+        const vsCodeService = yield* VSCodeService;
+        // Ensure final content is written
+        const buffer = Buffer.from(state.accumulatedContent, "utf-8");
+        yield* vsCodeService.writeFile(state.fileUri, buffer);
 
-    const relativePath = vscode.workspace.asRelativePath(state.fileUri, false);
+        const relativePath = vsCodeService.asRelativePath(state.fileUri, false);
 
-    // Clean up
-    streamingStates.delete(toolCallId);
+        // Clean up
+        yield* Effect.sync(() => {
+          streamingStates.delete(toolCallId);
+        });
 
-    return { success: true, filePath: relativePath };
-  } catch (error) {
-    streamingStates.delete(toolCallId);
-    return {
-      success: false,
-      filePath: vscode.workspace.asRelativePath(state.fileUri, false),
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
-  }
+        return { success: true, filePath: relativePath };
+      }),
+      Effect.mapError((error) => {
+        streamingStates.delete(toolCallId);
+        return {
+          success: false,
+          filePath: state.fileUri.fsPath,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }),
+      Effect.match({
+        onSuccess: (result) => result,
+        onFailure: (error) => error,
+      }),
+      Effect.provide(VSCodeService.Default),
+    ),
+  );
 }
 
 /**

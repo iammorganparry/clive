@@ -1,4 +1,4 @@
-import { Effect, } from "effect";
+import { Effect, pipe } from "effect";
 import { z } from "zod";
 import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
@@ -6,7 +6,7 @@ import { ConfigService as ConfigServiceEffect } from "../../services/config-serv
 import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
-import { getWorkspaceRoot, resolveFileUri } from "../../lib/vscode-effects.js";
+import { VSCodeService } from "../../services/vs-code.js";
 import { ensureDirectoryExists } from "../../utils/fs-effects.js";
 
 const { procedure } = createRouter<RpcContext>();
@@ -133,8 +133,13 @@ export const systemRouter = {
     )
     .mutation(({ input }) =>
       Effect.gen(function* () {
-        const workspaceRoot = yield* getWorkspaceRoot();
-        const plansDir = vscode.Uri.joinPath(workspaceRoot, ".clive", "plans");
+        const vsCodeService = yield* VSCodeService;
+        const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
+        const plansDir = vsCodeService.joinPath(
+          workspaceRoot,
+          ".clive",
+          "plans",
+        );
 
         // Ensure .clive/plans directory exists
         yield* ensureDirectoryExists(plansDir);
@@ -142,19 +147,22 @@ export const systemRouter = {
         // Generate filename if not provided
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         const filename = input.filename || `test-plan-${timestamp}.md`;
-        const fileUri = vscode.Uri.joinPath(plansDir, filename);
+        const fileUri = vsCodeService.joinPath(plansDir, filename);
 
         // Write file
-        yield* Effect.tryPromise({
-          try: () => {
-            const contentBuffer = Buffer.from(input.content, "utf-8");
-            return vscode.workspace.fs.writeFile(fileUri, contentBuffer);
-          },
-          catch: (error) =>
-            new Error(
-              error instanceof Error ? error.message : "Failed to write plan file",
+        const contentBuffer = Buffer.from(input.content, "utf-8");
+        yield* vsCodeService
+          .writeFile(fileUri, contentBuffer)
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new Error(
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to write plan file",
+                ),
             ),
-        });
+          );
 
         // Open file in markdown preview mode
         yield* Effect.tryPromise({
@@ -174,9 +182,9 @@ export const systemRouter = {
         );
 
         // Return relative path
-        const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+        const relativePath = vsCodeService.asRelativePath(fileUri, false);
         return { filePath: relativePath };
-      }),
+      }).pipe(Effect.provide(VSCodeService.Default)),
     ),
 
   /**
@@ -189,20 +197,22 @@ export const systemRouter = {
       }),
     )
     .mutation(({ input }) =>
-      Effect.gen(function* () {
-        const fileUri = yield* resolveFileUri(input.filePath);
-        yield* Effect.tryPromise({
-          try: () =>
-            vscode.commands.executeCommand("markdown.showPreview", fileUri),
-          catch: (error) =>
-            new Error(
-              error instanceof Error
-                ? error.message
-                : "Failed to open file in preview",
-            ),
-        });
-        return { success: true };
-      }).pipe(
+      pipe(
+        Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
+          const fileUri = yield* vsCodeService.resolveFileUri(input.filePath);
+          yield* Effect.tryPromise({
+            try: () =>
+              vscode.commands.executeCommand("markdown.showPreview", fileUri),
+            catch: (error) =>
+              new Error(
+                error instanceof Error
+                  ? error.message
+                  : "Failed to open file in preview",
+              ),
+          });
+          return { success: true };
+        }),
         Effect.catchAll((error) =>
           Effect.fail(
             new Error(
@@ -212,6 +222,7 @@ export const systemRouter = {
             ),
           ),
         ),
+        Effect.provide(VSCodeService.Default),
       ),
     ),
 };

@@ -1,8 +1,9 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 import { Data, Effect, Option, pipe, Runtime } from "effect";
+import { VSCodeService } from "../../vs-code.js";
 
 // ============================================================
 // Error Types
@@ -11,10 +12,6 @@ import { Data, Effect, Option, pipe, Runtime } from "effect";
 export class PlanStreamingError extends Data.TaggedError("PlanStreamingError")<{
   message: string;
   cause?: unknown;
-}> {}
-
-export class NoWorkspaceError extends Data.TaggedError("NoWorkspaceError")<{
-  message: string;
 }> {}
 
 export class StreamingNotInitializedError extends Data.TaggedError(
@@ -265,96 +262,87 @@ const planStreamingStates = new Map<string, PlanStreamingWriteState>();
 /**
  * Get workspace root as Effect
  */
-const getWorkspaceRoot = (): Effect.Effect<vscode.Uri, NoWorkspaceError> =>
-  pipe(
-    Effect.sync(() => vscode.workspace.workspaceFolders),
-    Effect.flatMap((folders) =>
-      pipe(
-        Option.fromNullable(folders?.[0]?.uri),
-        Option.match({
-          onNone: () =>
-            Effect.fail(
-              new NoWorkspaceError({ message: "No workspace folder found" }),
-            ),
-          onSome: (uri) => Effect.succeed(uri),
-        }),
-      ),
-    ),
-  );
+const getWorkspaceRoot = () =>
+  Effect.gen(function* () {
+    const vsCodeService = yield* VSCodeService;
+    return yield* vsCodeService.getWorkspaceRoot();
+  });
 
 /**
  * Resolve file path to Uri
  */
-const resolveFilePath = (
-  targetPath: string,
-  workspaceRoot: vscode.Uri,
-): vscode.Uri =>
-  path.isAbsolute(targetPath)
-    ? vscode.Uri.file(targetPath)
-    : vscode.Uri.joinPath(workspaceRoot, targetPath);
+const resolveFilePath = (targetPath: string, workspaceRoot: vscode.Uri) =>
+  Effect.gen(function* () {
+    const vsCodeService = yield* VSCodeService;
+    return path.isAbsolute(targetPath)
+      ? vsCodeService.fileUri(targetPath)
+      : vsCodeService.joinPath(workspaceRoot, targetPath);
+  });
 
 /**
  * Ensure parent directory exists
  */
-const ensureParentDirectory = (
-  fileUri: vscode.Uri,
-): Effect.Effect<void, PlanStreamingError> =>
-  pipe(
-    Effect.tryPromise({
-      try: async () => {
-        const parentDir = vscode.Uri.joinPath(fileUri, "..");
-        try {
-          await vscode.workspace.fs.stat(parentDir);
-        } catch {
-          await vscode.workspace.fs.createDirectory(parentDir);
-        }
-      },
-      catch: (error) =>
-        new PlanStreamingError({
-          message: "Failed to ensure parent directory",
-          cause: error,
-        }),
-    }),
-  );
+const ensureParentDirectory = (fileUri: vscode.Uri) =>
+  Effect.gen(function* () {
+    const vsCodeService = yield* VSCodeService;
+    const parentDir = vsCodeService.joinPath(fileUri, "..");
+
+    const statResult = yield* vsCodeService
+      .stat(parentDir)
+      .pipe(Effect.catchAll(() => Effect.succeed(null)));
+
+    if (!statResult) {
+      yield* vsCodeService.createDirectory(parentDir).pipe(
+        Effect.mapError(
+          (error) =>
+            new PlanStreamingError({
+              message: "Failed to ensure parent directory",
+              cause: error,
+            }),
+        ),
+      );
+    }
+  });
 
 /**
  * Create empty file
  */
-const createEmptyFile = (
-  fileUri: vscode.Uri,
-): Effect.Effect<void, PlanStreamingError> =>
-  Effect.tryPromise({
-    try: () => vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8")),
-    catch: (error) =>
-      new PlanStreamingError({
-        message: "Failed to create empty file",
-        cause: error,
-      }),
+const createEmptyFile = (fileUri: vscode.Uri) =>
+  Effect.gen(function* () {
+    const vsCodeService = yield* VSCodeService;
+    yield* vsCodeService.writeFile(fileUri, Buffer.from("", "utf-8")).pipe(
+      Effect.mapError(
+        (error) =>
+          new PlanStreamingError({
+            message: "Failed to create empty file",
+            cause: error,
+          }),
+      ),
+    );
   });
 
 /**
  * Open file in editor
  */
-export const openFileInEditor = (
-  fileUri: vscode.Uri,
-): Effect.Effect<
-  { document: vscode.TextDocument; editor: vscode.TextEditor },
-  PlanStreamingError
-> =>
-  Effect.tryPromise({
-    try: async () => {
-      const document = await vscode.workspace.openTextDocument(fileUri);
-      const editor = await vscode.window.showTextDocument(document, {
+export const openFileInEditor = (fileUri: vscode.Uri) =>
+  Effect.gen(function* () {
+    const vsCodeService = yield* VSCodeService;
+    const document = yield* vsCodeService.openTextDocument(fileUri);
+    const editor = yield* vsCodeService
+      .showTextDocument(document, {
         preview: false,
         preserveFocus: false,
-      });
-      return { document, editor };
-    },
-    catch: (error) =>
-      new PlanStreamingError({
-        message: "Failed to open file in editor",
-        cause: error,
-      }),
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new PlanStreamingError({
+              message: "Failed to open file in editor",
+              cause: error,
+            }),
+        ),
+      );
+    return { document, editor };
   });
 
 /**
@@ -369,14 +357,15 @@ const getStreamingState = (
  * Get file path from streaming state for a given toolCallId
  * Returns undefined if streaming state doesn't exist or file hasn't been initialized
  */
-export const getStreamingFilePath = (
-  toolCallId: string,
-): string | undefined => {
-  const state = planStreamingStates.get(toolCallId);
-  return state?.fileUri && state.isInitialized
-    ? vscode.workspace.asRelativePath(state.fileUri, false)
-    : undefined;
-};
+export const getStreamingFilePath = (toolCallId: string) =>
+  Effect.gen(function* () {
+    const state = planStreamingStates.get(toolCallId);
+    if (!state?.fileUri || !state.isInitialized) {
+      return undefined;
+    }
+    const vsCodeService = yield* VSCodeService;
+    return vsCodeService.asRelativePath(state.fileUri, false);
+  });
 
 // ============================================================
 // Effect-based Public API
@@ -388,10 +377,10 @@ export const getStreamingFilePath = (
 export const initializePlanStreamingWriteEffect = (
   targetPath: string,
   toolCallId: string,
-): Effect.Effect<void, NoWorkspaceError | PlanStreamingError> =>
+) =>
   Effect.gen(function* () {
     const workspaceRoot = yield* getWorkspaceRoot();
-    const fileUri = resolveFilePath(targetPath, workspaceRoot);
+    const fileUri = yield* resolveFilePath(targetPath, workspaceRoot);
 
     yield* ensureParentDirectory(fileUri);
     yield* createEmptyFile(fileUri);
@@ -414,7 +403,7 @@ export const initializePlanStreamingWriteEffect = (
 export const appendPlanStreamingContentEffect = (
   toolCallId: string,
   contentChunk: string,
-): Effect.Effect<void, StreamingNotInitializedError | PlanStreamingError> =>
+) =>
   Effect.gen(function* () {
     const state = yield* pipe(
       getStreamingState(toolCallId),
@@ -440,40 +429,55 @@ export const appendPlanStreamingContentEffect = (
       Option.match({
         onNone: () =>
           // Fallback: write accumulated content directly
-          Effect.tryPromise({
-            try: () =>
-              vscode.workspace.fs.writeFile(
+          Effect.gen(function* () {
+            const vsCodeService = yield* VSCodeService;
+            yield* vsCodeService
+              .writeFile(
                 state.fileUri,
                 Buffer.from(state.accumulatedContent, "utf-8"),
-              ),
-            catch: (error) =>
-              new PlanStreamingError({
-                message: "Failed to write accumulated content",
-                cause: error,
-              }),
+              )
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanStreamingError({
+                      message: "Failed to write accumulated content",
+                      cause: error,
+                    }),
+                ),
+              );
           }),
         onSome: ({ document }) =>
-          Effect.tryPromise({
-            try: async () => {
-              const edit = new vscode.WorkspaceEdit();
-              // Replace entire document with full content
-              const fullRange = new vscode.Range(
-                document.positionAt(0),
-                document.positionAt(document.getText().length),
-              );
-              edit.replace(state.fileUri, fullRange, state.accumulatedContent);
-              await vscode.workspace.applyEdit(edit);
+          Effect.gen(function* () {
+            const vsCodeService = yield* VSCodeService;
+            const edit = vsCodeService.createWorkspaceEdit();
+            // Replace entire document with full content
+            const fullRange = vsCodeService.createRange(
+              document.positionAt(0),
+              document.positionAt(document.getText().length),
+            );
+            edit.replace(state.fileUri, fullRange, state.accumulatedContent);
+            yield* vsCodeService.applyEdit(edit).pipe(
+              Effect.mapError(
+                (error) =>
+                  new PlanStreamingError({
+                    message: "Failed to apply edit",
+                    cause: error,
+                  }),
+              ),
+            );
 
-              // Reload document
-              state.document = await vscode.workspace.openTextDocument(
-                state.fileUri,
+            // Reload document
+            state.document = yield* vsCodeService
+              .openTextDocument(state.fileUri)
+              .pipe(
+                Effect.mapError(
+                  (error) =>
+                    new PlanStreamingError({
+                      message: "Failed to reload document",
+                      cause: error,
+                    }),
+                ),
               );
-            },
-            catch: (error) =>
-              new PlanStreamingError({
-                message: "Failed to apply edit",
-                cause: error,
-              }),
           }),
       }),
     );
@@ -482,9 +486,7 @@ export const appendPlanStreamingContentEffect = (
 /**
  * Finalize streaming plan write and clean up state (Effect version)
  */
-export const finalizePlanStreamingWriteEffect = (
-  toolCallId: string,
-): Effect.Effect<string, StreamingNotInitializedError | PlanStreamingError> =>
+export const finalizePlanStreamingWriteEffect = (toolCallId: string) =>
   Effect.gen(function* () {
     const state = yield* pipe(
       getStreamingState(toolCallId),
@@ -496,20 +498,20 @@ export const finalizePlanStreamingWriteEffect = (
     );
 
     // Ensure final content is written
-    yield* Effect.tryPromise({
-      try: () =>
-        vscode.workspace.fs.writeFile(
-          state.fileUri,
-          Buffer.from(state.accumulatedContent, "utf-8"),
+    const vsCodeService = yield* VSCodeService;
+    yield* vsCodeService
+      .writeFile(state.fileUri, Buffer.from(state.accumulatedContent, "utf-8"))
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new PlanStreamingError({
+              message: "Failed to write final content",
+              cause: error,
+            }),
         ),
-      catch: (error) =>
-        new PlanStreamingError({
-          message: "Failed to write final content",
-          cause: error,
-        }),
-    });
+      );
 
-    const relativePath = vscode.workspace.asRelativePath(state.fileUri, false);
+    const relativePath = vsCodeService.asRelativePath(state.fileUri, false);
 
     // Clean up
     yield* Effect.sync(() => planStreamingStates.delete(toolCallId));
@@ -524,11 +526,11 @@ export const renamePlanFileEffect = (
   oldPath: string,
   newPath: string,
   toolCallId: string,
-): Effect.Effect<string, PlanStreamingError | NoWorkspaceError> =>
+) =>
   Effect.gen(function* () {
     const workspaceRoot = yield* getWorkspaceRoot();
-    const oldUri = resolveFilePath(oldPath, workspaceRoot);
-    const newUri = resolveFilePath(newPath, workspaceRoot);
+    const oldUri = yield* resolveFilePath(oldPath, workspaceRoot);
+    const newUri = yield* resolveFilePath(newPath, workspaceRoot);
 
     // Get current state
     const state = planStreamingStates.get(toolCallId);
@@ -538,45 +540,92 @@ export const renamePlanFileEffect = (
       );
     }
 
-    // Rename file using VS Code API
-    yield* Effect.tryPromise({
-      try: async () => {
-        // Read old file content
-        const content = await vscode.workspace.fs.readFile(oldUri);
+    const vsCodeService = yield* VSCodeService;
 
-        // Ensure new directory exists
-        const newParentDir = vscode.Uri.joinPath(newUri, "..");
-        try {
-          await vscode.workspace.fs.stat(newParentDir);
-        } catch {
-          await vscode.workspace.fs.createDirectory(newParentDir);
-        }
+    // Read old file content
+    const content = yield* vsCodeService.readFile(oldUri).pipe(
+      Effect.mapError(
+        (error) =>
+          new PlanStreamingError({
+            message: "Failed to read old file",
+            cause: error,
+          }),
+      ),
+    );
 
-        // Write to new location
-        await vscode.workspace.fs.writeFile(newUri, content);
+    // Ensure new directory exists
+    const newParentDir = vsCodeService.joinPath(newUri, "..");
+    const statResult = yield* vsCodeService
+      .stat(newParentDir)
+      .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-        // Delete old file
-        await vscode.workspace.fs.delete(oldUri);
+    if (!statResult) {
+      yield* vsCodeService.createDirectory(newParentDir).pipe(
+        Effect.mapError(
+          (error) =>
+            new PlanStreamingError({
+              message: "Failed to create new directory",
+              cause: error,
+            }),
+        ),
+      );
+    }
 
-        // Update streaming state with new URI
-        const newDocument = await vscode.workspace.openTextDocument(newUri);
-        const newEditor = await vscode.window.showTextDocument(newDocument, {
-          preview: false,
-          preserveFocus: false,
-        });
+    // Write to new location
+    yield* vsCodeService.writeFile(newUri, content).pipe(
+      Effect.mapError(
+        (error) =>
+          new PlanStreamingError({
+            message: "Failed to write to new location",
+            cause: error,
+          }),
+      ),
+    );
 
-        planStreamingStates.set(toolCallId, {
-          ...state,
-          fileUri: newUri,
-          document: newDocument,
-          editor: newEditor,
-        });
-      },
-      catch: (error) =>
-        new PlanStreamingError({
-          message: "Failed to rename plan file",
-          cause: error,
-        }),
+    // Delete old file
+    yield* vsCodeService.deleteFile(oldUri).pipe(
+      Effect.mapError(
+        (error) =>
+          new PlanStreamingError({
+            message: "Failed to delete old file",
+            cause: error,
+          }),
+      ),
+    );
+
+    // Update streaming state with new URI
+    const newDocument = yield* vsCodeService.openTextDocument(newUri).pipe(
+      Effect.mapError(
+        (error) =>
+          new PlanStreamingError({
+            message: "Failed to open new document",
+            cause: error,
+          }),
+      ),
+    );
+
+    const newEditor = yield* vsCodeService
+      .showTextDocument(newDocument, {
+        preview: false,
+        preserveFocus: false,
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new PlanStreamingError({
+              message: "Failed to show new document",
+              cause: error,
+            }),
+        ),
+      );
+
+    yield* Effect.sync(() => {
+      planStreamingStates.set(toolCallId, {
+        ...state,
+        fileUri: newUri,
+        document: newDocument,
+        editor: newEditor,
+      });
     });
 
     return newPath;
@@ -597,6 +646,7 @@ export async function initializePlanStreamingWrite(
 ): Promise<{ success: boolean; error?: string }> {
   return pipe(
     initializePlanStreamingWriteEffect(targetPath, toolCallId),
+    Effect.provide(VSCodeService.Default),
     Effect.match({
       onSuccess: () => ({ success: true }),
       onFailure: (error) => ({
@@ -617,21 +667,23 @@ export async function appendPlanStreamingContent(
 ): Promise<{ success: boolean; error?: string }> {
   return pipe(
     appendPlanStreamingContentEffect(toolCallId, contentChunk),
-    Effect.match({
-      onSuccess: () => ({ success: true }),
-      onFailure: (error) => {
-        if (error._tag === "StreamingNotInitializedError") {
-          return { success: false, error: "Streaming write not initialized" };
-        }
-        if (error._tag === "PlanStreamingError") {
-          return {
-            success: false,
-            error: error.message ?? "Failed to append content",
-          };
-        }
-        return { success: false, error: "Unknown error" };
-      },
+    Effect.provide(VSCodeService.Default),
+    Effect.map(() => ({ success: true })),
+    Effect.catchTags({
+      StreamingNotInitializedError: () =>
+        Effect.succeed({
+          success: false,
+          error: "Streaming write not initialized",
+        }),
+      PlanStreamingError: (e) =>
+        Effect.succeed({
+          success: false,
+          error: e.message ?? "Failed to append content",
+        }),
     }),
+    Effect.catchAll(() =>
+      Effect.succeed({ success: false, error: "Unknown error" }),
+    ),
     Runtime.runPromise(runtime),
   );
 }
@@ -644,17 +696,25 @@ export async function finalizePlanStreamingWrite(
 ): Promise<{ success: boolean; filePath: string; error?: string }> {
   return pipe(
     finalizePlanStreamingWriteEffect(toolCallId),
-    Effect.match({
-      onSuccess: (filePath) => ({ success: true, filePath }),
-      onFailure: (error) => ({
-        success: false,
-        filePath: "",
-        error:
-          error._tag === "StreamingNotInitializedError"
-            ? "Streaming write not found"
-            : (error.message ?? "Unknown error"),
-      }),
+    Effect.provide(VSCodeService.Default),
+    Effect.map((filePath) => ({ success: true, filePath })),
+    Effect.catchTags({
+      StreamingNotInitializedError: () =>
+        Effect.succeed({
+          success: false,
+          filePath: "",
+          error: "Streaming write not found",
+        }),
+      PlanStreamingError: (e) =>
+        Effect.succeed({
+          success: false,
+          filePath: "",
+          error: e.message ?? "Unknown error",
+        }),
     }),
+    Effect.catchAll(() =>
+      Effect.succeed({ success: false, filePath: "", error: "Unknown error" }),
+    ),
     Runtime.runPromise(runtime),
   );
 }
@@ -734,10 +794,11 @@ export const createProposeTestPlanTool = (
 
           // File writing is handled by streaming event handlers
           // Get filePath from streaming state (set by event handlers during streaming)
-          const filePath = getStreamingFilePath(toolCallId);
+          const filePath = yield* getStreamingFilePath(toolCallId);
 
           return createOutputResult(input, planId, true, filePath);
         }),
+        Effect.provide(VSCodeService.Default),
         Runtime.runPromise(runtime),
       ),
   });
@@ -790,10 +851,11 @@ export const createProposeTestPlanToolWithGuard = (
 
           // File writing is handled by streaming event handlers
           // Get filePath from streaming state (set by event handlers during streaming)
-          const filePath = getStreamingFilePath(toolCallId);
+          const filePath = yield* getStreamingFilePath(toolCallId);
 
           return createOutputResult(input, planId, true, filePath);
         }),
+        Effect.provide(VSCodeService.Default),
         Runtime.runPromise(runtime),
       ),
   });

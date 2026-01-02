@@ -6,11 +6,7 @@
 import { Effect } from "effect";
 import * as vscode from "vscode";
 import * as path from "node:path";
-import {
-  getWorkspaceRoot,
-  readFileAsStringEffect,
-} from "../../../lib/vscode-effects.js";
-import { RulesLoadError } from "./errors.js";
+import { VSCodeService } from "../../vs-code.js";
 
 /**
  * Service for loading user-defined rules from the workspace
@@ -26,8 +22,9 @@ export class RulesService extends Effect.Service<RulesService>()(
        */
       const loadUserRules = () =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
-          const rulesDir = vscode.Uri.joinPath(
+          const vsCodeService = yield* VSCodeService;
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
+          const rulesDir = vsCodeService.joinPath(
             workspaceRoot,
             ".clive",
             "rules",
@@ -35,15 +32,7 @@ export class RulesService extends Effect.Service<RulesService>()(
 
           // Find all .md files in rules directory
           const pattern = new vscode.RelativePattern(rulesDir, "*.md");
-          const files = yield* Effect.tryPromise({
-            try: () => vscode.workspace.findFiles(pattern),
-            catch: (error) =>
-              new RulesLoadError({
-                message: "Failed to search for rule files",
-                path: rulesDir.fsPath,
-                cause: error,
-              }),
-          }).pipe(
+          const files = yield* vsCodeService.findFiles(pattern).pipe(
             // If directory doesn't exist or search fails, return empty array
             Effect.catchAll(() => Effect.succeed([])),
           );
@@ -55,7 +44,7 @@ export class RulesService extends Effect.Service<RulesService>()(
           // Read and combine all rule files
           const contents = yield* Effect.all(
             files.map((uri) =>
-              readFileAsStringEffect(uri).pipe(
+              vsCodeService.readFileAsString(uri).pipe(
                 Effect.map((content) => ({
                   name: path.basename(uri.fsPath, ".md"),
                   content,
@@ -89,4 +78,3 @@ export class RulesService extends Effect.Service<RulesService>()(
  * Default live layer for RulesService
  */
 export const RulesServiceLive = RulesService.Default;
-

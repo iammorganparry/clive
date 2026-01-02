@@ -13,12 +13,6 @@ import {
 } from "../rpc/handler.js";
 import type { RpcSubscriptionMessage } from "@clive/webview-rpc";
 import type { RpcContext } from "../rpc/context.js";
-import {
-  resolveFileUri,
-  openTextDocumentEffect,
-  showTextDocumentEffect,
-  showErrorMessageEffect,
-} from "../lib/vscode-effects.js";
 import { toLayerContext } from "../services/layer-factory.js";
 
 /**
@@ -155,17 +149,22 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
         // Handle non-RPC messages
         if (isOpenFileMessage(message)) {
           pipe(
-            resolveFileUri(message.filePath),
-            Effect.flatMap(openTextDocumentEffect),
-            Effect.flatMap((document) => showTextDocumentEffect(document)),
+            Effect.gen(function* () {
+              const vsCodeService = yield* VSCodeService;
+              const fileUri = yield* vsCodeService.resolveFileUri(message.filePath);
+              const document = yield* vsCodeService.openTextDocument(fileUri);
+              return yield* vsCodeService.showTextDocument(document);
+            }),
             Effect.catchAll((error) =>
               Effect.gen(function* () {
                 console.error("Failed to open file:", error);
-                yield* showErrorMessageEffect(
+                const vsCodeService = yield* VSCodeService;
+                yield* vsCodeService.showErrorMessage(
                   `Failed to open file: ${message.filePath}`,
                 );
               }),
             ),
+            Effect.provide(VSCodeService.Default),
             Runtime.runPromise(Runtime.defaultRuntime),
           ).catch(() => {
             // Error already handled in Effect pipeline

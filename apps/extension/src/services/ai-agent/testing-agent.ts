@@ -2,7 +2,7 @@ import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import { type LanguageModel, streamText } from "ai";
 import { Data, Effect, HashMap, Match, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
-import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
+import { VSCodeService } from "../../vs-code.js";
 import { createUsageEvent, stringifyEvent } from "../../utils/json-utils.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
 import { AIModels } from "../ai-models.js";
@@ -188,7 +188,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const summaryModel = xai(AIModels.xai.fastNonReasoning);
 
             // Setup workspace context
-            const workspaceRootUri = yield* getWorkspaceRoot();
+            const vsCodeService = yield* VSCodeService;
+            const workspaceRootUri = yield* vsCodeService.getWorkspaceRoot();
             const workspaceRoot = workspaceRootUri.fsPath;
 
             // Build tools
@@ -495,7 +496,8 @@ export const buildInitialMessages = (
   mode: "plan" | "act" = "plan",
 ) =>
   Effect.gen(function* () {
-    const workspaceRootUri = yield* getWorkspaceRoot();
+    const vsCodeService = yield* VSCodeService;
+    const workspaceRootUri = yield* vsCodeService.getWorkspaceRoot();
     const workspaceRoot = workspaceRootUri.fsPath;
 
     const initialPrompt =

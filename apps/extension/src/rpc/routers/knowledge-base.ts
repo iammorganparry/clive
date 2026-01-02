@@ -1,7 +1,7 @@
 import { createRouter } from "@clive/webview-rpc";
 import { Effect } from "effect";
 import { z } from "zod";
-import { getWorkspaceRoot } from "../../lib/vscode-effects.js";
+import { VSCodeService } from "../../services/vs-code.js";
 import { ConfigService } from "../../services/config-service.js";
 import { KnowledgeBaseService } from "../../services/knowledge-base-service.js";
 import type { KnowledgeBaseProgressEvent } from "../../services/knowledge-base-types.js";
@@ -28,9 +28,10 @@ const getRepositoryId = () =>
   Effect.gen(function* () {
     const configService = yield* ConfigService;
     const repositoryService = yield* RepositoryService;
+    const vsCodeService = yield* VSCodeService;
     const userId = yield* configService.getUserId();
     const organizationId = yield* configService.getOrganizationId();
-    const workspaceRoot = yield* getWorkspaceRoot();
+    const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
     const rootPath = workspaceRoot.fsPath;
     const workspaceName = rootPath.split("/").pop() || "workspace";
 

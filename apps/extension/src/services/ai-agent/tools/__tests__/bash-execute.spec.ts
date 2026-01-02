@@ -1,34 +1,38 @@
 import { expect, vi } from "vitest";
 import { it } from "@effect/vitest";
-import { Effect, Exit, Cause, } from "effect";
+import { Effect, Exit, Cause } from "effect";
 import type { ChildProcess } from "node:child_process";
 import type * as vscode from "vscode";
-import * as vscodeEffects from "../../../../lib/vscode-effects";
 import type { BashExecuteInput, BashExecuteOutput } from "../../types";
 import { createBashExecuteTool, type SpawnFn } from "../bash-execute";
 import { executeTool } from "./test-helpers";
 import {
-    createMockChildProcess,
+  createMockChildProcess,
   createMockTokenBudgetService,
 } from "../../../../__tests__/mock-factories";
 
-// Mock vscode-effects
-vi.mock("../../../../lib/vscode-effects", () => ({
-  getWorkspaceRoot: vi.fn(),
+// Mock VSCodeService
+vi.mock("../../../vs-code.js", () => ({
+  VSCodeService: {
+    Default: {
+      pipe: vi.fn(),
+    },
+  },
 }));
-
 
 describe("bashExecuteTool", () => {
   let mockSpawn: ReturnType<typeof vi.fn<SpawnFn>>;
-  let streamingCallback: ((chunk: { command: string; output: string }) => void) | undefined;
+  let streamingCallback:
+    | ((chunk: { command: string; output: string }) => void)
+    | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
     streamingCallback = undefined;
     mockSpawn = vi.fn<SpawnFn>();
 
-    // Mock workspace root
-    vi.mocked(vscodeEffects.getWorkspaceRoot).mockReturnValue(
+    // Mock VSCodeService
+    const _mockGetWorkspaceRoot = vi.fn().mockReturnValue(
       Effect.succeed({
         fsPath: "/test-workspace",
         scheme: "file",
@@ -62,7 +66,9 @@ describe("bashExecuteTool", () => {
           expect(Exit.isFailure(result)).toBe(true);
           if (Exit.isFailure(result)) {
             const error = Cause.squash(result.cause);
-            expect(error instanceof Error && error.message).toContain("Command not allowed");
+            expect(error instanceof Error && error.message).toContain(
+              "Command not allowed",
+            );
           }
         }
       }),
@@ -70,8 +76,12 @@ describe("bashExecuteTool", () => {
 
     it.effect("should allow safe commands", () =>
       Effect.gen(function* () {
-        const mockBudget = yield* Effect.sync(() => createMockTokenBudgetService());
-        const tool = yield* Effect.sync(() => createBashExecuteTool(mockBudget, undefined, mockSpawn));
+        const mockBudget = yield* Effect.sync(() =>
+          createMockTokenBudgetService(),
+        );
+        const tool = yield* Effect.sync(() =>
+          createBashExecuteTool(mockBudget, undefined, mockSpawn),
+        );
 
         // Mock successful command execution
         yield* Effect.sync(() => {
@@ -196,7 +206,9 @@ describe("bashExecuteTool", () => {
         expect(Exit.isFailure(result)).toBe(true);
         if (Exit.isFailure(result)) {
           const error = Cause.squash(result.cause);
-          expect(error instanceof Error && error.message).toContain("Command execution failed");
+          expect(error instanceof Error && error.message).toContain(
+            "Command execution failed",
+          );
         }
       }),
     );
@@ -209,8 +221,12 @@ describe("bashExecuteTool", () => {
         yield* Effect.sync(() => vi.useFakeTimers());
 
         try {
-          const mockBudget = yield* Effect.sync(() => createMockTokenBudgetService());
-          const tool = yield* Effect.sync(() => createBashExecuteTool(mockBudget, undefined, mockSpawn));
+          const mockBudget = yield* Effect.sync(() =>
+            createMockTokenBudgetService(),
+          );
+          const tool = yield* Effect.sync(() =>
+            createBashExecuteTool(mockBudget, undefined, mockSpawn),
+          );
 
           const mockChild = yield* Effect.sync(() => {
             const child = createMockChildProcess();
@@ -219,10 +235,10 @@ describe("bashExecuteTool", () => {
           });
 
           const input: BashExecuteInput = { command: "sleep 100" };
-          
+
           // Create promise - executeTool returns a Promise
           const promise = executeTool(tool, input, {} as BashExecuteOutput);
-          
+
           // Attach catch handler immediately to prevent unhandled rejection
           promise.catch(() => {
             // Error is expected, ignore it here
@@ -238,7 +254,9 @@ describe("bashExecuteTool", () => {
             expect(Exit.isFailure(result)).toBe(true);
             if (Exit.isFailure(result)) {
               const error = Cause.squash(result.cause);
-              expect(error instanceof Error && error.message).toContain("timed out");
+              expect(error instanceof Error && error.message).toContain(
+                "timed out",
+              );
             }
             expect(mockChild.kill).toHaveBeenCalled();
           });
@@ -262,7 +280,11 @@ describe("bashExecuteTool", () => {
         };
 
         const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        const tool = createBashExecuteTool(
+          mockBudget,
+          streamingCallback,
+          mockSpawn,
+        );
         let stdoutHandler: ((data: Buffer) => void) | undefined;
         let closeHandler: ((code: number) => void) | undefined;
 
@@ -294,7 +316,9 @@ describe("bashExecuteTool", () => {
 
         // Streaming callback should be called with chunks
         expect(streamingChunks.length).toBeGreaterThan(0);
-        expect(streamingChunks.some((chunk) => chunk.output.includes("line1"))).toBe(true);
+        expect(
+          streamingChunks.some((chunk) => chunk.output.includes("line1")),
+        ).toBe(true);
       }),
     );
 
@@ -306,7 +330,11 @@ describe("bashExecuteTool", () => {
         };
 
         const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        const tool = createBashExecuteTool(
+          mockBudget,
+          streamingCallback,
+          mockSpawn,
+        );
         let stdoutHandler: ((data: Buffer) => void) | undefined;
         let closeHandler: ((code: number) => void) | undefined;
 
@@ -340,51 +368,64 @@ describe("bashExecuteTool", () => {
       }),
     );
 
-    it.effect("should emit command with streaming output for test commands", () =>
-      Effect.gen(function* () {
-        const streamingChunks: Array<{ command: string; output: string }> = [];
-        streamingCallback = (chunk) => {
-          streamingChunks.push(chunk);
-        };
+    it.effect(
+      "should emit command with streaming output for test commands",
+      () =>
+        Effect.gen(function* () {
+          const streamingChunks: Array<{ command: string; output: string }> =
+            [];
+          streamingCallback = (chunk) => {
+            streamingChunks.push(chunk);
+          };
 
-        const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
-        let stdoutHandler: ((data: Buffer) => void) | undefined;
-        let closeHandler: ((code: number) => void) | undefined;
+          const mockBudget = createMockTokenBudgetService();
+          const tool = createBashExecuteTool(
+            mockBudget,
+            streamingCallback,
+            mockSpawn,
+          );
+          let stdoutHandler: ((data: Buffer) => void) | undefined;
+          let closeHandler: ((code: number) => void) | undefined;
 
-        const mockChild = createMockChildProcess({
-          onStdoutData: (handler) => {
-            stdoutHandler = handler;
-          },
-          onClose: (handler) => {
-            closeHandler = handler as (code: number) => void;
-          },
-        });
-        mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
+          const mockChild = createMockChildProcess({
+            onStdoutData: (handler) => {
+              stdoutHandler = handler;
+            },
+            onClose: (handler) => {
+              closeHandler = handler as (code: number) => void;
+            },
+          });
+          mockSpawn.mockReturnValue(mockChild as unknown as ChildProcess);
 
-        const testCommand = "vitest run test.spec.ts";
-        const input: BashExecuteInput = { command: testCommand };
-        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+          const testCommand = "vitest run test.spec.ts";
+          const input: BashExecuteInput = { command: testCommand };
+          const promise = executeTool(tool, input, {} as BashExecuteOutput);
 
-        // Simulate test output streaming
-        if (stdoutHandler) {
-          stdoutHandler(Buffer.from("✓ test1 (100ms)\n"));
-          stdoutHandler(Buffer.from("✓ test2 (200ms)\n"));
-        }
+          // Simulate test output streaming
+          if (stdoutHandler) {
+            stdoutHandler(Buffer.from("✓ test1 (100ms)\n"));
+            stdoutHandler(Buffer.from("✓ test2 (200ms)\n"));
+          }
 
-        // Simulate process completion
-        if (closeHandler) {
-          closeHandler(0);
-        }
+          // Simulate process completion
+          if (closeHandler) {
+            closeHandler(0);
+          }
 
-        yield* Effect.promise(() => promise);
+          yield* Effect.promise(() => promise);
 
-        // Verify streaming chunks include the command
-        expect(streamingChunks.length).toBeGreaterThan(0);
-        expect(streamingChunks.every((chunk) => chunk.command === testCommand)).toBe(true);
-        expect(streamingChunks.some((chunk) => chunk.output.includes("test1"))).toBe(true);
-        expect(streamingChunks.some((chunk) => chunk.output.includes("test2"))).toBe(true);
-      }),
+          // Verify streaming chunks include the command
+          expect(streamingChunks.length).toBeGreaterThan(0);
+          expect(
+            streamingChunks.every((chunk) => chunk.command === testCommand),
+          ).toBe(true);
+          expect(
+            streamingChunks.some((chunk) => chunk.output.includes("test1")),
+          ).toBe(true);
+          expect(
+            streamingChunks.some((chunk) => chunk.output.includes("test2")),
+          ).toBe(true);
+        }),
     );
 
     it.effect("should stream vitest output in proper format", () =>
@@ -395,7 +436,11 @@ describe("bashExecuteTool", () => {
         };
 
         const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        const tool = createBashExecuteTool(
+          mockBudget,
+          streamingCallback,
+          mockSpawn,
+        );
         let stdoutHandler: ((data: Buffer) => void) | undefined;
         let closeHandler: ((code: number) => void) | undefined;
 
@@ -447,7 +492,11 @@ describe("bashExecuteTool", () => {
         };
 
         const mockBudget = createMockTokenBudgetService();
-        const tool = createBashExecuteTool(mockBudget, streamingCallback, mockSpawn);
+        const tool = createBashExecuteTool(
+          mockBudget,
+          streamingCallback,
+          mockSpawn,
+        );
         let stdoutHandler: ((data: Buffer) => void) | undefined;
         let closeHandler: ((code: number) => void) | undefined;
 
@@ -468,7 +517,9 @@ describe("bashExecuteTool", () => {
         // Simulate jest output
         if (stdoutHandler) {
           stdoutHandler(Buffer.from("PASS tests/auth.test.js\n"));
-          stdoutHandler(Buffer.from("  ✓ login with valid credentials (100ms)\n"));
+          stdoutHandler(
+            Buffer.from("  ✓ login with valid credentials (100ms)\n"),
+          );
           stdoutHandler(Buffer.from("  ✓ logout (50ms)\n"));
         }
 

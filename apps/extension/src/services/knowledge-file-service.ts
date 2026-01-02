@@ -6,12 +6,7 @@
 import { Data, Effect } from "effect";
 import * as vscode from "vscode";
 import type { KnowledgeBaseCategory } from "../constants.js";
-import {
-  findFilesEffect,
-  getWorkspaceRoot,
-  readFileAsStringEffect,
-  statFileEffect,
-} from "../lib/vscode-effects.js";
+import { VSCodeService } from "./vs-code.js";
 import {
   parseFrontmatter,
   generateFrontmatter as generateFrontmatterUtil,
@@ -19,7 +14,6 @@ import {
 import { ensureDirectoryExists } from "../utils/fs-effects.js";
 import { extractErrorMessage } from "../utils/error-utils.js";
 import { GitignoreManager } from "./gitignore-manager.js";
-import { VSCodeService } from "./vs-code.js";
 import { Layer } from "effect";
 
 /**
@@ -62,8 +56,9 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const getKnowledgeDir = () =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
-          return vscode.Uri.joinPath(workspaceRoot, ".clive", "knowledge");
+          const vsCodeService = yield* VSCodeService;
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
+          return vsCodeService.joinPath(workspaceRoot, ".clive", "knowledge");
         });
 
       /**
@@ -201,13 +196,16 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           // Read existing content if appending
           let existingContent = "";
           if (options?.append) {
-            const existing = yield* readFileAsStringEffect(fileUri).pipe(
-              Effect.map((content) => {
-                const parsed = parseFrontmatter(content);
-                return parsed.body;
-              }),
-              Effect.catchAll(() => Effect.succeed("")),
-            );
+            const vsCodeService = yield* VSCodeService;
+            const existing = yield* vsCodeService
+              .readFileAsString(fileUri)
+              .pipe(
+                Effect.map((content) => {
+                  const parsed = parseFrontmatter(content);
+                  return parsed.body;
+                }),
+                Effect.catchAll(() => Effect.succeed("")),
+              );
             existingContent = existing;
           }
 
@@ -234,8 +232,8 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               }),
           });
 
-          const _workspaceRoot = yield* getWorkspaceRoot();
-          const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+          const vsCodeService = yield* VSCodeService;
+          const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
           return {
             success: true,
@@ -252,10 +250,11 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
         options?: { startLine?: number; endLine?: number },
       ) =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
-          const fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
+          const vsCodeService = yield* VSCodeService;
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
+          const fileUri = vsCodeService.joinPath(workspaceRoot, filePath);
 
-          const content = yield* readFileAsStringEffect(fileUri);
+          const content = yield* vsCodeService.readFileAsString(fileUri);
           const { frontmatter, body } = parseFrontmatter(content);
 
           // Extract lines if specified
@@ -270,7 +269,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             finalBody = lines.slice(start, end).join("\n");
           }
 
-          const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+          const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
           return {
             path: fileUri.fsPath,
@@ -292,11 +291,11 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const listKnowledgeFiles = () =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* getKnowledgeDir();
-          const _workspaceRoot = yield* getWorkspaceRoot();
 
           // Find all markdown files in knowledge directory
-          const files = yield* findFilesEffect(
+          const files = yield* vsCodeService.findFiles(
             new vscode.RelativePattern(knowledgeDir, "**/*.md"),
           );
 
@@ -307,8 +306,8 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           }> = [];
 
           for (const file of files) {
-            const relativePath = vscode.workspace.asRelativePath(file, false);
-            const result = yield* readFileAsStringEffect(file).pipe(
+            const relativePath = vsCodeService.asRelativePath(file, false);
+            const result = yield* vsCodeService.readFileAsString(file).pipe(
               Effect.map((content) => {
                 const { frontmatter } = parseFrontmatter(content);
                 return {
@@ -335,11 +334,11 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
         options?: { category?: KnowledgeBaseCategory; caseSensitive?: boolean },
       ) =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* getKnowledgeDir();
-          const _workspaceRoot = yield* getWorkspaceRoot();
 
           // Find all markdown files
-          const files = yield* findFilesEffect(
+          const files = yield* vsCodeService.findFiles(
             new vscode.RelativePattern(knowledgeDir, "**/*.md"),
           );
 
@@ -357,7 +356,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           );
 
           for (const file of files) {
-            const result = yield* readFileAsStringEffect(file).pipe(
+            const result = yield* vsCodeService.readFileAsString(file).pipe(
               Effect.map((content) => {
                 const { frontmatter, body } = parseFrontmatter(content);
 
@@ -412,9 +411,10 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const generateIndex = () =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* getKnowledgeDir();
-          const indexUri = vscode.Uri.joinPath(knowledgeDir, "_index.md");
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const indexUri = vsCodeService.joinPath(knowledgeDir, "_index.md");
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
 
           // List all knowledge files
           const files = yield* listKnowledgeFiles();
@@ -430,29 +430,31 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               continue; // Skip index file itself
             }
 
-            yield* readFileAsStringEffect(
-              vscode.Uri.joinPath(workspaceRoot, file.relativePath),
-            ).pipe(
-              Effect.flatMap((content) =>
-                Effect.sync(() => {
-                  const { frontmatter } = parseFrontmatter(content);
-                  const category =
-                    (frontmatter.category as string) || "uncategorized";
-                  const title =
-                    (frontmatter.title as string) || file.relativePath;
+            yield* vsCodeService
+              .readFileAsString(
+                vsCodeService.joinPath(workspaceRoot, file.relativePath),
+              )
+              .pipe(
+                Effect.flatMap((content) =>
+                  Effect.sync(() => {
+                    const { frontmatter } = parseFrontmatter(content);
+                    const category =
+                      (frontmatter.category as string) || "uncategorized";
+                    const title =
+                      (frontmatter.title as string) || file.relativePath;
 
-                  if (!byCategory[category]) {
-                    byCategory[category] = [];
-                  }
+                    if (!byCategory[category]) {
+                      byCategory[category] = [];
+                    }
 
-                  byCategory[category].push({
-                    title,
-                    path: file.relativePath,
-                  });
-                }),
-              ),
-              Effect.catchAll(() => Effect.void),
-            );
+                    byCategory[category].push({
+                      title,
+                      path: file.relativePath,
+                    });
+                  }),
+                ),
+                Effect.catchAll(() => Effect.void),
+              );
           }
 
           // Generate index content with summaries
@@ -478,14 +480,16 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
           const fileContentsMap = new Map<string, string>();
           const fileContents = yield* Effect.all(
             allFiles.map((file) =>
-              readFileAsStringEffect(
-                vscode.Uri.joinPath(workspaceRoot, file.path),
-              ).pipe(
-                Effect.map((content) => ({ path: file.path, content })),
-                Effect.catchAll(() =>
-                  Effect.succeed({ path: file.path, content: null }),
+              vsCodeService
+                .readFileAsString(
+                  vsCodeService.joinPath(workspaceRoot, file.path),
+                )
+                .pipe(
+                  Effect.map((content) => ({ path: file.path, content })),
+                  Effect.catchAll(() =>
+                    Effect.succeed({ path: file.path, content: null }),
+                  ),
                 ),
-              ),
             ),
             { concurrency: 10 },
           );
@@ -566,32 +570,35 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const getQualityMetrics = () =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const files = yield* listKnowledgeFiles();
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
 
           // Read all files to calculate word count
           const fileContents = yield* Effect.all(
             files.map((file) =>
-              readFileAsStringEffect(
-                vscode.Uri.joinPath(workspaceRoot, file.relativePath),
-              ).pipe(
-                Effect.map((content) => {
-                  // Estimate word count: ~5 chars per word
-                  const wordCount = Math.floor(content.length / 5);
-                  return {
-                    path: file.path,
-                    wordCount,
-                    contentLength: content.length,
-                  };
-                }),
-                Effect.catchAll(() =>
-                  Effect.succeed({
-                    path: file.path,
-                    wordCount: 0,
-                    contentLength: 0,
+              vsCodeService
+                .readFileAsString(
+                  vsCodeService.joinPath(workspaceRoot, file.relativePath),
+                )
+                .pipe(
+                  Effect.map((content) => {
+                    // Estimate word count: ~5 chars per word
+                    const wordCount = Math.floor(content.length / 5);
+                    return {
+                      path: file.path,
+                      wordCount,
+                      contentLength: content.length,
+                    };
                   }),
+                  Effect.catchAll(() =>
+                    Effect.succeed({
+                      path: file.path,
+                      wordCount: 0,
+                      contentLength: 0,
+                    }),
+                  ),
                 ),
-              ),
             ),
             { concurrency: 10 },
           );
@@ -620,14 +627,12 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const knowledgeBaseExists = () =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* getKnowledgeDir();
-          const stat = yield* statFileEffect(knowledgeDir).pipe(
-            Effect.catchAll(() =>
-              Effect.fail(new Error("Directory not found")),
-            ),
-          );
-          return stat.type === vscode.FileType.Directory;
-        }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+          return yield* vsCodeService
+            .isDirectory(knowledgeDir)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+        });
 
       /**
        * Delete the entire knowledge base directory
@@ -635,13 +640,13 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
        */
       const deleteKnowledgeBase = () =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* getKnowledgeDir();
 
           // Check if directory exists
-          const exists = yield* statFileEffect(knowledgeDir).pipe(
-            Effect.map((stat) => stat.type === vscode.FileType.Directory),
-            Effect.catchAll(() => Effect.succeed(false)),
-          );
+          const exists = yield* vsCodeService
+            .isDirectory(knowledgeDir)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
           if (!exists) {
             yield* Effect.logDebug(
