@@ -1,7 +1,7 @@
 import { useMachine } from "@xstate/react";
 import type { LanguageModelUsage } from "ai";
 import { Match } from "effect";
-import { useEffect, useRef } from "react";
+import { useEffect, useCallback } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ToolEvent } from "../../../types/chat.js";
 import {
@@ -253,11 +253,76 @@ export function useChangesetChat({
     },
   });
 
+  // Build focused context for a specific suite
+  const buildSuiteContext = useCallback(
+    (
+      suite: TestSuiteQueueItem,
+    ): Array<{ role: "user" | "assistant" | "system"; content: string }> => {
+      const planRef = state.context.planFilePath
+        ? `Refer to the approved test plan at: ${state.context.planFilePath}`
+        : "";
+
+      return [
+        {
+          role: "user",
+          content: `Execute the following test suite from the approved plan:
+
+      Suite: ${suite.name}
+      Target file: ${suite.targetFilePath}
+      Test type: ${suite.testType}
+      Source files: ${suite.sourceFiles.join(", ")}
+
+      ${suite.description || ""}
+
+      ${planRef}
+
+      IMPORTANT: Focus ONLY on this suite. Write the test file and run it. Do not work on other suites.`,
+        },
+      ];
+    },
+    [state.context.planFilePath],
+  );
+
   // Start analysis subscription when START_ANALYSIS is triggered or when user sends message
+  // In act mode with queue processing, create isolated subscription per suite
   useEffect(() => {
+    // Handle act mode queue processing - create isolated subscription per suite
     if (
+      state.context.agentMode === "act" &&
+      state.context.isProcessingQueue &&
+      state.context.currentSuiteId &&
+      (state.matches("analyzing") || state.matches("idle")) &&
+      (planTestsSubscription.status === "idle" ||
+        planTestsSubscription.status === "complete")
+    ) {
+      const currentSuite = state.context.testSuiteQueue.find(
+        (s) => s.id === state.context.currentSuiteId,
+      );
+
+      if (currentSuite?.status === "in_progress") {
+        // If subscription is complete, unsubscribe first to reset it
+        if (planTestsSubscription.status === "complete") {
+          planTestsSubscription.unsubscribe();
+        }
+
+        // Create focused subscription for THIS suite only
+        planTestsSubscription.subscribe({
+          files: currentSuite.sourceFiles, // Only source files for this suite
+          branchName: state.context.branchName,
+          baseBranch,
+          conversationType: mode,
+          commitHash,
+          mode: "act",
+          planFilePath: state.context.planFilePath || undefined,
+          conversationHistory: buildSuiteContext(currentSuite), // Focused context
+        });
+      }
+    }
+    // Handle plan mode or regular analysis - use all files and full conversation history
+    else if (
       files.length > 0 &&
       state.matches("analyzing") &&
+      !state.context.isProcessingQueue &&
       (planTestsSubscription.status === "idle" ||
         planTestsSubscription.status === "complete")
     ) {
@@ -289,38 +354,14 @@ export function useChangesetChat({
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
     }
-  }, [files, state, planTestsSubscription, mode, commitHash, baseBranch]);
-
-  // Auto-send focused message when starting next suite in act mode
-  const previousSuiteId = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      state.context.agentMode === "act" &&
-      state.context.currentSuiteId &&
-      state.context.currentSuiteId !== previousSuiteId.current &&
-      previousSuiteId.current !== null // Only auto-send if we had a previous suite (not initial)
-    ) {
-      const currentSuite = state.context.testSuiteQueue.find(
-        (s) => s.id === state.context.currentSuiteId,
-      );
-      if (currentSuite && currentSuite.status === "in_progress") {
-        // Send focused message for next suite with plan reference
-        const planRef = state.context.planFilePath
-          ? `\n\nRefer to the approved test plan at: ${state.context.planFilePath}`
-          : "";
-        send({
-          type: "SEND_MESSAGE",
-          content: `Write tests for: ${currentSuite.name}\nTarget file: ${currentSuite.targetFilePath}\nTest type: ${currentSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.${planRef}`,
-        });
-      }
-    }
-    previousSuiteId.current = state.context.currentSuiteId;
   }, [
-    state.context.currentSuiteId,
-    state.context.agentMode,
-    state.context.testSuiteQueue,
-    state.context.planFilePath,
-    send,
+    files,
+    state,
+    planTestsSubscription,
+    mode,
+    commitHash,
+    baseBranch,
+    buildSuiteContext,
   ]);
 
   return {
@@ -343,6 +384,7 @@ export function useChangesetChat({
     agentMode: state.context.agentMode,
     subscriptionId: state.context.subscriptionId,
     hasPendingPlanApproval: state.context.hasPendingPlanApproval,
+    isProcessingQueue: state.context.isProcessingQueue,
     cancelStream: () => {
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });

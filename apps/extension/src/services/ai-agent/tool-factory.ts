@@ -95,31 +95,35 @@ const createBaseTools = (config: ToolConfig) =>
       config.getKnowledgeContext,
     );
 
-    // Track whether proposeTestPlan has been called to prevent duplicates
-    const proposeTestPlanCalled = { value: false };
-
-    const proposeTestPlan = createProposeTestPlanToolWithGuard(
-      config.fileStreamingCallback,
-      proposeTestPlanCalled,
-    );
-
-    const approvePlan = createApprovePlanTool(config.progressCallback);
-
     const completeTask = createCompleteTaskTool();
 
     const webTools = config.firecrawlEnabled
       ? createWebTools({ enableSearch: true })
       : {};
 
-    return {
+    const tools: Record<string, unknown> = {
       bashExecute,
       searchKnowledge,
       summarizeContext,
-      proposeTestPlan,
-      approvePlan,
       completeTask,
       ...webTools,
     };
+
+    // Only include proposeTestPlan and approvePlan in plan mode
+    // In act mode, the agent should only execute tests, not propose new plans
+    if (config.mode === "plan") {
+      // Track whether proposeTestPlan has been called to prevent duplicates
+      const proposeTestPlanCalled = { value: false };
+
+      tools.proposeTestPlan = createProposeTestPlanToolWithGuard(
+        config.fileStreamingCallback,
+        proposeTestPlanCalled,
+      );
+
+      tools.approvePlan = createApprovePlanTool(config.progressCallback);
+    }
+
+    return tools;
   });
 
 /**

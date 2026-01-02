@@ -37,6 +37,7 @@ describe("changeset-chat-machine test execution actions", () => {
       planFilePath: null,
       usage: null,
       subscriptionId: null,
+      isProcessingQueue: false,
     };
   });
 
@@ -847,6 +848,7 @@ describe("changeset-chat-machine plan content actions", () => {
       planFilePath: null,
       usage: null,
       subscriptionId: null,
+      isProcessingQueue: false,
     };
   });
 
@@ -990,6 +992,7 @@ describe("changeset-chat-machine hasPendingPlanApproval flag", () => {
       planFilePath: null,
       usage: null,
       subscriptionId: null,
+      isProcessingQueue: false,
     };
   });
 
@@ -1131,6 +1134,7 @@ describe("changeset-chat-machine SKIP_SUITE event", () => {
       planFilePath: null,
       usage: null,
       subscriptionId: null,
+      isProcessingQueue: false,
     };
   });
 
