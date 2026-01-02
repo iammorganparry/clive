@@ -323,6 +323,19 @@ export const sanitizePlanName = (name: string): string =>
     .substring(0, 50);
 
 /**
+ * Generate descriptive filename for test plan
+ * Format: {sanitized-name}-{test-type}-{count}-{suite|suites}.md
+ */
+export const generatePlanFilename = (
+  name: string,
+  suitesInfo: ExtractedSuitesInfo,
+): string => {
+  const sanitizedName = sanitizePlanName(name);
+  const suffix = suitesInfo.count === 1 ? "suite" : "suites";
+  return `.clive/plans/${sanitizedName}-${suitesInfo.primaryTestType}-${suitesInfo.count}-${suffix}.md`;
+};
+
+/**
  * Unescape JSON string escapes
  * Converts \\n, \\t, \\", \\\\ to actual characters
  * Note: Order matters - backslash must be replaced first to avoid
@@ -383,4 +396,194 @@ export const extractJsonField = (
   // If we reach here, the string is incomplete (no closing quote yet)
   // Return what we have so far for streaming display
   return extracted || null;
+};
+
+/**
+ * Extract suites information from partial JSON
+ * Parses the suites array to get count and test types
+ * Returns null if suites array is incomplete or not found
+ */
+export interface ExtractedSuitesInfo {
+  count: number;
+  primaryTestType: "unit" | "integration" | "e2e" | "mixed";
+}
+
+export const extractSuitesInfo = (json: string): ExtractedSuitesInfo | null => {
+  // Find the suites field
+  const suitesPattern = `"suites"\\s*:\\s*\\[`;
+  const suitesIndex = json.search(new RegExp(suitesPattern));
+  if (suitesIndex === -1) return null;
+
+  // Find where the array starts (after the opening bracket)
+  const arrayStartIndex = json.indexOf("[", suitesIndex);
+  if (arrayStartIndex === -1) return null;
+
+  // Extract array content by counting brackets
+  let depth = 0;
+  let i = arrayStartIndex;
+  let arrayContent = "";
+  let inString = false;
+  let escapeNext = false;
+
+  while (i < json.length) {
+    const char = json[i];
+
+    if (escapeNext) {
+      arrayContent += char;
+      escapeNext = false;
+      i++;
+      continue;
+    }
+
+    if (char === "\\") {
+      arrayContent += char;
+      escapeNext = true;
+      i++;
+      continue;
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      arrayContent += char;
+      i++;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === "[") {
+        depth++;
+        arrayContent += char;
+      } else if (char === "]") {
+        depth--;
+        arrayContent += char;
+        if (depth === 0) {
+          // Found complete array
+          break;
+        }
+      } else {
+        arrayContent += char;
+      }
+    } else {
+      arrayContent += char;
+    }
+
+    i++;
+  }
+
+  // If depth is not 0, array is incomplete
+  if (depth !== 0) return null;
+
+  // Try to parse the array content
+  try {
+    // Count objects in the array by counting complete objects
+    // A complete object has balanced braces
+    let objectCount = 0;
+    let objectDepth = 0;
+    let inObjectString = false;
+    let objectEscapeNext = false;
+    let objectStart = -1;
+
+    for (let j = 0; j < arrayContent.length; j++) {
+      const char = arrayContent[j];
+
+      if (objectEscapeNext) {
+        objectEscapeNext = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        objectEscapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !objectEscapeNext) {
+        inObjectString = !inObjectString;
+        continue;
+      }
+
+      if (!inObjectString) {
+        if (char === "{") {
+          if (objectDepth === 0) {
+            objectStart = j;
+          }
+          objectDepth++;
+        } else if (char === "}") {
+          objectDepth--;
+          if (objectDepth === 0 && objectStart !== -1) {
+            // Found a complete object
+            objectCount++;
+            objectStart = -1;
+          }
+        }
+      }
+    }
+
+    // Extract testType values from the array
+    const testTypes: Array<"unit" | "integration" | "e2e"> = [];
+    const testTypePattern = /"testType"\s*:\s*"(\w+)"/g;
+    let match: RegExpExecArray | null;
+    match = testTypePattern.exec(arrayContent);
+    while (match !== null) {
+      const testType = match[1];
+      if (
+        testType === "unit" ||
+        testType === "integration" ||
+        testType === "e2e"
+      ) {
+        testTypes.push(testType);
+      }
+      match = testTypePattern.exec(arrayContent);
+    }
+
+    if (objectCount === 0 && testTypes.length === 0) {
+      // Array might be empty or incomplete
+      return null;
+    }
+
+    // Determine primary test type
+    let primaryTestType: "unit" | "integration" | "e2e" | "mixed" = "mixed";
+    if (testTypes.length > 0) {
+      const typeCounts = {
+        unit: 0,
+        integration: 0,
+        e2e: 0,
+      };
+      for (const type of testTypes) {
+        typeCounts[type]++;
+      }
+
+      const maxCount = Math.max(
+        typeCounts.unit,
+        typeCounts.integration,
+        typeCounts.e2e,
+      );
+      const uniqueTypes = [
+        typeCounts.unit > 0 ? "unit" : null,
+        typeCounts.integration > 0 ? "integration" : null,
+        typeCounts.e2e > 0 ? "e2e" : null,
+      ].filter((t): t is string => t !== null);
+
+      if (uniqueTypes.length === 1) {
+        primaryTestType = uniqueTypes[0] as "unit" | "integration" | "e2e";
+      } else if (maxCount === testTypes.length) {
+        // All suites have the same type
+        primaryTestType = Object.entries(typeCounts).find(
+          ([, count]) => count === maxCount,
+        )?.[0] as "unit" | "integration" | "e2e";
+      } else {
+        primaryTestType = "mixed";
+      }
+    }
+
+    // Use objectCount if we found complete objects, otherwise use testTypes.length
+    const count = objectCount > 0 ? objectCount : testTypes.length;
+
+    return {
+      count,
+      primaryTestType,
+    };
+  } catch {
+    // Parsing failed, array might be incomplete
+    return null;
+  }
 };

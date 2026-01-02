@@ -4,6 +4,8 @@ import {
   unescapeJsonString,
   extractJsonField,
   generateCorrelationId,
+  generatePlanFilename,
+  extractSuitesInfo,
 } from "../testing-agent-helpers";
 
 describe("JSON Parsing Utilities", () => {
@@ -180,6 +182,202 @@ describe("JSON Parsing Utilities", () => {
       const timestampPart = parseInt(parts[1], 10);
       expect(timestampPart).toBeGreaterThanOrEqual(before);
       expect(timestampPart).toBeLessThanOrEqual(after);
+    });
+  });
+
+  describe("generatePlanFilename", () => {
+    it("should generate filename with unit test type and single suite", () => {
+      const result = generatePlanFilename("Test Plan for Auth", {
+        count: 1,
+        primaryTestType: "unit",
+      });
+      expect(result).toBe(".clive/plans/test-plan-for-auth-unit-1-suite.md");
+    });
+
+    it("should generate filename with multiple suites (plural)", () => {
+      const result = generatePlanFilename("Test Plan for Auth", {
+        count: 3,
+        primaryTestType: "unit",
+      });
+      expect(result).toBe(".clive/plans/test-plan-for-auth-unit-3-suites.md");
+    });
+
+    it("should generate filename with integration test type", () => {
+      const result = generatePlanFilename("API Tests", {
+        count: 2,
+        primaryTestType: "integration",
+      });
+      expect(result).toBe(".clive/plans/api-tests-integration-2-suites.md");
+    });
+
+    it("should generate filename with e2e test type", () => {
+      const result = generatePlanFilename("User Journey Tests", {
+        count: 1,
+        primaryTestType: "e2e",
+      });
+      expect(result).toBe(".clive/plans/user-journey-tests-e2e-1-suite.md");
+    });
+
+    it("should generate filename with mixed test type", () => {
+      const result = generatePlanFilename("Comprehensive Tests", {
+        count: 5,
+        primaryTestType: "mixed",
+      });
+      expect(result).toBe(".clive/plans/comprehensive-tests-mixed-5-suites.md");
+    });
+
+    it("should sanitize special characters in plan name", () => {
+      const result = generatePlanFilename("Test@Plan#With$Special%Chars!", {
+        count: 1,
+        primaryTestType: "unit",
+      });
+      expect(result).toBe(".clive/plans/test-plan-with-special-chars-unit-1-suite.md");
+    });
+
+    it("should truncate long plan names to 50 characters", () => {
+      const longName = "a".repeat(100);
+      const result = generatePlanFilename(longName, {
+        count: 1,
+        primaryTestType: "unit",
+      });
+      const filename = result.replace(".clive/plans/", "").replace("-unit-1-suite.md", "");
+      expect(filename.length).toBe(50);
+    });
+  });
+
+  describe("extractSuitesInfo", () => {
+    it("should extract single unit suite", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 1,
+        primaryTestType: "unit",
+      });
+    });
+
+    it("should extract multiple suites with same type", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}, {"id": "suite-2", "testType": "unit"}, {"id": "suite-3", "testType": "unit"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 3,
+        primaryTestType: "unit",
+      });
+    });
+
+    it("should identify integration as primary test type", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "integration"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 1,
+        primaryTestType: "integration",
+      });
+    });
+
+    it("should identify e2e as primary test type", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "e2e"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 1,
+        primaryTestType: "e2e",
+      });
+    });
+
+    it("should identify mixed type for different test types", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}, {"id": "suite-2", "testType": "integration"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 2,
+        primaryTestType: "mixed",
+      });
+    });
+
+    it("should return mixed when multiple different types present", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}, {"id": "suite-2", "testType": "unit"}, {"id": "suite-3", "testType": "integration"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 3,
+        primaryTestType: "mixed",
+      });
+    });
+
+    it("should return null for missing suites field", () => {
+      const json = `{"name": "Test Plan", "overview": "description"}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toBe(null);
+    });
+
+    it("should return null for incomplete suites array (streaming)", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"`;
+      const result = extractSuitesInfo(json);
+      expect(result).toBe(null);
+    });
+
+    it("should return null for empty suites array", () => {
+      const json = `{"suites": []}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toBe(null);
+    });
+
+    it("should handle nested objects with brackets in strings", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit", "description": "test [brackets] in string"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 1,
+        primaryTestType: "unit",
+      });
+    });
+
+    it("should handle escaped quotes in suite objects", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit", "name": "Test \\"quoted\\" name"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 1,
+        primaryTestType: "unit",
+      });
+    });
+
+    it("should handle complex nested arrays and objects", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit", "sourceFiles": ["file1.ts", "file2.ts"]}, {"id": "suite-2", "testType": "unit"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 2,
+        primaryTestType: "unit",
+      });
+    });
+
+    it("should handle streaming JSON with partial second suite", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}, {"id": "suite-2", "testT`;
+      const result = extractSuitesInfo(json);
+      expect(result).toBe(null);
+    });
+
+    it("should handle all three test types mixed", () => {
+      const json = `{"suites": [{"id": "suite-1", "testType": "unit"}, {"id": "suite-2", "testType": "integration"}, {"id": "suite-3", "testType": "e2e"}]}`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 3,
+        primaryTestType: "mixed",
+      });
+    });
+
+    it("should handle whitespace in JSON", () => {
+      const json = `{
+        "suites": [
+          {
+            "id": "suite-1",
+            "testType": "unit"
+          },
+          {
+            "id": "suite-2",
+            "testType": "unit"
+          }
+        ]
+      }`;
+      const result = extractSuitesInfo(json);
+      expect(result).toEqual({
+        count: 2,
+        primaryTestType: "unit",
+      });
     });
   });
 });

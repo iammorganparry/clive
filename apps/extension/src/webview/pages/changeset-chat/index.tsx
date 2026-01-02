@@ -177,6 +177,7 @@ export const ChangesetChatPage: React.FC = () => {
               if (part.type === "reasoning") {
                 return (
                   <Reasoning 
+                    className="mt-2"
                     key={`${message.id}-reasoning-${index}`}
                     isStreaming={part.isStreaming ?? false}
                   >
