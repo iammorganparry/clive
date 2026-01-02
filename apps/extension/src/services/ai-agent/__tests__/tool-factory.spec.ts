@@ -34,6 +34,10 @@ vi.mock("../tools/propose-test-plan", () => ({
     name: "proposeTestPlan",
     execute: vi.fn(),
   })),
+  createProposeTestPlanToolWithGuard: vi.fn(() => ({
+    name: "proposeTestPlan",
+    execute: vi.fn(),
+  })),
 }));
 
 vi.mock("../tools/complete-task", () => ({

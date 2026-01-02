@@ -16,7 +16,7 @@ import {
   createWebTools,
   createWriteKnowledgeFileTool,
   createWriteTestFileTool,
-  createProposeTestPlanTool,
+  createProposeTestPlanToolWithGuard,
   createCompleteTaskTool,
   createApprovePlanTool,
   createEditFileContentTool,
@@ -95,8 +95,12 @@ const createBaseTools = (config: ToolConfig) =>
       config.getKnowledgeContext,
     );
 
-    const proposeTestPlan = createProposeTestPlanTool(
+    // Track whether proposeTestPlan has been called to prevent duplicates
+    const proposeTestPlanCalled = { value: false };
+
+    const proposeTestPlan = createProposeTestPlanToolWithGuard(
       config.fileStreamingCallback,
+      proposeTestPlanCalled,
     );
 
     const approvePlan = createApprovePlanTool(config.progressCallback);
