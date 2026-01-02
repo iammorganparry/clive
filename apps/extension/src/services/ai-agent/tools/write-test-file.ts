@@ -344,14 +344,17 @@ export async function appendStreamingContent(
   }
 
   try {
-    state.accumulatedContent += contentChunk;
+    // Replace accumulated content (we receive full content, not a delta)
+    state.accumulatedContent = contentChunk;
 
     if (state.editor && state.document) {
       const edit = new vscode.WorkspaceEdit();
-      const endPosition = state.document.positionAt(
-        state.accumulatedContent.length - contentChunk.length,
+      // Replace entire document with full content
+      const fullRange = new vscode.Range(
+        state.document.positionAt(0),
+        state.document.positionAt(state.document.getText().length),
       );
-      edit.insert(state.fileUri, endPosition, contentChunk);
+      edit.replace(state.fileUri, fullRange, contentChunk);
       await vscode.workspace.applyEdit(edit);
 
       // Reload document

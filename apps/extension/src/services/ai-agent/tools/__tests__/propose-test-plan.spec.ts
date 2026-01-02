@@ -44,6 +44,7 @@ describe("proposeTestPlanTool", () => {
     mockDocument = {
       uri: vscode.Uri.file("/test-workspace/.clive/plans/test-plan.md"),
       positionAt: vi.fn(() => ({ line: 0, character: 0 })),
+      getText: vi.fn(() => ""),
     } as unknown as vscode.TextDocument;
 
     mockEditor = {

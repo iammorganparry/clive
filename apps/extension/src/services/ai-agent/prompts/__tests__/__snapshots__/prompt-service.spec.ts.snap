@@ -68,6 +68,7 @@ You are in execution mode with an approved test plan. Your focus is implementing
   - Follow testStrategy for externalDependencies (sandbox, mock, skip)
   - Do NOT rediscover what was already found in planning
 
+
 **NATURAL CONVERSATION**:
   - If the user asks a question or makes a comment, respond naturally and helpfully
   - After answering, continue with the current test suite

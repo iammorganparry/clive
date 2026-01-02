@@ -1,5 +1,6 @@
 import { Stream, Match } from "effect";
 import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
+import { logToOutput } from "./logger.js";
 
 /**
  * Event types emitted from the AI agent stream
@@ -20,14 +21,14 @@ export interface AgentStreamEvent {
   toolResult?: unknown;
   toolCallId?: string;
   stepIndex?: number;
-  argsTextDelta?: string; // For streaming partial tool arguments
+  inputTextDelta?: string; // For streaming partial tool arguments (AI SDK v6 renamed from argsTextDelta)
 }
 
 /**
  * Convert AI SDK streamText result to Effect Stream
  * Consumes the fullStream async iterable and maps chunks to AgentStreamEvent
  * Uses proper AI SDK types for type safety
- * 
+ *
  * Note: The second generic parameter of StreamTextResult has a constraint,
  * but we only use fullStream which doesn't depend on it, so we use a type assertion.
  */
@@ -35,11 +36,18 @@ export function streamFromAI<TOOLS extends ToolSet>(
   // biome-ignore lint/suspicious/noExplicitAny: AI SDK StreamTextResult requires Output type constraint, but we only use fullStream
   result: StreamTextResult<TOOLS, any>,
 ): Stream.Stream<AgentStreamEvent, Error, never> {
+  // Cache toolCallId -> toolName from tool-input-start events
+  // The AI SDK's tool-input-delta events don't include toolName, so we need to track it
+  const toolNameCache = new Map<string, string>();
+
   return Stream.fromAsyncIterable(
     result.fullStream,
     (error) => new Error(String(error)),
   ).pipe(
     Stream.map((chunk: TextStreamPart<TOOLS>) => {
+      // Log all AI SDK events for debugging
+      logToOutput(`[streamFromAI] RAW chunk.type: ${chunk.type}`);
+
       // Map AI SDK chunk types to our event types using Match
       // TextStreamPart is a discriminated union with 'type' as the discriminant
       // Based on AI SDK types:
@@ -105,30 +113,43 @@ export function streamFromAI<TOOLS extends ToolSet>(
         }),
         Match.when("tool-input-start", () => {
           // Handle streaming tool call start event
+          // Runtime uses 'id' instead of 'toolCallId' (mismatch with TypeScript types)
           const streamingStart = chunk as unknown as {
             type: "tool-input-start";
-            toolCallId: string;
+            id: string; // Runtime property name
             toolName: string;
           };
+          // Cache the toolName for later delta events (which don't include toolName)
+          toolNameCache.set(streamingStart.id, streamingStart.toolName);
+          logToOutput(
+            `[streamFromAI] Cached toolName: toolCallId=${streamingStart.id}, toolName=${streamingStart.toolName}`,
+          );
           return {
             type: "tool-call-streaming-start" as const,
             toolName: streamingStart.toolName,
-            toolCallId: streamingStart.toolCallId,
+            toolCallId: streamingStart.id,
           } satisfies AgentStreamEvent;
         }),
         Match.when("tool-input-delta", () => {
           // Handle streaming tool call argument deltas
+          // Note: tool-input-delta events from AI SDK do NOT include toolName
+          // We must look it up from the cache populated by tool-input-start events
+          // Runtime uses 'id' and 'delta' instead of 'toolCallId' and 'inputTextDelta' (mismatch with TypeScript types)
           const delta = chunk as unknown as {
             type: "tool-input-delta";
-            toolCallId: string;
-            toolName: string;
-            argsTextDelta: string;
+            id: string; // Runtime property name (not toolCallId)
+            delta: string; // Runtime property name (not inputTextDelta)
           };
+          // Look up the cached toolName from the corresponding tool-input-start event
+          const toolName = toolNameCache.get(delta.id);
+          logToOutput(
+            `[streamFromAI] tool-input-delta: toolCallId=${delta.id}, toolName=${toolName ?? "undefined (not cached)"}`,
+          );
           return {
             type: "tool-call-delta" as const,
-            toolName: delta.toolName,
-            toolCallId: delta.toolCallId,
-            argsTextDelta: delta.argsTextDelta,
+            toolName, // Now properly set from cache (or undefined if not cached yet)
+            toolCallId: delta.id,
+            inputTextDelta: delta.delta,
           } satisfies AgentStreamEvent;
         }),
         Match.orElse(() => ({
@@ -137,7 +158,11 @@ export function streamFromAI<TOOLS extends ToolSet>(
         })),
       );
     }),
-    // Filter out empty text-delta events
+    // Log transformed event type and filter empty text-delta events
+    Stream.map((event) => {
+      logToOutput(`[streamFromAI] TRANSFORMED event.type: ${event.type}`);
+      return event;
+    }),
     Stream.filter((event) => !(event.type === "text-delta" && !event.content)),
   );
 }

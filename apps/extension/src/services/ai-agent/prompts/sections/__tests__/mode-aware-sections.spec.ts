@@ -81,6 +81,46 @@ describe("Mode-Aware Prompt Sections", () => {
       expect(content).toContain("LIMITED CONTEXT GATHERING");
       expect(content).toContain("if absolutely necessary");
     });
+
+    it("should include planFilePath in act mode when provided", async () => {
+      const config: BuildConfig = {
+        workspaceRoot: "/test/workspace",
+        mode: "act" as const,
+        planFilePath: ".clive/plans/test-plan-12345.md",
+      };
+
+      const content = await Effect.runPromise(workflow(config));
+
+      expect(content).toContain("**Plan file available**");
+      expect(content).toContain(".clive/plans/test-plan-12345.md");
+      expect(content).toContain("Read the approved test plan");
+    });
+
+    it("should not include planFilePath section in act mode when not provided", async () => {
+      const config: BuildConfig = {
+        workspaceRoot: "/test/workspace",
+        mode: "act" as const,
+      };
+
+      const content = await Effect.runPromise(workflow(config));
+
+      expect(content).not.toContain("**Plan file available**");
+      expect(content).not.toContain("Read the approved test plan");
+    });
+
+    it("should not include planFilePath in plan mode even when provided", async () => {
+      const config: BuildConfig = {
+        workspaceRoot: "/test/workspace",
+        mode: "plan" as const,
+        planFilePath: ".clive/plans/test-plan-12345.md",
+      };
+
+      const content = await Effect.runPromise(workflow(config));
+
+      expect(content).toContain("You are in planning mode");
+      expect(content).not.toContain("**Plan file available**");
+      expect(content).not.toContain(".clive/plans/test-plan-12345.md");
+    });
   });
 
   describe("Task Instructions Section", () => {

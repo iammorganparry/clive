@@ -8,6 +8,7 @@ import { Effect, Runtime, Layer } from "effect";
 import { ConfigService } from "./services/config-service.js";
 import { createSecretStorageLayer } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
+import { setGlobalOutputChannel } from "./utils/logger.js";
 import { Commands } from "./constants.js";
 import {
   PlanCodeLensProvider,
@@ -39,6 +40,7 @@ const commandCenter = new CommandCenter();
 
 // Create output channel for logging
 const outputChannel = vscode.window.createOutputChannel("Clive");
+setGlobalOutputChannel(outputChannel);
 
 /**
  * Extension exports for testing purposes

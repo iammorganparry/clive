@@ -5,11 +5,19 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  define: {
+    __DEV__: "true",
+  },
   test: {
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.spec.ts", "src/**/*.spec.tsx", "src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: [
+      "src/**/*.spec.ts",
+      "src/**/*.spec.tsx",
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+    ],
     exclude: ["node_modules", "dist", "out", "src/test/**"],
   },
   resolve: {

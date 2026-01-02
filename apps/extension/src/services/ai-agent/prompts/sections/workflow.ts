@@ -45,6 +45,7 @@ You are in execution mode with an approved test plan. Your focus is implementing
   - Use discoveredPatterns (mock factory paths, test patterns)
   - Follow testStrategy for externalDependencies (sandbox, mock, skip)
   - Do NOT rediscover what was already found in planning
+${config.planFilePath ? `  - **Plan file available**: Read the approved test plan at \`${config.planFilePath}\` for full context if needed` : ""}
 
 **NATURAL CONVERSATION**:
   - If the user asks a question or makes a comment, respond naturally and helpfully
