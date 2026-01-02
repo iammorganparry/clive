@@ -35,7 +35,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { testSuiteQueue } = actor.getSnapshot().context;
       expect(testSuiteQueue).toHaveLength(2);
@@ -61,7 +64,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { testSuiteQueue } = actor.getSnapshot().context;
       expect(testSuiteQueue[0].status).toBe("in_progress");
@@ -92,7 +98,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { testSuiteQueue } = actor.getSnapshot().context;
       expect(testSuiteQueue[1].status).toBe("pending");
@@ -110,7 +119,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { currentSuiteId } = actor.getSnapshot().context;
       expect(currentSuiteId).toBe("suite-abc-123");
@@ -130,7 +142,10 @@ describe("changeset-chat-machine queue processing", () => {
       // Verify initial mode is plan
       expect(actor.getSnapshot().context.agentMode).toBe("plan");
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { agentMode } = actor.getSnapshot().context;
       expect(agentMode).toBe("act");
@@ -154,7 +169,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { hasPendingPlanApproval } = actor.getSnapshot().context;
       expect(hasPendingPlanApproval).toBe(false);
@@ -226,7 +244,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       const { testSuiteQueue } = actor.getSnapshot().context;
       const inProgressCount = testSuiteQueue.filter(
@@ -253,7 +274,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Try to start next suite while first is still in progress
       actor.send({ type: "START_NEXT_SUITE" });
@@ -285,15 +309,18 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
-      
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
       // Transition to streaming state first
       actor.send({
         type: "RESPONSE_CHUNK",
         chunkType: "message",
         content: "Starting...",
       });
-      
+
       // Mark first suite as completed
       actor.send({
         type: "MARK_SUITE_COMPLETED",
@@ -331,7 +358,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Simulate test execution - transition to streaming state
       actor.send({
@@ -361,7 +391,8 @@ describe("changeset-chat-machine queue processing", () => {
           toolCallId: "test-call-1",
           updates: {
             output: {
-              stdout: "✓ test1 (100ms)\n✓ test2 (200ms)\n\nTest Files  1 passed (1)\nTests  2 passed (2)",
+              stdout:
+                "✓ test1 (100ms)\n✓ test2 (200ms)\n\nTest Files  1 passed (1)\nTests  2 passed (2)",
               exitCode: 0,
               wasTruncated: false,
               command: "vitest run test1.spec.ts",
@@ -380,7 +411,7 @@ describe("changeset-chat-machine queue processing", () => {
       actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
-      
+
       // First suite should be completed, second should be in_progress
       expect(testSuiteQueue[0].status).toBe("completed");
       expect(testSuiteQueue[1].status).toBe("in_progress");
@@ -398,7 +429,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming state
       actor.send({
@@ -444,7 +478,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming
       actor.send({
@@ -500,7 +537,7 @@ describe("changeset-chat-machine queue processing", () => {
       actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
-      
+
       // First suite should be marked as failed
       expect(testSuiteQueue[0].status).toBe("failed");
       // Should still advance to next suite
@@ -528,7 +565,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming state
       actor.send({
@@ -582,7 +622,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming state
       actor.send({
@@ -628,7 +671,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Set all suites to completed
       actor.send({
@@ -670,7 +716,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Simulate streaming state
       actor.send({
@@ -684,7 +733,7 @@ describe("changeset-chat-machine queue processing", () => {
       actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const { currentSuiteId, testSuiteQueue } = actor.getSnapshot().context;
-      
+
       // Should have transitioned to analyzing and started next suite
       expect(actor.getSnapshot().matches("analyzing")).toBe(true);
       expect(currentSuiteId).toBe("suite-2");
@@ -703,7 +752,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Simulate streaming
       actor.send({
@@ -725,10 +777,175 @@ describe("changeset-chat-machine queue processing", () => {
       actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: true });
 
       const snapshot = actor.getSnapshot();
-      
+
       // Should transition to idle since no pending suites
       expect(snapshot.matches("idle")).toBe(true);
       expect(snapshot.context.currentSuiteId).toBeNull();
+    });
+
+    it("should mark suite as completed when RESPONSE_COMPLETE fires with taskCompleted: false", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests 1",
+          testType: "unit",
+          targetFilePath: "test1.ts",
+          sourceFiles: [],
+        },
+        {
+          id: "suite-2",
+          name: "Unit Tests 2",
+          testType: "unit",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Simulate streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Working on tests...",
+      });
+
+      // Verify suite-1 is in_progress
+      expect(actor.getSnapshot().context.testSuiteQueue[0].status).toBe(
+        "in_progress",
+      );
+      expect(actor.getSnapshot().context.currentSuiteId).toBe("suite-1");
+
+      // Complete response with taskCompleted: false (agent still working)
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: false });
+
+      const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
+
+      // Suite should be marked as completed (stream ended = work done)
+      expect(testSuiteQueue[0].status).toBe("completed");
+      // Should NOT advance to next suite (taskCompleted: false)
+      expect(currentSuiteId).toBeNull();
+      expect(testSuiteQueue[1].status).toBe("pending");
+      // Should transition to idle (not analyzing) since we're not advancing
+      expect(actor.getSnapshot().matches("idle")).toBe(true);
+    });
+
+    it("should NOT advance to next suite when taskCompleted is false", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests 1",
+          testType: "unit",
+          targetFilePath: "test1.ts",
+          sourceFiles: [],
+        },
+        {
+          id: "suite-2",
+          name: "Unit Tests 2",
+          testType: "unit",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+        },
+        {
+          id: "suite-3",
+          name: "Unit Tests 3",
+          testType: "unit",
+          targetFilePath: "test3.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Simulate streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Working...",
+      });
+
+      // Complete with taskCompleted: false
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: false });
+
+      const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
+
+      // First suite completed, but no advancement
+      expect(testSuiteQueue[0].status).toBe("completed");
+      expect(testSuiteQueue[1].status).toBe("pending");
+      expect(testSuiteQueue[2].status).toBe("pending");
+      expect(currentSuiteId).toBeNull();
+
+      // Should be idle, not analyzing (no auto-advancement)
+      expect(actor.getSnapshot().matches("idle")).toBe(true);
+    });
+
+    it("should properly cleanup stale in_progress items when RESPONSE_COMPLETE fires", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests 1",
+          testType: "unit",
+          targetFilePath: "test1.ts",
+          sourceFiles: [],
+        },
+        {
+          id: "suite-2",
+          name: "Unit Tests 2",
+          testType: "unit",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Simulate streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Working...",
+      });
+
+      // Manually create stale state: suite-1 in_progress, suite-2 also in_progress (bug scenario)
+      actor.send({
+        type: "DEV_INJECT_STATE",
+        updates: {
+          testSuiteQueue: [
+            { ...suites[0], status: "in_progress" as const },
+            { ...suites[1], status: "in_progress" as const },
+          ],
+          currentSuiteId: "suite-1",
+        },
+      });
+
+      // Verify stale state exists
+      expect(actor.getSnapshot().context.testSuiteQueue[0].status).toBe(
+        "in_progress",
+      );
+      expect(actor.getSnapshot().context.testSuiteQueue[1].status).toBe(
+        "in_progress",
+      );
+
+      // Complete response - should clean up current suite
+      actor.send({ type: "RESPONSE_COMPLETE", taskCompleted: false });
+
+      const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
+
+      // Current suite (suite-1) should be completed
+      expect(testSuiteQueue[0].status).toBe("completed");
+      // Suite-2 should remain in_progress (it's stale, but we only clean up currentSuiteId)
+      // This is expected - the fix prevents NEW stale items, but doesn't retroactively fix existing ones
+      expect(testSuiteQueue[1].status).toBe("in_progress");
+      expect(currentSuiteId).toBeNull();
     });
   });
 
@@ -758,7 +975,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming state (SKIP_SUITE accepted in streaming)
       actor.send({
@@ -771,12 +991,12 @@ describe("changeset-chat-machine queue processing", () => {
       actor.send({ type: "SKIP_SUITE", suiteId: "suite-2" });
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
-      
+
       // Suite-2 should be skipped
       expect(testSuiteQueue[1].status).toBe("skipped");
-      
+
       // The skipSuite action advances to next pending when a suite is skipped
-      // Since suite-1 was in_progress and suite-2 was skipped, 
+      // Since suite-1 was in_progress and suite-2 was skipped,
       // it finds suite-3 as next pending and advances to it
       expect(testSuiteQueue[2].status).toBe("in_progress");
       expect(currentSuiteId).toBe("suite-3");
@@ -800,7 +1020,10 @@ describe("changeset-chat-machine queue processing", () => {
         },
       ];
 
-      actor.send({ type: "APPROVE_PLAN", suites: suites as TestSuiteQueueItem[] });
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
 
       // Transition to streaming state
       actor.send({

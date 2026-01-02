@@ -19,6 +19,7 @@ import { taskInstructions } from "./task-instructions.js";
 import { testEvaluation } from "./test-evaluation.js";
 import { testExecution } from "./test-execution.js";
 import { testUpdateDetection } from "./test-update-detection.js";
+import { regressionDetection } from "./regression-detection.js";
 import { verification } from "./verification.js";
 import { workflow } from "./workflow.js";
 import { workspaceContext } from "./workspace-context.js";
@@ -33,6 +34,7 @@ export const sectionRegistry: SectionRegistry = {
   [SectionId.PatternDiscovery]: patternDiscovery,
   [SectionId.IterativeTesting]: iterativeTesting,
   [SectionId.TestUpdateDetection]: testUpdateDetection,
+  [SectionId.RegressionDetection]: regressionDetection,
   [SectionId.TaskInstructions]: taskInstructions,
   [SectionId.AgentRules]: agentRules,
   [SectionId.CompletionSignal]: completionSignal,
@@ -50,7 +52,7 @@ export const sectionRegistry: SectionRegistry = {
 /**
  * Default order of sections in the test agent prompt
  */
-export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
+export const testAgentSectionOrder: (typeof SectionId)[keyof typeof SectionId][] =
   [
     SectionId.AgentRole,
     SectionId.KnowledgeBase,
@@ -58,6 +60,7 @@ export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
     SectionId.PatternDiscovery,
     SectionId.IterativeTesting,
     SectionId.TestUpdateDetection,
+    SectionId.RegressionDetection,
     SectionId.TaskInstructions,
     SectionId.AgentRules,
     SectionId.CompletionSignal,
@@ -71,4 +74,3 @@ export const testAgentSectionOrder: typeof SectionId[keyof typeof SectionId][] =
     SectionId.Verification,
     SectionId.FileOperations,
   ];
-

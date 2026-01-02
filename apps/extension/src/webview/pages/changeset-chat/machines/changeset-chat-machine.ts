@@ -1129,8 +1129,8 @@ export const changesetChatMachine = setup({
       isReasoningStreaming: () => false,
     }),
     completeSuiteOnStreamEnd: assign(({ context, event }) => {
-      // Only complete if agent signaled task completion
-      if (event.type !== "RESPONSE_COMPLETE" || !event.taskCompleted) {
+      // Always mark suite complete when stream ends (work on that suite is done)
+      if (event.type !== "RESPONSE_COMPLETE") {
         return {};
       }
 
@@ -1327,7 +1327,11 @@ export const changesetChatMachine = setup({
         },
         RESPONSE_COMPLETE: [
           {
-            guard: ({ context }) => {
+            guard: ({ context, event }) => {
+              // Only advance to next suite if agent explicitly signaled completion
+              if (event.type !== "RESPONSE_COMPLETE" || !event.taskCompleted) {
+                return false;
+              }
               // If in act mode with a current suite that will be completed, check for pending suites
               if (context.agentMode === "act" && context.currentSuiteId) {
                 const hasPendingSuites = context.testSuiteQueue.some(

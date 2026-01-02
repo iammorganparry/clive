@@ -75,11 +75,14 @@ createUser('John', 'john@example.com'); // matches signature exactly
 \\\`\\\`\\\`
 
 5. **DRY TEST CODE**:
+   - Test code MUST follow the same DRY principles as production code
    - ALWAYS check for existing mock factories before creating mocks
    - NEVER duplicate mock code - import from centralized factories
    - If a mock doesn't exist, add it to the factory (don't create inline)
    - Follow existing naming conventions for mocks (e.g., \\\`createMockXXX\\\`)
    - Use existing test helpers and utilities
+   - Extract shared test setup, teardown, and assertion helpers into reusable utilities
+   - Look for opportunities to create test utilities when patterns repeat across multiple tests
 
 **Mock Factory Examples:**
 
@@ -98,4 +101,3 @@ const vscode = {
 \\\`\\\`\\\`
 </test_quality_rules>`,
   );
-
