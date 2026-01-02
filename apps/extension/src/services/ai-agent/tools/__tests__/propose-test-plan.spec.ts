@@ -198,6 +198,137 @@ describe("proposeTestPlanTool", () => {
       );
       expect(result.suites[0].sourceFiles).toEqual(["src/file.ts"]);
     });
+
+    it("should include regressionAnalysis when provided", async () => {
+      const tool = createProposeTestPlanTool();
+
+      const input: ProposeTestPlanInput = {
+        name: "Test Plan with Regression Analysis",
+        overview: "Test plan with regression detection",
+        suites: [
+          {
+            id: "unit-tests",
+            name: "Unit Tests",
+            testType: "unit",
+            targetFilePath: "src/__tests__/unit.test.ts",
+            sourceFiles: ["src/file.ts"],
+          },
+        ],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "vitest",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        planContent: "# Plan",
+        regressionAnalysis: {
+          relatedTestFiles: [
+            "src/__tests__/file.test.ts",
+            "src/__tests__/related.test.ts",
+          ],
+          testsRun: 10,
+          passed: 8,
+          failed: 2,
+          skipped: 0,
+          failures: [
+            {
+              testFile: "src/__tests__/file.test.ts",
+              testName: "should handle new parameter",
+              errorMessage: "Expected 1 arguments, but got 0",
+              classification: "expected",
+              relatedChangesetFile: "src/file.ts",
+              suggestedAction: "update_test",
+            },
+            {
+              testFile: "src/__tests__/related.test.ts",
+              testName: "should not break unrelated test",
+              errorMessage: "Unexpected error",
+              classification: "unexpected",
+              suggestedAction: "investigate",
+            },
+          ],
+          summary: "2 tests failed: 1 expected regression, 1 unexpected",
+        },
+      };
+
+      const result = await executeTool(tool, input, {
+        success: false,
+        planId: "",
+        name: "",
+        overview: "",
+        suites: [] as ProposeTestPlanOutput["suites"],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        message: "No result returned",
+        regressionAnalysis: undefined,
+      } satisfies ProposeTestPlanOutput);
+
+      expect(result.success).toBe(true);
+      expect(result.regressionAnalysis).toBeDefined();
+      const regressionAnalysis = (result as ProposeTestPlanOutput)
+        .regressionAnalysis;
+      if (!regressionAnalysis) {
+        throw new Error("regressionAnalysis should be defined");
+      }
+      expect(regressionAnalysis.relatedTestFiles).toEqual([
+        "src/__tests__/file.test.ts",
+        "src/__tests__/related.test.ts",
+      ]);
+      expect(regressionAnalysis.testsRun).toBe(10);
+      expect(regressionAnalysis.passed).toBe(8);
+      expect(regressionAnalysis.failed).toBe(2);
+      expect(regressionAnalysis.failures).toHaveLength(2);
+      expect(regressionAnalysis.failures[0].classification).toBe("expected");
+      expect(regressionAnalysis.failures[1].classification).toBe("unexpected");
+    });
+
+    it("should not include regressionAnalysis when not provided", async () => {
+      const tool = createProposeTestPlanTool();
+
+      const input: ProposeTestPlanInput = {
+        name: "Test Plan without Regression Analysis",
+        overview: "Test plan",
+        suites: [
+          {
+            id: "unit-tests",
+            name: "Unit Tests",
+            testType: "unit",
+            targetFilePath: "src/__tests__/unit.test.ts",
+            sourceFiles: ["src/file.ts"],
+          },
+        ],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "vitest",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        planContent: "# Plan",
+      };
+
+      const result = await executeTool(tool, input, {
+        success: false,
+        planId: "",
+        name: "",
+        overview: "",
+        suites: [] as ProposeTestPlanOutput["suites"],
+        mockDependencies: [],
+        discoveredPatterns: {
+          testFramework: "",
+          mockFactoryPaths: [],
+          testPatterns: [],
+        },
+        message: "No result returned",
+        regressionAnalysis: undefined,
+      } satisfies ProposeTestPlanOutput);
+
+      expect(result.success).toBe(true);
+      expect(result.regressionAnalysis).toBeUndefined();
+    });
   });
 
   describe("Plan File Streaming", () => {
@@ -503,26 +634,38 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Wait for initialization
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks for rename operation
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("# Test Plan Content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("# Test Plan Content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
         });
 
         // Execute rename
-        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+        const result = yield* renamePlanFileEffect(
+          oldPath,
+          newPath,
+          toolCallId,
+        );
 
         // Assert
         yield* Effect.sync(() => {
@@ -562,14 +705,20 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mock to fail on readFile
         yield* Effect.sync(() => {
-          const mockReadFile = vi.fn().mockRejectedValue(new Error("File not found"));
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
+          const mockReadFile = vi
+            .fn()
+            .mockRejectedValue(new Error("File not found"));
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
         });
 
         // Execute rename - should fail
@@ -594,15 +743,21 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks - readFile succeeds, writeFile fails
         yield* Effect.sync(() => {
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
           mockFs.writeFile.mockRejectedValue(new Error("Permission denied"));
         });
@@ -629,22 +784,32 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks - readFile and writeFile succeed, delete fails
         yield* Effect.sync(() => {
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
-          const mockDelete = vi.fn().mockRejectedValue(new Error("Cannot delete"));
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi
+            .fn()
+            .mockRejectedValue(new Error("Cannot delete"));
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
           mockFs.writeFile.mockResolvedValue(undefined);
         });
@@ -671,28 +836,40 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("# Test Content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("# Test Content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockResolvedValue(undefined);
         });
 
         // Execute rename
-        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+        const result = yield* renamePlanFileEffect(
+          oldPath,
+          newPath,
+          toolCallId,
+        );
 
         // Assert - document and editor should be updated
         yield* Effect.sync(() => {
@@ -710,7 +887,9 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/subfolder/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks - stat fails for parent directory (doesn't exist)
         yield* Effect.sync(() => {
@@ -723,25 +902,35 @@ describe("proposeTestPlanTool", () => {
             }
             return Promise.resolve({ type: 1 } as vscode.FileStat);
           });
-          
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.createDirectory.mockResolvedValue(undefined);
           mockFs.writeFile.mockResolvedValue(undefined);
         });
 
         // Execute rename
-        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+        const result = yield* renamePlanFileEffect(
+          oldPath,
+          newPath,
+          toolCallId,
+        );
 
         // Assert - createDirectory should be called for parent directory
         yield* Effect.sync(() => {
@@ -759,28 +948,40 @@ describe("proposeTestPlanTool", () => {
         const newPath = "/absolute/path/new.md";
 
         // Initialize streaming state with absolute path
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockResolvedValue(undefined);
         });
 
         // Execute rename
-        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+        const result = yield* renamePlanFileEffect(
+          oldPath,
+          newPath,
+          toolCallId,
+        );
 
         // Assert
         yield* Effect.sync(() => {
@@ -799,25 +1000,33 @@ describe("proposeTestPlanTool", () => {
         const testContent = "# Test Plan\n\nThis is the plan content.";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks with specific content
         const capturedContent: Buffer[] = [];
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from(testContent));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from(testContent));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
-          mockFs.writeFile.mockImplementation((uri, content) => {
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
+          mockFs.writeFile.mockImplementation((_uri, content) => {
             capturedContent.push(content as Buffer);
             return Promise.resolve();
           });
@@ -829,7 +1038,8 @@ describe("proposeTestPlanTool", () => {
         // Assert - content should be preserved
         yield* Effect.sync(() => {
           expect(capturedContent.length).toBeGreaterThan(0);
-          const writtenContent = capturedContent[capturedContent.length - 1].toString();
+          const writtenContent =
+            capturedContent[capturedContent.length - 1].toString();
           expect(writtenContent).toBe(testContent);
         });
       }),
@@ -842,27 +1052,35 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks
         const deleteCallArgs: unknown[] = [];
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockImplementation((uri) => {
             deleteCallArgs.push(uri);
             return Promise.resolve();
           });
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockResolvedValue(undefined);
         });
 
@@ -884,28 +1102,39 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks - file operations succeed, but editor opening fails
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockResolvedValue(undefined);
-          
+
           // Mock openTextDocument to fail
-          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
-            .mockRejectedValue(new Error("Cannot open document"));
+          (
+            vscode.workspace.openTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mockRejectedValue(new Error("Cannot open document"));
         });
 
         // Execute rename - should fail
@@ -930,7 +1159,9 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-final.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Track which URIs were accessed
         const readUris: string[] = [];
@@ -938,22 +1169,26 @@ describe("proposeTestPlanTool", () => {
 
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          
+
           const mockReadFile = vi.fn().mockImplementation((uri) => {
             readUris.push(uri.toString());
             return Promise.resolve(Buffer.from("content"));
           });
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockImplementation((uri) => {
             writeUris.push(uri.toString());
             return Promise.resolve();
@@ -967,7 +1202,7 @@ describe("proposeTestPlanTool", () => {
         yield* Effect.sync(() => {
           expect(readUris.length).toBeGreaterThan(0);
           expect(readUris[0]).toContain("placeholder");
-          expect(writeUris.some(uri => uri.includes("final"))).toBe(true);
+          expect(writeUris.some((uri) => uri.includes("final"))).toBe(true);
         });
       }),
     );
@@ -979,24 +1214,34 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/newfolder/test-plan.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks - directory creation fails
         yield* Effect.sync(() => {
           mockFs.stat.mockRejectedValue(new Error("Directory not found"));
-          mockFs.createDirectory.mockRejectedValue(new Error("Cannot create directory"));
-          
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          mockFs.createDirectory.mockRejectedValue(
+            new Error("Cannot create directory"),
+          );
+
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
         });
 
         // Execute rename - should fail
@@ -1021,31 +1266,45 @@ describe("proposeTestPlanTool", () => {
         const newPath = ".clive/plans/test-plan-renamed.md";
 
         // Initialize streaming state
-        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+        yield* Effect.promise(() =>
+          initializePlanStreamingWrite(oldPath, toolCallId),
+        );
 
         // Setup mocks
         yield* Effect.sync(() => {
           mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
-          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockReadFile = vi
+            .fn()
+            .mockResolvedValue(Buffer.from("content"));
           const mockDelete = vi.fn().mockResolvedValue(undefined);
-          
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).readFile = mockReadFile;
-          (vscode.workspace.fs as unknown as {
-            readFile: ReturnType<typeof vi.fn>;
-            delete: ReturnType<typeof vi.fn>;
-          }).delete = mockDelete;
-          
+
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).readFile = mockReadFile;
+          (
+            vscode.workspace.fs as unknown as {
+              readFile: ReturnType<typeof vi.fn>;
+              delete: ReturnType<typeof vi.fn>;
+            }
+          ).delete = mockDelete;
+
           mockFs.writeFile.mockResolvedValue(undefined);
-          
+
           // Track calls to openTextDocument and showTextDocument
           vi.clearAllMocks();
-          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
-            .mockResolvedValue(mockDocument);
-          (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>)
-            .mockResolvedValue(mockEditor);
+          (
+            vscode.workspace.openTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mockResolvedValue(mockDocument);
+          (
+            vscode.window.showTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mockResolvedValue(mockEditor);
         });
 
         // Execute rename
@@ -1053,10 +1312,18 @@ describe("proposeTestPlanTool", () => {
 
         // Assert - should open and show new document
         yield* Effect.sync(() => {
-          const openDocumentCalls = (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mock.calls;
+          const openDocumentCalls = (
+            vscode.workspace.openTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mock.calls;
           expect(openDocumentCalls.length).toBeGreaterThan(0);
-          
-          const showDocumentCalls = (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>).mock.calls;
+
+          const showDocumentCalls = (
+            vscode.window.showTextDocument as unknown as ReturnType<
+              typeof vi.fn
+            >
+          ).mock.calls;
           expect(showDocumentCalls.length).toBeGreaterThan(0);
         });
       }),

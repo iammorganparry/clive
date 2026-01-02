@@ -145,6 +145,40 @@ const ProposeTestPlanInputSchema = z.object({
         "- Implementation Plan with numbered sections\n" +
         "- Changes Summary footer",
     ),
+  regressionAnalysis: z
+    .object({
+      relatedTestFiles: z
+        .array(z.string())
+        .describe("Test files related to the changeset that were executed"),
+      testsRun: z.number().describe("Total tests executed"),
+      passed: z.number().describe("Number of passing tests"),
+      failed: z.number().describe("Number of failing tests"),
+      skipped: z.number().optional().describe("Number of skipped tests"),
+      failures: z
+        .array(
+          z.object({
+            testFile: z.string().describe("Path to failing test file"),
+            testName: z.string().describe("Name of failing test case"),
+            errorMessage: z.string().describe("Error message from failure"),
+            classification: z
+              .enum(["expected", "unexpected"])
+              .describe("Whether failure is expected due to changeset"),
+            relatedChangesetFile: z
+              .string()
+              .optional()
+              .describe("Which changeset file caused expected regression"),
+            suggestedAction: z
+              .enum(["update_test", "fix_code", "investigate"])
+              .describe("Recommended action to resolve"),
+          }),
+        )
+        .describe("Details of each failing test"),
+      summary: z.string().describe("Brief summary of regression status"),
+    })
+    .optional()
+    .describe(
+      "Results of running related tests before planning. Only included if user opts in and related tests exist.",
+    ),
 });
 
 export type ProposeTestPlanInput = z.infer<typeof ProposeTestPlanInputSchema>;
@@ -176,6 +210,22 @@ export interface ProposeTestPlanOutput {
     testFramework: string;
     mockFactoryPaths: string[];
     testPatterns: string[];
+  };
+  regressionAnalysis?: {
+    relatedTestFiles: string[];
+    testsRun: number;
+    passed: number;
+    failed: number;
+    skipped?: number;
+    failures: Array<{
+      testFile: string;
+      testName: string;
+      errorMessage: string;
+      classification: "expected" | "unexpected";
+      relatedChangesetFile?: string;
+      suggestedAction: "update_test" | "fix_code" | "investigate";
+    }>;
+    summary: string;
   };
   message: string;
   filePath?: string;
@@ -647,6 +697,7 @@ const createOutputResult = (
   mockDependencies: input.mockDependencies,
   externalDependencies: input.externalDependencies,
   discoveredPatterns: input.discoveredPatterns,
+  regressionAnalysis: input.regressionAnalysis,
   message: approved
     ? `Test plan proposal created: ${input.name}`
     : `Test plan proposal rejected: ${input.name}`,

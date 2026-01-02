@@ -71,10 +71,13 @@ describe("Plan Streaming Integration", () => {
           );
 
           // Verify file-created event was emitted
-          const fileCreatedEvent = events.find(
+          // Find the LAST file-created event (after rename to descriptive filename)
+          const fileCreatedEvents = events.filter(
             (e) => e.status === "file-created",
           );
-          expect(fileCreatedEvent).toBeDefined();
+          expect(fileCreatedEvents.length).toBeGreaterThan(0);
+          const fileCreatedEvent =
+            fileCreatedEvents[fileCreatedEvents.length - 1];
 
           const parsed = fileCreatedEvent
             ? JSON.parse(fileCreatedEvent.message)
@@ -131,10 +134,8 @@ describe("Plan Streaming Integration", () => {
             : null;
           expect(parsed?.type).toBe("file-created");
           expect(parsed?.toolCallId).toBe(toolCallId);
-          // Fallback format: {sanitized-name}-{timestamp}.md
-          expect(parsed?.filePath).toMatch(
-            /^\.clive\/plans\/test-plan-for-auth-\d+\.md$/,
-          );
+          // Fallback format: {sanitized-name}.md (no timestamp when suites info not available)
+          expect(parsed?.filePath).toBe(".clive/plans/test-plan-for-auth.md");
         }),
     );
 
@@ -308,10 +309,13 @@ describe("Plan Streaming Integration", () => {
           );
 
           // Verify file path is in .clive/plans/ with descriptive format
-          const fileCreatedEvent = events.find(
+          // Find the LAST file-created event (after rename to descriptive filename)
+          const fileCreatedEvents = events.filter(
             (e) => e.status === "file-created",
           );
-          expect(fileCreatedEvent).toBeDefined();
+          expect(fileCreatedEvents.length).toBeGreaterThan(0);
+          const fileCreatedEvent =
+            fileCreatedEvents[fileCreatedEvents.length - 1];
 
           const parsed = fileCreatedEvent
             ? JSON.parse(fileCreatedEvent.message)
@@ -354,12 +358,14 @@ describe("Plan Streaming Integration", () => {
             correlationId,
           );
 
-          const event1 = events.find(
+          // Find the LAST file-created event for this toolCallId (after rename)
+          const events1 = events.filter(
             (e) =>
               e.status === "file-created" &&
               JSON.parse(e.message).toolCallId === toolCallId1,
           );
-          expect(event1).toBeDefined();
+          expect(events1.length).toBeGreaterThan(0);
+          const event1 = events1[events1.length - 1];
           const parsed1 = event1 ? JSON.parse(event1.message) : null;
           expect(parsed1?.filePath).toBe(
             ".clive/plans/auth-tests-unit-1-suite.md",
@@ -385,12 +391,14 @@ describe("Plan Streaming Integration", () => {
             correlationId,
           );
 
-          const event2 = events.find(
+          // Find the LAST file-created event for this toolCallId (after rename)
+          const events2 = events.filter(
             (e) =>
               e.status === "file-created" &&
               JSON.parse(e.message).toolCallId === toolCallId2,
           );
-          expect(event2).toBeDefined();
+          expect(events2.length).toBeGreaterThan(0);
+          const event2 = events2[events2.length - 1];
           const parsed2 = event2 ? JSON.parse(event2.message) : null;
           expect(parsed2?.filePath).toBe(
             ".clive/plans/api-tests-integration-3-suites.md",
@@ -416,12 +424,14 @@ describe("Plan Streaming Integration", () => {
             correlationId,
           );
 
-          const event3 = events.find(
+          // Find the LAST file-created event for this toolCallId (after rename)
+          const events3 = events.filter(
             (e) =>
               e.status === "file-created" &&
               JSON.parse(e.message).toolCallId === toolCallId3,
           );
-          expect(event3).toBeDefined();
+          expect(events3.length).toBeGreaterThan(0);
+          const event3 = events3[events3.length - 1];
           const parsed3 = event3 ? JSON.parse(event3.message) : null;
           expect(parsed3?.filePath).toBe(
             ".clive/plans/comprehensive-tests-mixed-2-suites.md",
@@ -504,8 +514,9 @@ describe("Plan Streaming Integration", () => {
           expect(parsed?.content).toContain("Content here");
           expect(parsed?.isComplete).toBe(false);
           // filePath should still be present (tracked before initialization attempt)
+          // When initialization fails, it uses the placeholder path (sanitized name)
           expect(parsed?.filePath).toBeDefined();
-          expect(parsed?.filePath).toContain(".clive/plans/test-plan-");
+          expect(parsed?.filePath).toBe(".clive/plans/failure-test-plan.md");
         }),
     );
   });

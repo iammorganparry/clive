@@ -199,7 +199,21 @@ export interface PlanStreamingMockOverrides {
   initializePlanStreamingWriteEffect?: () => Effect.Effect<void>;
   appendPlanStreamingContentEffect?: () => Effect.Effect<void>;
   finalizePlanStreamingWriteEffect?: () => Effect.Effect<string>;
+  renamePlanFileEffect?: (
+    oldPath: string,
+    newPath: string,
+    toolCallId: string,
+  ) => Effect.Effect<string>;
 }
+
+/**
+ * PlanStreamingError mock class
+ * Uses Data.TaggedError to match the real implementation
+ */
+export class PlanStreamingError extends Data.TaggedError("PlanStreamingError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
 /**
  * Create mock plan streaming functions for proposeTestPlan tool
@@ -208,6 +222,7 @@ export function createMockPlanStreaming(
   overrides?: PlanStreamingMockOverrides,
 ) {
   return {
+    PlanStreamingError,
     initializePlanStreamingWriteEffect:
       overrides?.initializePlanStreamingWriteEffect ?? vi.fn(() => Effect.void),
     appendPlanStreamingContentEffect:
@@ -215,6 +230,9 @@ export function createMockPlanStreaming(
     finalizePlanStreamingWriteEffect:
       overrides?.finalizePlanStreamingWriteEffect ??
       vi.fn(() => Effect.succeed(".clive/plans/test-plan.md")),
+    renamePlanFileEffect:
+      overrides?.renamePlanFileEffect ??
+      vi.fn((_oldPath: string, newPath: string) => Effect.succeed(newPath)),
   };
 }
 
