@@ -36,10 +36,23 @@ describe("RulesService", () => {
     mockVSCodeServiceLayer = layer;
     mockVscode = vsMock;
 
+    // Ensure mock workspace has a workspace folder for RulesService to work
+    // @ts-expect-error - mockVscode is a mock, so we can mutate it
+    mockVscode.workspace.workspaceFolders = [
+      {
+        uri: { fsPath: "/test/workspace", scheme: "file" } as vscode.Uri,
+        name: "workspace",
+        index: 0,
+      },
+    ] as vscode.WorkspaceFolder[];
+
     // Provide VSCodeService to RulesService
-    // This creates a layer that provides RulesService without requiring VSCodeService
-    testLayer = RulesService.Default.pipe(
-      Layer.provide(mockVSCodeServiceLayer),
+    // RulesService.Default requires VSCodeService.Default as a dependency
+    // The standard pattern: ServiceWithDependency.Default.pipe(Layer.provide(dependencyLayer))
+    // Merge both layers so both services are available
+    testLayer = Layer.mergeAll(
+      mockVSCodeServiceLayer,
+      RulesService.Default.pipe(Layer.provide(mockVSCodeServiceLayer)),
     );
   });
 

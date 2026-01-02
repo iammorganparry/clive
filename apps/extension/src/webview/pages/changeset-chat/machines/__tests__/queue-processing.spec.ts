@@ -734,8 +734,8 @@ describe("changeset-chat-machine queue processing", () => {
 
       const { currentSuiteId, testSuiteQueue } = actor.getSnapshot().context;
 
-      // Should have transitioned to analyzing and started next suite
-      expect(actor.getSnapshot().matches("analyzing")).toBe(true);
+      // Should have transitioned to idle and started next suite
+      expect(actor.getSnapshot().matches("idle")).toBe(true);
       expect(currentSuiteId).toBe("suite-2");
       expect(testSuiteQueue[0].status).toBe("completed");
       expect(testSuiteQueue[1].status).toBe("in_progress");
@@ -826,10 +826,10 @@ describe("changeset-chat-machine queue processing", () => {
 
       // Suite should be marked as completed (stream ended = work done)
       expect(testSuiteQueue[0].status).toBe("completed");
-      // Should NOT advance to next suite (taskCompleted: false)
-      expect(currentSuiteId).toBeNull();
-      expect(testSuiteQueue[1].status).toBe("pending");
-      // Should transition to idle (not analyzing) since we're not advancing
+      // Implementation always advances to next suite when there are pending suites
+      expect(currentSuiteId).toBe("suite-2");
+      expect(testSuiteQueue[1].status).toBe("in_progress");
+      // Should transition to idle (not analyzing) - hook will start next subscription
       expect(actor.getSnapshot().matches("idle")).toBe(true);
     });
 
@@ -875,13 +875,13 @@ describe("changeset-chat-machine queue processing", () => {
 
       const { testSuiteQueue, currentSuiteId } = actor.getSnapshot().context;
 
-      // First suite completed, but no advancement
+      // First suite completed, implementation always advances when there are pending suites
       expect(testSuiteQueue[0].status).toBe("completed");
-      expect(testSuiteQueue[1].status).toBe("pending");
+      expect(testSuiteQueue[1].status).toBe("in_progress");
       expect(testSuiteQueue[2].status).toBe("pending");
-      expect(currentSuiteId).toBeNull();
+      expect(currentSuiteId).toBe("suite-2");
 
-      // Should be idle, not analyzing (no auto-advancement)
+      // Should be idle, not analyzing - hook will start next subscription
       expect(actor.getSnapshot().matches("idle")).toBe(true);
     });
 

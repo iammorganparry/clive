@@ -365,7 +365,7 @@ replaced2
 
       expect(result.success).toBe(true);
       expect(result.message).toContain("pending user review");
-      expect(result.message).toContain("CodeLens");
+      expect(result.message).toContain("inline buttons");
     });
   });
 

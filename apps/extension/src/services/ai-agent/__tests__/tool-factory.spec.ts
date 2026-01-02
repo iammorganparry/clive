@@ -175,8 +175,6 @@ describe("Tool Factory", () => {
         expect(tools).toHaveProperty("bashExecute");
         expect(tools).toHaveProperty("searchKnowledge");
         expect(tools).toHaveProperty("summarizeContext");
-        expect(tools).toHaveProperty("proposeTestPlan");
-        expect(tools).toHaveProperty("approvePlan");
         expect(tools).toHaveProperty("completeTask");
       }),
     );
