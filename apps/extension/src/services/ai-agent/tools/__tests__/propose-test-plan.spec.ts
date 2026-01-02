@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, expect, vi, beforeEach } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import * as vscode from "vscode";
 import {
   createProposeTestPlanTool,
   initializePlanStreamingWrite,
   appendPlanStreamingContent,
   finalizePlanStreamingWrite,
+  renamePlanFileEffect,
 } from "../propose-test-plan";
 import type {
   ProposeTestPlanInput,
@@ -490,5 +493,573 @@ describe("proposeTestPlanTool", () => {
 
       expect(result.success).toBe(true);
     });
+  });
+
+  describe("Plan File Rename Effect", () => {
+    it.effect("should rename plan file successfully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Wait for initialization
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks for rename operation
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("# Test Plan Content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+        });
+
+        // Execute rename
+        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result).toBe(newPath);
+          expect(vscode.workspace.fs.readFile).toHaveBeenCalled();
+          expect(mockFs.writeFile).toHaveBeenCalled();
+          expect(vscode.workspace.fs.delete).toHaveBeenCalled();
+        });
+      }),
+    );
+
+    it.effect("should fail when streaming state not found", () =>
+      Effect.gen(function* () {
+        const toolCallId = "non-existent-id";
+        const oldPath = ".clive/plans/old.md";
+        const newPath = ".clive/plans/new.md";
+
+        // Execute rename without initialization
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert - should fail
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Streaming state not found");
+          }
+        });
+      }),
+    );
+
+    it.effect("should handle read file errors gracefully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mock to fail on readFile
+        yield* Effect.sync(() => {
+          const mockReadFile = vi.fn().mockRejectedValue(new Error("File not found"));
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+        });
+
+        // Execute rename - should fail
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Failed to rename plan file");
+          }
+        });
+      }),
+    );
+
+    it.effect("should handle write file errors gracefully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks - readFile succeeds, writeFile fails
+        yield* Effect.sync(() => {
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          mockFs.writeFile.mockRejectedValue(new Error("Permission denied"));
+        });
+
+        // Execute rename - should fail
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Failed to rename plan file");
+          }
+        });
+      }),
+    );
+
+    it.effect("should handle delete file errors gracefully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks - readFile and writeFile succeed, delete fails
+        yield* Effect.sync(() => {
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockRejectedValue(new Error("Cannot delete"));
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          mockFs.writeFile.mockResolvedValue(undefined);
+        });
+
+        // Execute rename - should fail
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Failed to rename plan file");
+          }
+        });
+      }),
+    );
+
+    it.effect("should update streaming state with new file URI", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("# Test Content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockResolvedValue(undefined);
+        });
+
+        // Execute rename
+        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - document and editor should be updated
+        yield* Effect.sync(() => {
+          expect(result).toBe(newPath);
+          expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
+          expect(vscode.window.showTextDocument).toHaveBeenCalled();
+        });
+      }),
+    );
+
+    it.effect("should create parent directory if it doesn't exist", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/subfolder/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks - stat fails for parent directory (doesn't exist)
+        yield* Effect.sync(() => {
+          let statCallCount = 0;
+          mockFs.stat.mockImplementation(() => {
+            statCallCount++;
+            if (statCallCount === 1) {
+              // First call: parent directory doesn't exist
+              return Promise.reject(new Error("Directory not found"));
+            }
+            return Promise.resolve({ type: 1 } as vscode.FileStat);
+          });
+          
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.createDirectory.mockResolvedValue(undefined);
+          mockFs.writeFile.mockResolvedValue(undefined);
+        });
+
+        // Execute rename
+        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - createDirectory should be called for parent directory
+        yield* Effect.sync(() => {
+          expect(result).toBe(newPath);
+          expect(mockFs.createDirectory).toHaveBeenCalled();
+          expect(mockFs.writeFile).toHaveBeenCalled();
+        });
+      }),
+    );
+
+    it.effect("should handle absolute paths correctly", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = "/absolute/path/old.md";
+        const newPath = "/absolute/path/new.md";
+
+        // Initialize streaming state with absolute path
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockResolvedValue(undefined);
+        });
+
+        // Execute rename
+        const result = yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result).toBe(newPath);
+          expect(vscode.Uri.file).toHaveBeenCalledWith(oldPath);
+          expect(vscode.Uri.file).toHaveBeenCalledWith(newPath);
+        });
+      }),
+    );
+
+    it.effect("should preserve file content during rename", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+        const testContent = "# Test Plan\n\nThis is the plan content.";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks with specific content
+        const capturedContent: Buffer[] = [];
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from(testContent));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockImplementation((uri, content) => {
+            capturedContent.push(content as Buffer);
+            return Promise.resolve();
+          });
+        });
+
+        // Execute rename
+        yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - content should be preserved
+        yield* Effect.sync(() => {
+          expect(capturedContent.length).toBeGreaterThan(0);
+          const writtenContent = capturedContent[capturedContent.length - 1].toString();
+          expect(writtenContent).toBe(testContent);
+        });
+      }),
+    );
+
+    it.effect("should delete old file after successful rename", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks
+        const deleteCallArgs: unknown[] = [];
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockImplementation((uri) => {
+            deleteCallArgs.push(uri);
+            return Promise.resolve();
+          });
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockResolvedValue(undefined);
+        });
+
+        // Execute rename
+        yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - old file should be deleted
+        yield* Effect.sync(() => {
+          expect(deleteCallArgs.length).toBe(1);
+          expect(vscode.workspace.fs.delete).toHaveBeenCalledTimes(1);
+        });
+      }),
+    );
+
+    it.effect("should handle editor opening errors gracefully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks - file operations succeed, but editor opening fails
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockResolvedValue(undefined);
+          
+          // Mock openTextDocument to fail
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockRejectedValue(new Error("Cannot open document"));
+        });
+
+        // Execute rename - should fail
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Failed to rename plan file");
+          }
+        });
+      }),
+    );
+
+    it.effect("should read from old path and write to new path", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-final.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Track which URIs were accessed
+        const readUris: string[] = [];
+        const writeUris: string[] = [];
+
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          
+          const mockReadFile = vi.fn().mockImplementation((uri) => {
+            readUris.push(uri.toString());
+            return Promise.resolve(Buffer.from("content"));
+          });
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockImplementation((uri) => {
+            writeUris.push(uri.toString());
+            return Promise.resolve();
+          });
+        });
+
+        // Execute rename
+        yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - read from old, write to new
+        yield* Effect.sync(() => {
+          expect(readUris.length).toBeGreaterThan(0);
+          expect(readUris[0]).toContain("placeholder");
+          expect(writeUris.some(uri => uri.includes("final"))).toBe(true);
+        });
+      }),
+    );
+
+    it.effect("should handle directory creation errors gracefully", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/newfolder/test-plan.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks - directory creation fails
+        yield* Effect.sync(() => {
+          mockFs.stat.mockRejectedValue(new Error("Directory not found"));
+          mockFs.createDirectory.mockRejectedValue(new Error("Cannot create directory"));
+          
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+        });
+
+        // Execute rename - should fail
+        const result = yield* Effect.either(
+          renamePlanFileEffect(oldPath, newPath, toolCallId),
+        );
+
+        // Assert
+        yield* Effect.sync(() => {
+          expect(result._tag).toBe("Left");
+          if (result._tag === "Left") {
+            expect(result.left.message).toContain("Failed to rename plan file");
+          }
+        });
+      }),
+    );
+
+    it.effect("should open new document and show new editor", () =>
+      Effect.gen(function* () {
+        const toolCallId = getUniqueToolCallId();
+        const oldPath = ".clive/plans/test-placeholder.md";
+        const newPath = ".clive/plans/test-plan-renamed.md";
+
+        // Initialize streaming state
+        yield* Effect.promise(() => initializePlanStreamingWrite(oldPath, toolCallId));
+
+        // Setup mocks
+        yield* Effect.sync(() => {
+          mockFs.stat.mockResolvedValue({ type: 1 } as vscode.FileStat);
+          const mockReadFile = vi.fn().mockResolvedValue(Buffer.from("content"));
+          const mockDelete = vi.fn().mockResolvedValue(undefined);
+          
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).readFile = mockReadFile;
+          (vscode.workspace.fs as unknown as {
+            readFile: ReturnType<typeof vi.fn>;
+            delete: ReturnType<typeof vi.fn>;
+          }).delete = mockDelete;
+          
+          mockFs.writeFile.mockResolvedValue(undefined);
+          
+          // Track calls to openTextDocument and showTextDocument
+          vi.clearAllMocks();
+          (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockResolvedValue(mockDocument);
+          (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>)
+            .mockResolvedValue(mockEditor);
+        });
+
+        // Execute rename
+        yield* renamePlanFileEffect(oldPath, newPath, toolCallId);
+
+        // Assert - should open and show new document
+        yield* Effect.sync(() => {
+          const openDocumentCalls = (vscode.workspace.openTextDocument as unknown as ReturnType<typeof vi.fn>).mock.calls;
+          expect(openDocumentCalls.length).toBeGreaterThan(0);
+          
+          const showDocumentCalls = (vscode.window.showTextDocument as unknown as ReturnType<typeof vi.fn>).mock.calls;
+          expect(showDocumentCalls.length).toBeGreaterThan(0);
+        });
+      }),
+    );
   });
 });

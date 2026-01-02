@@ -38,7 +38,7 @@ describe("Plan Streaming Integration", () => {
 
   describe("handleProposeTestPlanDelta", () => {
     it.effect(
-      "should emit file-created event when plan name is extracted",
+      "should emit file-created event with descriptive filename when name and suites are extracted",
       () =>
         Effect.gen(function* () {
           const streamingState = yield* createStreamingState();
@@ -57,12 +57,13 @@ describe("Plan Streaming Integration", () => {
             correlationId,
           );
 
-          // Send delta with name field
+          // Send delta with name and suites fields for descriptive filename
           yield* handleToolCallDelta(
             {
               toolName: "proposeTestPlan",
               toolCallId,
-              inputTextDelta: '{"name": "Test Plan for Auth"',
+              inputTextDelta:
+                '{"name": "Authentication Tests", "suites": [{"id": "suite-1", "name": "Unit Tests", "testType": "unit", "targetFilePath": "test.ts"}, {"id": "suite-2", "name": "Integration Tests", "testType": "integration", "targetFilePath": "test.ts"}]',
             },
             streamingState,
             progressCallback,
@@ -80,8 +81,60 @@ describe("Plan Streaming Integration", () => {
             : null;
           expect(parsed?.type).toBe("file-created");
           expect(parsed?.toolCallId).toBe(toolCallId);
-          expect(parsed?.filePath).toContain(".clive/plans/test-plan-");
-          expect(parsed?.filePath).toContain("test-plan-for-auth");
+          // Verify descriptive filename format: {name}-{testType}-{count}-suites.md
+          expect(parsed?.filePath).toMatch(
+            /^\.clive\/plans\/authentication-tests-(unit|integration|e2e|mixed)-2-suites\.md$/,
+          );
+        }),
+    );
+
+    it.effect(
+      "should use fallback filename when suites info not available",
+      () =>
+        Effect.gen(function* () {
+          const streamingState = yield* createStreamingState();
+          const correlationId = "test-plan-fallback";
+          const toolCallId = "propose-plan-fallback";
+          const events: Array<{ status: string; message: string }> = [];
+          const progressCallback = (status: string, message: string) => {
+            events.push({ status, message });
+          };
+
+          // Initialize streaming for proposeTestPlan
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          // Send delta with only name field (suites not yet available)
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId,
+              inputTextDelta: '{"name": "Test Plan for Auth"',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          // Verify file-created event was emitted with fallback filename
+          const fileCreatedEvent = events.find(
+            (e) => e.status === "file-created",
+          );
+          expect(fileCreatedEvent).toBeDefined();
+
+          const parsed = fileCreatedEvent
+            ? JSON.parse(fileCreatedEvent.message)
+            : null;
+          expect(parsed?.type).toBe("file-created");
+          expect(parsed?.toolCallId).toBe(toolCallId);
+          // Fallback format: {sanitized-name}-{timestamp}.md
+          expect(parsed?.filePath).toMatch(
+            /^\.clive\/plans\/test-plan-for-auth-\d+\.md$/,
+          );
         }),
     );
 
@@ -221,48 +274,239 @@ describe("Plan Streaming Integration", () => {
         }),
     );
 
-    it.effect("should create plan file path in .clive/plans/ directory", () =>
-      Effect.gen(function* () {
-        const streamingState = yield* createStreamingState();
-        const correlationId = "test-plan-dir";
-        const toolCallId = "propose-plan-dir";
-        const events: Array<{ status: string; message: string }> = [];
-        const progressCallback = (status: string, message: string) => {
-          events.push({ status, message });
-        };
+    it.effect(
+      "should create plan file path in .clive/plans/ directory with descriptive filename",
+      () =>
+        Effect.gen(function* () {
+          const streamingState = yield* createStreamingState();
+          const correlationId = "test-plan-dir";
+          const toolCallId = "propose-plan-dir";
+          const events: Array<{ status: string; message: string }> = [];
+          const progressCallback = (status: string, message: string) => {
+            events.push({ status, message });
+          };
 
-        // Initialize streaming
-        yield* handleToolCallStreamingStart(
-          { toolName: "proposeTestPlan", toolCallId },
-          streamingState,
-          progressCallback,
-          correlationId,
-        );
+          // Initialize streaming
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
 
-        // Send delta with name
-        yield* handleToolCallDelta(
-          {
-            toolName: "proposeTestPlan",
-            toolCallId,
-            inputTextDelta: '{"name": "Directory Test Plan"',
-          },
-          streamingState,
-          progressCallback,
-          correlationId,
-        );
+          // Send delta with name and suites for descriptive filename
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId,
+              inputTextDelta:
+                '{"name": "Directory Test Plan", "suites": [{"id": "suite-1", "name": "Unit Tests", "testType": "unit", "targetFilePath": "test.ts"}]',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
 
-        // Verify file path is in .clive/plans/
-        const fileCreatedEvent = events.find(
-          (e) => e.status === "file-created",
-        );
-        expect(fileCreatedEvent).toBeDefined();
+          // Verify file path is in .clive/plans/ with descriptive format
+          const fileCreatedEvent = events.find(
+            (e) => e.status === "file-created",
+          );
+          expect(fileCreatedEvent).toBeDefined();
 
-        const parsed = fileCreatedEvent
-          ? JSON.parse(fileCreatedEvent.message)
-          : null;
-        expect(parsed?.filePath).toMatch(/^\.clive\/plans\/test-plan-/);
-        expect(parsed?.filePath).toMatch(/\.md$/);
-      }),
+          const parsed = fileCreatedEvent
+            ? JSON.parse(fileCreatedEvent.message)
+            : null;
+          expect(parsed?.filePath).toMatch(
+            /^\.clive\/plans\/directory-test-plan-/,
+          );
+          expect(parsed?.filePath).toMatch(/-unit-1-suite\.md$/);
+        }),
+    );
+
+    it.effect(
+      "should generate descriptive filenames for different test types and suite counts",
+      () =>
+        Effect.gen(function* () {
+          const streamingState = yield* createStreamingState();
+          const correlationId = "test-filename-variants";
+          const events: Array<{ status: string; message: string }> = [];
+          const progressCallback = (status: string, message: string) => {
+            events.push({ status, message });
+          };
+
+          // Test case 1: Single unit test suite
+          const toolCallId1 = "propose-plan-single-unit";
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId: toolCallId1 },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId: toolCallId1,
+              inputTextDelta:
+                '{"name": "Auth Tests", "suites": [{"id": "suite-1", "name": "Unit Tests", "testType": "unit", "targetFilePath": "test.ts"}]',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          const event1 = events.find(
+            (e) =>
+              e.status === "file-created" &&
+              JSON.parse(e.message).toolCallId === toolCallId1,
+          );
+          expect(event1).toBeDefined();
+          const parsed1 = event1 ? JSON.parse(event1.message) : null;
+          expect(parsed1?.filePath).toBe(
+            ".clive/plans/auth-tests-unit-1-suite.md",
+          );
+
+          // Test case 2: Multiple integration test suites
+          const toolCallId2 = "propose-plan-multi-integration";
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId: toolCallId2 },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId: toolCallId2,
+              inputTextDelta:
+                '{"name": "API Tests", "suites": [{"id": "suite-1", "testType": "integration", "targetFilePath": "test.ts"}, {"id": "suite-2", "testType": "integration", "targetFilePath": "test.ts"}, {"id": "suite-3", "testType": "integration", "targetFilePath": "test.ts"}]',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          const event2 = events.find(
+            (e) =>
+              e.status === "file-created" &&
+              JSON.parse(e.message).toolCallId === toolCallId2,
+          );
+          expect(event2).toBeDefined();
+          const parsed2 = event2 ? JSON.parse(event2.message) : null;
+          expect(parsed2?.filePath).toBe(
+            ".clive/plans/api-tests-integration-3-suites.md",
+          );
+
+          // Test case 3: Mixed test types (should use "mixed")
+          const toolCallId3 = "propose-plan-mixed";
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId: toolCallId3 },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId: toolCallId3,
+              inputTextDelta:
+                '{"name": "Comprehensive Tests", "suites": [{"id": "suite-1", "testType": "unit", "targetFilePath": "test.ts"}, {"id": "suite-2", "testType": "integration", "targetFilePath": "test.ts"}]',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          const event3 = events.find(
+            (e) =>
+              e.status === "file-created" &&
+              JSON.parse(e.message).toolCallId === toolCallId3,
+          );
+          expect(event3).toBeDefined();
+          const parsed3 = event3 ? JSON.parse(event3.message) : null;
+          expect(parsed3?.filePath).toBe(
+            ".clive/plans/comprehensive-tests-mixed-2-suites.md",
+          );
+        }),
+    );
+
+    it.effect(
+      "should emit plan-content-streaming even when file initialization fails",
+      () =>
+        Effect.gen(function* () {
+          const streamingState = yield* createStreamingState();
+          const correlationId = "test-plan-failure";
+          const toolCallId = "propose-plan-failure";
+          const events: Array<{ status: string; message: string }> = [];
+          const progressCallback = (status: string, message: string) => {
+            events.push({ status, message });
+          };
+
+          // Initialize streaming
+          yield* handleToolCallStreamingStart(
+            { toolName: "proposeTestPlan", toolCallId },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          // Mock file initialization to fail
+          vi.mocked(
+            proposeTestPlan.initializePlanStreamingWriteEffect,
+          ).mockReturnValue(
+            Effect.fail(
+              new proposeTestPlan.PlanStreamingError({
+                message: "Failed to create file",
+              }),
+            ),
+          );
+
+          // Send delta with name first (will trigger failed initialization)
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId,
+              inputTextDelta: '{"name": "Failure Test Plan"',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          // Verify error event was emitted
+          const errorEvent = events.find((e) => e.status === "error");
+          expect(errorEvent).toBeDefined();
+
+          // Now send delta with planContent (should still emit event despite file failure)
+          yield* handleToolCallDelta(
+            {
+              toolName: "proposeTestPlan",
+              toolCallId,
+              inputTextDelta:
+                ', "planContent": "# Test Plan\\n\\nContent here"}',
+            },
+            streamingState,
+            progressCallback,
+            correlationId,
+          );
+
+          // CRITICAL: Verify plan-content-streaming event was still emitted despite file failure
+          const streamingEvent = events.find(
+            (e) => e.status === "plan-content-streaming",
+          );
+          expect(streamingEvent).toBeDefined();
+
+          const parsed = streamingEvent
+            ? JSON.parse(streamingEvent.message)
+            : null;
+          expect(parsed?.type).toBe("plan-content-streaming");
+          expect(parsed?.toolCallId).toBe(toolCallId);
+          expect(parsed?.content).toContain("# Test Plan");
+          expect(parsed?.content).toContain("Content here");
+          expect(parsed?.isComplete).toBe(false);
+          // filePath should still be present (tracked before initialization attempt)
+          expect(parsed?.filePath).toBeDefined();
+          expect(parsed?.filePath).toContain(".clive/plans/test-plan-");
+        }),
     );
   });
 

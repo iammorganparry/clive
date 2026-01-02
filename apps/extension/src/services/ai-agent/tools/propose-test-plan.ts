@@ -467,6 +467,71 @@ export const finalizePlanStreamingWriteEffect = (
     return relativePath;
   });
 
+/**
+ * Rename plan file from placeholder to descriptive filename
+ */
+export const renamePlanFileEffect = (
+  oldPath: string,
+  newPath: string,
+  toolCallId: string,
+): Effect.Effect<string, PlanStreamingError | NoWorkspaceError> =>
+  Effect.gen(function* () {
+    const workspaceRoot = yield* getWorkspaceRoot();
+    const oldUri = resolveFilePath(oldPath, workspaceRoot);
+    const newUri = resolveFilePath(newPath, workspaceRoot);
+
+    // Get current state
+    const state = planStreamingStates.get(toolCallId);
+    if (!state) {
+      return yield* Effect.fail(
+        new PlanStreamingError({ message: "Streaming state not found" }),
+      );
+    }
+
+    // Rename file using VS Code API
+    yield* Effect.tryPromise({
+      try: async () => {
+        // Read old file content
+        const content = await vscode.workspace.fs.readFile(oldUri);
+
+        // Ensure new directory exists
+        const newParentDir = vscode.Uri.joinPath(newUri, "..");
+        try {
+          await vscode.workspace.fs.stat(newParentDir);
+        } catch {
+          await vscode.workspace.fs.createDirectory(newParentDir);
+        }
+
+        // Write to new location
+        await vscode.workspace.fs.writeFile(newUri, content);
+
+        // Delete old file
+        await vscode.workspace.fs.delete(oldUri);
+
+        // Update streaming state with new URI
+        const newDocument = await vscode.workspace.openTextDocument(newUri);
+        const newEditor = await vscode.window.showTextDocument(newDocument, {
+          preview: false,
+          preserveFocus: false,
+        });
+
+        planStreamingStates.set(toolCallId, {
+          ...state,
+          fileUri: newUri,
+          document: newDocument,
+          editor: newEditor,
+        });
+      },
+      catch: (error) =>
+        new PlanStreamingError({
+          message: "Failed to rename plan file",
+          cause: error,
+        }),
+    });
+
+    return newPath;
+  });
+
 // ============================================================
 // Promise-based API (for AI SDK compatibility)
 // ============================================================

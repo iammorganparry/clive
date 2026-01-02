@@ -30,6 +30,8 @@ import {
   extractJsonField,
   unescapeJsonString,
   sanitizePlanName,
+  extractSuitesInfo,
+  generatePlanFilename,
 } from "./testing-agent-helpers.js";
 import { logToOutput } from "../../utils/logger.js";
 import {
@@ -41,6 +43,7 @@ import {
   initializePlanStreamingWriteEffect,
   appendPlanStreamingContentEffect,
   finalizePlanStreamingWriteEffect,
+  renamePlanFileEffect,
 } from "./tools/propose-test-plan.js";
 import type { WriteTestFileOutput } from "./types.js";
 /**
@@ -171,14 +174,23 @@ const handleProposeTestPlanDelta = (
     yield* setStreamingArgs(streamingState, toolCallId, accumulated);
 
     // Initialize plan file if name is available and not yet initialized
+    // Create immediately with placeholder name, rename when suites info available
     const nameValue = extractJsonField(accumulated, "name");
+    const suitesInfo = extractSuitesInfo(accumulated);
     const hasPlan = yield* hasPlanToolCall(streamingState, toolCallId);
 
     if (nameValue && !hasPlan) {
-      const targetPath = `.clive/plans/test-plan-${sanitizePlanName(nameValue)}-${Date.now()}.md`;
+      const unescapedName = unescapeJsonString(nameValue);
+
+      // Create file immediately with placeholder name
+      const placeholderPath = `.clive/plans/${sanitizePlanName(unescapedName)}.md`;
+
+      // Track the plan path BEFORE attempting initialization
+      // This ensures we have a targetPath even if file creation fails
+      yield* trackPlanToolCall(streamingState, toolCallId, placeholderPath);
 
       yield* pipe(
-        initializePlanStreamingWriteEffect(targetPath, toolCallId),
+        initializePlanStreamingWriteEffect(placeholderPath, toolCallId),
         Effect.tap(() =>
           Effect.sync(() => {
             progressCallback?.(
@@ -186,16 +198,13 @@ const handleProposeTestPlanDelta = (
               JSON.stringify({
                 type: "file-created",
                 toolCallId,
-                filePath: targetPath,
+                filePath: placeholderPath,
               }),
             );
           }),
         ),
         Effect.tap(() =>
-          trackPlanToolCall(streamingState, toolCallId, targetPath),
-        ),
-        Effect.tap(() =>
-          trackFileToolCall(streamingState, targetPath, toolCallId),
+          trackFileToolCall(streamingState, placeholderPath, toolCallId),
         ),
         Effect.tap(() =>
           setPlanInitStatus(streamingState, toolCallId, Promise.resolve(true)),
@@ -217,18 +226,96 @@ const handleProposeTestPlanDelta = (
           }),
         ),
       );
+
+      // If suites info is available immediately, rename to descriptive filename
+      if (suitesInfo) {
+        const descriptivePath = generatePlanFilename(unescapedName, suitesInfo);
+        if (descriptivePath !== placeholderPath) {
+          yield* pipe(
+            renamePlanFileEffect(placeholderPath, descriptivePath, toolCallId),
+            Effect.tap((newPath: string) =>
+              trackPlanToolCall(streamingState, toolCallId, newPath),
+            ),
+            Effect.tap((newPath: string) =>
+              trackFileToolCall(streamingState, newPath, toolCallId),
+            ),
+            Effect.tap((newPath: string) =>
+              Effect.sync(() => {
+                progressCallback?.(
+                  "file-created",
+                  JSON.stringify({
+                    type: "file-created",
+                    toolCallId,
+                    filePath: newPath,
+                  }),
+                );
+              }),
+            ),
+            Effect.catchAll((error) =>
+              Effect.logError(
+                `[TestingAgent:${correlationId}] Failed to rename plan file: ${
+                  error instanceof Error ? error.message : "Unknown error"
+                }`,
+              ),
+            ),
+          );
+        }
+      }
     }
 
-    // Extract and stream planContent to file
+    // Check if file was created with placeholder and suites info just arrived
+    if (nameValue && hasPlan && suitesInfo) {
+      const currentPath = yield* getFilePathForPlan(streamingState, toolCallId);
+      const unescapedName = unescapeJsonString(nameValue);
+      const descriptivePath = generatePlanFilename(unescapedName, suitesInfo);
+
+      // Check if current path is a placeholder (simple name without test type/count)
+      const isPlaceholder =
+        currentPath && !currentPath.match(/-\w+-\d+-(suite|suites)\.md$/);
+
+      if (currentPath && isPlaceholder && descriptivePath !== currentPath) {
+        yield* pipe(
+          renamePlanFileEffect(currentPath, descriptivePath, toolCallId),
+          Effect.tap((newPath) =>
+            trackPlanToolCall(streamingState, toolCallId, newPath),
+          ),
+          Effect.tap((newPath) =>
+            trackFileToolCall(streamingState, newPath, toolCallId),
+          ),
+          Effect.tap((newPath) =>
+            Effect.sync(() => {
+              progressCallback?.(
+                "file-created",
+                JSON.stringify({
+                  type: "file-created",
+                  toolCallId,
+                  filePath: newPath,
+                }),
+              );
+            }),
+          ),
+          Effect.catchAll((error) =>
+            Effect.logError(
+              `[TestingAgent:${correlationId}] Failed to rename plan file: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`,
+            ),
+          ),
+        );
+      }
+    }
+
+    // Extract and stream planContent to webview
     const planContentValue = extractJsonField(accumulated, "planContent");
     if (!planContentValue) return;
 
     const planContentChunk = unescapeJsonString(planContentValue);
+
+    // Get targetPath (may be empty if initialization failed, but that's OK)
     const targetPath = yield* getFilePathForPlan(streamingState, toolCallId);
 
-    if (!targetPath) return;
-
-    // FIRST: Emit the event to the webview (always succeeds)
+    // FIRST: Emit the event to the webview (always succeeds, even if filePath is empty)
+    // The webview needs the content for display regardless of file creation success
     yield* Effect.sync(() => {
       progressCallback?.(
         "plan-content-streaming",
@@ -237,32 +324,35 @@ const handleProposeTestPlanDelta = (
           toolCallId,
           content: planContentChunk,
           isComplete: false,
-          filePath: targetPath,
+          filePath: targetPath || undefined, // Send undefined if empty string
         }),
       );
     });
 
     // THEN: Attempt to write to file (may fail, but event was already sent)
-    const initPromise = yield* getPlanInitStatus(streamingState, toolCallId);
-    if (initPromise) {
-      yield* Effect.tryPromise({
-        try: async () => {
-          const success = await initPromise;
-          if (!success) {
-            throw new Error("Initialization failed");
-          }
-        },
-        catch: () => new Error("Failed to wait for initialization"),
-      }).pipe(
-        Effect.flatMap(() =>
-          appendPlanStreamingContentEffect(toolCallId, planContentChunk),
-        ),
-        Effect.catchAll((error) =>
-          Effect.logError(
-            `[TestingAgent:${correlationId}] Failed to append plan streaming content: ${error.message ?? "Unknown error"}`,
+    // Only attempt file write if we have a targetPath and initialization succeeded
+    if (targetPath) {
+      const initPromise = yield* getPlanInitStatus(streamingState, toolCallId);
+      if (initPromise) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            const success = await initPromise;
+            if (!success) {
+              throw new Error("Initialization failed");
+            }
+          },
+          catch: () => new Error("Failed to wait for initialization"),
+        }).pipe(
+          Effect.flatMap(() =>
+            appendPlanStreamingContentEffect(toolCallId, planContentChunk),
           ),
-        ),
-      );
+          Effect.catchAll((error) =>
+            Effect.logError(
+              `[TestingAgent:${correlationId}] Failed to append plan streaming content: ${error.message ?? "Unknown error"}`,
+            ),
+          ),
+        );
+      }
     }
   });
 
@@ -659,7 +749,7 @@ const handleProposeTestPlanResult = (
       if (planContentValue) {
         const planContent = unescapeJsonString(planContentValue);
 
-        // Emit final plan content as complete with file path
+        // Emit final plan content as complete with file path (may be empty if file creation failed)
         yield* Effect.sync(() => {
           progressCallback?.(
             "plan-content-streaming",
@@ -668,7 +758,7 @@ const handleProposeTestPlanResult = (
               toolCallId,
               content: planContent,
               isComplete: true,
-              filePath: targetPath,
+              filePath: targetPath || undefined, // Send undefined if empty string
             }),
           );
         });
