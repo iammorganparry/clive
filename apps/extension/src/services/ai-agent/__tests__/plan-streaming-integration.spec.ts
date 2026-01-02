@@ -14,6 +14,10 @@ import {
   setPlanInitStatus,
 } from "../agent-state";
 import * as proposeTestPlan from "../tools/propose-test-plan";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../../__tests__/mock-factories/index.js";
 
 // Mock the plan streaming tools
 vi.mock("../tools/propose-test-plan", async () => {
@@ -23,17 +27,19 @@ vi.mock("../tools/propose-test-plan", async () => {
   return createMockPlanStreaming();
 });
 
-// Mock vscode module
-vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import(
-    "../../../__tests__/mock-factories"
-  );
-  return createVSCodeMock();
-});
-
 describe("Plan Streaming Integration", () => {
+  let _mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let _mockVscode: ReturnType<typeof createVSCodeMock>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Create mock VSCodeService layer (even though not directly used, keeps consistency)
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    _mockVSCodeServiceLayer = layer;
+    _mockVscode = vsMock;
   });
 
   describe("handleProposeTestPlanDelta", () => {
@@ -88,7 +94,7 @@ describe("Plan Streaming Integration", () => {
           expect(parsed?.filePath).toMatch(
             /^\.clive\/plans\/authentication-tests-(unit|integration|e2e|mixed)-2-suites\.md$/,
           );
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -136,7 +142,7 @@ describe("Plan Streaming Integration", () => {
           expect(parsed?.toolCallId).toBe(toolCallId);
           // Fallback format: {sanitized-name}.md (no timestamp when suites info not available)
           expect(parsed?.filePath).toBe(".clive/plans/test-plan-for-auth.md");
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -201,7 +207,7 @@ describe("Plan Streaming Integration", () => {
           expect(parsed?.content).toContain("# Test Plan");
           expect(parsed?.isComplete).toBe(false);
           expect(parsed?.filePath).toBe(targetPath);
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -272,7 +278,7 @@ describe("Plan Streaming Integration", () => {
             const parsed = JSON.parse(event.message);
             expect(parsed.filePath).toBe(targetPath);
           }
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -324,7 +330,7 @@ describe("Plan Streaming Integration", () => {
             /^\.clive\/plans\/directory-test-plan-/,
           );
           expect(parsed?.filePath).toMatch(/-unit-1-suite\.md$/);
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -436,7 +442,7 @@ describe("Plan Streaming Integration", () => {
           expect(parsed3?.filePath).toBe(
             ".clive/plans/comprehensive-tests-mixed-2-suites.md",
           );
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect(
@@ -517,7 +523,7 @@ describe("Plan Streaming Integration", () => {
           // When initialization fails, it uses the placeholder path (sanitized name)
           expect(parsed?.filePath).toBeDefined();
           expect(parsed?.filePath).toBe(".clive/plans/failure-test-plan.md");
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
   });
 
@@ -584,7 +590,7 @@ describe("Plan Streaming Integration", () => {
           expect(parsed?.isComplete).toBe(true);
           expect(parsed?.content).toContain("# Final Plan Content");
           expect(parsed?.filePath).toBe(targetPath);
-        }),
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
 
     it.effect("should emit tool-result event for proposeTestPlan", () =>
@@ -628,7 +634,7 @@ describe("Plan Streaming Integration", () => {
         expect(parsed?.toolName).toBe("proposeTestPlan");
         expect(parsed?.toolCallId).toBe(toolCallId);
         expect(parsed?.state).toBe("output-available");
-      }),
+      }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
   });
 });

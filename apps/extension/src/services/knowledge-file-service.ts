@@ -81,6 +81,8 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
 
           // Update .gitignore to ignore .clive/knowledge/ and .clive/.env.test
           // This is a one-time operation - GitignoreManager checks if patterns already exist
+          // GitignoreManager needs VSCodeService, which is already available in the outer context
+          // We provide both services here since Effect.provide creates a new isolated context
           yield* GitignoreManager.pipe(
             Effect.flatMap((manager) => manager.ensureCliveIgnored()),
             Effect.catchAll((error) =>
@@ -93,7 +95,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
               }),
             ),
             Effect.provide(
-              Layer.merge(GitignoreManager.Default, VSCodeService.Default),
+              Layer.mergeAll(GitignoreManager.Default, VSCodeService.Default),
             ),
           );
 
@@ -120,14 +122,16 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
       const getCategoryPath = (
         category: KnowledgeBaseCategory,
         knowledgeDir: vscode.Uri,
-      ): vscode.Uri => {
-        // Sanitize category name for directory
-        const sanitizedCategory = category
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "");
-        return vscode.Uri.joinPath(knowledgeDir, sanitizedCategory);
-      };
+      ) =>
+        Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
+          // Sanitize category name for directory
+          const sanitizedCategory = category
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+          return vsCodeService.joinPath(knowledgeDir, sanitizedCategory);
+        });
 
       /**
        * Write a knowledge file for a category
@@ -143,8 +147,9 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
         },
       ) =>
         Effect.gen(function* () {
+          const vsCodeService = yield* VSCodeService;
           const knowledgeDir = yield* ensureKnowledgeDir();
-          const categoryPath = getCategoryPath(category, knowledgeDir);
+          const categoryPath = yield* getCategoryPath(category, knowledgeDir);
 
           // Ensure category directory exists
           yield* ensureDirectoryExists(categoryPath).pipe(
@@ -163,7 +168,7 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/^-|-$/g, "");
-          const fileUri = vscode.Uri.joinPath(
+          const fileUri = vsCodeService.joinPath(
             categoryPath,
             `${sanitizedTitle}.md`,
           );
@@ -218,21 +223,19 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             : fullContent;
 
           // Write file
-          yield* Effect.tryPromise({
-            try: async () => {
-              await vscode.workspace.fs.writeFile(
-                fileUri,
-                Buffer.from(finalContent, "utf-8"),
-              );
-            },
-            catch: (error) =>
-              new KnowledgeFileError({
-                message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
-                cause: error,
-              }),
-          });
+          yield* vsCodeService.writeFile(
+            fileUri,
+            Buffer.from(finalContent, "utf-8"),
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new KnowledgeFileError({
+                  message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
+                  cause: error,
+                }),
+            ),
+          );
 
-          const vsCodeService = yield* VSCodeService;
           const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
           return {

@@ -7,6 +7,7 @@
  * Handles both synchronous and AsyncIterable results
  */
 export async function executeTool<TInput, TOutput>(
+  // biome-ignore lint/suspicious/noExplicitAny: Test helper needs to accept any tool type
   tool: { execute?: (...args: any[]) => any },
   input: TInput,
   defaultResult: TOutput,
@@ -31,4 +32,3 @@ export async function executeTool<TInput, TOutput>(
 
   return result as TOutput;
 }
-

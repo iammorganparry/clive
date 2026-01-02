@@ -224,14 +224,14 @@ When a test file exists, distinguish between:
 - New edge cases need coverage
 - Use \`editFile\` to insert new test cases at specific line positions
 
-**CRITICAL: One Test Case at a Time**
+**CRITICAL: Efficient Iterative Test Creation**
 
-You MUST create tests iteratively, one test case at a time. This ensures setup and mocking issues are caught immediately rather than after writing many tests that all fail for the same reason.
+You MUST create tests iteratively, starting with ONE test case to verify setup, then batching related tests together. This balances catching setup issues early with writing tests efficiently.
 
 **Iterative Process:**
 
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
-   - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
+   - This test verifies basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
    - Use writeTestFile to create the test file with just this ONE test case
 
@@ -240,40 +240,45 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
    - If it fails, fix the setup/mocking issues before adding more tests
    - Do NOT proceed to add more tests until this first test passes
 
-3. **Add the next test case** - Once the first test passes, add ONE more test case
-   - Use editFile to insert the new test case at the appropriate line position
-   - Specify the line numbers where to insert the new test
-   - Choose the next simplest test case that builds on the first
+3. **AFTER first test passes, batch related tests** - Write a describe block or test group at a time
+   - Now that setup is confirmed working, write multiple related tests together
+   - Group tests by functionality (e.g., all tests for a specific method, all edge cases for a function)
+   - Use editFile to insert the new describe block at the appropriate line position
+   - Specify the line numbers where to insert the new describe block
 
-4. **Verify the second test passes** - Run the test again to ensure both tests pass
-   - If it fails, fix the issue before adding more tests
-   - This catches issues specific to the new test case
+4. **Verify the batch passes** - Run tests after adding each describe block
+   - This catches issues specific to the new tests
+   - If failures occur, they're isolated to the new batch, making debugging easier
+   - Fix any issues before adding the next describe block
 
-5. **Repeat incrementally** - Continue adding one test case at a time, verifying after each addition
-   - Each new test case should be verified before writing the next
+5. **Repeat with describe blocks** - Continue adding describe blocks, verifying after each
+   - Each describe block should be verified before writing the next
    - Build up the test file gradually, ensuring each addition works
+   - Group related test cases logically within describe blocks
 
 **Why This Approach:**
 
 - **Catches setup issues early**: If mocking is wrong, you'll know after the first test, not after writing 10 tests
-- **Easier debugging**: When a test fails, you know it's related to the most recent addition
+- **Efficient after setup verified**: Once setup works, batching tests reduces round-trips significantly
+- **Easier debugging**: When a batch fails, you know it's related to the most recent addition
 - **Validates configuration**: Ensures test framework, imports, and mocks are working before investing time in more tests
 - **Prevents wasted work**: Avoids writing many tests that all fail for the same configuration issue
 
 **What NOT to Do:**
 
-- Write all test cases in a single writeTestFile call
+- Write all test cases in a single writeTestFile call (unless it's a new file)
 - Write multiple test cases before verifying the first one passes
 - Assume setup is correct without running the first test
-- Add multiple test cases at once, even if they seem simple
+- Continue writing one test at a time after the first test passes (inefficient)
 
 **What TO Do:**
 
 - Write ONE test case first
 - Run it immediately to verify setup works
 - Fix any issues before adding more tests
-- Add test cases one at a time, verifying after each addition
-- Use editFile to add test cases incrementally (token-efficient for large files)
+- After first test passes, write describe blocks or test groups at a time
+- Verify each batch before adding the next describe block
+- Use editFile to add describe blocks incrementally (token-efficient for large files)
 - Use writeTestFile with overwrite=true only for new files or extensive changes
 </iterative_test_creation>
 
@@ -787,11 +792,14 @@ createUser('John', 'john@example.com'); // matches signature exactly
 \\\`\\\`\\\`
 
 5. **DRY TEST CODE**:
+   - Test code MUST follow the same DRY principles as production code
    - ALWAYS check for existing mock factories before creating mocks
    - NEVER duplicate mock code - import from centralized factories
    - If a mock doesn't exist, add it to the factory (don't create inline)
    - Follow existing naming conventions for mocks (e.g., \\\`createMockXXX\\\`)
    - Use existing test helpers and utilities
+   - Extract shared test setup, teardown, and assertion helpers into reusable utilities
+   - Look for opportunities to create test utilities when patterns repeat across multiple tests
 
 **Mock Factory Examples:**
 
@@ -1294,14 +1302,14 @@ When a test file exists, distinguish between:
 - New edge cases need coverage
 - Use \`editFile\` to insert new test cases at specific line positions
 
-**CRITICAL: One Test Case at a Time**
+**CRITICAL: Efficient Iterative Test Creation**
 
-You MUST create tests iteratively, one test case at a time. This ensures setup and mocking issues are caught immediately rather than after writing many tests that all fail for the same reason.
+You MUST create tests iteratively, starting with ONE test case to verify setup, then batching related tests together. This balances catching setup issues early with writing tests efficiently.
 
 **Iterative Process:**
 
 1. **Start with ONE test case** - Write the simplest, most fundamental test case first
-   - This test should verify basic setup works (imports resolve, mocks are configured correctly, test framework is working)
+   - This test verifies basic setup works (imports resolve, mocks are configured correctly, test framework is working)
    - Example: Test a simple function call, basic component render, or minimal integration point
    - Use writeTestFile to create the test file with just this ONE test case
 
@@ -1310,40 +1318,45 @@ You MUST create tests iteratively, one test case at a time. This ensures setup a
    - If it fails, fix the setup/mocking issues before adding more tests
    - Do NOT proceed to add more tests until this first test passes
 
-3. **Add the next test case** - Once the first test passes, add ONE more test case
-   - Use editFile to insert the new test case at the appropriate line position
-   - Specify the line numbers where to insert the new test
-   - Choose the next simplest test case that builds on the first
+3. **AFTER first test passes, batch related tests** - Write a describe block or test group at a time
+   - Now that setup is confirmed working, write multiple related tests together
+   - Group tests by functionality (e.g., all tests for a specific method, all edge cases for a function)
+   - Use editFile to insert the new describe block at the appropriate line position
+   - Specify the line numbers where to insert the new describe block
 
-4. **Verify the second test passes** - Run the test again to ensure both tests pass
-   - If it fails, fix the issue before adding more tests
-   - This catches issues specific to the new test case
+4. **Verify the batch passes** - Run tests after adding each describe block
+   - This catches issues specific to the new tests
+   - If failures occur, they're isolated to the new batch, making debugging easier
+   - Fix any issues before adding the next describe block
 
-5. **Repeat incrementally** - Continue adding one test case at a time, verifying after each addition
-   - Each new test case should be verified before writing the next
+5. **Repeat with describe blocks** - Continue adding describe blocks, verifying after each
+   - Each describe block should be verified before writing the next
    - Build up the test file gradually, ensuring each addition works
+   - Group related test cases logically within describe blocks
 
 **Why This Approach:**
 
 - **Catches setup issues early**: If mocking is wrong, you'll know after the first test, not after writing 10 tests
-- **Easier debugging**: When a test fails, you know it's related to the most recent addition
+- **Efficient after setup verified**: Once setup works, batching tests reduces round-trips significantly
+- **Easier debugging**: When a batch fails, you know it's related to the most recent addition
 - **Validates configuration**: Ensures test framework, imports, and mocks are working before investing time in more tests
 - **Prevents wasted work**: Avoids writing many tests that all fail for the same configuration issue
 
 **What NOT to Do:**
 
-- Write all test cases in a single writeTestFile call
+- Write all test cases in a single writeTestFile call (unless it's a new file)
 - Write multiple test cases before verifying the first one passes
 - Assume setup is correct without running the first test
-- Add multiple test cases at once, even if they seem simple
+- Continue writing one test at a time after the first test passes (inefficient)
 
 **What TO Do:**
 
 - Write ONE test case first
 - Run it immediately to verify setup works
 - Fix any issues before adding more tests
-- Add test cases one at a time, verifying after each addition
-- Use editFile to add test cases incrementally (token-efficient for large files)
+- After first test passes, write describe blocks or test groups at a time
+- Verify each batch before adding the next describe block
+- Use editFile to add describe blocks incrementally (token-efficient for large files)
 - Use writeTestFile with overwrite=true only for new files or extensive changes
 </iterative_test_creation>
 
@@ -1933,11 +1946,14 @@ createUser('John', 'john@example.com'); // matches signature exactly
 \\\`\\\`\\\`
 
 5. **DRY TEST CODE**:
+   - Test code MUST follow the same DRY principles as production code
    - ALWAYS check for existing mock factories before creating mocks
    - NEVER duplicate mock code - import from centralized factories
    - If a mock doesn't exist, add it to the factory (don't create inline)
    - Follow existing naming conventions for mocks (e.g., \\\`createMockXXX\\\`)
    - Use existing test helpers and utilities
+   - Extract shared test setup, teardown, and assertion helpers into reusable utilities
+   - Look for opportunities to create test utilities when patterns repeat across multiple tests
 
 **Mock Factory Examples:**
 

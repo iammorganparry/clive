@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Effect, Runtime } from "effect";
-import * as vscode from "vscode";
+import * as vscodeModule from "vscode";
 import {
   PendingEditService,
   setPendingEditServiceInstance,
@@ -11,38 +11,25 @@ import {
   rejectBlockAsync,
   registerBlockSync,
 } from "../pending-edit-service.js";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../__tests__/mock-factories/index.js";
 
-// Mock vscode module
+// Mock vscode globally for pending-edit-service which uses vscode.* directly
 vi.mock("vscode", async () => {
-  const { createVSCodeMock } = await import("../../__tests__/mock-factories");
-  const baseMock = createVSCodeMock();
-
-  // Add EventEmitter to the mock
-  class MockEventEmitter {
-    private listeners: Array<() => void> = [];
-
-    event = (listener: () => void) => {
-      this.listeners.push(listener);
-      return { dispose: vi.fn() };
-    };
-
-    fire = () => {
-      this.listeners.forEach((listener) => {
-        listener();
-      });
-    };
-
-    dispose = vi.fn();
-  }
-
-  return {
-    ...baseMock,
-    EventEmitter: MockEventEmitter,
-  };
+  const { createVSCodeMock } = await import(
+    "../../__tests__/mock-factories/vscode-mock.js"
+  );
+  return createVSCodeMock();
 });
 
 describe("PendingEditService", () => {
   const runtime = Runtime.defaultRuntime;
+  let _mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let mockVscode: ReturnType<typeof createVSCodeMock>;
   let mockFs: {
     writeFile: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
@@ -51,7 +38,19 @@ describe("PendingEditService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    _mockVSCodeServiceLayer = layer;
+    mockVscode = vsMock;
+
     // Setup mock file system with delete method
+    // Use the global mock's fs methods (the actual code uses vscode.workspace.fs directly)
+    const _globalMockFs = (vscodeModule as unknown as typeof mockVscode)
+      .workspace.fs as unknown as {
+      writeFile: ReturnType<typeof vi.fn>;
+      delete: ReturnType<typeof vi.fn>;
+    };
+
     const mockWriteFile = vi.fn().mockResolvedValue(undefined);
     const mockDelete = vi.fn().mockResolvedValue(undefined);
 
@@ -60,12 +59,16 @@ describe("PendingEditService", () => {
       delete: mockDelete,
     };
 
-    // Override the fs object in vscode.workspace
-    Object.defineProperty(vscode.workspace, "fs", {
-      value: mockFs,
-      writable: true,
-      configurable: true,
-    });
+    // Override the fs object in the global mock (used by PendingEditService)
+    Object.defineProperty(
+      (vscodeModule as unknown as typeof mockVscode).workspace,
+      "fs",
+      {
+        value: mockFs,
+        writable: true,
+        configurable: true,
+      },
+    );
 
     // Mock openTextDocument for rejectBlock
     const mockOpenTextDocument = vi.fn().mockResolvedValue({
@@ -73,7 +76,7 @@ describe("PendingEditService", () => {
         "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10",
     });
 
-    Object.defineProperty(vscode.workspace, "openTextDocument", {
+    Object.defineProperty(mockVscode.workspace, "openTextDocument", {
       value: mockOpenTextDocument,
       writable: true,
       configurable: true,

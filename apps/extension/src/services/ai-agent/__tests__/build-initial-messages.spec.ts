@@ -3,13 +3,27 @@
  * Tests mode-aware behavior for plan vs act mode
  */
 
-import { describe, expect } from "vitest";
+import { describe, expect, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { buildInitialMessages } from "../testing-agent.js";
-import { VSCodeService } from "../../vs-code.js";
+import {
+  createMockVSCodeServiceLayer,
+  type createVSCodeMock,
+} from "../../../__tests__/mock-factories/index.js";
 
 describe("buildInitialMessages", () => {
+  let mockVSCodeServiceLayer: ReturnType<
+    typeof createMockVSCodeServiceLayer
+  >["layer"];
+  let _mockVscode: ReturnType<typeof createVSCodeMock>;
+
+  beforeEach(() => {
+    // Create mock VSCodeService layer
+    const { layer, mockVscode: vsMock } = createMockVSCodeServiceLayer();
+    mockVSCodeServiceLayer = layer;
+    _mockVscode = vsMock;
+  });
   describe("Mode-aware behavior", () => {
     it.effect(
       "should append planning prompt in plan mode when history ends with assistant message",
@@ -43,7 +57,7 @@ describe("buildInitialMessages", () => {
               "propose a comprehensive test strategy",
             );
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -80,7 +94,7 @@ describe("buildInitialMessages", () => {
               ),
             ).toBe(true);
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -114,7 +128,7 @@ describe("buildInitialMessages", () => {
             expect(messages).toEqual(conversationHistory);
             // Should NOT append planning prompt when last message is from user
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -139,7 +153,7 @@ describe("buildInitialMessages", () => {
             expect(messages.length).toBe(1);
             expect(messages).toEqual(conversationHistory);
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -158,7 +172,7 @@ describe("buildInitialMessages", () => {
             expect(planMessages[0].content).toContain("Analyze this file");
             expect(actMessages[0].content).toContain("Analyze this file");
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -186,7 +200,7 @@ describe("buildInitialMessages", () => {
               "propose ONE consolidated test plan",
             );
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
 
     it.effect(
@@ -211,7 +225,7 @@ describe("buildInitialMessages", () => {
             expect(messages.length).toBe(1);
             expect(messages[0]).toEqual(conversationHistory[0]);
           });
-        }).pipe(Effect.provide(VSCodeService.Default)) as Effect.Effect<void>,
+        }).pipe(Effect.provide(mockVSCodeServiceLayer)) as Effect.Effect<void>,
     );
   });
 });

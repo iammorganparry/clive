@@ -38,8 +38,65 @@ export interface VSCodeMockOverrides {
 }
 
 /**
+ * Module-level singleton for VS Code mock instance
+ * This ensures vi.mock("vscode") and test configuration use the same instance
+ */
+let mockInstance: typeof vscode | null = null;
+
+/**
+ * Setup or get the singleton VS Code mock instance
+ * This should be called from vi.mock("vscode") and in beforeEach to ensure
+ * all code uses the same mock instance
+ */
+export function setupVSCodeMock(
+  overrides?: VSCodeMockOverrides,
+): typeof vscode {
+  if (!mockInstance) {
+    mockInstance = createVSCodeMock(overrides);
+  } else if (overrides) {
+    // Merge overrides into existing instance
+    const newMock = createVSCodeMock(overrides);
+    // Deep merge the mock functions
+    Object.assign(mockInstance, newMock);
+    if (newMock.workspace) {
+      Object.assign(mockInstance.workspace, newMock.workspace);
+      if (newMock.workspace.fs) {
+        Object.assign(mockInstance.workspace.fs, newMock.workspace.fs);
+      }
+    }
+    if (newMock.Uri) {
+      Object.assign(mockInstance.Uri, newMock.Uri);
+    }
+    if (newMock.window) {
+      Object.assign(mockInstance.window, newMock.window);
+    }
+    if (newMock.languages) {
+      Object.assign(mockInstance.languages, newMock.languages);
+    }
+  }
+  return mockInstance;
+}
+
+/**
+ * Reset the singleton mock instance
+ * Call this in beforeEach to clear state between tests
+ */
+export function resetVSCodeMock(): void {
+  mockInstance = null;
+}
+
+/**
+ * Get the current singleton mock instance without creating one
+ * Returns null if not yet initialized
+ */
+export function getVSCodeMock(): typeof vscode | null {
+  return mockInstance;
+}
+
+/**
  * Create a VS Code mock with configurable overrides
  * Defaults to a standard test workspace setup
+ * Note: For tests, prefer using setupVSCodeMock() to ensure singleton pattern
  */
 export function createVSCodeMock(
   overrides: VSCodeMockOverrides = {},
@@ -57,12 +114,10 @@ export function createVSCodeMock(
     },
   ];
 
-  const defaultAsRelativePath = vi.fn(
-    (uri: vscode.Uri | string): string => {
-      if (typeof uri === "string") return uri;
-      return uri.fsPath?.replace("/test-workspace/", "") || uri.path || "";
-    },
-  );
+  const defaultAsRelativePath = vi.fn((uri: vscode.Uri | string): string => {
+    if (typeof uri === "string") return uri;
+    return uri.fsPath?.replace("/test-workspace/", "") || uri.path || "";
+  });
 
   const defaultUriFile = vi.fn((path: string): vscode.Uri => {
     return {
@@ -92,20 +147,34 @@ export function createVSCodeMock(
     },
   );
 
-  return {
+  const mockVscode = {
     workspace: {
-      workspaceFolders:
-        overrides.workspaceFolders ?? defaultWorkspaceFolders,
+      workspaceFolders: overrides.workspaceFolders ?? defaultWorkspaceFolders,
       fs: {
-        stat: overrides.fs?.stat ?? vi.fn(),
-        writeFile: overrides.fs?.writeFile ?? vi.fn(),
-        readFile: overrides.fs?.readFile ?? vi.fn(),
-        createDirectory: overrides.fs?.createDirectory ?? vi.fn(),
+        stat:
+          overrides.fs?.stat ??
+          vi.fn().mockResolvedValue({
+            type: 1,
+            ctime: Date.now(),
+            mtime: Date.now(),
+            size: 0,
+          }),
+        writeFile:
+          overrides.fs?.writeFile ?? vi.fn().mockResolvedValue(undefined),
+        readFile:
+          overrides.fs?.readFile ?? vi.fn().mockResolvedValue(Buffer.from("")),
+        createDirectory:
+          overrides.fs?.createDirectory ?? vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
       },
       asRelativePath: overrides.asRelativePath ?? defaultAsRelativePath,
       openTextDocument:
-        overrides.openTextDocument ?? vi.fn().mockResolvedValue({
-          uri: { fsPath: "/test-workspace/test.ts", toString: () => "file:///test-workspace/test.ts" },
+        overrides.openTextDocument ??
+        vi.fn().mockResolvedValue({
+          uri: {
+            fsPath: "/test-workspace/test.ts",
+            toString: () => "file:///test-workspace/test.ts",
+          },
           getText: () => "",
           positionAt: (offset: number) => ({ line: 0, character: offset }),
         } as unknown as vscode.TextDocument),
@@ -122,14 +191,29 @@ export function createVSCodeMock(
         public pattern: string,
       ) {}
     },
+    EventEmitter: class MockEventEmitter<T> {
+      private listeners: Array<(e: T) => void> = [];
+      event = (listener: (e: T) => void) => {
+        this.listeners.push(listener);
+        return { dispose: vi.fn() };
+      };
+      fire = (data: T) => {
+        for (const listener of this.listeners) {
+          listener(data);
+        }
+      };
+      dispose = vi.fn();
+    },
     window: {
       showInformationMessage:
         overrides.window?.showInformationMessage ?? vi.fn(),
       showErrorMessage: overrides.window?.showErrorMessage ?? vi.fn(),
       showTextDocument:
         overrides.window?.showTextDocument ?? vi.fn().mockResolvedValue({}),
-      visibleTextEditors:
-        overrides.window?.visibleTextEditors ?? [],
+      visibleTextEditors: overrides.window?.visibleTextEditors ?? [],
+      createTextEditorDecorationType: vi.fn(() => ({
+        dispose: vi.fn(),
+      })),
     },
     WorkspaceEdit:
       overrides.WorkspaceEdit ??
@@ -146,35 +230,32 @@ export function createVSCodeMock(
       Information: 2,
       Hint: 3,
     },
-    Range: overrides.Range ?? class MockRange {
-      constructor(
-        public start: vscode.Position,
-        public end: vscode.Position,
-      ) {}
-      isEqual(other: vscode.Range): boolean {
-        return (
-          this.start.line === other.start.line &&
-          this.start.character === other.start.character &&
-          this.end.line === other.end.line &&
-          this.end.character === other.end.character
-        );
-      }
-    },
-    Position: overrides.Position ?? class MockPosition {
-      constructor(
-        public line: number,
-        public character: number,
-      ) {}
-    },
+    Range:
+      overrides.Range ??
+      class MockRange {
+        constructor(
+          public start: vscode.Position,
+          public end: vscode.Position,
+        ) {}
+        isEqual(other: vscode.Range): boolean {
+          return (
+            this.start.line === other.start.line &&
+            this.start.character === other.start.character &&
+            this.end.line === other.end.line &&
+            this.end.character === other.end.character
+          );
+        }
+      },
+    Position:
+      overrides.Position ??
+      class MockPosition {
+        constructor(
+          public line: number,
+          public character: number,
+        ) {}
+      },
   } as unknown as typeof vscode;
-}
 
-/**
- * Setup vi.mock for vscode module using the factory
- * This is a convenience function for test files that want to use vi.mock
- */
-export function setupVSCodeMock(overrides?: VSCodeMockOverrides): void {
-  const mock = createVSCodeMock(overrides);
-  vi.mock("vscode", () => mock);
+  // Add default export for ES module compatibility
+  return Object.assign(mockVscode, { default: mockVscode });
 }
-
