@@ -141,6 +141,7 @@ export interface ChangesetChatContext {
   agentMode: "plan" | "act"; // Current agent mode
   subscriptionId: string | null; // Active subscription ID for tool approvals
   hasPendingPlanApproval: boolean; // True when proposeTestPlan tool completes successfully
+  isProcessingQueue: boolean; // True when actively processing suites in act mode
 }
 
 interface BackendHistoryMessage {
@@ -1028,6 +1029,7 @@ export const changesetChatMachine = setup({
       currentSuiteId: () => null,
       agentMode: () => "plan",
       hasPendingPlanApproval: () => false,
+      isProcessingQueue: () => false,
     }),
     approvePlan: assign(({ event }) => {
       if (event.type !== "APPROVE_PLAN") return {};
@@ -1037,6 +1039,7 @@ export const changesetChatMachine = setup({
         currentSuiteId: firstSuite?.id || null,
         agentMode: "act" as const,
         hasPendingPlanApproval: false, // Reset flag after approval
+        isProcessingQueue: suites.length > 0, // Start processing queue if we have suites
         // Mark first suite as in_progress, remaining as pending
         testSuiteQueue: suites.map((suite, index) =>
           index === 0
@@ -1050,10 +1053,14 @@ export const changesetChatMachine = setup({
         (suite) => suite.status === "pending",
       );
       if (!nextSuite) {
-        return {};
+        // No more pending suites - stop processing queue
+        return {
+          isProcessingQueue: false,
+        };
       }
       return {
         currentSuiteId: nextSuite.id,
+        isProcessingQueue: true, // Continue processing queue
         testSuiteQueue: context.testSuiteQueue.map((suite) =>
           suite.id === nextSuite.id
             ? { ...suite, status: "in_progress" as const }
@@ -1203,6 +1210,7 @@ export const changesetChatMachine = setup({
     agentMode: "plan" as const,
     subscriptionId: null,
     hasPendingPlanApproval: false,
+    isProcessingQueue: false,
   }),
   states: {
     idle: {
@@ -1272,15 +1280,29 @@ export const changesetChatMachine = setup({
             "updatePlanContent",
           ],
         },
-        RESPONSE_COMPLETE: {
-          target: "idle",
-          actions: [
-            "completeSuiteOnStreamEnd",
-            "clearStreamingContent",
-            "stopReasoningStreaming",
-            "markAnalysisComplete",
-          ],
-        },
+        RESPONSE_COMPLETE: [
+          {
+            guard: ({ context }) => {
+              // In act mode with pending suites - advance queue, go to idle
+              return (
+                context.agentMode === "act" &&
+                context.isProcessingQueue &&
+                context.testSuiteQueue.some((s) => s.status === "pending")
+              );
+            },
+            actions: ["completeSuiteOnStreamEnd", "startNextSuite"],
+            target: "idle", // Go to idle, not analyzing - hook will start next subscription
+          },
+          {
+            target: "idle",
+            actions: [
+              "completeSuiteOnStreamEnd",
+              "clearStreamingContent",
+              "stopReasoningStreaming",
+              "markAnalysisComplete",
+            ],
+          },
+        ],
         RESPONSE_ERROR: {
           target: "idle",
           actions: ["setResponseError"],
@@ -1327,22 +1349,16 @@ export const changesetChatMachine = setup({
         },
         RESPONSE_COMPLETE: [
           {
-            guard: ({ context, event }) => {
-              // Only advance to next suite if agent explicitly signaled completion
-              if (event.type !== "RESPONSE_COMPLETE" || !event.taskCompleted) {
-                return false;
-              }
-              // If in act mode with a current suite that will be completed, check for pending suites
-              if (context.agentMode === "act" && context.currentSuiteId) {
-                const hasPendingSuites = context.testSuiteQueue.some(
-                  (s) => s.status === "pending",
-                );
-                return hasPendingSuites;
-              }
-              return false;
+            guard: ({ context }) => {
+              // In act mode with pending suites - advance queue, go to idle
+              return (
+                context.agentMode === "act" &&
+                context.isProcessingQueue &&
+                context.testSuiteQueue.some((s) => s.status === "pending")
+              );
             },
             actions: ["completeSuiteOnStreamEnd", "startNextSuite"],
-            target: "analyzing",
+            target: "idle", // Go to idle, not analyzing - hook will start next subscription
           },
           {
             target: "idle",

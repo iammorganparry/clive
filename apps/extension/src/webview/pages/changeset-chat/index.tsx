@@ -76,6 +76,7 @@ export const ChangesetChatPage: React.FC = () => {
     agentMode,
     subscriptionId,
     hasPendingPlanApproval,
+    isProcessingQueue,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName, baseBranch, mode, commitHash });
@@ -264,22 +265,13 @@ export const ChangesetChatPage: React.FC = () => {
       name: section.name,
       testType: section.testType,
       targetFilePath: section.targetFilePath,
-      sourceFiles: [], // TODO: parse from section if needed
+      sourceFiles: files, // Use the files being analyzed
       status: "pending",
       description: section.description,
     }));
 
     // Dispatch APPROVE_PLAN event to populate queue and switch to act mode
     send({ type: "APPROVE_PLAN", suites });
-
-    // Send focused message for first suite
-    const firstSuite = suites[0];
-    if (firstSuite) {
-      send({
-        type: "SEND_MESSAGE",
-        content: `Write tests for: ${firstSuite.name}\nTarget file: ${firstSuite.targetFilePath}\nTest type: ${firstSuite.testType}\n\nFocus only on this suite. Other suites will be handled separately.`,
-      });
-    }
   };
 
   const handleNewChat = () => {
@@ -404,7 +396,7 @@ export const ChangesetChatPage: React.FC = () => {
                     ? "Type your feedback or questions..."
                     : "Chat will be enabled after analysis completes..."
                 }
-                disabled={!hasCompletedAnalysis || isLoading}
+                disabled={(!hasCompletedAnalysis && !isProcessingQueue) || isLoading}
               />
               <PromptInputFooter>
                 <PromptInputContext

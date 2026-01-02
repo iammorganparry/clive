@@ -13,7 +13,11 @@ import {
 } from "../rpc/handler.js";
 import type { RpcSubscriptionMessage } from "@clive/webview-rpc";
 import type { RpcContext } from "../rpc/context.js";
-import { toLayerContext } from "../services/layer-factory.js";
+import {
+  createCachedLayers,
+  toLayerContext,
+  type CachedLayers,
+} from "../services/layer-factory.js";
 
 /**
  * Message type for opening a file
@@ -46,6 +50,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   private _context?: vscode.ExtensionContext;
   private _outputChannel?: vscode.OutputChannel;
   private _isDev: boolean = false;
+  private _cachedLayers?: CachedLayers;
   private themeChangeDisposable?: vscode.Disposable;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
 
@@ -86,6 +91,18 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       webviewView.webview,
       this._extensionUri,
     );
+
+    // Create cached layers ONCE when webview resolves
+    // This ensures proper layer memoization via reference equality
+    if (this._context && this._outputChannel) {
+      this._cachedLayers = createCachedLayers(
+        toLayerContext({
+          context: this._context,
+          outputChannel: this._outputChannel,
+          isDev: this._isDev,
+        }),
+      );
+    }
 
     // Send initial theme info
     const initialTheme = vscode.window.activeColorTheme;
@@ -236,13 +253,18 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       cypressDetector: new CypressDetector(),
       gitService,
       diffProvider: this.diffProvider,
-      // Layer context for building Effect layers in routers
+      // Layer context for building Effect layers in routers (fallback for tests)
       layerContext: toLayerContext({
         context: this._context,
         outputChannel: this._outputChannel,
         isDev: this._isDev,
       }),
-      // No layer overrides in production - routers use defaults
+      // Pass cached layers to enable proper memoization
+      // Routers will use these instead of creating new layers on each request
+      configLayer: this._cachedLayers?.configLayer,
+      agentLayer: this._cachedLayers?.agentLayer,
+      authLayer: this._cachedLayers?.authLayer,
+      systemLayer: this._cachedLayers?.systemLayer,
     };
   }
 

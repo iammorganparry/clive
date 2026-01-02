@@ -313,3 +313,158 @@ export function toLayerContext(ctx: {
     isDev: ctx.isDev,
   };
 }
+
+/**
+ * Type aliases for layer return types
+ */
+export type ConfigLayerType = ReturnType<typeof createConfigServiceLayer>;
+export type AgentLayerType = ReturnType<typeof createAgentServiceLayer>;
+export type AuthLayerType = ReturnType<typeof createAuthServiceLayer>;
+export type SystemLayerType = ReturnType<typeof createSystemServiceLayer>;
+
+/**
+ * Cached layers for a session.
+ * All layer factory functions should be called ONCE and the result reused.
+ * This ensures proper layer memoization via reference equality.
+ */
+export interface CachedLayers {
+  configLayer: ConfigLayerType;
+  agentLayer: AgentLayerType;
+  authLayer: AuthLayerType;
+  systemLayer: SystemLayerType;
+}
+
+/**
+ * Internal: Build config layer from pre-built domain and base layers
+ * Avoids redundant layer creation when building cached layers
+ */
+function createConfigServiceLayerFromDomain(
+  domainLayer: ReturnType<typeof createDomainLayer>,
+  baseLayer: ReturnType<typeof createBaseLayer>,
+) {
+  // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
+    Layer.provide(baseLayer),
+  );
+
+  // KnowledgeBaseAgent depends on ConfigService, RepositoryService, and KnowledgeFileService
+  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
+    Layer.provide(Layer.mergeAll(domainLayer, knowledgeFileLayer)),
+  );
+
+  // KnowledgeBaseService depends on KnowledgeBaseAgent and KnowledgeFileService
+  const knowledgeBaseServiceLayer = KnowledgeBaseServiceLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer, knowledgeFileLayer),
+    ),
+  );
+
+  return Layer.mergeAll(
+    domainLayer,
+    knowledgeFileLayer,
+    knowledgeBaseAgentLayer,
+    knowledgeBaseServiceLayer,
+  );
+}
+
+/**
+ * Internal: Build agent layer from pre-built domain and base layers
+ * Avoids redundant layer creation when building cached layers
+ */
+function createAgentServiceLayerFromDomain(
+  domainLayer: ReturnType<typeof createDomainLayer>,
+  baseLayer: ReturnType<typeof createBaseLayer>,
+) {
+  // PlanFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const planFileLayer = PlanFileService.Default.pipe(Layer.provide(baseLayer));
+
+  // Domain layer with plan file service
+  const domainWithServices = Layer.mergeAll(domainLayer, planFileLayer);
+
+  // KnowledgeFileService depends on VSCodeService (in baseLayer via coreLayer)
+  const knowledgeFileLayer = KnowledgeFileServiceLive.pipe(
+    Layer.provide(baseLayer),
+  );
+
+  // KnowledgeBaseAgent depends on ConfigService, RepositoryService, and KnowledgeFileService
+  const knowledgeBaseAgentLayer = KnowledgeBaseAgentLive.pipe(
+    Layer.provide(Layer.mergeAll(domainLayer, knowledgeFileLayer)),
+  );
+
+  // KnowledgeBaseService depends on KnowledgeBaseAgent and KnowledgeFileService
+  const knowledgeBaseServiceLayer = KnowledgeBaseServiceLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(domainLayer, knowledgeBaseAgentLayer, knowledgeFileLayer),
+    ),
+  );
+
+  // SummaryService has no dependencies - can be added directly
+  const summaryServiceLayer = SummaryServiceLive;
+
+  // CompletionDetector has no dependencies - can be added directly
+  const completionDetectorLayer = CompletionDetectorLive;
+
+  // RulesService has no dependencies - can be added directly
+  const rulesServiceLayer = RulesServiceLive;
+
+  // PromptService depends on RulesService
+  const promptServiceLayer = PromptServiceLive.pipe(
+    Layer.provide(rulesServiceLayer),
+  );
+
+  // Domain layer with all services including knowledge base and summary service
+  const domainWithAllServices = Layer.mergeAll(
+    domainWithServices,
+    knowledgeFileLayer,
+    knowledgeBaseAgentLayer,
+    knowledgeBaseServiceLayer,
+    summaryServiceLayer,
+    completionDetectorLayer,
+    rulesServiceLayer,
+    promptServiceLayer,
+  );
+
+  // Add agent layers
+  // TestingAgent depends on PlanFileService, KnowledgeBaseService, and SummaryService
+  const testingLayer = TestingAgentLive.pipe(
+    Layer.provide(domainWithAllServices),
+  );
+
+  return Layer.mergeAll(domainWithAllServices, testingLayer);
+}
+
+/**
+ * Internal: Build auth layer from pre-built base layer
+ * Avoids redundant layer creation when building cached layers
+ */
+function createAuthServiceLayerFromBase(
+  baseLayer: ReturnType<typeof createBaseLayer>,
+) {
+  // DeviceAuthService depends on ConfigService (in baseLayer)
+  const deviceAuthLayer = DeviceAuthServiceLive.pipe(Layer.provide(baseLayer));
+
+  return Layer.mergeAll(baseLayer, deviceAuthLayer);
+}
+
+/**
+ * Create all layers once for the session.
+ * Call this ONCE when the webview is created, then reuse the layers.
+ * This ensures proper layer memoization via reference equality.
+ *
+ * All router-specific layers share the same core/base/domain layers,
+ * which means Effect's layer memoization will work correctly.
+ */
+export function createCachedLayers(ctx: LayerContext): CachedLayers {
+  // Create core/base/domain layers ONCE - these are shared across all routers
+  const coreLayer = createCoreLayer(ctx);
+  const baseLayer = createBaseLayer(coreLayer);
+  const domainLayer = createDomainLayer(baseLayer, ctx);
+
+  // Build all router-specific layers from the shared base layers
+  return {
+    configLayer: createConfigServiceLayerFromDomain(domainLayer, baseLayer),
+    agentLayer: createAgentServiceLayerFromDomain(domainLayer, baseLayer),
+    authLayer: createAuthServiceLayerFromBase(baseLayer),
+    systemLayer: domainLayer,
+  };
+}
