@@ -1,19 +1,20 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { spawn as nodeSpawn, type SpawnOptions, type ChildProcess } from "node:child_process";
+import {
+  spawn as nodeSpawn,
+  type SpawnOptions,
+  type ChildProcess,
+} from "node:child_process";
 import { Effect, Runtime, Data } from "effect";
 import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import type { TokenBudgetService } from "../token-budget.js";
-import { getWorkspaceRoot } from "../../../lib/vscode-effects.js";
+import { VSCodeService } from "../../vs-code.js";
 
 /**
  * Type for spawn function - allows dependency injection for testing
  */
-export type SpawnFn = (
-  command: string,
-  options: SpawnOptions,
-) => ChildProcess;
+export type SpawnFn = (command: string, options: SpawnOptions) => ChildProcess;
 
 /**
  * Blocked patterns that indicate destructive or unsafe operations
@@ -176,7 +177,8 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
       return Runtime.runPromise(Runtime.defaultRuntime)(
         Effect.gen(function* () {
           // Get workspace root
-          const workspaceRootUri = yield* getWorkspaceRoot();
+          const vsCodeService = yield* VSCodeService;
+          const workspaceRootUri = yield* vsCodeService.getWorkspaceRoot();
           const workspaceRoot = workspaceRootUri.fsPath;
 
           // Validate command safety
@@ -334,29 +336,31 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
             wasTruncated,
             command,
           };
-        }).pipe(
-          Effect.catchTag("CommandNotAllowedError", (error) =>
-            Effect.fail(
-              new Error(
-                `Command not allowed: ${error.command}. ${error.reason}`,
+        })
+          .pipe(
+            Effect.catchTag("CommandNotAllowedError", (error) =>
+              Effect.fail(
+                new Error(
+                  `Command not allowed: ${error.command}. ${error.reason}`,
+                ),
               ),
             ),
-          ),
-          Effect.catchTag("BashCommandError", (error) =>
-            Effect.fail(
-              new Error(
-                `Command execution failed: ${error.message}. Command: ${error.command}`,
+            Effect.catchTag("BashCommandError", (error) =>
+              Effect.fail(
+                new Error(
+                  `Command execution failed: ${error.message}. Command: ${error.command}`,
+                ),
               ),
             ),
-          ),
-          Effect.catchAll((error) =>
-            Effect.fail(
-              new Error(
-                `Unexpected error: ${error instanceof Error ? error.message : "Unknown error"}`,
+            Effect.catchAll((error) =>
+              Effect.fail(
+                new Error(
+                  `Unexpected error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                ),
               ),
             ),
-          ),
-        ),
+          )
+          .pipe(Effect.provide(VSCodeService.Default)),
       );
     },
     providerOptions: {

@@ -4,13 +4,8 @@
  */
 
 import { Data, Effect } from "effect";
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import { VSCodeService } from "./vs-code.js";
-import {
-  getWorkspaceRoot,
-  readFileAsStringEffect,
-  statFileEffect,
-} from "../lib/vscode-effects.js";
 import { extractErrorMessage } from "../utils/error-utils.js";
 
 /**
@@ -38,15 +33,12 @@ export class GitignoreManager extends Effect.Service<GitignoreManager>()(
   "GitignoreManager",
   {
     effect: Effect.gen(function* () {
-      const vscodeService = yield* VSCodeService;
+      const vsCodeService = yield* VSCodeService;
 
       /**
        * Check if a pattern exists in gitignore content
        */
-      const patternExists = (
-        content: string,
-        pattern: string,
-      ): boolean => {
+      const patternExists = (content: string, pattern: string): boolean => {
         const lines = content.split("\n");
         for (const line of lines) {
           const trimmed = line.trim();
@@ -63,46 +55,45 @@ export class GitignoreManager extends Effect.Service<GitignoreManager>()(
        */
       const readGitignore = (workspaceRoot: vscode.Uri) =>
         Effect.gen(function* () {
-          const gitignoreUri = vscode.Uri.joinPath(workspaceRoot, ".gitignore");
+          const gitignoreUri = vsCodeService.joinPath(
+            workspaceRoot,
+            ".gitignore",
+          );
 
           // Check if file exists
-          const exists = yield* statFileEffect(gitignoreUri).pipe(
-            Effect.map((stat) => stat.type === vscode.FileType.File),
-            Effect.catchAll(() => Effect.succeed(false)),
-          );
+          const exists = yield* vsCodeService
+            .isFile(gitignoreUri)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
           if (!exists) {
             return "";
           }
 
-          return yield* readFileAsStringEffect(gitignoreUri).pipe(
-            Effect.catchAll(() => Effect.succeed("")),
-          );
+          return yield* vsCodeService
+            .readFileAsString(gitignoreUri)
+            .pipe(Effect.catchAll(() => Effect.succeed("")));
         });
 
       /**
        * Write .gitignore file
        */
-      const writeGitignore = (
-        workspaceRoot: vscode.Uri,
-        content: string,
-      ) =>
-        Effect.tryPromise({
-          try: async () => {
-            const gitignoreUri = vscode.Uri.joinPath(
-              workspaceRoot,
-              ".gitignore",
+      const writeGitignore = (workspaceRoot: vscode.Uri, content: string) =>
+        Effect.gen(function* () {
+          const gitignoreUri = vsCodeService.joinPath(
+            workspaceRoot,
+            ".gitignore",
+          );
+          yield* vsCodeService
+            .writeFile(gitignoreUri, Buffer.from(content, "utf-8"))
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new GitignoreError({
+                    message: `Failed to write .gitignore: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+              ),
             );
-            await vscodeService.workspace.fs.writeFile(
-              gitignoreUri,
-              Buffer.from(content, "utf-8"),
-            );
-          },
-          catch: (error) =>
-            new GitignoreError({
-              message: `Failed to write .gitignore: ${extractErrorMessage(error)}`,
-              cause: error,
-            }),
         });
 
       /**
@@ -123,7 +114,7 @@ export class GitignoreManager extends Effect.Service<GitignoreManager>()(
             }
           }
 
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
           const existingContent = yield* readGitignore(workspaceRoot);
 
           // Check if all patterns already exist
@@ -182,4 +173,3 @@ export class GitignoreManager extends Effect.Service<GitignoreManager>()(
  * Use Layer.merge(GitignoreManager.Default, VSCodeService.Default) when providing
  */
 export const GitignoreManagerLive = GitignoreManager.Default;
-

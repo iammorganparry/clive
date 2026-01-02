@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
 import { createSearchKnowledgeTool } from "../search-knowledge";
 import type { KnowledgeFileService } from "../../../knowledge-file-service";
-import { VSCodeFileFindError } from "../../../../lib/vscode-effects.js";
+import { FileSystemError } from "../../../vs-code.js";
 import { createMockKnowledgeFileService } from "../../../../__tests__/mock-factories";
 
 type SearchResult = {
@@ -39,7 +39,13 @@ async function executeTool(
     for await (const value of result as AsyncIterable<SearchResult>) {
       results.push(value);
     }
-    return results[results.length - 1] ?? { results: [], query: input.query, count: 0 };
+    return (
+      results[results.length - 1] ?? {
+        results: [],
+        query: input.query,
+        count: 0,
+      }
+    );
   }
 
   return result as SearchResult;
@@ -63,8 +69,14 @@ describe("searchKnowledgeTool", () => {
     mockKnowledgeFileService = createMockKnowledgeFileService({
       listKnowledgeFiles: vi.fn(() =>
         Effect.succeed([
-          { relativePath: ".clive/knowledge/test-execution.md", path: "/test/test-execution.md" },
-          { relativePath: ".clive/knowledge/architecture.md", path: "/test/architecture.md" },
+          {
+            relativePath: ".clive/knowledge/test-execution.md",
+            path: "/test/test-execution.md",
+          },
+          {
+            relativePath: ".clive/knowledge/architecture.md",
+            path: "/test/architecture.md",
+          },
         ]),
       ),
       readKnowledgeFile: vi.fn((path: string) => {
@@ -77,7 +89,8 @@ describe("searchKnowledgeTool", () => {
               title: "Running Unit Tests",
               updatedAt: new Date().toISOString(),
             },
-            content: "Use npx vitest run for unit tests. Tests are located in __tests__ directories. This is a longer description that goes beyond 500 characters to test the full content return for critical categories. We want to make sure that test-execution category articles always return their full content without truncation because they contain critical information about how to run tests in this codebase. This includes framework-specific commands, configuration details, and important patterns that developers need to follow when writing and executing tests.",
+            content:
+              "Use npx vitest run for unit tests. Tests are located in __tests__ directories. This is a longer description that goes beyond 500 characters to test the full content return for critical categories. We want to make sure that test-execution category articles always return their full content without truncation because they contain critical information about how to run tests in this codebase. This includes framework-specific commands, configuration details, and important patterns that developers need to follow when writing and executing tests.",
           });
         }
         return Effect.succeed({
@@ -88,7 +101,8 @@ describe("searchKnowledgeTool", () => {
             title: "System Architecture",
             updatedAt: new Date().toISOString(),
           },
-          content: "The system uses Effect-TS for dependency injection and layer composition. This is a longer content that would normally be truncated for non-critical categories. The architecture follows a layered approach with clear separation of concerns. Services are organized into tiers based on their dependencies, with core services at the bottom and feature services at the top. This design makes testing easier and promotes modularity.",
+          content:
+            "The system uses Effect-TS for dependency injection and layer composition. This is a longer content that would normally be truncated for non-critical categories. The architecture follows a layered approach with clear separation of concerns. Services are organized into tiers based on their dependencies, with core services at the bottom and feature services at the top. This design makes testing easier and promotes modularity.",
         });
       }),
     });
@@ -163,7 +177,9 @@ describe("searchKnowledgeTool", () => {
       if (testExecutionResult) {
         expect(testExecutionResult.content).toContain("Use npx vitest run");
         // Critical categories should return full content, not truncated
-        expect(testExecutionResult.content).toContain("framework-specific commands");
+        expect(testExecutionResult.content).toContain(
+          "framework-specific commands",
+        );
       }
     });
 
@@ -241,8 +257,8 @@ describe("searchKnowledgeTool", () => {
     it("should handle errors gracefully", async () => {
       vi.mocked(mockKnowledgeFileService.listKnowledgeFiles).mockReturnValue(
         Effect.fail(
-          new VSCodeFileFindError({
-            pattern: "**/*.md",
+          new FileSystemError({
+            message: "Failed to find files",
             cause: new Error("File system error"),
           }),
         ),

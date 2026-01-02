@@ -1,11 +1,7 @@
 import { Effect, Data } from "effect";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  getWorkspaceRoot,
-  readFileAsStringEffect,
-} from "../lib/vscode-effects.js";
-import * as vscode from "vscode";
+import { VSCodeService } from "./vs-code.js";
 
 const execAsync = promisify(exec);
 
@@ -24,6 +20,7 @@ export class DockerSandboxService extends Effect.Service<DockerSandboxService>()
   "DockerSandboxService",
   {
     effect: Effect.gen(function* () {
+      const vsCodeService = yield* VSCodeService;
       const isDockerAvailable = () =>
         Effect.tryPromise({
           try: () => execAsync("docker --version"),
@@ -36,7 +33,7 @@ export class DockerSandboxService extends Effect.Service<DockerSandboxService>()
 
       const start = (composeFile?: string) =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
           const cwd = workspaceRoot.fsPath;
 
           yield* isDockerAvailable();
@@ -62,7 +59,7 @@ export class DockerSandboxService extends Effect.Service<DockerSandboxService>()
 
       const stop = (composeFile?: string) =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
           const cwd = workspaceRoot.fsPath;
 
           const composeArg = composeFile ? `-f ${composeFile}` : "";
@@ -84,7 +81,7 @@ export class DockerSandboxService extends Effect.Service<DockerSandboxService>()
 
       const waitForHealth = (maxWaitMs = 30_000) =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
           const cwd = workspaceRoot.fsPath;
 
           yield* Effect.logDebug(
@@ -125,16 +122,16 @@ export class DockerSandboxService extends Effect.Service<DockerSandboxService>()
 
       const loadSandboxEnv = () =>
         Effect.gen(function* () {
-          const workspaceRoot = yield* getWorkspaceRoot();
+          const workspaceRoot = yield* vsCodeService.getWorkspaceRoot();
 
-          const envTestUri = vscode.Uri.joinPath(
+          const envTestUri = vsCodeService.joinPath(
             workspaceRoot,
             ".clive",
             ".env.test",
           );
-          const envContent = yield* readFileAsStringEffect(envTestUri).pipe(
-            Effect.catchAll(() => Effect.succeed("")),
-          );
+          const envContent = yield* vsCodeService
+            .readFileAsString(envTestUri)
+            .pipe(Effect.catchAll(() => Effect.succeed("")));
 
           if (!envContent) {
             yield* Effect.logDebug(
