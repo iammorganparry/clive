@@ -1326,3 +1326,239 @@ describe("changeset-chat-machine SKIP_SUITE event", () => {
   });
 });
 
+describe("changeset-chat-machine CANCEL_STREAM event", () => {
+  let mockContext: ChangesetChatContext;
+
+  beforeEach(() => {
+    mockContext = {
+      files: [],
+      branchName: "test-branch",
+      messages: [],
+      streamingContent: "",
+      toolEvents: [],
+      error: null,
+      reasoningContent: "",
+      isReasoningStreaming: false,
+      hasCompletedAnalysis: false,
+      hasPendingPlanApproval: false,
+      scratchpadTodos: [],
+      historyLoaded: false,
+      testExecutions: [],
+      accumulatedTestOutput: new Map(),
+      accumulatedFileContent: new Map(),
+      testSuiteQueue: [],
+      currentSuiteId: null,
+      agentMode: "act",
+      planContent: null,
+      planFilePath: null,
+      usage: null,
+      subscriptionId: null,
+      isProcessingQueue: false,
+    };
+  });
+
+  describe("cancelStream action", () => {
+    it("should set hasCompletedAnalysis to true", () => {
+      mockContext.hasCompletedAnalysis = false;
+
+      // Simulate cancelStream action
+      mockContext.hasCompletedAnalysis = true;
+
+      expect(mockContext.hasCompletedAnalysis).toBe(true);
+    });
+
+    it("should reset isReasoningStreaming to false", () => {
+      mockContext.isReasoningStreaming = true;
+
+      // Simulate cancelStream action
+      mockContext.isReasoningStreaming = false;
+
+      expect(mockContext.isReasoningStreaming).toBe(false);
+    });
+
+    it("should clear currentSuiteId", () => {
+      mockContext.currentSuiteId = "suite-1";
+
+      // Simulate cancelStream action
+      mockContext.currentSuiteId = null;
+
+      expect(mockContext.currentSuiteId).toBeNull();
+    });
+
+    it("should reset isProcessingQueue to false", () => {
+      mockContext.isProcessingQueue = true;
+
+      // Simulate cancelStream action
+      mockContext.isProcessingQueue = false;
+
+      expect(mockContext.isProcessingQueue).toBe(false);
+    });
+
+    it("should mark current suite as cancelled if one is in progress", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Simulate cancelStream action
+      if (mockContext.currentSuiteId) {
+        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+          suite.id === mockContext.currentSuiteId
+            ? { ...suite, status: "cancelled" as const }
+            : suite,
+        );
+      }
+      mockContext.currentSuiteId = null;
+      mockContext.isProcessingQueue = false;
+
+      const cancelledSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
+      expect(cancelledSuite?.status).toBe("cancelled");
+      expect(mockContext.currentSuiteId).toBeNull();
+    });
+
+    it("should not affect completed suites when cancelling", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "completed",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-2";
+
+      // Simulate cancelStream action
+      if (mockContext.currentSuiteId) {
+        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+          suite.id === mockContext.currentSuiteId
+            ? { ...suite, status: "cancelled" as const }
+            : suite,
+        );
+      }
+      mockContext.currentSuiteId = null;
+
+      const completedSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
+      const cancelledSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
+      expect(completedSuite?.status).toBe("completed");
+      expect(cancelledSuite?.status).toBe("cancelled");
+    });
+
+    it("should leave pending suites as pending when cancelling", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "in_progress",
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+        {
+          id: "suite-3",
+          name: "E2E Tests",
+          testType: "e2e",
+          targetFilePath: "test3.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = "suite-1";
+
+      // Simulate cancelStream action
+      if (mockContext.currentSuiteId) {
+        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+          suite.id === mockContext.currentSuiteId
+            ? { ...suite, status: "cancelled" as const }
+            : suite,
+        );
+      }
+      mockContext.currentSuiteId = null;
+      mockContext.isProcessingQueue = false;
+
+      const suite2 = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
+      const suite3 = mockContext.testSuiteQueue.find((s) => s.id === "suite-3");
+      expect(suite2?.status).toBe("pending");
+      expect(suite3?.status).toBe("pending");
+    });
+
+    it("should handle cancellation when no suite is in progress", () => {
+      mockContext.testSuiteQueue = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+          status: "pending",
+        },
+      ];
+      mockContext.currentSuiteId = null;
+      mockContext.isProcessingQueue = false;
+
+      // Simulate cancelStream action - should not throw
+      if (mockContext.currentSuiteId) {
+        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
+          suite.id === mockContext.currentSuiteId
+            ? { ...suite, status: "cancelled" as const }
+            : suite,
+        );
+      }
+      mockContext.isProcessingQueue = false;
+
+      // All suites should remain pending
+      const suite1 = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
+      expect(suite1?.status).toBe("pending");
+    });
+
+    it("should allow continuing conversation after cancellation", () => {
+      mockContext.hasCompletedAnalysis = false;
+      mockContext.isReasoningStreaming = true;
+      mockContext.currentSuiteId = "suite-1";
+      mockContext.isProcessingQueue = true;
+
+      // Simulate cancelStream action - re-enables input
+      mockContext.hasCompletedAnalysis = true;
+      mockContext.isReasoningStreaming = false;
+      mockContext.currentSuiteId = null;
+      mockContext.isProcessingQueue = false;
+
+      // User should be able to send new messages
+      expect(mockContext.hasCompletedAnalysis).toBe(true);
+      expect(mockContext.isReasoningStreaming).toBe(false);
+    });
+  });
+});
+

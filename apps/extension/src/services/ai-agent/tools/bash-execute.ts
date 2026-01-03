@@ -285,6 +285,19 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
               const approvalResult = yield* Effect.promise(() =>
                 waitForApproval(toolCallId),
               );
+
+              // Check if aborted during approval wait (race condition handling)
+              // The user might have cancelled while we were waiting for approval
+              if (toolSignal.aborted || signal?.aborted) {
+                ToolCallAbortRegistry.cleanup(toolCallId);
+                yield* Effect.fail(
+                  new BashCommandError({
+                    message: "Command cancelled during approval",
+                    command,
+                  }),
+                );
+              }
+
               // Check if approved (APPROVAL.YES means approved)
               if (approvalResult !== APPROVAL.YES) {
                 ToolCallAbortRegistry.cleanup(toolCallId);

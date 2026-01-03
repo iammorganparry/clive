@@ -364,6 +364,9 @@ export function useChangesetChat({
     buildSuiteContext,
   ]);
 
+  // Abort all running tool calls mutation
+  const abortAllToolCalls = rpc.agents.abortAllToolCalls.useMutation();
+
   return {
     state,
     send,
@@ -386,6 +389,19 @@ export function useChangesetChat({
     hasPendingPlanApproval: state.context.hasPendingPlanApproval,
     isProcessingQueue: state.context.isProcessingQueue,
     cancelStream: () => {
+      // First abort all running tool calls to ensure clean cleanup
+      abortAllToolCalls
+        .mutateAsync()
+        .then((result) => {
+          console.log(
+            "[useChangesetChat] Aborted all tool calls:",
+            result.abortedCount,
+          );
+        })
+        .catch((error: unknown) => {
+          console.error("[useChangesetChat] Failed to abort tool calls:", error);
+        });
+      // Then unsubscribe from the stream and update state
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });
     },

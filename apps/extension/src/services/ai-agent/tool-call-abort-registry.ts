@@ -64,6 +64,31 @@ export const ToolCallAbortRegistry = {
   },
 
   /**
+   * Abort all running tool calls
+   * Used when the entire stream is cancelled to clean up all pending operations
+   * @returns The number of tool calls that were aborted
+   */
+  abortAll: (): number => {
+    const count = runningToolCalls.size;
+    console.log(
+      "[ToolCallAbortRegistry] Aborting all running tool calls:",
+      count,
+    );
+
+    for (const [toolCallId, abortController] of runningToolCalls) {
+      console.log(
+        "[ToolCallAbortRegistry] Aborting toolCallId:",
+        toolCallId,
+      );
+      abortController.abort();
+    }
+
+    runningToolCalls.clear();
+    console.log("[ToolCallAbortRegistry] All tool calls aborted and cleared");
+    return count;
+  },
+
+  /**
    * Clean up a tool call registration (called when execution completes normally)
    * @param toolCallId - Unique identifier for the tool call to clean up
    */
@@ -79,5 +104,21 @@ export const ToolCallAbortRegistry = {
   isRunning: (toolCallId: string): boolean => {
     const abortController = runningToolCalls.get(toolCallId);
     return abortController !== undefined && !abortController.signal.aborted;
+  },
+
+  /**
+   * Get the count of currently running tool calls
+   * @returns The number of running tool calls
+   */
+  getRunningCount: (): number => {
+    return runningToolCalls.size;
+  },
+
+  /**
+   * Get all running tool call IDs
+   * @returns Array of toolCallIds that are currently running
+   */
+  getRunningToolCallIds: (): string[] => {
+    return [...runningToolCalls.keys()];
   },
 };

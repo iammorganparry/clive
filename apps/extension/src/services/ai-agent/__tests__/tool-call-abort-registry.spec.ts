@@ -98,4 +98,131 @@ describe("ToolCallAbortRegistry", () => {
       expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
     });
   });
+
+  describe("abortAll", () => {
+    it("should abort all running tool calls and return count", () => {
+      const toolCallId1 = "test-abort-all-1";
+      const toolCallId2 = "test-abort-all-2";
+      const toolCallId3 = "test-abort-all-3";
+
+      const controller1 = ToolCallAbortRegistry.register(toolCallId1);
+      const controller2 = ToolCallAbortRegistry.register(toolCallId2);
+      const controller3 = ToolCallAbortRegistry.register(toolCallId3);
+
+      const abortedCount = ToolCallAbortRegistry.abortAll();
+
+      expect(abortedCount).toBe(3);
+      expect(controller1.signal.aborted).toBe(true);
+      expect(controller2.signal.aborted).toBe(true);
+      expect(controller3.signal.aborted).toBe(true);
+    });
+
+    it("should return 0 when no tool calls are running", () => {
+      // Ensure registry is clean
+      ToolCallAbortRegistry.abortAll();
+
+      const abortedCount = ToolCallAbortRegistry.abortAll();
+
+      expect(abortedCount).toBe(0);
+    });
+
+    it("should clear all tool calls from registry", () => {
+      const toolCallId1 = "test-abort-all-clear-1";
+      const toolCallId2 = "test-abort-all-clear-2";
+
+      ToolCallAbortRegistry.register(toolCallId1);
+      ToolCallAbortRegistry.register(toolCallId2);
+
+      ToolCallAbortRegistry.abortAll();
+
+      expect(ToolCallAbortRegistry.isRunning(toolCallId1)).toBe(false);
+      expect(ToolCallAbortRegistry.isRunning(toolCallId2)).toBe(false);
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(0);
+    });
+  });
+
+  describe("getRunningCount", () => {
+    it("should return 0 when no tool calls are registered", () => {
+      // Ensure registry is clean
+      ToolCallAbortRegistry.abortAll();
+
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(0);
+    });
+
+    it("should return correct count of running tool calls", () => {
+      const toolCallId1 = "test-count-1";
+      const toolCallId2 = "test-count-2";
+
+      ToolCallAbortRegistry.register(toolCallId1);
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(1);
+
+      ToolCallAbortRegistry.register(toolCallId2);
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(2);
+
+      // Cleanup
+      ToolCallAbortRegistry.abortAll();
+    });
+
+    it("should decrease count after abort", () => {
+      const toolCallId1 = "test-count-abort-1";
+      const toolCallId2 = "test-count-abort-2";
+
+      ToolCallAbortRegistry.register(toolCallId1);
+      ToolCallAbortRegistry.register(toolCallId2);
+
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(2);
+
+      ToolCallAbortRegistry.abort(toolCallId1);
+
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(1);
+
+      // Cleanup
+      ToolCallAbortRegistry.abortAll();
+    });
+  });
+
+  describe("getRunningToolCallIds", () => {
+    it("should return empty array when no tool calls are registered", () => {
+      // Ensure registry is clean
+      ToolCallAbortRegistry.abortAll();
+
+      expect(ToolCallAbortRegistry.getRunningToolCallIds()).toEqual([]);
+    });
+
+    it("should return all running tool call IDs", () => {
+      const toolCallId1 = "test-ids-1";
+      const toolCallId2 = "test-ids-2";
+
+      ToolCallAbortRegistry.register(toolCallId1);
+      ToolCallAbortRegistry.register(toolCallId2);
+
+      const ids = ToolCallAbortRegistry.getRunningToolCallIds();
+
+      expect(ids).toContain(toolCallId1);
+      expect(ids).toContain(toolCallId2);
+      expect(ids.length).toBe(2);
+
+      // Cleanup
+      ToolCallAbortRegistry.abortAll();
+    });
+
+    it("should not include aborted tool calls", () => {
+      const toolCallId1 = "test-ids-aborted-1";
+      const toolCallId2 = "test-ids-aborted-2";
+
+      ToolCallAbortRegistry.register(toolCallId1);
+      ToolCallAbortRegistry.register(toolCallId2);
+
+      ToolCallAbortRegistry.abort(toolCallId1);
+
+      const ids = ToolCallAbortRegistry.getRunningToolCallIds();
+
+      expect(ids).not.toContain(toolCallId1);
+      expect(ids).toContain(toolCallId2);
+      expect(ids.length).toBe(1);
+
+      // Cleanup
+      ToolCallAbortRegistry.abortAll();
+    });
+  });
 });

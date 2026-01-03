@@ -234,7 +234,7 @@ describe("writeKnowledgeFileTool", () => {
         const result = await executeTool(
           tool,
           {
-            category: category as any,
+            category,
             title: "Test",
             content: "Content",
           },
