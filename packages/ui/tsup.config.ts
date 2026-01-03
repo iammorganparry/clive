@@ -20,6 +20,8 @@ export default defineConfig({
     "src/toast.tsx",
     "src/drawer.tsx",
     "src/collapsible.tsx",
+    "src/scroll-area.tsx",
+    "src/select.tsx",
     "src/components/blocks/index.ts",
     "src/components/ai-elements/plan.tsx",
     "src/components/ai-elements/conversation.tsx",

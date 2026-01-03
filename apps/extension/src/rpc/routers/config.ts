@@ -221,4 +221,52 @@ export const configRouter = {
         provideConfigLayer(ctx),
       ),
     ),
+
+  /**
+   * Get terminal command approval setting
+   */
+  getTerminalCommandApproval: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug(
+        "[ConfigRouter] Getting terminal command approval setting",
+      );
+      const settingsService = yield* SettingsService;
+      const approval = yield* settingsService.getTerminalCommandApproval();
+      return { approval };
+    }).pipe(provideConfigLayer(ctx)),
+  ),
+
+  /**
+   * Set terminal command approval setting
+   */
+  setTerminalCommandApproval: procedure
+    .input(
+      z.object({
+        approval: z.enum(["always", "auto"]),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConfigRouter] Setting terminal command approval: ${input.approval}`,
+        );
+        const settingsService = yield* SettingsService;
+        yield* settingsService.setTerminalCommandApproval(input.approval);
+        return { approval: input.approval };
+      }).pipe(
+        Effect.catchTags({
+          SettingsError: (error) =>
+            Effect.gen(function* () {
+              yield* Effect.logDebug(
+                `[ConfigRouter] SettingsError in setTerminalCommandApproval: ${error.message} (operation: ${error.operation})`,
+              );
+              return {
+                approval: "always" as const,
+                error: error.message,
+              };
+            }),
+        }),
+        provideConfigLayer(ctx),
+      ),
+    ),
 };

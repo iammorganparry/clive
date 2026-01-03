@@ -9,9 +9,27 @@ import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
 import { handleSubscriptionMessage } from "../handler.js";
 import type { RpcContext } from "../context.js";
 import { getDiffTrackerService } from "../../services/diff-tracker-service.js";
+import { SettingsService } from "../../services/settings-service.js";
+import { ToolCallAbortRegistry } from "../../services/ai-agent/tool-call-abort-registry.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
+
+/** Event types that contain JSON data and should be parsed */
+const JSON_EVENT_TYPES = new Set<string>([
+  "proposal",
+  "plan_file_created",
+  "content_streamed",
+  "tool-call",
+  "tool-result",
+  "tool-output-streaming",
+  "tool-approval-requested",
+  "usage",
+  "reasoning",
+  "plan-content-streaming",
+  "file-created",
+  "file-output-streaming",
+]);
 
 /**
  * Get the agent layer - uses override if provided, otherwise creates default.
@@ -63,6 +81,7 @@ export const agentsRouter = {
       signal,
       onProgress,
       subscriptionId,
+      waitForApproval,
     }: {
       input: {
         files: string[];
@@ -85,182 +104,172 @@ export const agentsRouter = {
     }) {
       const serviceLayer = getAgentLayer(ctx);
 
-      const result = await Runtime.runPromise(runtime)(
-        Effect.gen(function* () {
-          const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-          const startTime = Date.now();
+      const effectProgram = Effect.gen(function* () {
+        const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        const startTime = Date.now();
 
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] ========== Starting test generation with HITL ==========`,
+        );
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
+        );
+
+        const testAgent = yield* TestingAgent;
+        const isConfigured = yield* testAgent.isConfigured();
+
+        if (!isConfigured) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ========== Starting test generation with HITL ==========`,
+            `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
           );
+          yield* Effect.promise(() =>
+            vscode.window.showErrorMessage(
+              "AI Gateway token not available. Please log in to authenticate.",
+            ),
+          );
+          return {
+            executions: [],
+            error: "API key not configured",
+          };
+        }
+
+        if (input.files.length === 0) {
           yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] Files to process: ${input.files.length}`,
+            `[RpcRouter:${requestId}] ERROR: No files provided`,
           );
+          return {
+            executions: [],
+            error: "No files provided",
+          };
+        }
 
-          const testAgent = yield* TestingAgent;
-          const isConfigured = yield* testAgent.isConfigured();
+        vscode.window.showInformationMessage(
+          `Planning Cypress tests for ${input.files.length} file(s)...`,
+        );
 
-          if (!isConfigured) {
-            yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] ERROR: Not configured, aborting`,
-            );
-            yield* Effect.promise(() =>
-              vscode.window.showErrorMessage(
-                "AI Gateway token not available. Please log in to authenticate.",
-              ),
-            );
-            return {
-              executions: [],
-              error: "API key not configured",
-            };
-          }
+        // Create conversation BEFORE running agent so it exists when proposals stream
+        const conversationService = yield* ConversationService;
 
-          if (input.files.length === 0) {
-            yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] ERROR: No files provided`,
-            );
-            return {
-              executions: [],
-              error: "No files provided",
-            };
-          }
+        // Get or create branch conversation
+        const conversation = yield* conversationService
+          .getOrCreateBranchConversation(
+            input.branchName,
+            input.baseBranch,
+            input.files,
+            input.conversationType,
+            input.commitHash,
+          )
+          .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-          vscode.window.showInformationMessage(
-            `Planning Cypress tests for ${input.files.length} file(s)...`,
-          );
+        const testingAgent = yield* TestingAgent;
 
-          // Create conversation BEFORE running agent so it exists when proposals stream
-          const conversationService = yield* ConversationService;
+        // Progress callback that yields to client
+        const progressCallback = (status: string, message: string) => {
+          if (!onProgress) return;
 
-          // Get or create branch conversation
-          const conversation = yield* conversationService
-            .getOrCreateBranchConversation(
-              input.branchName,
-              input.baseBranch,
-              input.files,
-              input.conversationType,
-              input.commitHash,
-            )
-            .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-          const testingAgent = yield* TestingAgent;
-
-          // Progress callback that yields to client
-          const progressCallback = (status: string, message: string) => {
-            if (onProgress) {
-              // Check if this is a special event type (JSON)
-              if (
-                status === "proposal" ||
-                status === "plan_file_created" ||
-                status === "content_streamed" ||
-                status === "tool-call" ||
-                status === "tool-result" ||
-                status === "tool-output-streaming" ||
-                status === "tool-approval-requested" ||
-                status === "usage" ||
-                status === "reasoning" ||
-                status === "plan-content-streaming" ||
-                status === "file-created" ||
-                status === "file-output-streaming"
-              ) {
-                try {
-                  const eventData = JSON.parse(message);
-                  onProgress({
-                    ...eventData,
-                    subscriptionId: subscriptionId || "",
-                  });
-                } catch {
-                  // Not JSON, send as regular progress
-                  onProgress({ type: "progress", status, message });
-                }
-              } else {
-                onProgress({ type: "progress", status, message });
-              }
+          if (JSON_EVENT_TYPES.has(status)) {
+            try {
+              const eventData = JSON.parse(message);
+              onProgress({
+                ...eventData,
+                subscriptionId: subscriptionId || "",
+              });
+            } catch {
+              // Not valid JSON, send as regular progress
+              onProgress({ type: "progress", status, message });
             }
+          } else {
+            onProgress({ type: "progress", status, message });
+          }
+        };
+
+        // Get approval setting for terminal commands
+        const settingsService = yield* SettingsService;
+        const getApprovalSetting: () => Effect.Effect<"always" | "auto"> = () =>
+          settingsService.getTerminalCommandApproval();
+
+        // Use planAndExecuteTests - proposals auto-approve
+        // File edits are non-blocking and registered with PendingEditService
+        const result = yield* testingAgent.planAndExecuteTests(input.files, {
+          mode: input.mode || "plan",
+          planFilePath: input.planFilePath, // Pass plan file path for act mode context
+          conversationHistory: input.conversationHistory,
+          outputChannel: ctx.outputChannel,
+          progressCallback,
+          signal,
+          waitForApproval,
+          getApprovalSetting,
+        });
+
+        // Persist conversation messages to database
+
+        if (conversation && result.response) {
+          // Build context object with full data
+          const context = {
+            executions: result.executions,
+            timestamp: new Date().toISOString(),
           };
 
-          // Use planAndExecuteTests - proposals auto-approve
-          // File edits are non-blocking and registered with PendingEditService
-          const result = yield* testingAgent.planAndExecuteTests(input.files, {
-            mode: input.mode || "plan",
-            planFilePath: input.planFilePath, // Pass plan file path for act mode context
-            conversationHistory: input.conversationHistory,
-            outputChannel: ctx.outputChannel,
-            progressCallback,
-            signal,
-          });
+          // Save assistant message with context in toolCalls
+          yield* conversationService
+            .addMessage(conversation.id, "assistant", result.response, context)
+            .pipe(Effect.catchAll(() => Effect.void));
 
-          // Persist conversation messages to database
+          // Update conversation status
+          const hasExecutions =
+            result.executions && result.executions.length > 0;
+          yield* conversationService
+            .updateStatus(
+              conversation.id,
+              hasExecutions ? "completed" : "planning",
+            )
+            .pipe(Effect.catchAll(() => Effect.void));
 
-          if (conversation && result.response) {
-            // Build context object with full data
-            const context = {
-              executions: result.executions,
-              timestamp: new Date().toISOString(),
-            };
+          yield* Effect.logDebug(
+            `[RpcRouter:${requestId}] Persisted conversation for branch ${input.branchName}`,
+          );
+        }
 
-            // Save assistant message with context in toolCalls
-            yield* conversationService
-              .addMessage(
-                conversation.id,
-                "assistant",
-                result.response,
-                context,
-              )
-              .pipe(Effect.catchAll(() => Effect.void));
+        const totalDuration = Date.now() - startTime;
+        yield* Effect.logDebug(
+          `[RpcRouter:${requestId}] ========== Completed in ${totalDuration}ms ==========`,
+        );
 
-            // Update conversation status
-            const hasExecutions =
-              result.executions && result.executions.length > 0;
-            yield* conversationService
-              .updateStatus(
-                conversation.id,
-                hasExecutions ? "completed" : "planning",
-              )
-              .pipe(Effect.catchAll(() => Effect.void));
+        return result;
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function* () {
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+            const isCancellation = errorMessage.includes("cancelled");
 
             yield* Effect.logDebug(
-              `[RpcRouter:${requestId}] Persisted conversation for branch ${input.branchName}`,
+              isCancellation
+                ? `[RpcRouter] Planning cancelled by user`
+                : `[RpcRouter] Planning failed: ${errorMessage}`,
             );
-          }
 
-          const totalDuration = Date.now() - startTime;
-          yield* Effect.logDebug(
-            `[RpcRouter:${requestId}] ========== Completed in ${totalDuration}ms ==========`,
-          );
-
-          return result;
-        }).pipe(
-          Effect.catchAll((error) =>
-            Effect.gen(function* () {
-              const errorMessage =
-                error instanceof Error ? error.message : "Unknown error";
-              const isCancellation = errorMessage.includes("cancelled");
-
-              yield* Effect.logDebug(
-                isCancellation
-                  ? `[RpcRouter] Planning cancelled by user`
-                  : `[RpcRouter] Planning failed: ${errorMessage}`,
+            // Don't show error message for user-initiated cancellations
+            if (!isCancellation) {
+              yield* Effect.promise(() =>
+                vscode.window.showErrorMessage(
+                  `Failed to plan tests: ${errorMessage}`,
+                ),
               );
+            }
 
-              // Don't show error message for user-initiated cancellations
-              if (!isCancellation) {
-                yield* Effect.promise(() =>
-                  vscode.window.showErrorMessage(
-                    `Failed to plan tests: ${errorMessage}`,
-                  ),
-                );
-              }
-
-              return {
-                executions: [],
-                error: isCancellation ? "Cancelled by user" : errorMessage,
-              };
-            }),
-          ),
-          Effect.provide(serviceLayer),
+            return {
+              executions: [],
+              error: isCancellation ? "Cancelled by user" : errorMessage,
+            };
+          }),
         ),
       );
+
+      // Provide layer before running
+      const providedEffect = effectProgram.pipe(Effect.provide(serviceLayer));
+
+      const result = await Runtime.runPromise(runtime)(providedEffect);
 
       // Yield proposals as they come in (handled by progressCallback)
       // Final result is returned below
@@ -402,6 +411,31 @@ export const agentsRouter = {
         }
 
         return { success: handled };
+      }),
+    ),
+
+  /**
+   * Abort a specific running tool call
+   * Used by the webview to cancel individual bash commands without cancelling the entire stream
+   */
+  abortToolCall: procedure
+    .input(
+      z.object({
+        subscriptionId: z.string(),
+        toolCallId: z.string(),
+      }),
+    )
+    .mutation(({ input }) =>
+      Effect.sync(() => {
+        console.log("[AgentsRouter] abortToolCall called", input);
+        // Note: subscriptionId is included for consistency with approveToolCall,
+        // but we only need toolCallId to abort the specific command
+        const aborted = ToolCallAbortRegistry.abort(input.toolCallId);
+        console.log("[AgentsRouter] abortToolCall result:", {
+          aborted,
+          toolCallId: input.toolCallId,
+        });
+        return { success: aborted };
       }),
     ),
 

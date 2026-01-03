@@ -3,6 +3,7 @@ import type { VSCodeAPI } from "../../services/vscode.js";
 import { ApiKeyForm } from "./components/api-key-form.js";
 import { KnowledgeBaseCard } from "./components/knowledge-base-card.js";
 import { BaseBranchForm } from "./components/base-branch-form.js";
+import { TerminalCommandApprovalForm } from "./components/terminal-command-approval-form.js";
 
 interface SettingsPageProps {
   vscode: VSCodeAPI;
@@ -32,6 +33,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <BaseBranchForm />
+
+      <TerminalCommandApprovalForm />
 
       <KnowledgeBaseCard />
 

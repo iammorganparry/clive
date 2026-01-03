@@ -1,33 +1,17 @@
 import { setup, assign } from "xstate";
 import type { BranchChangesData } from "../components/branch-changes.js";
 
-interface CypressStatusData {
-  overallStatus: "installed" | "not_installed" | "partial";
-  packages: Array<{
-    name: string;
-    path: string;
-    relativePath: string;
-    hasCypressPackage: boolean;
-    hasCypressConfig: boolean;
-    isConfigured: boolean;
-  }>;
-  workspaceRoot: string;
-}
-
 export interface DashboardContext {
   branchChanges: BranchChangesData | null;
-  cypressStatus: CypressStatusData | null;
 }
 
 export type DashboardEvent = {
   type: "DATA_LOADED";
   branchChanges: BranchChangesData | null;
-  cypressStatus: CypressStatusData | null;
 };
 
 export interface DashboardInput {
   branchChanges: BranchChangesData | null;
-  cypressStatus: CypressStatusData | null;
 }
 
 export const dashboardMachine = setup({
@@ -41,7 +25,6 @@ export const dashboardMachine = setup({
   initial: "loading",
   context: ({ input }): DashboardContext => ({
     branchChanges: input.branchChanges ?? null,
-    cypressStatus: input.cypressStatus ?? null,
   }),
   states: {
     loading: {
@@ -50,7 +33,6 @@ export const dashboardMachine = setup({
           target: "ready",
           actions: assign({
             branchChanges: ({ event }) => event.branchChanges,
-            cypressStatus: ({ event }) => event.cypressStatus,
           }),
         },
       },
@@ -60,7 +42,6 @@ export const dashboardMachine = setup({
         DATA_LOADED: {
           actions: assign({
             branchChanges: ({ event }) => event.branchChanges,
-            cypressStatus: ({ event }) => event.cypressStatus,
           }),
         },
       },

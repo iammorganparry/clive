@@ -100,6 +100,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             outputChannel?: vscode.OutputChannel;
             progressCallback?: (status: string, message: string) => void;
             signal?: AbortSignal;
+            waitForApproval?: (toolCallId: string) => Promise<unknown>;
+            getApprovalSetting?: () => Effect.Effect<"always" | "auto">;
           },
         ) =>
           Effect.gen(function* () {
@@ -109,6 +111,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const conversationHistory = options?.conversationHistory ?? [];
             const progressCallback = options?.progressCallback;
             const signal = options?.signal;
+            const waitForApproval = options?.waitForApproval;
+            const getApprovalSetting = options?.getApprovalSetting;
 
             if (files.length === 0) {
               return yield* Effect.fail(
@@ -220,6 +224,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               onKnowledgeRetrieved: (results) => {
                 knowledgeContext.addFromSearchResults(results);
               },
+              waitForApproval,
+              getApprovalSetting,
+              signal,
             });
 
             progressCallback?.(
@@ -377,6 +384,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                         streamingState,
                         progressCallback,
                         correlationId,
+                        waitForApproval,
+                        getApprovalSetting,
                       ),
                     ),
                     Match.when(

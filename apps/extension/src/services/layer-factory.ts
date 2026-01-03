@@ -11,7 +11,7 @@
  * - Tier 3 (Features): CodebaseIndexing, Agents
  */
 
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 import { CompletionDetectorLive } from "./ai-agent/completion-detector.js";
 import { KnowledgeBaseAgentLive } from "./ai-agent/knowledge-base-agent.js";
@@ -108,33 +108,37 @@ export function createDomainLayer(
 
   // SettingsService depends on extension context
   // GitService depends on VSCodeService and SettingsService
+  let settingsLayer: Layer.Layer<SettingsService>;
   if (ctx?.extensionContext) {
-    const settingsLayer = Layer.effect(
+    settingsLayer = Layer.effect(
       SettingsService,
       createSettingsServiceLayer(ctx.extensionContext),
     );
-    const gitLayer = GitServiceLive.pipe(
-      Layer.provide(Layer.mergeAll(baseLayer, settingsLayer)),
-    );
-
-    return Layer.mergeAll(
-      baseLayer,
-      repoLayer,
-      convLayer,
-      sourceFilterLayer,
-      settingsLayer,
-      gitLayer,
-    );
+  } else {
+    // Fallback: Create a no-op SettingsService layer for type consistency
+    // This ensures TypeScript knows SettingsService is always provided
+    settingsLayer = Layer.succeed(SettingsService, {
+      _tag: "SettingsService" as const,
+      setGlobalState: () => {},
+      isOnboardingComplete: () => Effect.sync(() => false),
+      setOnboardingComplete: () => Effect.void,
+      getBaseBranch: () => Effect.sync(() => null),
+      setBaseBranch: () => Effect.void,
+      getTerminalCommandApproval: () => Effect.sync(() => "always" as const),
+      setTerminalCommandApproval: () => Effect.void,
+    });
   }
 
-  // Fallback: GitService without SettingsService (will use auto-detect only)
-  const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer));
+  const gitLayer = GitServiceLive.pipe(
+    Layer.provide(Layer.mergeAll(baseLayer, settingsLayer)),
+  );
 
   return Layer.mergeAll(
     baseLayer,
     repoLayer,
     convLayer,
     sourceFilterLayer,
+    settingsLayer,
     gitLayer,
   );
 }

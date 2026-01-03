@@ -340,6 +340,28 @@ export function createMockSettingsServiceLayer(): {
               operation: "setBaseBranch",
             }),
         }),
+      getTerminalCommandApproval: () =>
+        Effect.sync(() => {
+          return (
+            (mockGlobalState.get<"always" | "auto">(
+              GlobalStateKeys.terminalCommandApproval,
+            ) as "always" | "auto" | undefined) ?? "always"
+          );
+        }),
+      setTerminalCommandApproval: (value: "always" | "auto") =>
+        Effect.tryPromise({
+          try: async () => {
+            await mockGlobalState.update(
+              GlobalStateKeys.terminalCommandApproval,
+              value,
+            );
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setTerminalCommandApproval",
+            }),
+        }),
     })),
   );
 

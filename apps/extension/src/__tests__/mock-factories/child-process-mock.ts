@@ -12,7 +12,7 @@ export interface MockChildProcess {
   stdout: { on: (event: string, handler: (data: Buffer) => void) => void };
   stderr: { on: (event: string, handler: (data: Buffer) => void) => void };
   on: (event: string, handler: (code: number | Error) => void) => void;
-  kill: () => void;
+  kill: () => boolean;
 }
 
 export interface ChildProcessHandlers {
@@ -20,6 +20,7 @@ export interface ChildProcessHandlers {
   onStderrData?: (handler: (data: Buffer) => void) => void;
   onClose?: (handler: (code: number) => void) => void;
   onError?: (handler: (error: Error) => void) => void;
+  kill?: () => boolean;
 }
 
 /**
@@ -50,7 +51,7 @@ export function createMockChildProcess(
         handlers.onError?.(handler as (error: Error) => void);
       }
     }),
-    kill: vi.fn(),
+    kill: handlers.kill ?? vi.fn(() => true),
   };
 }
 

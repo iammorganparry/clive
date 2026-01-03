@@ -98,6 +98,8 @@ export const GlobalStateKeys = {
   gitignoreUpdated: "clive.gitignoreUpdated",
   /** User-configured base branch (null = auto-detect) */
   baseBranch: "clive.baseBranch",
+  /** Terminal command approval setting: "always" = always ask, "auto" = auto-approve */
+  terminalCommandApproval: "clive.terminalCommandApproval",
 } as const;
 
 /**

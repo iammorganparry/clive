@@ -3,7 +3,11 @@ import { it } from "@effect/vitest";
 import { Effect, Exit, Cause } from "effect";
 import type { ChildProcess } from "node:child_process";
 import type { BashExecuteInput, BashExecuteOutput } from "../../types";
-import { createBashExecuteTool, type SpawnFn } from "../bash-execute";
+import {
+  createBashExecuteTool,
+  type SpawnFn,
+  isReadOnlyCommand,
+} from "../bash-execute";
 import { executeTool } from "./test-helpers";
 import {
   createMockChildProcess,
@@ -13,6 +17,8 @@ import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../../../__tests__/mock-factories/index.js";
+import { APPROVAL } from "../../hitl-utils.js";
+import { ToolCallAbortRegistry } from "../../tool-call-abort-registry";
 
 // Mock vscode globally for tools that use VSCodeService.Default internally
 vi.mock("vscode", async () => {
@@ -691,6 +697,330 @@ describe("bashExecuteTool", () => {
           }),
         );
       }),
+    );
+  });
+
+  describe("isReadOnlyCommand", () => {
+    it("should identify read-only commands", () => {
+      const readOnlyCommands = [
+        "cat file.txt",
+        "head -n 10 file.txt",
+        "tail -f file.txt",
+        "grep pattern file.txt",
+        "find . -name '*.ts'",
+        "ls -la",
+        "pwd",
+        "tree",
+        "wc -l file.txt",
+        "diff file1 file2",
+        "git status",
+        "git log --oneline",
+        "git diff HEAD",
+        "npm list",
+        "npm outdated",
+      ];
+
+      for (const cmd of readOnlyCommands) {
+        expect(isReadOnlyCommand(cmd)).toBe(true);
+      }
+    });
+
+    it("should identify write/modify commands", () => {
+      const writeCommands = [
+        "echo hello > file.txt", // Output redirection
+        "cat file.txt | sort > out", // Pipe with redirection
+        "npx vitest run", // Test execution
+        "npm run build", // Build command
+        "touch newfile.txt", // Create file
+        "mkdir new-dir", // Create directory
+        "git commit -m 'msg'", // Git write operation
+        "git push", // Git write operation
+        "printf 'text' > file.md", // Write file
+      ];
+
+      for (const cmd of writeCommands) {
+        expect(isReadOnlyCommand(cmd)).toBe(false);
+      }
+    });
+
+    it("should handle edge cases", () => {
+      expect(isReadOnlyCommand("  cat file.txt  ")).toBe(true); // Whitespace
+      expect(isReadOnlyCommand("CAT file.txt")).toBe(false); // Case sensitive
+      expect(isReadOnlyCommand("grep > output.txt pattern")).toBe(false); // Redirect
+    });
+  });
+
+  describe("Approval Flow", () => {
+    it.effect(
+      "should execute read-only commands without approval when setting is 'always'",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = createMockTokenBudgetService();
+          const getApprovalSetting = () => Effect.succeed("always" as const);
+          const waitForApproval = vi.fn();
+
+          const tool = createBashExecuteTool(
+            mockBudget,
+            undefined,
+            mockSpawn,
+            waitForApproval,
+            getApprovalSetting,
+          );
+
+          // Mock successful command execution
+          yield* Effect.sync(() => {
+            const child = createMockChildProcess({
+              onClose: (handler) => {
+                setTimeout(() => (handler as (code: number) => void)(0), 10);
+              },
+            });
+            mockSpawn.mockReturnValue(child as unknown as ChildProcess);
+          });
+
+          const input: BashExecuteInput = { command: "cat file.txt" };
+          const promise = executeTool(tool, input, {} as BashExecuteOutput);
+          yield* Effect.promise(() => promise);
+
+          yield* Effect.sync(() => {
+            expect(waitForApproval).not.toHaveBeenCalled();
+          });
+        }),
+    );
+
+    it.effect(
+      "should wait for approval for write commands when setting is 'always'",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = createMockTokenBudgetService();
+          const getApprovalSetting = () => Effect.succeed("always" as const);
+          const waitForApproval = vi.fn().mockResolvedValue(APPROVAL.YES);
+
+          const tool = createBashExecuteTool(
+            mockBudget,
+            undefined,
+            mockSpawn,
+            waitForApproval,
+            getApprovalSetting,
+          );
+
+          // Mock successful command execution
+          yield* Effect.sync(() => {
+            const child = createMockChildProcess({
+              onClose: (handler) => {
+                setTimeout(() => (handler as (code: number) => void)(0), 10);
+              },
+            });
+            mockSpawn.mockReturnValue(child as unknown as ChildProcess);
+          });
+
+          const input: BashExecuteInput = { command: "npx vitest run" };
+          const promise = executeTool(tool, input, {} as BashExecuteOutput);
+          yield* Effect.promise(() => promise);
+
+          yield* Effect.sync(() => {
+            expect(waitForApproval).toHaveBeenCalled();
+          });
+        }),
+    );
+
+    it.effect("should reject command when approval is denied", () =>
+      Effect.gen(function* () {
+        const mockBudget = createMockTokenBudgetService();
+        const getApprovalSetting = () => Effect.succeed("always" as const);
+        const waitForApproval = vi.fn().mockResolvedValue(APPROVAL.NO);
+
+        const tool = createBashExecuteTool(
+          mockBudget,
+          undefined,
+          mockSpawn,
+          waitForApproval,
+          getApprovalSetting,
+        );
+
+        const input: BashExecuteInput = { command: "npx vitest run" };
+        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+        const result = yield* Effect.exit(Effect.promise(() => promise));
+
+        expect(Exit.isFailure(result)).toBe(true);
+        if (Exit.isFailure(result)) {
+          const error = Cause.squash(result.cause);
+          expect(
+            error instanceof Error && error.message.includes("denied"),
+          ).toBe(true);
+        }
+      }),
+    );
+
+    it.effect("should not require approval when setting is 'auto'", () =>
+      Effect.gen(function* () {
+        const mockBudget = createMockTokenBudgetService();
+        const getApprovalSetting = () => Effect.succeed("auto" as const);
+        const waitForApproval = vi.fn();
+
+        const tool = createBashExecuteTool(
+          mockBudget,
+          undefined,
+          mockSpawn,
+          waitForApproval,
+          getApprovalSetting,
+        );
+
+        // Mock successful command execution
+        yield* Effect.sync(() => {
+          const child = createMockChildProcess({
+            onClose: (handler) => {
+              setTimeout(() => (handler as (code: number) => void)(0), 10);
+            },
+          });
+          mockSpawn.mockReturnValue(child as unknown as ChildProcess);
+        });
+
+        const input: BashExecuteInput = { command: "npx vitest run" };
+        const promise = executeTool(tool, input, {} as BashExecuteOutput);
+        yield* Effect.promise(() => promise);
+
+        yield* Effect.sync(() => {
+          expect(waitForApproval).not.toHaveBeenCalled();
+        });
+      }),
+    );
+  });
+
+  describe("abort handling", () => {
+    it.effect("should register toolCallId with ToolCallAbortRegistry", () =>
+      Effect.gen(function* () {
+        const mockBudget = yield* Effect.sync(() =>
+          createMockTokenBudgetService(),
+        );
+        const child = yield* Effect.sync(() =>
+          createMockChildProcess({
+            onClose: (handler) => {
+              setTimeout(() => (handler as (code: number) => void)(0), 50);
+            },
+          }),
+        );
+        yield* Effect.sync(() =>
+          mockSpawn.mockReturnValue(child as unknown as ChildProcess),
+        );
+
+        const tool = yield* Effect.sync(() =>
+          createBashExecuteTool(mockBudget, undefined, mockSpawn),
+        );
+        const toolCallId = "test-abort-1";
+
+        // Execute with explicit toolCallId
+        if (!tool.execute) {
+          yield* Effect.fail(new Error("Tool execute function is undefined"));
+        }
+        const executeResult = (
+          tool.execute as NonNullable<typeof tool.execute>
+        )({ command: "echo test" }, { toolCallId, messages: [] });
+        const promise = Promise.resolve(executeResult);
+
+        // The toolCallId should be registered while running
+        yield* Effect.sync(() => {
+          expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(true);
+        });
+
+        yield* Effect.promise(() => promise);
+
+        // After completion, it should be cleaned up
+        yield* Effect.sync(() => {
+          expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
+        });
+      }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
+    );
+
+    it.effect(
+      "should abort command when ToolCallAbortRegistry.abort is called",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = yield* Effect.sync(() =>
+            createMockTokenBudgetService(),
+          );
+          let killCalled = false;
+
+          const child = yield* Effect.sync(() =>
+            createMockChildProcess({
+              kill: () => {
+                killCalled = true;
+                return true;
+              },
+              // Don't auto-close - we'll abort instead
+            }),
+          );
+          yield* Effect.sync(() =>
+            mockSpawn.mockReturnValue(child as unknown as ChildProcess),
+          );
+
+          const tool = yield* Effect.sync(() =>
+            createBashExecuteTool(mockBudget, undefined, mockSpawn),
+          );
+          const toolCallId = "test-abort-2";
+
+          if (!tool.execute) {
+            yield* Effect.fail(new Error("Tool execute function is undefined"));
+          }
+          const executeResult = (
+            tool.execute as NonNullable<typeof tool.execute>
+          )({ command: "sleep 100" }, { toolCallId, messages: [] });
+          const promise = Promise.resolve(executeResult);
+
+          // Abort after a short delay
+          yield* Effect.sync(() => {
+            setTimeout(() => {
+              ToolCallAbortRegistry.abort(toolCallId);
+            }, 10);
+          });
+
+          const result = yield* Effect.exit(Effect.promise(() => promise));
+
+          yield* Effect.sync(() => {
+            expect(Exit.isFailure(result)).toBe(true);
+            expect(killCalled).toBe(true);
+          });
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
+    );
+
+    it.effect("should use AI SDK provided toolCallId from options", () =>
+      Effect.gen(function* () {
+        const mockBudget = yield* Effect.sync(() =>
+          createMockTokenBudgetService(),
+        );
+        const child = yield* Effect.sync(() =>
+          createMockChildProcess({
+            onClose: (handler) => {
+              setTimeout(() => (handler as (code: number) => void)(0), 10);
+            },
+          }),
+        );
+        yield* Effect.sync(() =>
+          mockSpawn.mockReturnValue(child as unknown as ChildProcess),
+        );
+
+        const tool = yield* Effect.sync(() =>
+          createBashExecuteTool(mockBudget, undefined, mockSpawn),
+        );
+        const aiSdkToolCallId = "toolu_01ABC123";
+
+        if (!tool.execute) {
+          yield* Effect.fail(new Error("Tool execute function is undefined"));
+        }
+        const executeResult = (
+          tool.execute as NonNullable<typeof tool.execute>
+        )(
+          { command: "echo test" },
+          { toolCallId: aiSdkToolCallId, messages: [] },
+        );
+        const promise = Promise.resolve(executeResult);
+
+        // Should be registered with the AI SDK's toolCallId
+        yield* Effect.sync(() => {
+          expect(ToolCallAbortRegistry.isRunning(aiSdkToolCallId)).toBe(true);
+        });
+
+        yield* Effect.promise(() => promise);
+      }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
   });
 });

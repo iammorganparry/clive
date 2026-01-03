@@ -4,6 +4,8 @@ import {
 } from "@clive/ui/components/ai-elements/code-block";
 import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
+import { ScrollArea } from "@clive/ui/scroll-area";
+import { TerminalCard, type TerminalStatus } from "./terminal-output.js";
 import {
   Task,
   TaskContent,
@@ -47,6 +49,7 @@ interface ToolCallCardProps {
   streamingContent?: string; // For file-writing tools that stream content
   toolCallId?: string;
   subscriptionId?: string;
+  onCancelStream?: () => void; // For cancelling running commands
 }
 
 // Tool display config removed - using natural language summaries instead
@@ -61,6 +64,111 @@ const isBashExecuteArgs = (input: unknown): input is BashExecuteArgs =>
   input !== null &&
   "command" in input &&
   typeof (input as BashExecuteArgs).command === "string";
+
+// Helper component for bash execute terminal output
+interface BashExecuteTerminalProps {
+  input: unknown;
+  output: unknown;
+  state: ToolState;
+  toolCallId?: string;
+  subscriptionId?: string;
+}
+
+function BashExecuteTerminal({ 
+  input, 
+  output, 
+  state,
+  toolCallId,
+  subscriptionId,
+}: BashExecuteTerminalProps) {
+  // RPC mutations for approval and abort
+  const rpc = useRpc();
+  const approveToolCall = rpc.agents.approveToolCall.useMutation();
+  const abortToolCall = rpc.agents.abortToolCall.useMutation();
+
+  const command = isBashExecuteArgs(input)
+    ? input.command
+    : output && typeof output === "object"
+      ? (output as { command?: string }).command || ""
+      : "";
+
+  const stdout =
+    output && typeof output === "object"
+      ? (output as { stdout?: string }).stdout
+      : undefined;
+
+  const stderr =
+    output && typeof output === "object"
+      ? (output as { stderr?: string }).stderr
+      : undefined;
+
+  const exitCode =
+    output && typeof output === "object"
+      ? (output as { exitCode?: number }).exitCode
+      : undefined;
+
+  // Map ToolState to TerminalStatus
+  const terminalStatus: TerminalStatus = (() => {
+    if (state === "approval-requested") return "pending";
+    if (state === "input-streaming" || state === "input-available") return "running";
+    if (state === "output-error") return "error";
+    if (state === "output-available") {
+      return exitCode === 0 ? "completed" : "error";
+    }
+    return "running";
+  })();
+
+  // Combine stdout and stderr into output
+  const terminalOutput = [stdout, stderr].filter(Boolean).join("\n");
+
+  // Handler for approval
+  const handleApprove = useCallback(() => {
+    if (!toolCallId || !subscriptionId) return;
+    
+    approveToolCall.mutate({
+      subscriptionId,
+      toolCallId,
+      approved: true,
+    });
+  }, [toolCallId, subscriptionId, approveToolCall]);
+
+  // Handler for rejection
+  const handleReject = useCallback(() => {
+    if (!toolCallId || !subscriptionId) return;
+    
+    approveToolCall.mutate({
+      subscriptionId,
+      toolCallId,
+      approved: false,
+    });
+  }, [toolCallId, subscriptionId, approveToolCall]);
+
+  // Handler for cancelling the running command
+  const handleCancel = useCallback(() => {
+    console.log("[BashExecuteTerminal] handleCancel called", { toolCallId, subscriptionId });
+    if (!toolCallId || !subscriptionId) {
+      console.warn("[BashExecuteTerminal] Missing toolCallId or subscriptionId");
+      return;
+    }
+    
+    console.log("[BashExecuteTerminal] Calling abortToolCall.mutate");
+    abortToolCall.mutate({
+      subscriptionId,
+      toolCallId,
+    });
+  }, [toolCallId, subscriptionId, abortToolCall]);
+
+  return (
+    <TerminalCard
+      command={command}
+      output={terminalOutput || undefined}
+      status={terminalStatus}
+      onApprove={toolCallId && subscriptionId ? handleApprove : undefined}
+      onReject={toolCallId && subscriptionId ? handleReject : undefined}
+      onCancel={toolCallId && subscriptionId ? handleCancel : undefined}
+    />
+  );
+}
 
 interface ProposeTestArgs {
   sourceFile?: string;
@@ -1127,6 +1235,19 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
 
   const toolIcon = getToolIcon(toolName);
 
+  // For bash execute, render TerminalCard directly as a standalone component
+  if (toolName === "bashExecute") {
+    return (
+      <BashExecuteTerminal 
+        input={input} 
+        output={output} 
+        state={state}
+        toolCallId={toolCallId}
+        subscriptionId={subscriptionId}
+      />
+    );
+  }
+
   return (
     <Task defaultOpen={hasGroupedResults} className={cn(hasError && "opacity-75")}>
       <TaskTrigger title={triggerTitle}>
@@ -1152,19 +1273,6 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               <span className="text-sm">{summary}</span>
             )}
           </div>
-          {/* Inline Approval Buttons for approval-requested state */}
-          {/* File edit tools (writeTestFile, editFileContent) use CodeLens in editor instead */}
-          {state === "approval-requested" && toolCallId && subscriptionId && 
-           !["writeTestFile", "editFileContent"].includes(toolName) && (
-            <div className="flex items-center gap-1">
-              <Button onClick={handleApprove} variant="default" size="sm" className="h-6 px-2 text-xs">
-                Approve
-              </Button>
-              <Button onClick={handleReject} variant="destructive" size="sm" className="h-6 px-2 text-xs">
-                Reject
-              </Button>
-            </div>
-          )}
           {statusBadge && (
             <div className="flex items-center gap-2 shrink-0">
               {statusBadge}
@@ -1174,54 +1282,68 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
         </div>
       </TaskTrigger>
       <TaskContent>
-        {/* Code Writing Tools - Show code prominently */}
-        {isCodeWritingTool && fileInfo ? (
-          <div className="mt-2">
-            {isStreaming && (
-              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                <span>Streaming file content...</span>
+          <ScrollArea className="max-h-[300px]">
+            {/* Code Writing Tools - Show code prominently */}
+            {isCodeWritingTool && fileInfo ? (
+              <div className="mt-2">
+                {isStreaming && (
+                  <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+                    <span>Streaming file content...</span>
+                  </div>
+                )}
+                <CodeBlock
+                  code={fileInfo.content}
+                  language={fileInfo.language}
+                  showLineNumbers={true}
+                >
+                  <CodeBlockCopyButton />
+                </CodeBlock>
               </div>
+            ) : (
+              <>
+                {/* Grep/Find File Lists - Show grouped file results */}
+                {renderGrepFindResults()}
+
+                {/* Action List - Clean list of actions taken */}
+                {renderActionList()}
+
+                {/* Output/Result - Show formatted output for tools that need it */}
+                {renderFormattedOutput()}
+
+                {/* File Links Section - Show clickable file links */}
+                {filePaths.length > 0 && (
+                  filePaths.map((filePath) => (
+                      <TaskItem key={filePath}>
+                        <div className="flex items-center gap-2 w-full">
+                          <TaskItemFile
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenFile(filePath);
+                            }}
+                            className="cursor-pointer flex-1 items-center gap-2"
+                          >
+                            <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
+                            {extractFilename(filePath)}
+                          </TaskItemFile>
+                        </div>
+                      </TaskItem>
+                    ))
+                )}
+              </>
             )}
-            <CodeBlock
-              code={fileInfo.content}
-              language={fileInfo.language}
-              showLineNumbers={true}
-            >
-              <CodeBlockCopyButton />
-            </CodeBlock>
+          </ScrollArea>
+        {/* Footer with approve/reject actions */}
+        {state === "approval-requested" && toolCallId && subscriptionId && 
+         !["writeTestFile", "editFileContent"].includes(toolName) && (
+          <div className="flex justify-end gap-2 border-t pt-2 mt-2">
+            <Button onClick={handleReject} variant="outline" size="sm">
+              Reject
+            </Button>
+            <Button onClick={handleApprove} variant="default" size="sm">
+              Approve
+            </Button>
           </div>
-        ) : (
-          <>
-            {/* Grep/Find File Lists - Show grouped file results */}
-            {renderGrepFindResults()}
-
-            {/* Action List - Clean list of actions taken */}
-            {renderActionList()}
-
-            {/* Output/Result - Show formatted output for tools that need it */}
-            {renderFormattedOutput()}
-
-            {/* File Links Section - Show clickable file links */}
-            {filePaths.length > 0 && (
-              filePaths.map((filePath) => (
-                  <TaskItem key={filePath}>
-                    <div className="flex items-center gap-2 w-full">
-                      <TaskItemFile
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenFile(filePath);
-                        }}
-                        className="cursor-pointer flex-1 items-center gap-2"
-                      >
-                        <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
-                        {extractFilename(filePath)}
-                      </TaskItemFile>
-                    </div>
-                  </TaskItem>
-                ))
-            )}
-          </>
         )}
       </TaskContent>
     </Task>

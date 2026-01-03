@@ -349,6 +349,55 @@ export function createMockBashExecuteMessage(): ChatMessage {
 }
 
 /**
+ * Create mock message with bashExecute awaiting approval
+ */
+export function createMockBashExecutePendingApproval(): ChatMessage {
+  return {
+    id: `msg-bash-pending-${Date.now()}`,
+    role: "assistant",
+    parts: [
+      { type: "text", text: "I'd like to run a terminal command. Please approve or reject." },
+      {
+        type: "tool-bashExecute",
+        toolName: "bashExecute",
+        toolCallId: `tool-bash-pending-${Date.now()}`,
+        state: "approval-requested",
+        input: { command: "npm test -- auth.test.ts" },
+      },
+    ],
+    timestamp: new Date(),
+  };
+}
+
+/**
+ * Create mock message with bashExecute rejected by user
+ */
+export function createMockBashExecuteRejected(): ChatMessage {
+  return {
+    id: `msg-bash-rejected-${Date.now()}`,
+    role: "assistant",
+    parts: [
+      { type: "text", text: "I'd like to run a terminal command." },
+      {
+        type: "tool-bashExecute",
+        toolName: "bashExecute",
+        toolCallId: `tool-bash-rejected-${Date.now()}`,
+        state: "output-denied",
+        input: { command: "npm test -- auth.test.ts" },
+        output: {
+          stdout: "",
+          stderr: "",
+          exitCode: -1,
+          command: "npm test -- auth.test.ts",
+        },
+        errorText: "Command execution was rejected by user.",
+      },
+    ],
+    timestamp: new Date(),
+  };
+}
+
+/**
  * Create mock message with writeTestFile tool call
  */
 export function createMockWriteTestFileMessage(): ChatMessage {

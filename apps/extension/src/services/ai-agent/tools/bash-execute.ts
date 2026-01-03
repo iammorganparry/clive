@@ -10,6 +10,8 @@ import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 import { countTokensInText } from "../../../utils/token-utils.js";
 import type { TokenBudgetService } from "../token-budget.js";
 import { VSCodeService } from "../../vs-code.js";
+import { APPROVAL } from "../hitl-utils.js";
+import { ToolCallAbortRegistry } from "../tool-call-abort-registry.js";
 
 /**
  * Type for spawn function - allows dependency injection for testing
@@ -75,7 +77,77 @@ const BLOCKED_PATTERNS = [
 /**
  * Maximum execution time in milliseconds
  */
-const EXECUTION_TIMEOUT_MS = 30_000; // 30 seconds
+const EXECUTION_TIMEOUT_MS = 10_000; // 10 seconds
+
+/**
+ * Patterns that indicate read-only operations
+ * Commands matching these patterns don't modify the filesystem or system state
+ */
+const READ_ONLY_PATTERNS = [
+  /^cat\s/, // Read file
+  /^head\s/, // Read first lines
+  /^tail\s/, // Read last lines
+  /^less\s/, // View file
+  /^more\s/, // View file
+  /^grep\s/, // Search
+  /^find\s/, // Find files
+  /^ls\b/, // List directory
+  /^pwd$/, // Print working directory
+  /^echo\s/, // Print (no redirection)
+  /^tree\b/, // Directory tree
+  /^wc\s/, // Word count
+  /^diff\s/, // Compare files
+  /^file\s/, // File type
+  /^which\s/, // Find command
+  /^whereis\s/, // Find binary
+  /^type\s/, // Command type
+  /^stat\s/, // File stats
+  /^du\s/, // Disk usage
+  /^df\b/, // Disk free
+  /^git\s+(status|log|diff|show|branch|remote|config\s+--get)/, // Git read operations
+  /^npm\s+(list|ls|outdated|view|info)/, // npm read operations
+  /^yarn\s+(list|info|why)/, // yarn read operations
+  /^pnpm\s+(list|ls)/, // pnpm read operations
+] as const;
+
+/**
+ * Patterns that indicate write/modify operations
+ */
+const WRITE_PATTERNS = [
+  /^touch\s/, // Create file
+  /^mkdir\s/, // Create directory
+  /^rm\s/, // Remove file (though blocked)
+  /^mv\s/, // Move file (though blocked)
+  /^cp\s/, // Copy file
+  /^git\s+(commit|push|add|merge|rebase|reset|checkout\s+[^-])/, // Git write operations
+  /^npm\s+(install|run|exec|publish)/, // npm write operations
+  /^yarn\s+(add|install|run|exec|publish)/, // yarn write operations
+  /^pnpm\s+(add|install|run|exec|publish)/, // pnpm write operations
+  /^npx\s/, // Execute packages (often modifies state)
+] as const;
+
+/**
+ * Check if a command is read-only (doesn't modify filesystem or system state)
+ * @param command - The bash command to check
+ * @returns true if the command is read-only, false otherwise
+ */
+export function isReadOnlyCommand(command: string): boolean {
+  const trimmed = command.trim();
+
+  // Check for output redirection (>, >>) - these indicate write operations
+  // Exception: "cat file > output" is still a write operation, so we check for >
+  if (/>/.test(trimmed)) {
+    return false;
+  }
+
+  // Check for write command patterns
+  if (WRITE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return false;
+  }
+
+  // Check for read-only patterns
+  return READ_ONLY_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
 
 class BashCommandError extends Data.TaggedError("BashCommandError")<{
   message: string;
@@ -86,6 +158,11 @@ class BashCommandError extends Data.TaggedError("BashCommandError")<{
 class CommandNotAllowedError extends Data.TaggedError(
   "CommandNotAllowedError",
 )<{
+  command: string;
+  reason: string;
+}> {}
+
+class CommandDeniedError extends Data.TaggedError("CommandDeniedError")<{
   command: string;
   reason: string;
 }> {}
@@ -139,11 +216,15 @@ export interface BashExecuteToolOptions {
  * Factory function to create bashExecuteTool with token budget awareness
  * Uses MEDIUM priority - up to 25% of remaining budget
  * Supports streaming output via onStreamingOutput callback
+ * Supports approval flow via waitForApproval callback
  */
 export const createBashExecuteTool = (
   budget: TokenBudgetService,
   onStreamingOutput?: StreamingOutputCallback,
   spawnFn: SpawnFn = nodeSpawn,
+  waitForApproval?: (toolCallId: string) => Promise<unknown>,
+  getApprovalSetting?: () => Effect.Effect<"always" | "auto">,
+  signal?: AbortSignal,
 ) =>
   tool({
     description: `Execute bash commands in the workspace.
@@ -171,11 +252,53 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
           "The bash command to execute. Use relative paths only. Commands execute from workspace root automatically.",
         ),
     }),
-    execute: async ({
-      command,
-    }: BashExecuteInput): Promise<BashExecuteOutput> => {
+    execute: async (
+      { command }: BashExecuteInput,
+      options?: { toolCallId?: string },
+    ): Promise<BashExecuteOutput> => {
+      console.log("[BashExecute] execute called with options:", options);
+      // Get toolCallId from options (provided by AI SDK) or generate one
+      const toolCallId =
+        options?.toolCallId ??
+        `bash-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      console.log("[BashExecute] Using toolCallId:", toolCallId);
+
+      // Register this tool call with the abort registry
+      const toolAbortController = ToolCallAbortRegistry.register(toolCallId);
+      const toolSignal = toolAbortController.signal;
+
       return Runtime.runPromise(Runtime.defaultRuntime)(
         Effect.gen(function* () {
+          // Check approval setting if available
+          if (getApprovalSetting && waitForApproval) {
+            const approval = yield* getApprovalSetting();
+            // Only require approval for non-read commands when setting is "always"
+            if (approval === "always" && !isReadOnlyCommand(command)) {
+              // Emit approval request event via onStreamingOutput callback
+              if (onStreamingOutput) {
+                onStreamingOutput({
+                  command: `APPROVAL_REQUESTED:${toolCallId}:${command}`,
+                  output: "",
+                });
+              }
+              // Wait for approval
+              const approvalResult = yield* Effect.promise(() =>
+                waitForApproval(toolCallId),
+              );
+              // Check if approved (APPROVAL.YES means approved)
+              if (approvalResult !== APPROVAL.YES) {
+                ToolCallAbortRegistry.cleanup(toolCallId);
+                yield* Effect.fail(
+                  new CommandDeniedError({
+                    command,
+                    reason: "Command execution denied by user",
+                  }),
+                );
+              }
+            }
+            // If approval is "auto" or command is read-only or approval was granted, continue execution
+          }
+
           // Get workspace root
           const vsCodeService = yield* VSCodeService;
           const workspaceRootUri = yield* vsCodeService.getWorkspaceRoot();
@@ -185,7 +308,7 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
           yield* validateCommand(command);
 
           yield* Effect.logDebug(
-            `[BashExecute] Executing command: ${command.substring(0, 100)}...`,
+            `[BashExecute] Executing command: ${command.substring(0, 100)}... (toolCallId: ${toolCallId})`,
           );
 
           // Execute command with spawn for streaming support
@@ -209,6 +332,7 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
 
                 // Set timeout
                 const timeout = setTimeout(() => {
+                  ToolCallAbortRegistry.cleanup(toolCallId);
                   child.kill();
                   reject(
                     new BashCommandError({
@@ -217,6 +341,56 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
                     }),
                   );
                 }, EXECUTION_TIMEOUT_MS);
+
+                // Handle abort signals - listen to both tool-level and stream-level signals
+                let abortHandler: (() => void) | undefined;
+                let streamAbortHandler: (() => void) | undefined;
+
+                const handleAbort = () => {
+                  ToolCallAbortRegistry.cleanup(toolCallId);
+                  clearTimeout(timeout);
+                  if (abortHandler) {
+                    toolSignal.removeEventListener("abort", abortHandler);
+                  }
+                  if (streamAbortHandler && signal) {
+                    signal.removeEventListener("abort", streamAbortHandler);
+                  }
+                  child.kill();
+                  reject(
+                    new BashCommandError({
+                      message: "Command cancelled",
+                      command,
+                    }),
+                  );
+                };
+
+                // Check if already aborted
+                if (toolSignal.aborted || signal?.aborted) {
+                  ToolCallAbortRegistry.cleanup(toolCallId);
+                  clearTimeout(timeout);
+                  child.kill();
+                  reject(
+                    new BashCommandError({
+                      message: "Command cancelled",
+                      command,
+                    }),
+                  );
+                  return;
+                }
+
+                // Listen to tool-level abort signal
+                abortHandler = handleAbort;
+                toolSignal.addEventListener("abort", abortHandler, {
+                  once: true,
+                });
+
+                // Also listen to stream-level abort signal if provided
+                if (signal) {
+                  streamAbortHandler = handleAbort;
+                  signal.addEventListener("abort", streamAbortHandler, {
+                    once: true,
+                  });
+                }
 
                 // Stream stdout
                 child.stdout?.on("data", (data: Buffer) => {
@@ -259,7 +433,16 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
 
                 // Handle process completion
                 child.on("close", (code) => {
+                  ToolCallAbortRegistry.cleanup(toolCallId);
                   clearTimeout(timeout);
+
+                  // Clean up abort listeners if they exist
+                  if (abortHandler) {
+                    toolSignal.removeEventListener("abort", abortHandler);
+                  }
+                  if (streamAbortHandler && signal) {
+                    signal.removeEventListener("abort", streamAbortHandler);
+                  }
 
                   // Emit any remaining buffered output
                   if (onStreamingOutput) {
@@ -285,6 +468,7 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
 
                 // Handle process errors
                 child.on("error", (error) => {
+                  ToolCallAbortRegistry.cleanup(toolCallId);
                   clearTimeout(timeout);
                   reject(
                     new BashCommandError({
@@ -338,20 +522,26 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
           };
         })
           .pipe(
-            Effect.catchTag("CommandNotAllowedError", (error) =>
-              Effect.fail(
-                new Error(
-                  `Command not allowed: ${error.command}. ${error.reason}`,
+            Effect.catchTags({
+              CommandNotAllowedError: (error) =>
+                Effect.fail(
+                  new Error(
+                    `Command not allowed: ${error.command}. ${error.reason}`,
+                  ),
                 ),
-              ),
-            ),
-            Effect.catchTag("BashCommandError", (error) =>
-              Effect.fail(
-                new Error(
-                  `Command execution failed: ${error.message}. Command: ${error.command}`,
+              BashCommandError: (error) =>
+                Effect.fail(
+                  new Error(
+                    `Command execution failed: ${error.message}. Command: ${error.command}`,
+                  ),
                 ),
-              ),
-            ),
+              CommandDeniedError: (error) =>
+                Effect.fail(
+                  new Error(
+                    `Command denied: ${error.command}. ${error.reason}`,
+                  ),
+                ),
+            }),
             Effect.catchAll((error) =>
               Effect.fail(
                 new Error(

@@ -84,6 +84,14 @@
       "types": "./dist/drawer.d.ts",
       "default": "./dist/drawer.js"
     },
+    "./scroll-area": {
+      "types": "./dist/scroll-area.d.ts",
+      "default": "./dist/scroll-area.js"
+    },
+    "./select": {
+      "types": "./dist/select.d.ts",
+      "default": "./dist/select.js"
+    },
     "./components/ai-elements/plan": {
       "types": "./dist/components/ai-elements/plan.d.ts",
       "default": "./dist/components/ai-elements/plan.js"

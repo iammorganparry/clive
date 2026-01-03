@@ -396,6 +396,7 @@ export const handleToolCallDelta = (
 /**
  * Handle tool-call event
  * Tracks tool calls and emits progress updates
+ * Checks approval setting for bashExecute and auto-approves if enabled
  */
 export const handleToolCall = (
   event: {
@@ -407,6 +408,8 @@ export const handleToolCall = (
   streamingState: Ref.Ref<StreamingState>,
   progressCallback: ProgressCallback | undefined,
   correlationId: string,
+  _waitForApproval?: (toolCallId: string) => Promise<unknown>,
+  _getApprovalSetting?: () => Effect.Effect<"always" | "auto">,
 ) =>
   Effect.gen(function* () {
     logToOutput(
@@ -448,6 +451,8 @@ export const handleToolCall = (
       if (command) {
         yield* trackCommandToolCall(streamingState, command, event.toolCallId);
       }
+      // Approval logic is now handled inside bash-execute.ts before execution
+      // No need for additional approval handling here
     }
 
     // Track toolCallId for file writes

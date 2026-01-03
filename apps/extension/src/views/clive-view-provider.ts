@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import { getWebviewHtml } from "./webview-html.js";
 import { Views, WebviewMessages } from "../constants.js";
@@ -250,7 +249,6 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       context: this._context,
       outputChannel: this._outputChannel,
       isDev: this._isDev,
-      cypressDetector: new CypressDetector(),
       gitService,
       diffProvider: this.diffProvider,
       // Layer context for building Effect layers in routers (fallback for tests)

@@ -19,6 +19,8 @@ import {
   createMockFailedSuiteQueue,
   createMockMixedQueue,
   createMockBashExecuteMessage,
+  createMockBashExecutePendingApproval,
+  createMockBashExecuteRejected,
   createMockWriteTestFileMessage,
   createMockWriteTestFilePendingApproval,
   createMockWriteTestFileRejected,
@@ -143,6 +145,30 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
   // Tool call handlers
   const handleBashExecute = () => {
     const message = createMockBashExecuteMessage();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleBashExecutePending = () => {
+    const message = createMockBashExecutePendingApproval();
+    send({
+      type: "DEV_INJECT_STATE",
+      updates: {
+        messages: [message],
+        hasCompletedAnalysis: true,
+      },
+    });
+    setIsOpen(false);
+  };
+
+  const handleBashExecuteRejected = () => {
+    const message = createMockBashExecuteRejected();
     send({
       type: "DEV_INJECT_STATE",
       updates: {
@@ -384,6 +410,22 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
             <DropdownMenuItem onClick={handleWebSearch}>
               <Globe className="mr-2 h-4 w-4" />
               Web Search
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Terminal Approval States
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={handleBashExecutePending}>
+              <Terminal className="mr-2 h-4 w-4 text-yellow-500" />
+              Bash: Pending Approval
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleBashExecuteRejected}>
+              <XCircle className="mr-2 h-4 w-4 text-red-500" />
+              Bash: Rejected
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
