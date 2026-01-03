@@ -73,11 +73,15 @@ export const statusRouter = {
 
   /**
    * Get current HEAD commit hash
+   * Returns null if no workspace folder is open or git command fails
    */
   currentCommit: procedure.input(z.void()).query(({ ctx }) => {
     return Effect.gen(function* () {
       const commitHash = yield* ctx.gitService.getCurrentCommitHash();
       return { commitHash };
-    }).pipe(provideSystemLayer(ctx));
+    }).pipe(
+      Effect.catchAll(() => Effect.succeed({ commitHash: null })),
+      provideSystemLayer(ctx),
+    );
   }),
 };

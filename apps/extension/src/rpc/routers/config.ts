@@ -4,7 +4,8 @@ import { createRouter } from "@clive/webview-rpc";
 import { ApiKeyService } from "../../services/api-key-service.js";
 import { GitService } from "../../services/git-service.js";
 import { SettingsService } from "../../services/settings-service.js";
-import { GlobalStateKeys } from "../../constants.js";
+import { ClaudeCliService } from "../../services/claude-cli-service.js";
+import { GlobalStateKeys, type AiProviderType } from "../../constants.js";
 import { createConfigServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 import { VSCodeService } from "../../services/vs-code.js";
@@ -269,4 +270,107 @@ export const configRouter = {
         provideConfigLayer(ctx),
       ),
     ),
+
+  /**
+   * Get AI provider preference
+   */
+  getAiProvider: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Getting AI provider");
+      const settingsService = yield* SettingsService;
+      const provider = yield* settingsService.getAiProvider();
+      return { provider };
+    }).pipe(provideConfigLayer(ctx)),
+  ),
+
+  /**
+   * Set AI provider preference
+   */
+  setAiProvider: procedure
+    .input(
+      z.object({
+        provider: z.enum(["anthropic", "gateway", "claude-cli"]),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug(
+          `[ConfigRouter] Setting AI provider: ${input.provider}`,
+        );
+        const settingsService = yield* SettingsService;
+        yield* settingsService.setAiProvider(input.provider as AiProviderType);
+        return { provider: input.provider };
+      }).pipe(
+        Effect.catchTags({
+          SettingsError: (error) =>
+            Effect.gen(function* () {
+              yield* Effect.logDebug(
+                `[ConfigRouter] SettingsError in setAiProvider: ${error.message} (operation: ${error.operation})`,
+              );
+              return {
+                provider: "gateway" as const,
+                error: error.message,
+              };
+            }),
+        }),
+        provideConfigLayer(ctx),
+      ),
+    ),
+
+  /**
+   * Get Claude CLI status (installed, authenticated, version)
+   */
+  getClaudeCliStatus: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Getting Claude CLI status");
+      const cliService = yield* ClaudeCliService;
+      const status = yield* cliService.detectCli();
+      return status;
+    }).pipe(
+      Effect.catchAllDefect((defect) =>
+        Effect.gen(function* () {
+          const errorMessage =
+            defect instanceof Error ? defect.message : "Unknown error";
+          yield* Effect.logDebug(
+            `[ConfigRouter] Failed to get Claude CLI status: ${errorMessage}`,
+          );
+          return {
+            installed: false,
+            path: null,
+            authenticated: false,
+            version: null,
+            error: errorMessage,
+          };
+        }),
+      ),
+      provideConfigLayer(ctx),
+    ),
+  ),
+
+  /**
+   * Trigger Claude CLI authentication flow
+   */
+  authenticateClaudeCli: procedure.input(z.void()).mutation(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Triggering Claude CLI authentication");
+      const cliService = yield* ClaudeCliService;
+      const success = yield* cliService.authenticate();
+      return { success };
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          yield* Effect.logDebug(
+            `[ConfigRouter] Failed to authenticate Claude CLI: ${errorMessage}`,
+          );
+          return {
+            success: false,
+            error: errorMessage,
+          };
+        }),
+      ),
+      provideConfigLayer(ctx),
+    ),
+  ),
 };

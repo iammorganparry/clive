@@ -24,6 +24,13 @@ import {
   getVSCodeMock,
   type VSCodeMockOverrides,
 } from "./vscode-mock.js";
+import {
+  ClaudeCliService,
+  type ClaudeCliStatus,
+  type ClaudeCliExecuteOptions,
+  type ClaudeCliEvent,
+} from "../../services/claude-cli-service.js";
+import { Stream } from "effect";
 
 class SettingsError extends Data.TaggedError("SettingsError")<{
   message: string;
@@ -362,6 +369,25 @@ export function createMockSettingsServiceLayer(): {
               operation: "setTerminalCommandApproval",
             }),
         }),
+      getAiProvider: () =>
+        Effect.sync(() => {
+          return (
+            (mockGlobalState.get<"anthropic" | "gateway" | "claude-cli">(
+              GlobalStateKeys.aiProvider,
+            ) as "anthropic" | "gateway" | "claude-cli" | undefined) ?? "gateway"
+          );
+        }),
+      setAiProvider: (provider: "anthropic" | "gateway" | "claude-cli") =>
+        Effect.tryPromise({
+          try: async () => {
+            await mockGlobalState.update(GlobalStateKeys.aiProvider, provider);
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setAiProvider",
+            }),
+        }),
     })),
   );
 
@@ -673,4 +699,85 @@ export function createMockVSCodeServiceLayer(overrides?: VSCodeMockOverrides): {
   );
 
   return { layer, mockVscode };
+}
+
+/**
+ * Overrides for ClaudeCliService mock
+ *
+ * Note: Error types use `unknown` to allow tests to return Effect.fail() with
+ * any error type (ClaudeCliNotFoundError, ClaudeCliNotAuthenticatedError, etc.)
+ */
+export interface ClaudeCliServiceMockOverrides {
+  detectCli?: () => Effect.Effect<ClaudeCliStatus, unknown, never>;
+  checkAuth?: () => Effect.Effect<boolean, unknown, never>;
+  authenticate?: () => Effect.Effect<boolean, unknown, never>;
+  execute?: (
+    options: ClaudeCliExecuteOptions,
+  ) => Effect.Effect<Stream.Stream<ClaudeCliEvent, Error, never>, unknown, never>;
+  getCliPath?: () => Effect.Effect<string, unknown, never>;
+}
+
+/**
+ * Create a mock ClaudeCliService layer for testing
+ *
+ * @example
+ * ```typescript
+ * const { layer } = createMockClaudeCliServiceLayer({
+ *   detectCli: () => Effect.succeed({
+ *     installed: true,
+ *     path: "/usr/local/bin/claude",
+ *     authenticated: true,
+ *     version: "1.0.0"
+ *   })
+ * });
+ *
+ * await Effect.gen(function* () {
+ *   const service = yield* ClaudeCliService;
+ *   const status = yield* service.detectCli();
+ *   expect(status.installed).toBe(true);
+ * }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
+ * ```
+ */
+export function createMockClaudeCliServiceLayer(
+  overrides?: ClaudeCliServiceMockOverrides,
+): {
+  layer: Layer.Layer<ClaudeCliService>;
+} {
+  // Default mock implementations
+  const mockService = {
+    detectCli:
+      overrides?.detectCli ??
+      (() =>
+        Effect.succeed({
+          installed: true,
+          path: "/usr/local/bin/claude",
+          authenticated: true,
+          version: "1.0.0",
+        })),
+
+    checkAuth: overrides?.checkAuth ?? (() => Effect.succeed(true)),
+
+    authenticate: overrides?.authenticate ?? (() => Effect.succeed(true)),
+
+    execute:
+      overrides?.execute ??
+      ((_options: ClaudeCliExecuteOptions) =>
+        Effect.succeed(
+          Stream.fromIterable<ClaudeCliEvent>([
+            { type: "text", content: "Mock response" },
+            { type: "done" },
+          ]),
+        )),
+
+    getCliPath:
+      overrides?.getCliPath ?? (() => Effect.succeed("/usr/local/bin/claude")),
+  };
+
+  // Use type assertion since the inferred types from the real service are complex
+  const layer = Layer.succeed(
+    ClaudeCliService,
+    mockService as unknown as ClaudeCliService,
+  );
+
+  return { layer };
 }

@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect";
 import type * as vscode from "vscode";
-import { GlobalStateKeys } from "../constants.js";
+import { GlobalStateKeys, type AiProviderType } from "../constants.js";
 
 class SettingsError extends Data.TaggedError("SettingsError")<{
   message: string;
@@ -120,6 +120,37 @@ export class SettingsService extends Effect.Service<SettingsService>()(
                 operation: "setTerminalCommandApproval",
               }),
           }),
+
+        /**
+         * Get AI provider preference
+         * @returns "anthropic" | "gateway" | "claude-cli", defaults to "gateway"
+         */
+        getAiProvider: () =>
+          Effect.sync(() => {
+            const state = ensureGlobalState();
+            return (
+              (state.get<AiProviderType>(GlobalStateKeys.aiProvider) as
+                | AiProviderType
+                | undefined) ?? "gateway"
+            );
+          }),
+
+        /**
+         * Set AI provider preference
+         * @param provider - "anthropic" | "gateway" | "claude-cli"
+         */
+        setAiProvider: (provider: AiProviderType) =>
+          Effect.tryPromise({
+            try: async () => {
+              const state = ensureGlobalState();
+              await state.update(GlobalStateKeys.aiProvider, provider);
+            },
+            catch: (error) =>
+              new SettingsError({
+                message: error instanceof Error ? error.message : String(error),
+                operation: "setAiProvider",
+              }),
+          }),
       };
     }),
   },
@@ -201,6 +232,27 @@ export function createSettingsServiceLayer(context: vscode.ExtensionContext) {
             new SettingsError({
               message: error instanceof Error ? error.message : String(error),
               operation: "setTerminalCommandApproval",
+            }),
+        }),
+
+      getAiProvider: () =>
+        Effect.sync(() => {
+          return (
+            (globalState.get<AiProviderType>(GlobalStateKeys.aiProvider) as
+              | AiProviderType
+              | undefined) ?? "gateway"
+          );
+        }),
+
+      setAiProvider: (provider: AiProviderType) =>
+        Effect.tryPromise({
+          try: async () => {
+            await globalState.update(GlobalStateKeys.aiProvider, provider);
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setAiProvider",
             }),
         }),
     };

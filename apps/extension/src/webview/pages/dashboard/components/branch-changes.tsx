@@ -153,9 +153,10 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   );
 
   // Get current commit hash for uncommitted conversations
-  const { data: currentCommit, refetch: refetchCurrentCommit } = 
+  const { data: currentCommit, refetch: refetchCurrentCommit } =
     rpc.status.currentCommit.useQuery();
-  const commitHash = currentCommit?.commitHash;
+  // Convert null to undefined for consistency
+  const commitHash = currentCommit?.commitHash ?? undefined;
   
   // Always refetch currentCommit on mount - git commits can happen anytime
   useEffect(() => {

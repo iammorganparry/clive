@@ -45,6 +45,10 @@ export const routerShape: RouterRecord = {
     setBaseBranch: createProcedureShape("mutation"),
     getTerminalCommandApproval: createProcedureShape("query"),
     setTerminalCommandApproval: createProcedureShape("mutation"),
+    getAiProvider: createProcedureShape("query"),
+    setAiProvider: createProcedureShape("mutation"),
+    getClaudeCliStatus: createProcedureShape("query"),
+    authenticateClaudeCli: createProcedureShape("mutation"),
   },
   conversations: {
     start: createProcedureShape("mutation"),

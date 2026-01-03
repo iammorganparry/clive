@@ -12,6 +12,64 @@ Clive is a VS Code extension that helps you set up and manage Cypress end-to-end
 - 🎨 **Modern UI** - Beautiful webview interface built with React and Tailwind CSS
 - 🏗️ **Monorepo Support** - Works seamlessly with monorepos and multiple package structures
 
+## AI Provider Options
+
+Clive supports multiple AI providers for test generation. Configure your preferred provider in **Settings**.
+
+### Option 1: Clive Gateway (Default)
+
+The easiest option - uses Clive's managed API gateway. Requires a Clive account.
+
+### Option 2: Anthropic API Key
+
+Use your own Anthropic API key for direct API access.
+
+1. Get an API key from [console.anthropic.com](https://console.anthropic.com)
+2. Go to **Clive Settings** > **API Keys**
+3. Enter your Anthropic API key
+
+### Option 3: Claude Code CLI (Use Your Subscription)
+
+Use your existing **Claude Pro** or **Claude Max** subscription - no API charges.
+
+#### Prerequisites
+
+1. **Install Claude Code CLI**
+   ```bash
+   # macOS/Linux
+   curl -fsSL https://claude.ai/install.sh | sh
+
+   # Or via npm
+   npm install -g @anthropic-ai/claude-code
+   ```
+
+2. **Authenticate with Claude**
+   ```bash
+   claude login
+   ```
+   This opens a browser window to authenticate with your Anthropic account.
+
+3. **Verify Installation**
+   ```bash
+   claude --version
+   claude whoami
+   ```
+
+#### Configuration in Clive
+
+1. Go to **Clive Settings** > **AI Provider**
+2. Select **Claude Code CLI**
+3. Clive will auto-detect your CLI installation and authentication status
+4. If not authenticated, click **"Login to Claude"** to trigger the auth flow
+
+#### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| CLI not detected | Ensure `claude` is in your PATH. Try running `which claude` |
+| Not authenticated | Run `claude login` in terminal, or click "Login to Claude" in settings |
+| Token expired | Re-authenticate with `claude login` |
+
 ## Architecture
 
 Clive is built as a monorepo using [Turborepo](https://turborepo.com) and contains:
@@ -20,7 +78,7 @@ Clive is built as a monorepo using [Turborepo](https://turborepo.com) and contai
 apps
   ├─ extension          # VS Code extension (main product)
   └─ nextjs             # Next.js web application
-packages
+packages  
   ├─ api                # tRPC v11 router definition
   ├─ auth               # Authentication using Better Auth
   ├─ db                 # Database layer with Drizzle ORM & Supabase

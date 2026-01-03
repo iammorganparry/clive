@@ -100,7 +100,17 @@ export const GlobalStateKeys = {
   baseBranch: "clive.baseBranch",
   /** Terminal command approval setting: "always" = always ask, "auto" = auto-approve */
   terminalCommandApproval: "clive.terminalCommandApproval",
+  /** AI provider preference: "anthropic" | "gateway" | "claude-cli" */
+  aiProvider: "clive.aiProvider",
 } as const;
+
+/**
+ * AI provider types for LLM access
+ * - "anthropic": Direct Anthropic API key (user pays per token)
+ * - "gateway": Clive gateway token (Clive pays, requires login)
+ * - "claude-cli": Claude Code CLI (uses user's Claude subscription)
+ */
+export type AiProviderType = "anthropic" | "gateway" | "claude-cli";
 
 /**
  * Suggested knowledge base categories (examples, not enforced)

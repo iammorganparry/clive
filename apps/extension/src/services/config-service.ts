@@ -31,6 +31,7 @@ export interface UserInfo {
 export interface AiTokenResult {
   token: string;
   isGateway: boolean; // true = use gateway, false = direct provider
+  isCli: boolean; // true = use Claude CLI (user's subscription)
 }
 
 export const Secrets = {
@@ -228,6 +229,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
               return {
                 token: storedKey,
                 isGateway: false,
+                isCli: false,
               } as AiTokenResult;
             }
 
@@ -239,6 +241,7 @@ export class ConfigService extends Effect.Service<ConfigService>()(
             return {
               token: gatewayToken,
               isGateway: true,
+              isCli: false,
             } as AiTokenResult;
           }),
 

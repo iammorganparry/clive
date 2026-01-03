@@ -104,13 +104,7 @@ const App: React.FC<AppProps> = ({ vscode }) => {
     }
 
     if (route === Routes.settings) {
-      return (
-        <SettingsPage
-          vscode={vscode}
-          pendingPromises={pendingPromises}
-          createMessagePromise={createMessagePromise}
-        />
-      );
+      return <SettingsPage />;
     }
 
     if (route === Routes.changesetChat) {
