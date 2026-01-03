@@ -32,13 +32,6 @@ export const systemRouter = {
     Effect.gen(function* () {
       yield* Effect.logDebug("[SystemRouter] Handling ready message");
 
-      // Get Cypress status
-      const cypressStatus = yield* Effect.tryPromise({
-        try: () => ctx.cypressDetector.checkStatus(),
-        catch: (error) =>
-          new Error(error instanceof Error ? error.message : "Unknown error"),
-      });
-
       // Get branch changes
       const branchChanges = yield* ctx.gitService.getBranchChanges();
       const sourceFileFilter = yield* SourceFileFilterService;
@@ -59,11 +52,6 @@ export const systemRouter = {
       const token = yield* configService.getAuthToken();
 
       return {
-        cypressStatus: cypressStatus || {
-          overallStatus: "not_installed" as const,
-          packages: [],
-          workspaceRoot: "",
-        },
         branchChanges: branchChanges
           ? {
               branchName: branchChanges.branchName,

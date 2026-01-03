@@ -220,6 +220,10 @@ describe("Tool Factory", () => {
         expect(createBashExecuteTool).toHaveBeenCalledWith(
           config.budget,
           config.bashStreamingCallback,
+          undefined, // spawnFn - use default
+          config.waitForApproval,
+          config.getApprovalSetting,
+          config.signal,
         );
       }),
     );
@@ -293,6 +297,10 @@ describe("Tool Factory", () => {
         expect(createBashExecuteTool).toHaveBeenCalledWith(
           expect.anything(),
           bashCallback,
+          undefined, // spawnFn - use default
+          config.waitForApproval,
+          config.getApprovalSetting,
+          config.signal,
         );
       }),
     );

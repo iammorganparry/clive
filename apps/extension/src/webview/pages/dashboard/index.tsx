@@ -104,8 +104,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Get comparison mode from context
   const { mode: comparisonMode } = useComparisonMode();
 
-  // Query for Cypress status using new RPC API
-  const { data: cypressStatus, isLoading } = rpc.status.cypress.useQuery();
 
   // Query for branch changes using new RPC API
   const {
@@ -139,24 +137,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [, send] = useMachine(dashboardMachine, {
     input: {
       branchChanges: branchChanges ?? null,
-      cypressStatus: cypressStatus ?? null,
     },
   });
 
   // Update machine when data loads
   useEffect(() => {
-    if (
-      !isLoading &&
-      cypressStatus !== undefined &&
-      branchChanges !== undefined
-    ) {
+    if (!changesLoading && changesData !== undefined) {
       send({
         type: "DATA_LOADED",
-        branchChanges: branchChanges ?? null,
-        cypressStatus: cypressStatus ?? null,
+        branchChanges: changesData ?? null,
       });
     }
-  }, [isLoading, cypressStatus, branchChanges, send]);
+  }, [changesData, changesLoading, send]);
 
   // Preview diff mutation
   const previewDiffMutation = rpc.agents.previewDiff.useMutation();

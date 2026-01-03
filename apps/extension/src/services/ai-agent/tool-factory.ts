@@ -21,7 +21,7 @@ import {
   createApprovePlanTool,
   createEditFileContentTool,
 } from "./tools/index.js";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ToolSet } from "ai";
 
 /**
  * Streaming callback for bash command output
@@ -69,6 +69,9 @@ export interface ToolConfig {
   bashStreamingCallback?: BashStreamingCallback;
   fileStreamingCallback?: FileStreamingCallback;
   onKnowledgeRetrieved?: KnowledgeRetrievedCallback;
+  waitForApproval?: (toolCallId: string) => Promise<unknown>;
+  getApprovalSetting?: () => Effect.Effect<"always" | "auto">;
+  signal?: AbortSignal;
 }
 
 /**
@@ -79,6 +82,10 @@ const createBaseTools = (config: ToolConfig) =>
     const bashExecute = createBashExecuteTool(
       config.budget,
       config.bashStreamingCallback,
+      undefined, // spawnFn - use default
+      config.waitForApproval,
+      config.getApprovalSetting,
+      config.signal,
     );
 
     const searchKnowledge = createSearchKnowledgeTool(
@@ -101,13 +108,13 @@ const createBaseTools = (config: ToolConfig) =>
       ? createWebTools({ enableSearch: true })
       : {};
 
-    const tools: Record<string, unknown> = {
+    const tools = {
       bashExecute,
       searchKnowledge,
       summarizeContext,
       completeTask,
       ...webTools,
-    };
+    } as ToolSet;
 
     // Only include proposeTestPlan and approvePlan in plan mode
     // In act mode, the agent should only execute tests, not propose new plans
@@ -161,7 +168,7 @@ const createWriteTools = (config: ToolConfig) =>
       writeTestFile,
       writeKnowledgeFile,
       editFileContent,
-    };
+    } as ToolSet;
   });
 
 /**

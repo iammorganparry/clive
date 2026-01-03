@@ -40,7 +40,10 @@ import { GitServiceLive } from "../services/git-service.js";
 import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
 import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 import { KnowledgeFileService } from "../services/knowledge-file-service.js";
-import { createMockVSCodeServiceLayer } from "./mock-factories/service-mocks.js";
+import {
+  createMockVSCodeServiceLayer,
+  createMockSettingsServiceLayer,
+} from "./mock-factories/service-mocks.js";
 
 // =============================================================================
 // Types
@@ -494,12 +497,16 @@ function createDomainTestLayer(
   // GitService depends on VSCodeService (in baseLayer via coreLayer)
   const gitLayer = GitServiceLive.pipe(Layer.provide(baseLayer.layer));
 
+  // SettingsService mock (matching production createDomainLayer)
+  const { layer: settingsLayer } = createMockSettingsServiceLayer();
+
   return Layer.mergeAll(
     baseLayer.layer,
     repoLayer,
     convLayer,
     sourceFilterLayer,
     gitLayer,
+    settingsLayer,
   );
 }
 

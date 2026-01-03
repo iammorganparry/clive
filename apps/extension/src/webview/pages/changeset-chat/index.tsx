@@ -31,7 +31,6 @@ import {
 import { useChangesetChat } from "./hooks/use-changeset-chat.js";
 import { ToolCallCard } from "./components/tool-call-card.js";
 import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
-import { ScratchpadQueue } from "./components/scratchpad-queue.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
 import { TestSuiteQueue } from "./components/test-suite-queue.js";
@@ -67,7 +66,6 @@ export const ChangesetChatPage: React.FC = () => {
     isLoading,
     isLoadingHistory,
     hasCompletedAnalysis,
-    scratchpadTodos,
     usage,
     planContent,
     planFilePath,
@@ -348,18 +346,6 @@ export const ChangesetChatPage: React.FC = () => {
                     send({ type: "START_ANALYSIS" });
                   }}
                   onDismiss={() => send({ type: "CLEAR_ERROR" })}
-                />
-              )}
-
-              {/* Scratchpad Queue - shows agent's TODO list */}
-              <ScratchpadQueue todos={scratchpadTodos} />
-
-              {/* Plan Preview - shown when agent creates plan in scratchpad */}
-              {parsedPlan && (
-                <TestPlanPreview
-                  plan={parsedPlan}
-                  isStreaming={isLoading}
-                  filePath={planFilePath}
                 />
               )}
 

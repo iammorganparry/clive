@@ -1,7 +1,5 @@
-
 import type { Context } from "effect";
 import type * as vscode from "vscode";
-import type { CypressDetector } from "../services/cypress-detector.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import type { GitService } from "../services/git-service.js";
 import type {
@@ -42,7 +40,6 @@ export interface RpcContext {
   isDev: boolean;
 
   // Extension services (classes/objects, not Effect services)
-  cypressDetector: CypressDetector;
   gitService: GitServiceContext;
   diffProvider: DiffContentProvider;
 

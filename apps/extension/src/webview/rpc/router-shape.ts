@@ -23,6 +23,7 @@ export const routerShape: RouterRecord = {
     cancelTest: createProcedureShape("mutation"),
     previewDiff: createProcedureShape("mutation"),
     approveToolCall: createProcedureShape("mutation"),
+    abortToolCall: createProcedureShape("mutation"),
     acceptEdit: createProcedureShape("mutation"),
     rejectEdit: createProcedureShape("mutation"),
     getPendingEdits: createProcedureShape("query"),
@@ -41,6 +42,8 @@ export const routerShape: RouterRecord = {
     completeOnboarding: createProcedureShape("mutation"),
     getBaseBranch: createProcedureShape("query"),
     setBaseBranch: createProcedureShape("mutation"),
+    getTerminalCommandApproval: createProcedureShape("query"),
+    setTerminalCommandApproval: createProcedureShape("mutation"),
   },
   conversations: {
     start: createProcedureShape("mutation"),
@@ -60,7 +63,6 @@ export const routerShape: RouterRecord = {
     getCategories: createProcedureShape("query"),
   },
   status: {
-    cypress: createProcedureShape("query"),
     branchChanges: createProcedureShape("query"),
     uncommittedChanges: createProcedureShape("query"),
     currentCommit: createProcedureShape("query"),

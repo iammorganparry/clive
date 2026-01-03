@@ -86,6 +86,40 @@ export class SettingsService extends Effect.Service<SettingsService>()(
                 operation: "setBaseBranch",
               }),
           }),
+
+        /**
+         * Get terminal command approval setting
+         * @returns "always" to always ask for approval, "auto" to auto-approve
+         */
+        getTerminalCommandApproval: () =>
+          Effect.sync(() => {
+            const state = ensureGlobalState();
+            return (
+              (state.get<"always" | "auto">(
+                GlobalStateKeys.terminalCommandApproval,
+              ) as "always" | "auto" | undefined) ?? "always"
+            );
+          }),
+
+        /**
+         * Set terminal command approval setting
+         * @param value - "always" to always ask for approval, "auto" to auto-approve
+         */
+        setTerminalCommandApproval: (value: "always" | "auto") =>
+          Effect.tryPromise({
+            try: async () => {
+              const state = ensureGlobalState();
+              await state.update(
+                GlobalStateKeys.terminalCommandApproval,
+                value,
+              );
+            },
+            catch: (error) =>
+              new SettingsError({
+                message: error instanceof Error ? error.message : String(error),
+                operation: "setTerminalCommandApproval",
+              }),
+          }),
       };
     }),
   },
@@ -107,14 +141,18 @@ export function createSettingsServiceLayer(context: vscode.ExtensionContext) {
       isOnboardingComplete: () =>
         Effect.sync(() => {
           return (
-            globalState.get<boolean>(GlobalStateKeys.onboardingComplete) ?? false
+            globalState.get<boolean>(GlobalStateKeys.onboardingComplete) ??
+            false
           );
         }),
 
       setOnboardingComplete: (complete: boolean) =>
         Effect.tryPromise({
           try: async () => {
-            await globalState.update(GlobalStateKeys.onboardingComplete, complete);
+            await globalState.update(
+              GlobalStateKeys.onboardingComplete,
+              complete,
+            );
           },
           catch: (error) =>
             new SettingsError({
@@ -125,7 +163,9 @@ export function createSettingsServiceLayer(context: vscode.ExtensionContext) {
 
       getBaseBranch: () =>
         Effect.sync(() => {
-          return globalState.get<string | null>(GlobalStateKeys.baseBranch) ?? null;
+          return (
+            globalState.get<string | null>(GlobalStateKeys.baseBranch) ?? null
+          );
         }),
 
       setBaseBranch: (branch: string | null) =>
@@ -137,6 +177,30 @@ export function createSettingsServiceLayer(context: vscode.ExtensionContext) {
             new SettingsError({
               message: error instanceof Error ? error.message : String(error),
               operation: "setBaseBranch",
+            }),
+        }),
+
+      getTerminalCommandApproval: () =>
+        Effect.sync(() => {
+          return (
+            (globalState.get<"always" | "auto">(
+              GlobalStateKeys.terminalCommandApproval,
+            ) as "always" | "auto" | undefined) ?? "always"
+          );
+        }),
+
+      setTerminalCommandApproval: (value: "always" | "auto") =>
+        Effect.tryPromise({
+          try: async () => {
+            await globalState.update(
+              GlobalStateKeys.terminalCommandApproval,
+              value,
+            );
+          },
+          catch: (error) =>
+            new SettingsError({
+              message: error instanceof Error ? error.message : String(error),
+              operation: "setTerminalCommandApproval",
             }),
         }),
     };

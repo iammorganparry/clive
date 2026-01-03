@@ -113,7 +113,13 @@ export interface TestSuiteQueueItem {
   testType: "unit" | "integration" | "e2e";
   targetFilePath: string; // "src/auth/__tests__/auth.test.ts"
   sourceFiles: string[]; // Files being tested
-  status: "pending" | "in_progress" | "completed" | "failed" | "skipped";
+  status:
+    | "pending"
+    | "in_progress"
+    | "completed"
+    | "failed"
+    | "skipped"
+    | "cancelled";
   testResults?: TestFileExecution;
   description?: string; // From plan section
 }
@@ -1131,9 +1137,24 @@ export const changesetChatMachine = setup({
         currentSuiteId: null,
       };
     }),
-    cancelStream: assign({
-      hasCompletedAnalysis: () => true, // Re-enable input
-      isReasoningStreaming: () => false,
+    cancelStream: assign(({ context }) => {
+      const updates: Partial<ChangesetChatContext> = {
+        hasCompletedAnalysis: true, // Re-enable input
+        isReasoningStreaming: false,
+        currentSuiteId: null,
+        isProcessingQueue: false,
+      };
+
+      // Mark current suite as cancelled if one is in progress
+      if (context.currentSuiteId) {
+        updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
+          suite.id === context.currentSuiteId
+            ? { ...suite, status: "cancelled" as const }
+            : suite,
+        );
+      }
+
+      return updates;
     }),
     completeSuiteOnStreamEnd: assign(({ context, event }) => {
       // Always mark suite complete when stream ends (work on that suite is done)
@@ -1255,6 +1276,13 @@ export const changesetChatMachine = setup({
         SKIP_SUITE: {
           actions: ["skipSuite"],
           target: "analyzing",
+        },
+        CANCEL_STREAM: {
+          actions: [
+            "cancelStream",
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+          ],
         },
         DEV_INJECT_STATE: {
           actions: ["devInjectState"],

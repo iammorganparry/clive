@@ -1041,4 +1041,227 @@ describe("changeset-chat-machine queue processing", () => {
       expect(currentSuiteId).toBe("suite-2");
     });
   });
+
+  describe("CANCEL_STREAM Action", () => {
+    it("should mark current suite as cancelled when cancelling during streaming", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+        {
+          id: "suite-2",
+          name: "Integration Tests",
+          testType: "integration",
+          targetFilePath: "test2.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Processing...",
+      });
+
+      // Cancel stream
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const { testSuiteQueue } = actor.getSnapshot().context;
+      expect(testSuiteQueue[0].status).toBe("cancelled");
+      expect(testSuiteQueue[1].status).toBe("pending");
+    });
+
+    it("should clear currentSuiteId when cancelling", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Processing...",
+      });
+
+      // Cancel stream
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const { currentSuiteId } = actor.getSnapshot().context;
+      expect(currentSuiteId).toBeNull();
+    });
+
+    it("should set isProcessingQueue to false when cancelling", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Processing...",
+      });
+
+      // Cancel stream
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const { isProcessingQueue } = actor.getSnapshot().context;
+      expect(isProcessingQueue).toBe(false);
+    });
+
+    it("should re-enable input (hasCompletedAnalysis = true) when cancelling", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Processing...",
+      });
+
+      // Cancel stream
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const { hasCompletedAnalysis } = actor.getSnapshot().context;
+      expect(hasCompletedAnalysis).toBe(true);
+    });
+
+    it("should stop reasoning streaming when cancelling", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Start reasoning stream
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "reasoning",
+        content: "Thinking...",
+      });
+
+      // Cancel stream
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const { isReasoningStreaming } = actor.getSnapshot().context;
+      expect(isReasoningStreaming).toBe(false);
+    });
+
+    it("should handle cancel when no suite is in progress gracefully", () => {
+      // Cancel stream without any suites
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const snapshot = actor.getSnapshot();
+      expect(snapshot.context.currentSuiteId).toBeNull();
+      expect(snapshot.context.isProcessingQueue).toBe(false);
+      expect(snapshot.context.hasCompletedAnalysis).toBe(true);
+    });
+
+    it("should transition to idle state when cancelling from analyzing state", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Cancel stream from analyzing state
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const snapshot = actor.getSnapshot();
+      expect(snapshot.value).toBe("idle");
+    });
+
+    it("should transition to idle state when cancelling from streaming state", () => {
+      const suites: Omit<TestSuiteQueueItem, "status">[] = [
+        {
+          id: "suite-1",
+          name: "Unit Tests",
+          testType: "unit",
+          targetFilePath: "test.ts",
+          sourceFiles: [],
+        },
+      ];
+
+      actor.send({
+        type: "APPROVE_PLAN",
+        suites: suites as TestSuiteQueueItem[],
+      });
+
+      // Transition to streaming state
+      actor.send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "message",
+        content: "Processing...",
+      });
+
+      // Cancel stream from streaming state
+      actor.send({ type: "CANCEL_STREAM" });
+
+      const snapshot = actor.getSnapshot();
+      expect(snapshot.value).toBe("idle");
+    });
+  });
 });

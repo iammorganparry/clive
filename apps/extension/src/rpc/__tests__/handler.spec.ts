@@ -89,13 +89,6 @@ describe("handleRpcMessage", () => {
       context: {} as unknown as vscode.ExtensionContext,
       outputChannel: {} as unknown as vscode.OutputChannel,
       isDev: false,
-      cypressDetector: {
-        checkStatus: vi.fn().mockResolvedValue({
-          overallStatus: "installed" as const,
-          packages: [],
-          workspaceRoot: "/test",
-        }),
-      } as unknown as RpcContext["cypressDetector"],
       gitService: {
         getBranchChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
         getUncommittedChanges: vi.fn().mockReturnValue(Effect.succeed(null)),
@@ -140,7 +133,7 @@ describe("handleRpcMessage", () => {
       const message = {
         id: "test-1",
         type: "mutation" as const,
-        path: ["status", "cypress"], // This is a query procedure
+        path: ["status", "branchChanges"], // This is a query procedure, not mutation
         input: undefined,
       };
 
@@ -193,14 +186,11 @@ describe("handleRpcMessage", () => {
 
     it("should handle query handler errors", async () => {
       // Mock a failing service
-      mockContext.cypressDetector = {
-        checkStatus: vi.fn().mockRejectedValue(new Error("Service error")),
-      } as unknown as RpcContext["cypressDetector"];
 
       const message = {
         id: "test-1",
         type: "query" as const,
-        path: ["status", "cypress"],
+        path: ["status", "branchChanges"],
         input: undefined,
       };
 
@@ -287,13 +277,6 @@ describe("handleRpcMessage", () => {
         path: ["status", "cypress"],
         input: undefined,
       };
-
-      // Mock a service that throws
-      mockContext.cypressDetector = {
-        checkStatus: vi.fn().mockImplementation(() => {
-          throw new Error("Unexpected error");
-        }),
-      } as unknown as RpcContext["cypressDetector"];
 
       const response = await handleRpcMessage(message, mockContext);
 

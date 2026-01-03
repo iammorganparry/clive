@@ -260,3 +260,68 @@ describe("SettingsService - Onboarding Methods", () => {
     expect(resetStatus).toBe(false);
   });
 });
+
+describe("SettingsService - Terminal Command Approval", () => {
+  const runtime = Runtime.defaultRuntime;
+  let mockGlobalState: vscode.Memento;
+  let settingsLayer: Layer.Layer<SettingsService>;
+
+  beforeEach(() => {
+    const mock = createMockSettingsServiceLayer();
+    settingsLayer = mock.layer;
+    mockGlobalState = mock.mockGlobalState;
+  });
+
+  it("should return 'always' as default when not configured", async () => {
+    const result = await Effect.gen(function* () {
+      const service = yield* SettingsService;
+      return yield* service.getTerminalCommandApproval();
+    }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime));
+
+    expect(result).toBe("always");
+    expect(mockGlobalState.get).toHaveBeenCalledWith(
+      GlobalStateKeys.terminalCommandApproval,
+    );
+  });
+
+  it("should return configured approval setting", async () => {
+    await Effect.gen(function* () {
+      const service = yield* SettingsService;
+      yield* service.setTerminalCommandApproval("auto");
+    }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime));
+
+    const result = await Effect.gen(function* () {
+      const service = yield* SettingsService;
+      return yield* service.getTerminalCommandApproval();
+    }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime));
+
+    expect(result).toBe("auto");
+  });
+
+  it("should update approval setting from 'always' to 'auto'", async () => {
+    // Set to auto
+    await Effect.gen(function* () {
+      const service = yield* SettingsService;
+      yield* service.setTerminalCommandApproval("auto");
+    }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime));
+
+    expect(mockGlobalState.update).toHaveBeenCalledWith(
+      GlobalStateKeys.terminalCommandApproval,
+      "auto",
+    );
+  });
+
+  it("should handle storage errors", async () => {
+    // Spy on update and make it fail
+    vi.spyOn(mockGlobalState, "update").mockRejectedValueOnce(
+      new Error("Storage failed"),
+    );
+
+    await expect(
+      Effect.gen(function* () {
+        const service = yield* SettingsService;
+        yield* service.setTerminalCommandApproval("auto");
+      }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime)),
+    ).rejects.toThrow();
+  });
+});

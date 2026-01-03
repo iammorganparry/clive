@@ -46,7 +46,7 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
         inProgress = item;
       } else if (item.status === "pending") {
         pending.push(item);
-      } else if (item.status === "skipped") {
+      } else if (item.status === "skipped" || item.status === "cancelled") {
         skipped.push(item);
       }
     }
@@ -202,14 +202,14 @@ export const TestSuiteQueue: React.FC<TestSuiteQueueProps> = ({
         </QueueSection>
       )}
 
-      {/* Skipped Section */}
+      {/* Skipped/Cancelled Section */}
       {skippedItems.length > 0 && (
         <QueueSection defaultOpen={false}>
           <QueueSectionTrigger>
             <QueueSectionLabel
               icon={<X className="h-4 w-4" />}
               count={skippedItems.length}
-              label="Skipped"
+              label="Skipped/Cancelled"
             />
           </QueueSectionTrigger>
           <QueueSectionContent>
