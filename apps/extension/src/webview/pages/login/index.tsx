@@ -58,8 +58,6 @@ export const LoginPage: React.FC = () => {
     <div className="flex items-center justify-center h-screen p-6">
       <div className="w-full max-w-md space-y-4">
         <LoginForm
-          title="Clive"
-          description="Build with confidence"
           onGitHubClick={handleGitHubLogin}
           isLoading={isLoading}
           error={error}

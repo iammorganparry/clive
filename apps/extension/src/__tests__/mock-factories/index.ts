@@ -27,8 +27,10 @@ export {
   createMockStreamingWrite,
   createMockPlanStreaming,
   createMockVSCodeServiceLayer,
+  createMockClaudeCliServiceLayer,
   type StreamingWriteMockOverrides,
   type PlanStreamingMockOverrides,
+  type ClaudeCliServiceMockOverrides,
 } from "./service-mocks.js";
 
 export {

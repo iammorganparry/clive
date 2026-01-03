@@ -298,18 +298,22 @@ export function createRpcHookFactories(): RpcHookFactories<VSCodeAPI> {
             refetchInterval: options?.refetchInterval,
           },
         );
+
+        // Memoize refetch to prevent infinite loops when used in useEffect dependencies
+        const refetch = useCallback(async () => {
+          const refetchResult = await result.refetch();
+          return {
+            data: refetchResult.data as TOutput | undefined,
+            error: refetchResult.error,
+          };
+        }, [result.refetch]);
+
         // Narrow down to match the interface
         const returnValue: QueryHookReturn<TOutput> = {
           data: result.data as TOutput | undefined,
           isLoading: result.isLoading,
           error: result.error,
-          refetch: async () => {
-            const refetchResult = await result.refetch();
-            return {
-              data: refetchResult.data as TOutput | undefined,
-              error: refetchResult.error,
-            };
-          },
+          refetch,
         };
         return returnValue;
       };

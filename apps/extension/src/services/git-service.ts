@@ -463,6 +463,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 
       /**
        * Get current HEAD commit hash
+       * Returns null if no workspace folder is open
        */
       getCurrentCommitHash: () =>
         Effect.gen(function* () {
@@ -472,24 +473,20 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 
           if (!workspaceFolders || workspaceFolders.length === 0) {
             yield* Effect.logDebug("[GitService] No workspace folders found");
-            return yield* Effect.fail(
-              new GitCommandError({
-                message: "No workspace folder",
-                command: "git rev-parse HEAD",
-                workspaceRoot: "",
-              }),
-            );
+            return null;
           }
 
           const workspaceRoot = workspaceFolders[0].uri.fsPath;
           const commitHash = yield* executeGitCommand(
             "git rev-parse HEAD",
             workspaceRoot,
-          );
+          ).pipe(Effect.catchAll(() => Effect.succeed(null)));
 
-          yield* Effect.logDebug(
-            `[GitService] Current commit hash: ${commitHash.substring(0, 7)}...`,
-          );
+          if (commitHash) {
+            yield* Effect.logDebug(
+              `[GitService] Current commit hash: ${commitHash.substring(0, 7)}...`,
+            );
+          }
           return commitHash;
         }),
 

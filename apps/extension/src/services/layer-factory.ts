@@ -20,6 +20,7 @@ import { RulesServiceLive } from "./ai-agent/prompts/rules-service.js";
 import { SummaryServiceLive } from "./ai-agent/summary-service.js";
 import { TestingAgentLive } from "./ai-agent/testing-agent.js";
 import { ApiKeyServiceLive } from "./api-key-service.js";
+import { ClaudeCliServiceLive } from "./claude-cli-service.js";
 import { ConfigServiceLive } from "./config-service.js";
 import { ConversationServiceLive } from "./conversation-service.js";
 import { DeviceAuthServiceLive } from "./device-auth-service.js";
@@ -126,6 +127,8 @@ export function createDomainLayer(
       setBaseBranch: () => Effect.void,
       getTerminalCommandApproval: () => Effect.sync(() => "always" as const),
       setTerminalCommandApproval: () => Effect.void,
+      getAiProvider: () => Effect.sync(() => "gateway" as const),
+      setAiProvider: () => Effect.void,
     });
   }
 
@@ -182,11 +185,15 @@ export function createConfigServiceLayer(ctx: LayerContext) {
     ),
   );
 
+  // ClaudeCliService has no dependencies
+  const claudeCliLayer = ClaudeCliServiceLive;
+
   return Layer.mergeAll(
     domainLayer,
     knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
+    claudeCliLayer,
   );
 }
 
@@ -363,11 +370,15 @@ function createConfigServiceLayerFromDomain(
     ),
   );
 
+  // ClaudeCliService has no dependencies
+  const claudeCliLayer = ClaudeCliServiceLive;
+
   return Layer.mergeAll(
     domainLayer,
     knowledgeFileLayer,
     knowledgeBaseAgentLayer,
     knowledgeBaseServiceLayer,
+    claudeCliLayer,
   );
 }
 
