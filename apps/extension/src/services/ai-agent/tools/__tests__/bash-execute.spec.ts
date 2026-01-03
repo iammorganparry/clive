@@ -976,7 +976,13 @@ describe("bashExecuteTool", () => {
           const result = yield* Effect.exit(Effect.promise(() => promise));
 
           yield* Effect.sync(() => {
-            expect(Exit.isFailure(result)).toBe(true);
+            // Cancellation now resolves with a cancelled result instead of rejecting
+            expect(Exit.isSuccess(result)).toBe(true);
+            if (Exit.isSuccess(result)) {
+              const output = result.value as { cancelled?: boolean; message?: string };
+              expect(output.cancelled).toBe(true);
+              expect(output.message).toContain("cancelled");
+            }
             expect(killCalled).toBe(true);
           });
         }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
@@ -1021,6 +1027,183 @@ describe("bashExecuteTool", () => {
 
         yield* Effect.promise(() => promise);
       }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
+    );
+
+    it.effect(
+      "should reject immediately if stream signal is already aborted before execution",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = yield* Effect.sync(() =>
+            createMockTokenBudgetService(),
+          );
+          const child = yield* Effect.sync(() =>
+            createMockChildProcess({
+              onClose: (handler) => {
+                setTimeout(() => (handler as (code: number) => void)(0), 10);
+              },
+            }),
+          );
+          yield* Effect.sync(() =>
+            mockSpawn.mockReturnValue(child as unknown as ChildProcess),
+          );
+
+          // Create an already-aborted signal
+          const abortController = new AbortController();
+          abortController.abort();
+
+          const tool = yield* Effect.sync(() =>
+            createBashExecuteTool(
+              mockBudget,
+              undefined,
+              mockSpawn,
+              undefined,
+              undefined,
+              abortController.signal,
+            ),
+          );
+          const toolCallId = "test-pre-aborted-signal";
+
+          if (!tool.execute) {
+            yield* Effect.fail(new Error("Tool execute function is undefined"));
+          }
+          const executeResult = (
+            tool.execute as NonNullable<typeof tool.execute>
+          )({ command: "echo test" }, { toolCallId, messages: [] });
+          const promise = Promise.resolve(executeResult);
+
+          const result = yield* Effect.exit(Effect.promise(() => promise));
+
+          yield* Effect.sync(() => {
+            expect(Exit.isFailure(result)).toBe(true);
+            if (Exit.isFailure(result)) {
+              const error = Cause.squash(result.cause);
+              expect(error instanceof Error && error.message).toContain(
+                "cancelled before execution",
+              );
+            }
+            // Should NOT be registered since it was rejected immediately
+            expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
+            // Spawn should NOT have been called
+            expect(mockSpawn).not.toHaveBeenCalled();
+          });
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
+    );
+
+    it.effect(
+      "should reject immediately if abortAll is called right after registration",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = yield* Effect.sync(() =>
+            createMockTokenBudgetService(),
+          );
+
+          // Don't set up child to close - we want to test the abort path
+          const child = yield* Effect.sync(() => createMockChildProcess());
+          yield* Effect.sync(() =>
+            mockSpawn.mockReturnValue(child as unknown as ChildProcess),
+          );
+
+          const tool = yield* Effect.sync(() =>
+            createBashExecuteTool(mockBudget, undefined, mockSpawn),
+          );
+
+          // Register a tool and abort it before execution starts
+          const toolCallId = "test-abort-during-registration";
+
+          // First, let's abort all tools to ensure clean state
+          ToolCallAbortRegistry.abortAll();
+
+          // Now register a new tool call and immediately abort
+          const controller = ToolCallAbortRegistry.register(toolCallId);
+          controller.abort();
+          ToolCallAbortRegistry.cleanup(toolCallId);
+
+          // Create a new tool execution with a different ID
+          const toolCallId2 = "test-abort-after-registration";
+
+          if (!tool.execute) {
+            yield* Effect.fail(new Error("Tool execute function is undefined"));
+          }
+
+          // Execute the tool
+          const executeResult = (
+            tool.execute as NonNullable<typeof tool.execute>
+          )({ command: "echo test" }, { toolCallId: toolCallId2, messages: [] });
+          const promise = Promise.resolve(executeResult);
+
+          // Immediately abort after registration happens (simulating race condition)
+          yield* Effect.sync(() => {
+            // The tool should be running at this point
+            if (ToolCallAbortRegistry.isRunning(toolCallId2)) {
+              ToolCallAbortRegistry.abort(toolCallId2);
+            }
+          });
+
+          yield* Effect.exit(Effect.promise(() => promise));
+
+          yield* Effect.sync(() => {
+            // Either the tool was aborted successfully, or it completed before abort
+            // In either case, it should no longer be running
+            expect(ToolCallAbortRegistry.isRunning(toolCallId2)).toBe(false);
+          });
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
+    );
+
+    it.effect(
+      "should cleanup registry on cancellation during approval wait",
+      () =>
+        Effect.gen(function* () {
+          const mockBudget = yield* Effect.sync(() =>
+            createMockTokenBudgetService(),
+          );
+          const getApprovalSetting = () => Effect.succeed("always" as const);
+
+          // Create a promise that we can control
+          let rejectApproval: (reason: Error) => void;
+          const waitForApproval = vi.fn(
+            () =>
+              new Promise<unknown>((_, reject) => {
+                rejectApproval = reject;
+              }),
+          );
+
+          const tool = yield* Effect.sync(() =>
+            createBashExecuteTool(
+              mockBudget,
+              undefined,
+              mockSpawn,
+              waitForApproval,
+              getApprovalSetting,
+            ),
+          );
+          const toolCallId = "test-abort-during-approval";
+
+          if (!tool.execute) {
+            yield* Effect.fail(new Error("Tool execute function is undefined"));
+          }
+          const executeResult = (
+            tool.execute as NonNullable<typeof tool.execute>
+          )({ command: "npx vitest run" }, { toolCallId, messages: [] });
+          const promise = Promise.resolve(executeResult);
+
+          // Wait for approval to be requested
+          yield* Effect.promise(() => Promise.resolve());
+
+          // Abort the tool while waiting for approval
+          yield* Effect.sync(() => {
+            ToolCallAbortRegistry.abort(toolCallId);
+            // Also reject the approval promise to simulate user cancellation
+            rejectApproval(new Error("Cancelled"));
+          });
+
+          const result = yield* Effect.exit(Effect.promise(() => promise));
+
+          yield* Effect.sync(() => {
+            expect(Exit.isFailure(result)).toBe(true);
+            // Registry should be cleaned up
+            expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
+          });
+        }).pipe(Effect.provide(_mockVSCodeServiceLayer)),
     );
   });
 });

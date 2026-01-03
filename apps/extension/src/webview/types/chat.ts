@@ -12,7 +12,8 @@ export interface ToolEvent {
     | "approval-responded"
     | "output-available"
     | "output-error"
-    | "output-denied";
+    | "output-denied"
+    | "output-cancelled";
 }
 
 export type ToolState =
@@ -21,7 +22,8 @@ export type ToolState =
   | "approval-requested"
   | "output-available"
   | "output-error"
-  | "output-denied";
+  | "output-denied"
+  | "output-cancelled";
 
 export type MessagePart =
   | { type: "text"; text: string }

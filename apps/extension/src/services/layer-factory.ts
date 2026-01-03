@@ -243,7 +243,10 @@ export function createAgentServiceLayer(ctx: LayerContext) {
     Layer.provide(rulesServiceLayer),
   );
 
-  // Domain layer with all services including knowledge base and summary service
+  // ClaudeCliService has no dependencies - can be added directly
+  const claudeCliLayer = ClaudeCliServiceLive;
+
+  // Domain layer with all services including knowledge base, summary service, and CLI service
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
     knowledgeFileLayer,
@@ -253,10 +256,11 @@ export function createAgentServiceLayer(ctx: LayerContext) {
     completionDetectorLayer,
     rulesServiceLayer,
     promptServiceLayer,
+    claudeCliLayer,
   );
 
   // Add agent layers
-  // TestingAgent depends on PlanFileService, KnowledgeBaseService, and SummaryService
+  // TestingAgent depends on PlanFileService, KnowledgeBaseService, SummaryService, and ClaudeCliService
   const testingLayer = TestingAgentLive.pipe(
     Layer.provide(domainWithAllServices),
   );
@@ -427,7 +431,10 @@ function createAgentServiceLayerFromDomain(
     Layer.provide(rulesServiceLayer),
   );
 
-  // Domain layer with all services including knowledge base and summary service
+  // ClaudeCliService has no dependencies - can be added directly
+  const claudeCliLayer = ClaudeCliServiceLive;
+
+  // Domain layer with all services including knowledge base, summary service, and CLI service
   const domainWithAllServices = Layer.mergeAll(
     domainWithServices,
     knowledgeFileLayer,
@@ -437,10 +444,11 @@ function createAgentServiceLayerFromDomain(
     completionDetectorLayer,
     rulesServiceLayer,
     promptServiceLayer,
+    claudeCliLayer,
   );
 
   // Add agent layers
-  // TestingAgent depends on PlanFileService, KnowledgeBaseService, and SummaryService
+  // TestingAgent depends on PlanFileService, KnowledgeBaseService, SummaryService, and ClaudeCliService
   const testingLayer = TestingAgentLive.pipe(
     Layer.provide(domainWithAllServices),
   );

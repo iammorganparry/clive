@@ -388,20 +388,21 @@ export function useChangesetChat({
     subscriptionId: state.context.subscriptionId,
     hasPendingPlanApproval: state.context.hasPendingPlanApproval,
     isProcessingQueue: state.context.isProcessingQueue,
-    cancelStream: () => {
-      // First abort all running tool calls to ensure clean cleanup
-      abortAllToolCalls
-        .mutateAsync()
-        .then((result) => {
-          console.log(
-            "[useChangesetChat] Aborted all tool calls:",
-            result.abortedCount,
-          );
-        })
-        .catch((error: unknown) => {
-          console.error("[useChangesetChat] Failed to abort tool calls:", error);
-        });
+    cancelStream: async () => {
+      // First abort all running tool calls and WAIT for completion
+      // This ensures tools are properly terminated before we unsubscribe
+      try {
+        const result = await abortAllToolCalls.mutateAsync();
+        console.log(
+          "[useChangesetChat] Aborted all tool calls:",
+          result.abortedCount,
+        );
+      } catch (error: unknown) {
+        console.error("[useChangesetChat] Failed to abort tool calls:", error);
+      }
+
       // Then unsubscribe from the stream and update state
+      // This must happen AFTER abort completes to prevent race conditions
       planTestsSubscription.unsubscribe();
       send({ type: "CANCEL_STREAM" });
     },

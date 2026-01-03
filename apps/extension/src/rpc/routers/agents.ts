@@ -11,6 +11,7 @@ import type { RpcContext } from "../context.js";
 import { getDiffTrackerService } from "../../services/diff-tracker-service.js";
 import { SettingsService } from "../../services/settings-service.js";
 import { ToolCallAbortRegistry } from "../../services/ai-agent/tool-call-abort-registry.js";
+import { StreamAccumulator } from "../utils/stream-accumulator.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;
@@ -104,6 +105,9 @@ export const agentsRouter = {
     }) {
       const serviceLayer = getAgentLayer(ctx);
 
+      // Create accumulator for tracking streamed content (provider-agnostic)
+      const accumulator = new StreamAccumulator();
+
       const effectProgram = Effect.gen(function* () {
         const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         const startTime = Date.now();
@@ -161,10 +165,55 @@ export const agentsRouter = {
           )
           .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
+        // Register abort handler for cleanup and persistence
+        // This ensures content is persisted when the stream is cancelled
+        signal.addEventListener(
+          "abort",
+          async () => {
+            // Abort all running tool calls
+            const abortedCount = ToolCallAbortRegistry.abortAll();
+            console.log(
+              `[RpcRouter] Subscription aborted, cleaned up ${abortedCount} tool calls`,
+            );
+
+            // Persist accumulated content if we have a conversation
+            if (conversation && accumulator.hasContent()) {
+              const { text, toolCalls } = accumulator.getAccumulated();
+              try {
+                await Runtime.runPromise(runtime)(
+                  conversationService
+                    .addMessage(conversation.id, "assistant", text, {
+                      toolCalls,
+                      cancelled: true,
+                      timestamp: new Date().toISOString(),
+                    })
+                    .pipe(
+                      Effect.provide(serviceLayer),
+                      Effect.catchAll(() => Effect.void),
+                    ),
+                );
+                console.log(
+                  `[RpcRouter:${requestId}] Persisted partial conversation on abort`,
+                );
+              } catch (error) {
+                console.error(
+                  `[RpcRouter:${requestId}] Failed to persist on abort:`,
+                  error,
+                );
+              }
+            }
+          },
+          { once: true },
+        );
+
         const testingAgent = yield* TestingAgent;
 
-        // Progress callback that yields to client
+        // Progress callback that yields to client and accumulates content
         const progressCallback = (status: string, message: string) => {
+          // Accumulate content for persistence on cancellation (provider-agnostic)
+          accumulator.handleProgress(status, message);
+
+          // Forward to client
           if (!onProgress) return;
 
           if (JSON_EVENT_TYPES.has(status)) {

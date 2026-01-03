@@ -335,7 +335,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: gatewayToken, isGateway: true });
+      expect(result).toEqual({ token: gatewayToken, isGateway: true, isCli: false });
     });
   });
 
@@ -355,7 +355,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: storedApiKey, isGateway: false });
+      expect(result).toEqual({ token: storedApiKey, isGateway: false, isCli: false });
       expect(global.fetch).not.toHaveBeenCalled(); // Should not call gateway
     });
 
@@ -377,7 +377,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: gatewayToken, isGateway: true });
+      expect(result).toEqual({ token: gatewayToken, isGateway: true, isCli: false });
       expect(global.fetch).toHaveBeenCalled();
     });
 
@@ -393,7 +393,7 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: storedApiKey, isGateway: false });
+      expect(result).toEqual({ token: storedApiKey, isGateway: false, isCli: false });
       expect(global.fetch).not.toHaveBeenCalled();
     });
   });

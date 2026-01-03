@@ -12,6 +12,10 @@ import {
 } from "../ai-provider-factory.js";
 import { ConfigService } from "../config-service.js";
 import { KnowledgeFileService } from "../knowledge-file-service.js";
+import { SettingsService } from "../settings-service.js";
+import { ClaudeCliService } from "../claude-cli-service.js";
+import { createCliToolExecutor } from "./cli-tool-executor.js";
+import { runCliExecutionLoop } from "./cli-execution-loop.js";
 import { SummaryService } from "./summary-service.js";
 import { emitAgentError } from "./agent-error-utils.js";
 import { CompletionDetector } from "./completion-detector.js";
@@ -69,6 +73,8 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
       const summaryService = yield* SummaryService;
       const completionDetector = yield* CompletionDetector;
       const promptService = yield* PromptService;
+      const settingsService = yield* SettingsService;
+      const claudeCliService = yield* ClaudeCliService;
 
       return {
         /**
@@ -270,6 +276,63 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               emitAgentError(error, progressCallback);
             };
 
+            // Get the AI provider setting to determine execution path
+            const aiProvider = yield* settingsService.getAiProvider();
+            logToOutput(`[TestingAgent:${correlationId}] AI Provider: ${aiProvider}`);
+
+            // Branch based on AI provider
+            if (aiProvider === "claude-cli") {
+              // CLI Execution Path
+              // Use Claude CLI for bi-directional tool execution
+              logToOutput(`[TestingAgent:${correlationId}] Using Claude CLI execution path`);
+
+              // Build the prompt from messages
+              const currentState = yield* Ref.get(agentState);
+              const userMessages = currentState.messages
+                .filter((m) => m.role === "user")
+                .map((m) => m.content)
+                .join("\n\n");
+
+              // Execute via CLI
+              const cliHandle = yield* claudeCliService.execute({
+                prompt: userMessages,
+                systemPrompt: systemPromptWithWorkspace,
+                signal,
+              });
+
+              // Create tool executor with the same tools
+              const toolExecutor = createCliToolExecutor({
+                tools,
+                progressCallback,
+              });
+
+              // Run the CLI execution loop
+              const cliResult = yield* runCliExecutionLoop({
+                cliHandle,
+                toolExecutor,
+                progressCallback,
+                signal,
+                correlationId,
+              });
+
+              const totalDuration = Date.now() - startTime;
+              const finalState = yield* Ref.get(agentState);
+
+              yield* Effect.logDebug(
+                `[TestingAgent:${correlationId}] CLI execution completed in ${totalDuration}ms. Task completed: ${cliResult.taskCompleted}`,
+              );
+
+              return {
+                executions: finalState.executions,
+                response: cliResult.response,
+                taskCompleted: cliResult.taskCompleted,
+                toolRejected: finalState.didRejectTool,
+              };
+            }
+
+            // API Execution Path (default)
+            // Use Anthropic API via Vercel AI SDK
+
             // Create completion state for detecting [COMPLETE] delimiter
             const completionStateRef = yield* completionDetector.createState();
             const stopWhenComplete =
@@ -278,7 +341,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             // Stream execution
             const currentState = yield* Ref.get(agentState);
 
-            // Apply dynamic prompt caching to messages
+            // Create model for streaming
             const model = anthropic(AIModels.testing.medium);
 
             // Build all messages (system + conversation)

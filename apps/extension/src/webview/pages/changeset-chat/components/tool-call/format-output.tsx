@@ -35,8 +35,8 @@ export const formatToolOutput = (
     return null;
   }
 
-  // Handle bashExecute output
-  if (toolName === "bashExecute" && typeof output === "object") {
+  // Handle bashExecute/Bash output
+  if ((toolName === "bashExecute" || toolName === "Bash") && typeof output === "object") {
     const bashOutput = output as BashExecuteOutput;
     const command = bashOutput.command || "";
 
@@ -76,8 +76,8 @@ export const formatToolOutput = (
     }
   }
 
-  // Handle read_file output
-  if (toolName === "read_file" && typeof output === "object") {
+  // Handle read_file/Read output
+  if ((toolName === "read_file" || toolName === "Read") && typeof output === "object") {
     const fileOutput = output as ReadFileOutput;
     if (fileOutput.content) {
       const filePath = fileOutput.filePath || "";
@@ -123,6 +123,19 @@ export const formatToolOutput = (
         </div>
       );
     }
+  }
+
+  // Handle Glob/Grep output (same structured format)
+  if ((toolName === "Glob" || toolName === "Grep") && typeof output === "object") {
+    const searchOutput = output as { files?: Array<{ path: string }>; totalMatches?: number; pattern?: string };
+    if (searchOutput.files && searchOutput.files.length > 0) {
+      return (
+        <pre className="text-xs overflow-auto max-h-64 bg-muted p-2 rounded">
+          {searchOutput.files.map((f) => f.path).join("\n")}
+        </pre>
+      );
+    }
+    return <div className="text-sm text-muted-foreground">No matches found</div>;
   }
 
   return null;

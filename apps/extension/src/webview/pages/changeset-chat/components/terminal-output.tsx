@@ -8,6 +8,7 @@ import {
   Clock,
   AlertCircle,
   Play,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@clive/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@clive/ui/card";
@@ -22,6 +23,7 @@ interface TerminalCardProps {
   onApprove?: () => void;
   onReject?: () => void;
   onCancel?: () => void;
+  isCancelling?: boolean;
   className?: string;
   defaultCollapsed?: boolean;
 }
@@ -66,6 +68,7 @@ export function TerminalCard({
   onApprove,
   onReject,
   onCancel,
+  isCancelling = false,
   className,
   defaultCollapsed = false,
 }: TerminalCardProps) {
@@ -139,14 +142,24 @@ export function TerminalCard({
               )}
 
               {status === "running" && (
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={onCancel} 
-                  className="h-7 gap-1.5 text-xs hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-colors"
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onCancel}
+                  disabled={isCancelling}
+                  className="h-7 gap-1.5 text-xs hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-50"
                 >
-                  <X className="size-3" />
-                  Cancel
+                  {isCancelling ? (
+                    <>
+                      <Loader2 className="size-3 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <X className="size-3" />
+                      Cancel
+                    </>
+                  )}
                 </Button>
               )}
             </div>

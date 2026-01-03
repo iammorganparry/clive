@@ -217,9 +217,13 @@ export interface BashExecuteInput {
 export interface BashExecuteOutput {
   stdout: string;
   stderr?: string;
-  exitCode: number;
-  wasTruncated: boolean;
+  exitCode: number | null;
+  wasTruncated?: boolean;
   command: string;
+  /** Set to true when the command was cancelled by the user */
+  cancelled?: boolean;
+  /** Human-readable message about the result */
+  message?: string;
 }
 
 export interface RunTestInput {
