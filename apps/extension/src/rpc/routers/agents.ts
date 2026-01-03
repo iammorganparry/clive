@@ -417,27 +417,42 @@ export const agentsRouter = {
   /**
    * Abort a specific running tool call
    * Used by the webview to cancel individual bash commands without cancelling the entire stream
+   * subscriptionId is optional - only toolCallId is required for the actual abort operation
    */
   abortToolCall: procedure
     .input(
       z.object({
-        subscriptionId: z.string(),
+        subscriptionId: z.string().optional(),
         toolCallId: z.string(),
       }),
     )
     .mutation(({ input }) =>
       Effect.sync(() => {
         console.log("[AgentsRouter] abortToolCall called", input);
-        // Note: subscriptionId is included for consistency with approveToolCall,
-        // but we only need toolCallId to abort the specific command
         const aborted = ToolCallAbortRegistry.abort(input.toolCallId);
         console.log("[AgentsRouter] abortToolCall result:", {
           aborted,
           toolCallId: input.toolCallId,
+          subscriptionId: input.subscriptionId ?? "not provided",
         });
         return { success: aborted };
       }),
     ),
+
+  /**
+   * Abort all running tool calls
+   * Used when the entire stream is cancelled to clean up all pending operations
+   */
+  abortAllToolCalls: procedure.input(z.void()).mutation(() =>
+    Effect.sync(() => {
+      console.log("[AgentsRouter] abortAllToolCalls called");
+      const abortedCount = ToolCallAbortRegistry.abortAll();
+      console.log("[AgentsRouter] abortAllToolCalls result:", {
+        abortedCount,
+      });
+      return { success: true, abortedCount };
+    }),
+  ),
 
   /**
    * Accept a pending file edit (keep current changes)

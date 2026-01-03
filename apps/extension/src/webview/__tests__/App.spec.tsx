@@ -13,13 +13,13 @@ vi.mock("../pages/login/index.js", () => ({
 }));
 
 vi.mock("../pages/dashboard/index.js", () => ({
-  DashboardPage: ({ vscode }: { vscode: VSCodeAPI }) => (
+  DashboardPage: (_props: { vscode: VSCodeAPI }) => (
     <div data-testid="dashboard-page">Dashboard Page</div>
   ),
 }));
 
 vi.mock("../pages/settings/index.js", () => ({
-  SettingsPage: ({ vscode }: { vscode: VSCodeAPI }) => (
+  SettingsPage: (_props: { vscode: VSCodeAPI }) => (
     <div data-testid="settings-page">Settings Page</div>
   ),
 }));

@@ -223,7 +223,6 @@ export const createWriteTestFileTool = (
                 error instanceof Error ? error.message : "Unknown error";
 
               // Try to read current file content for error context
-              let currentContent: string | undefined;
               const fileUri = path.isAbsolute(targetPath)
                 ? vsCodeService.fileUri(targetPath)
                 : vsCodeService.joinPath(
@@ -232,13 +231,12 @@ export const createWriteTestFileTool = (
                   );
               const relativePath = vsCodeService.asRelativePath(fileUri, false);
 
-              const readResult = yield* vsCodeService
+              const currentContent = yield* vsCodeService
                 .openTextDocument(fileUri)
                 .pipe(
                   Effect.map((doc) => doc.getText()),
                   Effect.catchAll(() => Effect.succeed(undefined)),
                 );
-              currentContent = readResult;
 
               const errorResponse = formatFileEditError(
                 relativePath,
