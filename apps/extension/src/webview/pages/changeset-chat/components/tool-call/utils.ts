@@ -170,8 +170,8 @@ export const generateToolSummary = (
   input?: unknown,
   output?: unknown,
 ): string => {
-  // bashExecute: Show the command with smart formatting
-  if (toolName === "bashExecute" && isBashExecuteArgs(input)) {
+  // bashExecute/Bash: Show the command with smart formatting
+  if ((toolName === "bashExecute" || toolName === "Bash") && isBashExecuteArgs(input)) {
     const command = input.command.trim();
     if (command.startsWith("cat ")) {
       const filePath = command
@@ -212,8 +212,8 @@ export const generateToolSummary = (
     return command.length > 50 ? `${command.slice(0, 47)}...` : command;
   }
 
-  // read_file: Show "Read <filename>"
-  if (toolName === "read_file") {
+  // read_file/Read: Show "Read <filename>"
+  if (toolName === "read_file" || toolName === "Read") {
     if (isReadFileArgs(input)) {
       const path = input.filePath || input.targetPath;
       if (path) {
@@ -465,7 +465,7 @@ export const generateActionList = (
 ): string[] => {
   const actions: string[] = [];
 
-  if (toolName === "bashExecute" && isBashExecuteArgs(input)) {
+  if ((toolName === "bashExecute" || toolName === "Bash") && isBashExecuteArgs(input)) {
     const command = input.command.trim();
     if (isFileReadingCommand(command)) {
       return [];
@@ -474,7 +474,7 @@ export const generateActionList = (
     return actions;
   }
 
-  if (toolName === "read_file") {
+  if (toolName === "read_file" || toolName === "Read") {
     if (isReadFileArgs(input)) {
       const path = input.filePath || input.targetPath;
       if (path) {

@@ -80,7 +80,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
       ? (output as { command?: string }).command
       : "";
   const hasGroupedResults = Boolean(
-    toolName === "bashExecute" &&
+    (toolName === "bashExecute" || toolName === "Bash") &&
       command &&
       (command.includes("grep") || command.includes("find")) &&
       output &&
@@ -90,7 +90,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
 
   // Render grep/find file lists
   const renderGrepFindResults = useCallback((): React.ReactNode => {
-    if (toolName === "bashExecute" && typeof output === "object") {
+    if ((toolName === "bashExecute" || toolName === "Bash") && typeof output === "object") {
       const bashOutput = output as { stdout?: string; command?: string };
       const cmd = isBashExecuteArgs(input) ? input.command : bashOutput.command || "";
 
@@ -201,7 +201,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const toolIcon = getToolIcon(toolName);
 
   // For bash execute, render TerminalCard directly
-  if (toolName === "bashExecute") {
+  if (toolName === "bashExecute" || toolName === "Bash") {
     return (
       <BashExecuteTerminal
         input={input}
@@ -220,7 +220,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   }
 
   return (
-    <Task defaultOpen={hasGroupedResults} className={cn(hasError && "opacity-75")}>
+    <Task defaultOpen={hasGroupedResults} className={cn(hasError && "opacity-75", "w-full")}>
       <TaskTrigger title={triggerTitle}>
         <div className="group flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
           {toolIcon}

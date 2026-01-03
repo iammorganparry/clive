@@ -29,6 +29,7 @@ import {
   type ClaudeCliStatus,
   type ClaudeCliExecuteOptions,
   type ClaudeCliEvent,
+  type CliExecutionHandle,
 } from "../../services/claude-cli-service.js";
 import { Stream } from "effect";
 
@@ -713,7 +714,7 @@ export interface ClaudeCliServiceMockOverrides {
   authenticate?: () => Effect.Effect<boolean, unknown, never>;
   execute?: (
     options: ClaudeCliExecuteOptions,
-  ) => Effect.Effect<Stream.Stream<ClaudeCliEvent, Error, never>, unknown, never>;
+  ) => Effect.Effect<CliExecutionHandle, unknown, never>;
   getCliPath?: () => Effect.Effect<string, unknown, never>;
 }
 
@@ -762,12 +763,18 @@ export function createMockClaudeCliServiceLayer(
     execute:
       overrides?.execute ??
       ((_options: ClaudeCliExecuteOptions) =>
-        Effect.succeed(
-          Stream.fromIterable<ClaudeCliEvent>([
+        Effect.succeed({
+          stream: Stream.fromIterable<ClaudeCliEvent>([
             { type: "text", content: "Mock response" },
             { type: "done" },
           ]),
-        )),
+          sendToolResult: (_toolCallId: string, _result: string) => {
+            // No-op for mock
+          },
+          kill: () => {
+            // No-op for mock
+          },
+        } as CliExecutionHandle)),
 
     getCliPath:
       overrides?.getCliPath ?? (() => Effect.succeed("/usr/local/bin/claude")),

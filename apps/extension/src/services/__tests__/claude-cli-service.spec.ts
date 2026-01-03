@@ -204,7 +204,14 @@ describe("ClaudeCliService", () => {
   });
 
   describe("execute", () => {
-    it("should return a stream of CLI events", async () => {
+    // Helper to create mock CliExecutionHandle
+    const createMockHandle = (events: ClaudeCliEvent[]) => ({
+      stream: Stream.fromIterable(events),
+      sendToolResult: () => {},
+      kill: () => {},
+    });
+
+    it("should return a handle with stream of CLI events", async () => {
       const mockEvents: ClaudeCliEvent[] = [
         { type: "text", content: "Hello" },
         { type: "text", content: " World" },
@@ -212,13 +219,13 @@ describe("ClaudeCliService", () => {
       ];
 
       const { layer } = createMockClaudeCliServiceLayer({
-        execute: () => Effect.succeed(Stream.fromIterable(mockEvents)),
+        execute: () => Effect.succeed(createMockHandle(mockEvents)),
       });
 
       const events = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
-        const stream = yield* service.execute({ prompt: "Say hello" });
-        return yield* Stream.runCollect(stream);
+        const handle = yield* service.execute({ prompt: "Say hello" });
+        return yield* Stream.runCollect(handle.stream);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       const eventsArray = Chunk.toReadonlyArray(events);
@@ -237,13 +244,13 @@ describe("ClaudeCliService", () => {
       ];
 
       const { layer } = createMockClaudeCliServiceLayer({
-        execute: () => Effect.succeed(Stream.fromIterable(mockEvents)),
+        execute: () => Effect.succeed(createMockHandle(mockEvents)),
       });
 
       const events = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
-        const stream = yield* service.execute({ prompt: "Read the file" });
-        return yield* Stream.runCollect(stream);
+        const handle = yield* service.execute({ prompt: "Read the file" });
+        return yield* Stream.runCollect(handle.stream);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       const eventsArray = Chunk.toReadonlyArray(events);
@@ -264,13 +271,13 @@ describe("ClaudeCliService", () => {
       ];
 
       const { layer } = createMockClaudeCliServiceLayer({
-        execute: () => Effect.succeed(Stream.fromIterable(mockEvents)),
+        execute: () => Effect.succeed(createMockHandle(mockEvents)),
       });
 
       const events = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
-        const stream = yield* service.execute({ prompt: "Think hard" });
-        return yield* Stream.runCollect(stream);
+        const handle = yield* service.execute({ prompt: "Think hard" });
+        return yield* Stream.runCollect(handle.stream);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       const eventsArray = Chunk.toReadonlyArray(events);
@@ -326,20 +333,22 @@ describe("ClaudeCliService", () => {
     it("should handle stream errors with ClaudeCliExecutionError", async () => {
       const { layer } = createMockClaudeCliServiceLayer({
         execute: () =>
-          Effect.succeed(
-            Stream.fail(
+          Effect.succeed({
+            stream: Stream.fail(
               new ClaudeCliExecutionError({
                 message: "Process crashed",
                 exitCode: 1,
               }),
             ),
-          ),
+            sendToolResult: () => {},
+            kill: () => {},
+          }),
       });
 
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
-        const stream = yield* service.execute({ prompt: "Hello" });
-        return yield* Stream.runCollect(stream);
+        const handle = yield* service.execute({ prompt: "Hello" });
+        return yield* Stream.runCollect(handle.stream);
       }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
 
       expect(result._tag).toBe("Left");
@@ -353,13 +362,13 @@ describe("ClaudeCliService", () => {
       ];
 
       const { layer } = createMockClaudeCliServiceLayer({
-        execute: () => Effect.succeed(Stream.fromIterable(mockEvents)),
+        execute: () => Effect.succeed(createMockHandle(mockEvents)),
       });
 
       const events = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
-        const stream = yield* service.execute({ prompt: "Do something risky" });
-        return yield* Stream.runCollect(stream);
+        const handle = yield* service.execute({ prompt: "Do something risky" });
+        return yield* Stream.runCollect(handle.stream);
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
       const eventsArray = Chunk.toReadonlyArray(events);
@@ -367,6 +376,33 @@ describe("ClaudeCliService", () => {
         type: "error",
         message: "Something went wrong",
       });
+    });
+
+    it("should provide sendToolResult and kill methods", async () => {
+      const sendToolResultMock = vi.fn();
+      const killMock = vi.fn();
+
+      const { layer } = createMockClaudeCliServiceLayer({
+        execute: () =>
+          Effect.succeed({
+            stream: Stream.fromIterable([{ type: "done" as const }]),
+            sendToolResult: sendToolResultMock,
+            kill: killMock,
+          }),
+      });
+
+      await Effect.gen(function* () {
+        const service = yield* ClaudeCliService;
+        const handle = yield* service.execute({ prompt: "Test" });
+
+        // Test sendToolResult
+        handle.sendToolResult("tool-1", "result");
+        expect(sendToolResultMock).toHaveBeenCalledWith("tool-1", "result");
+
+        // Test kill
+        handle.kill();
+        expect(killMock).toHaveBeenCalled();
+      }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
     });
   });
 

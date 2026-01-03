@@ -267,6 +267,19 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
       const toolAbortController = ToolCallAbortRegistry.register(toolCallId);
       const toolSignal = toolAbortController.signal;
 
+      // Immediate abort check - catch cancellation that happened during registration
+      // This prevents a race condition where abortAll() is called between registration
+      // and the first abort check inside the Effect
+      if (toolSignal.aborted || signal?.aborted) {
+        ToolCallAbortRegistry.cleanup(toolCallId);
+        return Promise.reject(
+          new BashCommandError({
+            message: "Command cancelled before execution",
+            command,
+          }),
+        );
+      }
+
       return Runtime.runPromise(Runtime.defaultRuntime)(
         Effect.gen(function* () {
           // Check approval setting if available
@@ -330,7 +343,10 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
               new Promise<{
                 stdout: string;
                 stderr: string;
-                exitCode: number;
+                exitCode: number | null;
+                cancelled?: boolean;
+                message?: string;
+                command?: string;
               }>((resolve, reject) => {
                 const child = spawnFn(command, {
                   shell: true,
@@ -369,12 +385,17 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
                     signal.removeEventListener("abort", streamAbortHandler);
                   }
                   child.kill();
-                  reject(
-                    new BashCommandError({
-                      message: "Command cancelled",
-                      command,
-                    }),
-                  );
+                  // Resolve with cancelled result instead of rejecting
+                  // This allows the agent to continue with its next action
+                  resolve({
+                    cancelled: true,
+                    message:
+                      "Command cancelled by user. Do not retry - proceed with your next action.",
+                    command,
+                    stdout,
+                    stderr,
+                    exitCode: null,
+                  });
                 };
 
                 // Check if already aborted
@@ -505,6 +526,18 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
                     cause: error,
                   }),
           });
+
+          // Early return for cancelled results - don't process through budget
+          if (result.cancelled) {
+            return {
+              cancelled: true,
+              message: result.message || "Command cancelled by user. Do not retry - proceed with your next action.",
+              command,
+              stdout: result.stdout || "",
+              stderr: result.stderr || undefined,
+              exitCode: null,
+            };
+          }
 
           const stdout = result.stdout || "";
           const stderr = result.stderr || "";

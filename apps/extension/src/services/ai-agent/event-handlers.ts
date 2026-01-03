@@ -615,10 +615,12 @@ export const handleToolResult = (
         ? event.toolResult.output
         : event.toolResult;
 
-    // Check if tool was rejected
+    // Check if tool was rejected or cancelled
     const outputObj =
       actualOutput && typeof actualOutput === "object" ? actualOutput : {};
     const wasRejected = "rejected" in outputObj && outputObj.rejected === true;
+    const wasCancelled =
+      "cancelled" in outputObj && outputObj.cancelled === true;
 
     if (wasRejected) {
       yield* setToolRejected(agentState, true);
@@ -679,6 +681,13 @@ export const handleToolResult = (
       }
     }
 
+    // Determine the result state
+    const resultState = wasCancelled
+      ? "output-cancelled"
+      : wasRejected
+        ? "output-denied"
+        : "output-available";
+
     // Emit tool result
     progressCallback?.(
       "tool-result",
@@ -687,7 +696,7 @@ export const handleToolResult = (
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         output: actualOutput,
-        state: wasRejected ? "output-rejected" : "output-available",
+        state: resultState,
       }),
     );
   });

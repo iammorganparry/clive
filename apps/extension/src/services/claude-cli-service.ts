@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { logToOutput } from "../utils/logger.js";
 
 const execAsync = promisify(exec);
 
@@ -67,6 +68,19 @@ export interface ClaudeCliExecuteOptions {
   model?: string;
   maxTokens?: number;
   signal?: AbortSignal;
+}
+
+/**
+ * Handle for bi-directional CLI communication
+ * Allows reading events from stdout and sending tool results via stdin
+ */
+export interface CliExecutionHandle {
+  /** Stream of events from CLI stdout */
+  stream: Stream.Stream<ClaudeCliEvent, ClaudeCliExecutionError>;
+  /** Send a tool result back to the CLI via stdin */
+  sendToolResult: (toolCallId: string, result: string) => void;
+  /** Kill the CLI process */
+  kill: () => void;
 }
 
 /**
@@ -212,17 +226,71 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
       /**
        * Parse a single line of NDJSON output from Claude CLI
+       * Handles both Anthropic API format and Claude CLI stream-json format
        */
       const parseCliOutput = (line: string): ClaudeCliEvent | null => {
         if (!line.trim()) return null;
 
+        // Debug: Log raw line
+        logToOutput(`[ClaudeCliService] Raw line: ${line.substring(0, 200)}`);
+
         try {
           const data = JSON.parse(line);
 
-          // Map Claude CLI output format to our event types
-          // The actual format depends on Claude CLI's --output-format json
+          // Debug: Log parsed event type
+          logToOutput(`[ClaudeCliService] Parsed event type: ${data.type}`);
+
+          // Claude CLI stream-json format events
+          // Handle content_block_start for tool_use
+          if (data.type === "content_block_start") {
+            if (data.content_block?.type === "tool_use") {
+              return {
+                type: "tool_use",
+                id: data.content_block.id,
+                name: data.content_block.name,
+                input: data.content_block.input || {},
+              };
+            }
+            if (data.content_block?.type === "thinking") {
+              return { type: "thinking", content: data.content_block.thinking || "" };
+            }
+          }
+
+          // Handle content_block_delta
+          if (data.type === "content_block_delta") {
+            if (data.delta?.type === "text_delta") {
+              return { type: "text", content: data.delta.text };
+            }
+            if (data.delta?.type === "thinking_delta") {
+              return { type: "thinking", content: data.delta.thinking };
+            }
+            if (data.delta?.type === "input_json_delta") {
+              // Tool input is being streamed - we'll get complete input later
+              return null;
+            }
+          }
+
+          // Handle message_start - contains model info
+          if (data.type === "message_start") {
+            // Just acknowledge, no event needed
+            return null;
+          }
+
+          // Handle message_delta - contains stop reason
+          if (data.type === "message_delta") {
+            if (data.delta?.stop_reason === "end_turn" || data.delta?.stop_reason === "tool_use") {
+              return { type: "done" };
+            }
+            return null;
+          }
+
+          // Handle message_stop
+          if (data.type === "message_stop" || data.type === "result") {
+            return { type: "done" };
+          }
+
+          // Handle assistant message with content array
           if (data.type === "assistant" && data.message?.content) {
-            // Handle text content
             for (const block of data.message.content) {
               if (block.type === "text") {
                 return { type: "text", content: block.text };
@@ -241,26 +309,16 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             }
           }
 
-          if (data.type === "content_block_delta") {
-            if (data.delta?.type === "text_delta") {
-              return { type: "text", content: data.delta.text };
-            }
-            if (data.delta?.type === "thinking_delta") {
-              return { type: "thinking", content: data.delta.thinking };
-            }
-          }
-
-          if (data.type === "message_stop" || data.type === "result") {
-            return { type: "done" };
-          }
-
+          // Handle error events
           if (data.type === "error") {
             return {
               type: "error",
-              message: data.error?.message || "Unknown error",
+              message: data.error?.message || data.message || "Unknown error",
             };
           }
 
+          // Unknown event type - log it for debugging
+          logToOutput(`[ClaudeCliService] Unknown event type: ${data.type} ${JSON.stringify(data).substring(0, 200)}`);
           return null;
         } catch {
           // Not valid JSON, might be plain text output
@@ -357,6 +415,7 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
         /**
          * Execute a prompt via Claude CLI and stream the response
+         * Returns a handle for bi-directional communication
          */
         execute: (options: ClaudeCliExecuteOptions) =>
           Effect.gen(function* () {
@@ -377,12 +436,20 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               `[ClaudeCliService] Executing prompt via CLI: ${options.prompt.slice(0, 100)}...`,
             );
 
-            // Build CLI arguments
+            // Build CLI arguments for streaming output
+            // Note: --input-format stream-json would make the CLI wait for stdin
+            // For now, we use command-line prompt and only output streaming
             const args: string[] = [
               "--print", // Non-interactive mode
+              "--verbose", // Required for stream-json with --print
               "--output-format",
               "stream-json", // Stream JSON output
             ];
+
+            // Debug: Log the full command being executed
+            const fullArgs = [...args, options.prompt];
+            logToOutput(`[ClaudeCliService] Spawning CLI: ${cliPath}`);
+            logToOutput(`[ClaudeCliService] Args: ${JSON.stringify(fullArgs)}`);
 
             if (options.model) {
               args.push("--model", options.model);
@@ -393,32 +460,49 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             }
 
             if (options.systemPrompt) {
-              args.push("--system", options.systemPrompt);
+              args.push("--system-prompt", options.systemPrompt);
             }
 
             // Add the prompt as the last argument
             args.push(options.prompt);
 
-            // Create a stream from the CLI process
+            // Spawn the CLI process with inherited environment for auth
+            const child = spawn(cliPath, args, {
+              stdio: ["pipe", "pipe", "pipe"],
+              env: { ...process.env },
+            });
+
+            logToOutput(`[ClaudeCliService] Process spawned with PID: ${child.pid}`);
+            logToOutput(`[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`);
+
+            // Listen for spawn event to confirm process started
+            child.on("spawn", () => {
+              logToOutput(`[ClaudeCliService] Process spawn event fired`);
+            });
+
+            // Close stdin immediately for --print mode
+            // This signals to the CLI that no more input is coming and it should start processing
+            child.stdin.end();
+            logToOutput(`[ClaudeCliService] stdin closed to signal start`);
+
+            // Create a stream from the CLI process stdout
             const stream = Stream.async<
               ClaudeCliEvent,
               ClaudeCliExecutionError
             >((emit) => {
-              const child = spawn(cliPath, args, {
-                stdio: ["pipe", "pipe", "pipe"],
-                signal: options.signal,
-              });
-
               let buffer = "";
 
               child.stdout.on("data", (data: Buffer) => {
-                buffer += data.toString();
+                const chunk = data.toString();
+                logToOutput(`[ClaudeCliService] stdout chunk (${chunk.length} bytes): ${chunk.substring(0, 100)}`);
+                buffer += chunk;
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
                 for (const line of lines) {
                   const event = parseCliOutput(line);
                   if (event) {
+                    logToOutput(`[ClaudeCliService] Emitting event: ${event.type}`);
                     emit.single(event);
                   }
                 }
@@ -426,10 +510,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
               child.stderr.on("data", (data: Buffer) => {
                 const errorText = data.toString();
+                logToOutput(`[ClaudeCliService] stderr: ${errorText}`);
                 emit.single({ type: "error", message: errorText });
               });
 
               child.on("error", (error) => {
+                logToOutput(`[ClaudeCliService] Process error: ${error.message}`);
                 emit.fail(
                   new ClaudeCliExecutionError({
                     message: `CLI process error: ${error.message}`,
@@ -438,6 +524,7 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               });
 
               child.on("close", (code) => {
+                logToOutput(`[ClaudeCliService] Process closed with code: ${code}`);
                 // Process any remaining buffer
                 if (buffer.trim()) {
                   const event = parseCliOutput(buffer);
@@ -467,7 +554,40 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               }
             });
 
-            return stream;
+            // Create the execution handle with bi-directional communication
+            const handle: CliExecutionHandle = {
+              stream,
+
+              /**
+               * Send a tool result back to the CLI via stdin
+               * The CLI expects NDJSON format: {"type": "tool_result", "tool_use_id": "...", "content": "..."}
+               */
+              sendToolResult: (toolCallId: string, result: string) => {
+                if (!child.stdin?.writable) {
+                  console.error(
+                    "[ClaudeCliService] Cannot send tool result - stdin not writable",
+                  );
+                  return;
+                }
+
+                const message = JSON.stringify({
+                  type: "tool_result",
+                  tool_use_id: toolCallId,
+                  content: result,
+                });
+
+                child.stdin.write(`${message}\n`);
+              },
+
+              /**
+               * Kill the CLI process
+               */
+              kill: () => {
+                child.kill("SIGTERM");
+              },
+            };
+
+            return handle;
           }),
 
         /**

@@ -225,4 +225,113 @@ describe("ToolCallAbortRegistry", () => {
       ToolCallAbortRegistry.abortAll();
     });
   });
+
+  describe("race condition handling", () => {
+    it("should handle registration immediately followed by abortAll", () => {
+      const toolCallId = "race-condition-1";
+
+      // Simulate a race condition: register then immediately abortAll
+      const controller = ToolCallAbortRegistry.register(toolCallId);
+      const abortedCount = ToolCallAbortRegistry.abortAll();
+
+      expect(abortedCount).toBe(1);
+      expect(controller.signal.aborted).toBe(true);
+      expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
+    });
+
+    it("should handle multiple rapid registrations and abortAll", () => {
+      const ids = ["rapid-1", "rapid-2", "rapid-3", "rapid-4", "rapid-5"];
+      const controllers: AbortController[] = [];
+
+      // Rapid registration
+      for (const id of ids) {
+        controllers.push(ToolCallAbortRegistry.register(id));
+      }
+
+      // All should be running
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(5);
+
+      // AbortAll should handle all of them
+      const abortedCount = ToolCallAbortRegistry.abortAll();
+
+      expect(abortedCount).toBe(5);
+      for (const controller of controllers) {
+        expect(controller.signal.aborted).toBe(true);
+      }
+      expect(ToolCallAbortRegistry.getRunningCount()).toBe(0);
+    });
+
+    it("should handle abort listeners being triggered", () => {
+      const toolCallId = "listener-test-1";
+      let listenerCalled = false;
+
+      const controller = ToolCallAbortRegistry.register(toolCallId);
+      controller.signal.addEventListener("abort", () => {
+        listenerCalled = true;
+      });
+
+      ToolCallAbortRegistry.abort(toolCallId);
+
+      expect(listenerCalled).toBe(true);
+    });
+
+    it("should handle abort listeners with abortAll", () => {
+      const toolCallId1 = "listener-all-1";
+      const toolCallId2 = "listener-all-2";
+      const listenersCalled: string[] = [];
+
+      const controller1 = ToolCallAbortRegistry.register(toolCallId1);
+      const controller2 = ToolCallAbortRegistry.register(toolCallId2);
+
+      controller1.signal.addEventListener("abort", () => {
+        listenersCalled.push(toolCallId1);
+      });
+      controller2.signal.addEventListener("abort", () => {
+        listenersCalled.push(toolCallId2);
+      });
+
+      ToolCallAbortRegistry.abortAll();
+
+      expect(listenersCalled).toContain(toolCallId1);
+      expect(listenersCalled).toContain(toolCallId2);
+      expect(listenersCalled.length).toBe(2);
+    });
+
+    it("should allow re-registration after abort", () => {
+      const toolCallId = "re-register-1";
+
+      // First registration and abort
+      const controller1 = ToolCallAbortRegistry.register(toolCallId);
+      ToolCallAbortRegistry.abort(toolCallId);
+
+      expect(controller1.signal.aborted).toBe(true);
+      expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(false);
+
+      // Re-registration should work
+      const controller2 = ToolCallAbortRegistry.register(toolCallId);
+
+      expect(controller2.signal.aborted).toBe(false);
+      expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(true);
+
+      // Cleanup
+      ToolCallAbortRegistry.cleanup(toolCallId);
+    });
+
+    it("should allow re-registration after abortAll", () => {
+      const toolCallId = "re-register-all-1";
+
+      // First registration and abortAll
+      ToolCallAbortRegistry.register(toolCallId);
+      ToolCallAbortRegistry.abortAll();
+
+      // Re-registration should work
+      const controller = ToolCallAbortRegistry.register(toolCallId);
+
+      expect(controller.signal.aborted).toBe(false);
+      expect(ToolCallAbortRegistry.isRunning(toolCallId)).toBe(true);
+
+      // Cleanup
+      ToolCallAbortRegistry.cleanup(toolCallId);
+    });
+  });
 });

@@ -21,15 +21,23 @@ export const getToolIcon = (toolName: string): React.ReactNode => {
   const iconClass = "size-4";
 
   switch (toolName) {
+    // Internal tool names
     case "readFile":
+    case "read_file":
+    case "Read": // CLI tool name
       return <FileTextIcon className={iconClass} />;
     case "bashExecute":
+    case "Bash": // CLI tool name
       return <TerminalIcon className={iconClass} />;
     case "codebaseSearch":
+    case "Grep": // CLI tool name
+      return <SearchIcon className={iconClass} />;
+    case "Glob": // CLI tool name
       return <SearchIcon className={iconClass} />;
     case "searchKnowledge":
       return <BookOpenIcon className={iconClass} />;
     case "writeTestFile":
+    case "Write": // CLI tool name
       return <FileCheckIcon className={iconClass} />;
     case "writeKnowledgeFile":
       return <FileTextIcon className={iconClass} />;
@@ -38,6 +46,7 @@ export const getToolIcon = (toolName: string): React.ReactNode => {
     case "webSearch":
       return <GlobeIcon className={iconClass} />;
     case "editFileContent":
+    case "Edit": // CLI tool name
       return <FileTextIcon className={iconClass} />;
     default:
       return <CodeIcon className={iconClass} />;
@@ -60,12 +69,19 @@ export const getStatusBadge = (state: ToolState): React.ReactNode | null => {
         <span className="text-xs font-medium text-red-700 dark:text-red-300">Rejected</span>
       </div>
     ),
+    "output-cancelled": (
+      <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+        <XCircleIcon className="size-3 text-muted-foreground" />
+        <span className="text-xs font-medium text-muted-foreground">Cancelled</span>
+      </div>
+    ),
   };
 
   if (
     state === "output-available" ||
     state === "output-error" ||
-    state === "output-denied"
+    state === "output-denied" ||
+    state === "output-cancelled"
   ) {
     return <div className="flex items-center">{icons[state]}</div>;
   }
