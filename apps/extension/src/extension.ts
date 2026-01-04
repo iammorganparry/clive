@@ -19,6 +19,11 @@ import {
   getDiffTrackerService,
   initializeDiffTrackerService,
 } from "./services/diff-tracker-service.js";
+import {
+  getMcpBridgeRuntime,
+  resetMcpBridgeRuntime,
+} from "./mcp-bridge/runtime.js";
+import { createBridgeHandlers } from "./mcp-bridge/handlers.js";
 
 // Build-time constant injected by esbuild
 declare const __DEV__: boolean;
@@ -84,9 +89,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   const diffProvider = DiffContentProvider.register(context);
 
   // Initialize diff tracker service with extension URI for inset support
-  const _diffTrackerService = initializeDiffTrackerService(
-    context.extensionUri,
-  );
+  initializeDiffTrackerService(context.extensionUri);
 
   // Register plan CodeLens provider
   const planCodeLensProvider = new PlanCodeLensProvider();
@@ -266,6 +269,33 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   provider.setContext(context);
   provider.setOutputChannel(outputChannel);
   provider.setIsDev(isDev);
+
+  // Initialize MCP bridge runtime for Claude CLI custom tools
+  getMcpBridgeRuntime()
+    .then(async (runtime) => {
+      // Set up bridge handlers
+      const handlers = createBridgeHandlers();
+      await runtime.setHandlers(handlers);
+
+      // Connect runtime to the view provider for RPC access
+      provider.setMcpBridgeRuntime(runtime);
+
+      outputChannel.appendLine("[MCP Bridge] Runtime initialized");
+    })
+    .catch((error) => {
+      outputChannel.appendLine(
+        `[MCP Bridge] Failed to initialize runtime: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    });
+
+  // Clean up MCP bridge on deactivation
+  context.subscriptions.push({
+    dispose: () => {
+      resetMcpBridgeRuntime().catch(() => {
+        // Ignore errors during cleanup
+      });
+    },
+  });
 
   const webviewProviderDisposable = vscode.window.registerWebviewViewProvider(
     CliveViewProvider.viewType,

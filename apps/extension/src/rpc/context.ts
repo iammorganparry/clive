@@ -9,6 +9,7 @@ import type {
   createSystemServiceLayer,
   LayerContext,
 } from "../services/layer-factory.js";
+import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
 
 /**
  * Layer types inferred from the layer factory functions for type safety
@@ -52,4 +53,7 @@ export interface RpcContext {
   agentLayer?: AgentLayerType;
   authLayer?: AuthLayerType;
   systemLayer?: SystemLayerType;
+
+  // MCP Bridge runtime for managing custom tools
+  mcpBridgeRuntime?: McpBridgeRuntime;
 }

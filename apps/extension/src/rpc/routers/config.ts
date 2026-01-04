@@ -299,6 +299,48 @@ export const configRouter = {
         );
         const settingsService = yield* SettingsService;
         yield* settingsService.setAiProvider(input.provider as AiProviderType);
+
+        // Manage MCP bridge lifecycle based on provider
+        const bridgeRuntime = ctx.mcpBridgeRuntime;
+        if (bridgeRuntime) {
+          if (input.provider === "claude-cli") {
+            // Start bridge when Claude CLI is selected
+            yield* Effect.tryPromise({
+              try: () => bridgeRuntime.start(),
+              catch: (error) =>
+                new Error(
+                  `Failed to start MCP bridge: ${error instanceof Error ? error.message : "Unknown error"}`,
+                ),
+            }).pipe(
+              Effect.tap((socketPath) =>
+                Effect.logDebug(
+                  `[ConfigRouter] MCP bridge started at: ${socketPath}`,
+                ),
+              ),
+              Effect.catchAll((error) =>
+                Effect.logDebug(
+                  `[ConfigRouter] Failed to start MCP bridge: ${error.message}`,
+                ),
+              ),
+            );
+          } else {
+            // Stop bridge when switching away from Claude CLI
+            yield* Effect.tryPromise({
+              try: () => bridgeRuntime.stop(),
+              catch: () => new Error("Failed to stop MCP bridge"),
+            }).pipe(
+              Effect.tap(() =>
+                Effect.logDebug("[ConfigRouter] MCP bridge stopped"),
+              ),
+              Effect.catchAll((error) =>
+                Effect.logDebug(
+                  `[ConfigRouter] Failed to stop MCP bridge: ${error.message}`,
+                ),
+              ),
+            );
+          }
+        }
+
         return { provider: input.provider };
       }).pipe(
         Effect.catchTags({
