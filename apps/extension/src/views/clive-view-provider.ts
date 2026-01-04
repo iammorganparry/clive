@@ -17,6 +17,7 @@ import {
   toLayerContext,
   type CachedLayers,
 } from "../services/layer-factory.js";
+import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
 
 /**
  * Message type for opening a file
@@ -50,6 +51,7 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
   private _outputChannel?: vscode.OutputChannel;
   private _isDev: boolean = false;
   private _cachedLayers?: CachedLayers;
+  private _mcpBridgeRuntime?: McpBridgeRuntime;
   private themeChangeDisposable?: vscode.Disposable;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
 
@@ -68,6 +70,10 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
 
   public setIsDev(isDev: boolean): void {
     this._isDev = isDev;
+  }
+
+  public setMcpBridgeRuntime(runtime: McpBridgeRuntime): void {
+    this._mcpBridgeRuntime = runtime;
   }
 
   public getWebview(): vscode.WebviewView | undefined {
@@ -263,6 +269,8 @@ export class CliveViewProvider implements vscode.WebviewViewProvider {
       agentLayer: this._cachedLayers?.agentLayer,
       authLayer: this._cachedLayers?.authLayer,
       systemLayer: this._cachedLayers?.systemLayer,
+      // MCP Bridge runtime for custom tools lifecycle management
+      mcpBridgeRuntime: this._mcpBridgeRuntime,
     };
   }
 

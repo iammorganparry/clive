@@ -68,6 +68,11 @@ export interface ClaudeCliExecuteOptions {
   model?: string;
   maxTokens?: number;
   signal?: AbortSignal;
+  workspaceRoot?: string;
+  /** Path to MCP bridge socket (enables custom tools via MCP) */
+  mcpSocketPath?: string;
+  /** Path to MCP server JavaScript file */
+  mcpServerPath?: string;
 }
 
 /**
@@ -445,6 +450,23 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               "--output-format",
               "stream-json", // Stream JSON output
             ];
+
+            // Add MCP server configuration if provided
+            if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
+              const mcpConfig = {
+                "clive-tools": {
+                  type: "stdio",
+                  command: "node",
+                  args: [options.mcpServerPath],
+                  env: {
+                    CLIVE_WORKSPACE: options.workspaceRoot,
+                    CLIVE_SOCKET: options.mcpSocketPath,
+                  },
+                },
+              };
+              args.push("--mcp", JSON.stringify(mcpConfig));
+              logToOutput(`[ClaudeCliService] MCP config added: ${JSON.stringify(mcpConfig)}`);
+            }
 
             // Debug: Log the full command being executed
             const fullArgs = [...args, options.prompt];

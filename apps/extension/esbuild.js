@@ -26,7 +26,8 @@ const esbuildProblemMatcherPlugin = {
 
 
 async function main() {
-	const ctx = await esbuild.context({
+	// Build the main extension
+	const extensionCtx = await esbuild.context({
 		entryPoints: [
 			'src/extension.ts'
 		],
@@ -47,11 +48,45 @@ async function main() {
 			esbuildProblemMatcherPlugin,
 		],
 	});
+
+	// Build the MCP server as a separate ESM bundle
+	// This runs as a separate process spawned by Claude CLI
+	const mcpServerCtx = await esbuild.context({
+		entryPoints: [
+			'src/mcp-server/index.ts'
+		],
+		bundle: true,
+		format: 'esm',
+		minify: production,
+		sourcemap: true,
+		sourcesContent: false,
+		platform: 'node',
+		outfile: 'dist/mcp-server.mjs',
+		external: ['vscode'], // Exclude vscode - MCP server should not use it directly
+		logLevel: 'silent',
+		banner: {
+			// Required for ESM compatibility with certain Node.js features
+			js: 'import { createRequire } from "module"; const require = createRequire(import.meta.url);',
+		},
+		plugins: [
+			esbuildProblemMatcherPlugin,
+		],
+	});
+
 	if (watch) {
-		await ctx.watch();
+		await Promise.all([
+			extensionCtx.watch(),
+			mcpServerCtx.watch(),
+		]);
 	} else {
-		await ctx.rebuild();
-		await ctx.dispose();
+		await Promise.all([
+			extensionCtx.rebuild(),
+			mcpServerCtx.rebuild(),
+		]);
+		await Promise.all([
+			extensionCtx.dispose(),
+			mcpServerCtx.dispose(),
+		]);
 	}
 }
 
