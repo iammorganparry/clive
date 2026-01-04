@@ -9,7 +9,7 @@ import { ConfigService } from "./services/config-service.js";
 import { createSecretStorageLayer } from "./services/vs-code.js";
 import { createLoggerLayer } from "./services/logger-service.js";
 import { setGlobalOutputChannel } from "./utils/logger.js";
-import { Commands } from "./constants.js";
+import { Commands, GlobalStateKeys } from "./constants.js";
 import {
   PlanCodeLensProvider,
   handleApprovePlan,
@@ -273,14 +273,29 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
   // Initialize MCP bridge runtime for Claude CLI custom tools
   getMcpBridgeRuntime()
     .then(async (runtime) => {
-      // Set up bridge handlers
-      const handlers = createBridgeHandlers();
+      // Set up bridge handlers with webview provider for event emission
+      const handlers = createBridgeHandlers(provider);
       await runtime.setHandlers(handlers);
 
       // Connect runtime to the view provider for RPC access
       provider.setMcpBridgeRuntime(runtime);
 
       outputChannel.appendLine("[MCP Bridge] Runtime initialized");
+
+      // Check if Claude CLI is the current provider and start bridge if so
+      const currentProvider = context.globalState.get<string>(GlobalStateKeys.aiProvider);
+      if (currentProvider === "claude-cli") {
+        try {
+          const socketPath = await runtime.start();
+          outputChannel.appendLine(
+            `[MCP Bridge] Auto-started for Claude CLI at: ${socketPath}`,
+          );
+        } catch (startError) {
+          outputChannel.appendLine(
+            `[MCP Bridge] Failed to auto-start: ${startError instanceof Error ? startError.message : "Unknown error"}`,
+          );
+        }
+      }
     })
     .catch((error) => {
       outputChannel.appendLine(

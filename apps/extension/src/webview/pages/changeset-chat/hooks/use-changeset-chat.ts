@@ -8,6 +8,7 @@ import {
   changesetChatMachine,
   type TestSuiteQueueItem,
 } from "../machines/changeset-chat-machine.js";
+import { mcpBridgeEventEmitter } from "../../../services/mcp-bridge-events.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -65,6 +66,45 @@ export function useChangesetChat({
     send,
     isHistoryLoading,
   ]);
+
+  // MCP bridge event handlers for plan approval and context summarization
+  const handlePlanApproval = useCallback(
+    (data: { approved: boolean; planId?: string; feedback?: string }) => {
+      console.log("[MCP Bridge] Plan approval event received:", data);
+      if (data.approved) {
+        // When approved via MCP bridge, dispatch APPROVE_PLAN with current queue
+        const suites = state.context.testSuiteQueue;
+        send({ type: "APPROVE_PLAN", suites });
+      }
+      // Rejection is handled by the MCP response - agent stays in plan mode
+    },
+    [send, state.context.testSuiteQueue],
+  );
+
+  const handleSummarizeContext = useCallback(
+    (data: {
+      summary: string;
+      tokensBefore?: number;
+      tokensAfter?: number;
+      preserveKnowledge: boolean;
+    }) => {
+      console.log("[MCP Bridge] Context summarization event received:", data);
+      // Context summarization is informational - the MCP server handles the actual work
+      // Future: Could dispatch an event to update UI with token savings info
+    },
+    [],
+  );
+
+  // Subscribe to MCP bridge events
+  useEffect(() => {
+    mcpBridgeEventEmitter.on("plan-approval", handlePlanApproval);
+    mcpBridgeEventEmitter.on("summarize-context", handleSummarizeContext);
+
+    return () => {
+      mcpBridgeEventEmitter.off("plan-approval", handlePlanApproval);
+      mcpBridgeEventEmitter.off("summarize-context", handleSummarizeContext);
+    };
+  }, [handlePlanApproval, handleSummarizeContext]);
 
   // Subscribe to planTests
   const planTestsSubscription = rpc.agents.planTests.useSubscription({

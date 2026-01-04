@@ -36,6 +36,7 @@ import { ErrorBanner } from "./components/error-banner.js";
 import { TestSuiteQueue } from "./components/test-suite-queue.js";
 import { DevTestingToolbar } from "./components/dev-testing-toolbar.js";
 import { UserMessageText } from "./components/user-message-text.js";
+import { AgentStatusIndicator } from "./components/agent-status-indicator.js";
 import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
 import type { MessagePart, ChatMessage } from "../../types/chat.js";
 import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
@@ -66,6 +67,7 @@ export const ChangesetChatPage: React.FC = () => {
     isLoading,
     isLoadingHistory,
     hasCompletedAnalysis,
+    isReasoningStreaming,
     usage,
     planContent,
     planFilePath,
@@ -172,13 +174,14 @@ export const ChangesetChatPage: React.FC = () => {
                 );
               }
 
-              // Render reasoning parts inline
+              // Render reasoning parts inline - always visible while streaming
               if (part.type === "reasoning") {
                 return (
-                  <Reasoning 
+                  <Reasoning
                     className="mt-2"
                     key={`${message.id}-reasoning-${index}`}
                     isStreaming={part.isStreaming ?? false}
+                    defaultOpen={true}
                   >
                     <ReasoningTrigger />
                     <ReasoningContent>{part.content}</ReasoningContent>
@@ -351,6 +354,14 @@ export const ChangesetChatPage: React.FC = () => {
 
               {/* Empty state or messages */}
               {renderConversationContent()}
+
+              {/* Loading indicator when waiting for agent response */}
+              {isLoading && messages.length > 0 && (
+                <AgentStatusIndicator
+                  status={isReasoningStreaming ? "thinking" : "working"}
+                  message={isReasoningStreaming ? "Thinking..." : "Working..."}
+                />
+              )}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

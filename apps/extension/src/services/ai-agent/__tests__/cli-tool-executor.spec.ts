@@ -22,11 +22,13 @@ vi.mock("node:fs/promises", () => ({
 
 // Mock child_process - promisify will be called on exec
 vi.mock("node:child_process", () => ({
+  default: { exec: vi.fn() },
   exec: vi.fn(),
 }));
 
 // Mock util.promisify to return our mock
 vi.mock("node:util", () => ({
+  default: { promisify: () => mockExecAsync },
   promisify: () => mockExecAsync,
 }));
 
@@ -113,10 +115,10 @@ describe("cli-tool-executor", () => {
   });
 
   describe("Write tool handler", () => {
-    it("should write file contents successfully", async () => {
+    it("should write file contents successfully in act mode", async () => {
       mockWriteFile.mockResolvedValue(undefined);
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall(
           "Write",
@@ -134,10 +136,25 @@ describe("cli-tool-executor", () => {
       );
     });
 
-    it("should handle write errors", async () => {
+    it("should block write in plan mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Write",
+          { file_path: "/test/output.ts", content: "const x = 1;" },
+          "tool-5b",
+        )
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it("should handle write errors in act mode", async () => {
       mockWriteFile.mockRejectedValue(new Error("Permission denied"));
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall(
           "Write",
@@ -152,11 +169,11 @@ describe("cli-tool-executor", () => {
   });
 
   describe("Edit tool handler", () => {
-    it("should replace single occurrence", async () => {
+    it("should replace single occurrence in act mode", async () => {
       mockReadFile.mockResolvedValue("const x = 1;\nconst x = 2;");
       mockWriteFile.mockResolvedValue(undefined);
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall(
           "Edit",
@@ -181,7 +198,7 @@ describe("cli-tool-executor", () => {
       mockReadFile.mockResolvedValue("foo bar foo baz foo");
       mockWriteFile.mockResolvedValue(undefined);
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall(
           "Edit",
@@ -203,10 +220,29 @@ describe("cli-tool-executor", () => {
       );
     });
 
-    it("should return error when string not found", async () => {
+    it("should block edit in plan mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Edit",
+          {
+            file_path: "/test/file.ts",
+            old_string: "foo",
+            new_string: "bar",
+          },
+          "tool-8b",
+        )
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it("should return error when string not found in act mode", async () => {
       mockReadFile.mockResolvedValue("const x = 1;");
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall(
           "Edit",
@@ -225,10 +261,11 @@ describe("cli-tool-executor", () => {
   });
 
   describe("Bash tool handler", () => {
-    it("should execute command and return structured JSON", async () => {
+    it("should execute read-only command in plan mode", async () => {
       mockExecAsync.mockResolvedValue({ stdout: "hello world\n", stderr: "" });
 
-      const executor = createCliToolExecutor({ tools: {} });
+      // echo is a read-only command, should work in plan mode
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
         .executeToolCall("Bash", { command: "echo hello world" }, "tool-10")
         .pipe(Runtime.runPromise(runtime));
@@ -241,7 +278,44 @@ describe("cli-tool-executor", () => {
       expect(parsed.exitCode).toBe(0);
     });
 
-    it("should handle command errors with exit code", async () => {
+    it("should block write commands in plan mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "mkdir /test/dir" }, "tool-10b")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+      expect(mockExecAsync).not.toHaveBeenCalled();
+    });
+
+    it("should allow write commands in act mode", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "mkdir /test/dir" }, "tool-10c")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        "mkdir /test/dir",
+        expect.any(Object),
+      );
+    });
+
+    it("should block dangerous commands even in act mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "rm -rf /test" }, "tool-10d")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("blocked for safety");
+      expect(mockExecAsync).not.toHaveBeenCalled();
+    });
+
+    it("should handle command errors with exit code in act mode", async () => {
       const execError = new Error("Command failed") as Error & {
         code: number;
         stdout: string;
@@ -252,7 +326,7 @@ describe("cli-tool-executor", () => {
       execError.stderr = "command not found";
       mockExecAsync.mockRejectedValue(execError);
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       const result = await executor
         .executeToolCall("Bash", { command: "invalid-cmd" }, "tool-11")
         .pipe(Runtime.runPromise(runtime));
@@ -263,10 +337,10 @@ describe("cli-tool-executor", () => {
       expect(parsed.stderr).toContain("command not found");
     });
 
-    it("should respect timeout parameter", async () => {
+    it("should respect timeout parameter in act mode", async () => {
       mockExecAsync.mockResolvedValue({ stdout: "done", stderr: "" });
 
-      const executor = createCliToolExecutor({ tools: {} });
+      const executor = createCliToolExecutor({ tools: {}, mode: "act" });
       await executor
         .executeToolCall(
           "Bash",
@@ -281,7 +355,7 @@ describe("cli-tool-executor", () => {
       );
     });
 
-    it("should use default timeout of 2 minutes", async () => {
+    it("should use default timeout of 2 minutes in act mode", async () => {
       mockExecAsync.mockResolvedValue({ stdout: "done", stderr: "" });
 
       const executor = createCliToolExecutor({ tools: {} });

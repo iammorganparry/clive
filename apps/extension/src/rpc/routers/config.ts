@@ -415,4 +415,50 @@ export const configRouter = {
       provideConfigLayer(ctx),
     ),
   ),
+
+  /**
+   * Get MCP bridge connection status
+   */
+  getMcpBridgeStatus: procedure.input(z.void()).query(({ ctx }) =>
+    Effect.gen(function* () {
+      yield* Effect.logDebug("[ConfigRouter] Getting MCP bridge status");
+      const bridgeRuntime = ctx.mcpBridgeRuntime;
+
+      if (!bridgeRuntime) {
+        return {
+          bridgeReady: false,
+          starting: false,
+          error: null,
+          socketPath: null,
+        };
+      }
+
+      const status = yield* Effect.tryPromise({
+        try: () => bridgeRuntime.getStatus(),
+        catch: (error) =>
+          new Error(
+            `Failed to get MCP bridge status: ${error instanceof Error ? error.message : "Unknown error"}`,
+          ),
+      });
+
+      return status;
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          yield* Effect.logDebug(
+            `[ConfigRouter] Failed to get MCP bridge status: ${errorMessage}`,
+          );
+          return {
+            bridgeReady: false,
+            starting: false,
+            error: errorMessage,
+            socketPath: null,
+          };
+        }),
+      ),
+      provideConfigLayer(ctx),
+    ),
+  ),
 };

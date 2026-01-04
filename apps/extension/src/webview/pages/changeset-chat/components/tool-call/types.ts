@@ -17,17 +17,6 @@ export interface ToolCallCardProps {
 }
 
 /**
- * Props for BashExecuteTerminal component
- */
-export interface BashExecuteTerminalProps {
-  input: unknown;
-  output: unknown;
-  state: ToolState;
-  toolCallId?: string;
-  subscriptionId?: string;
-}
-
-/**
  * Bash execute command arguments
  */
 export interface BashExecuteArgs {

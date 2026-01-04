@@ -226,7 +226,7 @@ describe("ExtensionBridge", () => {
       mockSocket.emit("data", Buffer.from(fullResponse.substring(0, 10)));
       await waitFor(5);
 
-      mockSocket.emit("data", Buffer.from(fullResponse.substring(10) + "\n"));
+      mockSocket.emit("data", Buffer.from(`${fullResponse.substring(10)}\n`));
 
       const result = await callPromise;
       expect(result).toBe("buffered");

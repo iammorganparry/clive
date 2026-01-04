@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Effect, Stream, Runtime, Chunk } from "effect";
+import { Effect, Stream, Runtime } from "effect";
 import { runCliExecutionLoop } from "../cli-execution-loop.js";
 import type { CliExecutionHandle, ClaudeCliEvent } from "../../claude-cli-service.js";
 import type { CliToolExecutor, CliToolResult } from "../cli-tool-executor.js";
@@ -19,6 +19,7 @@ describe("cli-execution-loop", () => {
     return {
       stream: Stream.fromIterable(events),
       sendToolResult: vi.fn(),
+      close: vi.fn(),
       kill: vi.fn(),
     };
   };
@@ -97,7 +98,7 @@ describe("cli-execution-loop", () => {
         (call) => call[0] === "reasoning",
       );
       expect(reasoningCall).toBeDefined();
-      const parsed = JSON.parse(reasoningCall![1]);
+      const parsed = JSON.parse(reasoningCall?.[1]);
       expect(parsed.type).toBe("reasoning");
     });
   });
@@ -128,7 +129,7 @@ describe("cli-execution-loop", () => {
       );
       expect(toolCallEvent).toBeDefined();
 
-      const parsed = JSON.parse(toolCallEvent![1]);
+      const parsed = JSON.parse(toolCallEvent?.[1]);
       expect(parsed.toolCallId).toBe("tool-123");
       expect(parsed.toolName).toBe("Read");
       expect(parsed.state).toBe("input-available");
@@ -186,7 +187,7 @@ describe("cli-execution-loop", () => {
       );
       expect(toolResultEvent).toBeDefined();
 
-      const parsed = JSON.parse(toolResultEvent![1]);
+      const parsed = JSON.parse(toolResultEvent?.[1]);
       expect(parsed.toolCallId).toBe("tool-789");
       expect(parsed.state).toBe("output-available");
     });
@@ -220,7 +221,7 @@ describe("cli-execution-loop", () => {
       );
       expect(toolResultEvent).toBeDefined();
 
-      const parsed = JSON.parse(toolResultEvent![1]);
+      const parsed = JSON.parse(toolResultEvent?.[1]);
       expect(parsed.state).toBe("output-error");
     });
 
@@ -309,8 +310,9 @@ describe("cli-execution-loop", () => {
           ),
         ),
         sendToolResult: vi.fn(),
+        close: vi.fn(),
         kill: vi.fn(() => {
-          resolveWait!();
+          resolveWait?.();
         }),
       };
 
@@ -360,7 +362,7 @@ describe("cli-execution-loop", () => {
       const toolResultEvent = progressCallback.mock.calls.find(
         (call) => call[0] === "tool-result",
       );
-      const parsed = JSON.parse(toolResultEvent![1]);
+      const parsed = JSON.parse(toolResultEvent?.[1]);
 
       // Output should be parsed object, not string
       expect(typeof parsed.output).toBe("object");
@@ -393,7 +395,7 @@ describe("cli-execution-loop", () => {
       const toolResultEvent = progressCallback.mock.calls.find(
         (call) => call[0] === "tool-result",
       );
-      const parsed = JSON.parse(toolResultEvent![1]);
+      const parsed = JSON.parse(toolResultEvent?.[1]);
 
       // Output should be the string as-is
       expect(parsed.output).toBe("plain text result");

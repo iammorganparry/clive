@@ -4,11 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createMockFileSystem,
-  createMockGlob,
-  setupMockEnv,
-} from "../../../__tests__/mock-factories/mcp-mocks.js";
+import { setupMockEnv } from "../../../__tests__/mock-factories/mcp-mocks.js";
 
 // Mock dependencies
 vi.mock("node:fs/promises", () => ({

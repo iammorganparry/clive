@@ -40,6 +40,13 @@ interface ClaudeCliStatus {
   error?: string;
 }
 
+interface McpBridgeStatus {
+  bridgeReady: boolean;
+  starting: boolean;
+  error: string | null;
+  socketPath: string | null;
+}
+
 // API Key error handling types
 type ErrorCategory = "validation" | "timeout" | "storage" | "unknown";
 
@@ -150,6 +157,16 @@ export const AiProviderForm: React.FC = () => {
     isLoading: isLoadingCli,
     refetch: refetchCliStatus,
   } = rpc.config.getClaudeCliStatus.useQuery();
+
+  // Fetch MCP bridge status (only when Claude CLI is selected)
+  const {
+    data: mcpStatus,
+    isLoading: isLoadingMcp,
+    refetch: refetchMcpStatus,
+  } = rpc.config.getMcpBridgeStatus.useQuery({
+    enabled: provider === "claude-cli",
+    refetchInterval: provider === "claude-cli" ? 3000 : false, // Poll every 3s when active
+  });
 
   // Fetch API keys status
   const {
@@ -379,9 +396,18 @@ export const AiProviderForm: React.FC = () => {
             </div>
           )}
 
-          <div className="text-sm text-muted-foreground">
-            Current provider:{" "}
-            <span className="font-medium">{getProviderLabel(provider)}</span>
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Loading provider status...</span>
+              </>
+            ) : (
+              <>
+                Current provider:{" "}
+                <span className="font-medium">{getProviderLabel(provider)}</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -676,6 +702,44 @@ export const AiProviderForm: React.FC = () => {
                         </p>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* MCP Bridge status - only show when CLI is ready */}
+                {typedCliStatus.installed && typedCliStatus.authenticated && (
+                  <div className="pt-3 border-t border-border/50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">MCP Bridge:</span>
+                      {isLoadingMcp ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Checking...
+                        </Badge>
+                      ) : (mcpStatus as McpBridgeStatus | undefined)?.starting ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Connecting...
+                        </Badge>
+                      ) : (mcpStatus as McpBridgeStatus | undefined)?.bridgeReady ? (
+                        <Badge variant="default">Connected</Badge>
+                      ) : (
+                        <Badge variant="destructive">Disconnected</Badge>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => refetchMcpStatus()}
+                        className="h-6 w-6 p-0"
+                        disabled={isLoadingMcp}
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isLoadingMcp ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
+                    {(mcpStatus as McpBridgeStatus | undefined)?.error && (
+                      <p className="text-xs text-destructive mt-1">
+                        {(mcpStatus as McpBridgeStatus | undefined)?.error}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

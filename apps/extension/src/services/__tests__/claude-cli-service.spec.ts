@@ -208,6 +208,7 @@ describe("ClaudeCliService", () => {
     const createMockHandle = (events: ClaudeCliEvent[]) => ({
       stream: Stream.fromIterable(events),
       sendToolResult: () => {},
+      close: () => {},
       kill: () => {},
     });
 
@@ -341,6 +342,7 @@ describe("ClaudeCliService", () => {
               }),
             ),
             sendToolResult: () => {},
+            close: () => {},
             kill: () => {},
           }),
       });
@@ -387,6 +389,7 @@ describe("ClaudeCliService", () => {
           Effect.succeed({
             stream: Stream.fromIterable([{ type: "done" as const }]),
             sendToolResult: sendToolResultMock,
+            close: vi.fn(),
             kill: killMock,
           }),
       });

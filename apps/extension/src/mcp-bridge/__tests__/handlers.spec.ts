@@ -5,6 +5,22 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBridgeHandlers } from "../handlers.js";
+import type { CliveViewProvider } from "../../views/clive-view-provider.js";
+
+/**
+ * Create a mock CliveViewProvider for testing
+ */
+function createMockProvider(
+  postMessage = vi.fn(),
+): Partial<CliveViewProvider> {
+  return {
+    getWebview: vi.fn().mockReturnValue({
+      webview: {
+        postMessage,
+      },
+    }),
+  };
+}
 
 describe("MCP Bridge Handlers", () => {
   beforeEach(() => {
@@ -26,6 +42,14 @@ describe("MCP Bridge Handlers", () => {
       expect(typeof handlers.approvePlan).toBe("function");
       expect(typeof handlers.summarizeContext).toBe("function");
     });
+
+    it("accepts null webview provider", () => {
+      const handlers = createBridgeHandlers(null);
+
+      expect(handlers).toHaveProperty("proposeTestPlan");
+      expect(handlers).toHaveProperty("approvePlan");
+      expect(handlers).toHaveProperty("summarizeContext");
+    });
   });
 
   describe("proposeTestPlan handler", () => {
@@ -35,11 +59,11 @@ describe("MCP Bridge Handlers", () => {
       const handlers = createBridgeHandlers();
 
       // This will fail due to VSCode not being available, but we can check the error response
-      const result = (await handlers.proposeTestPlan({
+      const result = await handlers.proposeTestPlan({
         name: "Test Plan",
         planContent: "# Test Plan Content",
         toolCallId: "tool-123",
-      })) as { message: string };
+      });
 
       // The error response still has a message
       expect(result).toBeDefined();
@@ -113,6 +137,60 @@ describe("MCP Bridge Handlers", () => {
       expect(result.success).toBe(true);
       expect(result.mode).toBe("act");
     });
+
+    it("emits plan-approval event to webview when approved", async () => {
+      const mockPostMessage = vi.fn();
+      const mockProvider = createMockProvider(mockPostMessage);
+      const handlers = createBridgeHandlers(
+        mockProvider as unknown as CliveViewProvider,
+      );
+
+      await handlers.approvePlan({
+        approved: true,
+        planId: "plan-123",
+      });
+
+      expect(mockPostMessage).toHaveBeenCalledWith({
+        type: "mcp-bridge-event",
+        event: "plan-approval",
+        data: {
+          approved: true,
+          planId: "plan-123",
+          feedback: undefined,
+        },
+      });
+    });
+
+    it("emits plan-approval event to webview when rejected with feedback", async () => {
+      const mockPostMessage = vi.fn();
+      const mockProvider = createMockProvider(mockPostMessage);
+      const handlers = createBridgeHandlers(
+        mockProvider as unknown as CliveViewProvider,
+      );
+
+      await handlers.approvePlan({
+        approved: false,
+        feedback: "Needs more tests",
+      });
+
+      expect(mockPostMessage).toHaveBeenCalledWith({
+        type: "mcp-bridge-event",
+        event: "plan-approval",
+        data: {
+          approved: false,
+          planId: undefined,
+          feedback: "Needs more tests",
+        },
+      });
+    });
+
+    it("works without webview provider", async () => {
+      const handlers = createBridgeHandlers(null);
+      const result = await handlers.approvePlan({ approved: true });
+
+      expect(result.success).toBe(true);
+      expect(result.mode).toBe("act");
+    });
   });
 
   describe("summarizeContext handler", () => {
@@ -161,6 +239,64 @@ describe("MCP Bridge Handlers", () => {
       const result = await handlers.summarizeContext({
         summary: "Summary with knowledge preservation",
         preserveKnowledge: true,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("emits summarize-context event to webview", async () => {
+      const mockPostMessage = vi.fn();
+      const mockProvider = createMockProvider(mockPostMessage);
+      const handlers = createBridgeHandlers(
+        mockProvider as unknown as CliveViewProvider,
+      );
+
+      await handlers.summarizeContext({
+        summary: "Test summary",
+        tokensBefore: 5000,
+        tokensAfter: 1000,
+        preserveKnowledge: false,
+      });
+
+      expect(mockPostMessage).toHaveBeenCalledWith({
+        type: "mcp-bridge-event",
+        event: "summarize-context",
+        data: {
+          summary: "Test summary",
+          tokensBefore: 5000,
+          tokensAfter: 1000,
+          preserveKnowledge: false,
+        },
+      });
+    });
+
+    it("uses default preserveKnowledge=true when not specified", async () => {
+      const mockPostMessage = vi.fn();
+      const mockProvider = createMockProvider(mockPostMessage);
+      const handlers = createBridgeHandlers(
+        mockProvider as unknown as CliveViewProvider,
+      );
+
+      await handlers.summarizeContext({
+        summary: "Test summary",
+      });
+
+      expect(mockPostMessage).toHaveBeenCalledWith({
+        type: "mcp-bridge-event",
+        event: "summarize-context",
+        data: {
+          summary: "Test summary",
+          tokensBefore: 10000,
+          tokensAfter: 2000,
+          preserveKnowledge: true,
+        },
+      });
+    });
+
+    it("works without webview provider", async () => {
+      const handlers = createBridgeHandlers(null);
+      const result = await handlers.summarizeContext({
+        summary: "Test",
       });
 
       expect(result.success).toBe(true);
