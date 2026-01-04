@@ -67,7 +67,7 @@ export const ChangesetChatPage: React.FC = () => {
     isLoading,
     isLoadingHistory,
     hasCompletedAnalysis,
-    isReasoningStreaming,
+    isAnalyzing,
     usage,
     planContent,
     planFilePath,
@@ -355,13 +355,8 @@ export const ChangesetChatPage: React.FC = () => {
               {/* Empty state or messages */}
               {renderConversationContent()}
 
-              {/* Loading indicator when waiting for agent response */}
-              {isLoading && messages.length > 0 && (
-                <AgentStatusIndicator
-                  status={isReasoningStreaming ? "thinking" : "working"}
-                  message={isReasoningStreaming ? "Thinking..." : "Working..."}
-                />
-              )}
+              {/* Loading indicator while waiting for agent response */}
+              {isAnalyzing && <AgentStatusIndicator />}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>

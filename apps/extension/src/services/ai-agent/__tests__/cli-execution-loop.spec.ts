@@ -9,6 +9,13 @@ vi.mock("../../../utils/logger.js", () => ({
   logToOutput: vi.fn(),
 }));
 
+// Mock the frontmatter utils
+vi.mock("../../../utils/frontmatter-utils.js", () => ({
+  buildFullPlanContent: vi.fn((metadata, content) => {
+    return `---\nname: ${metadata.name}\n---\n${content}`;
+  }),
+}));
+
 describe("cli-execution-loop", () => {
   const runtime = Runtime.defaultRuntime;
 
@@ -135,7 +142,7 @@ describe("cli-execution-loop", () => {
       expect(parsed.state).toBe("input-available");
     });
 
-    it("should execute tool via toolExecutor", async () => {
+    it("should NOT execute CLI built-in tools locally (CLI handles them)", async () => {
       const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
@@ -143,6 +150,12 @@ describe("cli-execution-loop", () => {
           id: "tool-456",
           name: "Bash",
           input: { command: "echo test" },
+        },
+        // CLI executes the tool and sends back tool_result
+        {
+          type: "tool_result",
+          id: "tool-456",
+          content: '{"stdout": "test\\n"}',
         },
         { type: "done" },
       ]);
@@ -152,25 +165,25 @@ describe("cli-execution-loop", () => {
         toolExecutor,
       }).pipe(Runtime.runPromise(runtime));
 
-      expect(toolExecutor.executeToolCall).toHaveBeenCalledWith(
-        "Bash",
-        { command: "echo test" },
-        "tool-456",
-      );
+      // toolExecutor should NOT be called for CLI built-in tools
+      expect(toolExecutor.executeToolCall).not.toHaveBeenCalled();
     });
 
-    it("should emit tool-result with output-available state on success", async () => {
+    it("should emit tool-result when CLI sends tool_result event", async () => {
       const progressCallback = vi.fn();
-      const toolExecutor = createMockToolExecutor({
-        success: true,
-        result: '{"content": "file contents"}',
-      });
+      const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
           type: "tool_use",
           id: "tool-789",
           name: "Read",
           input: { file_path: "/test.ts" },
+        },
+        // CLI executes the tool and sends back tool_result
+        {
+          type: "tool_result",
+          id: "tool-789",
+          content: '{"content": "file contents"}',
         },
         { type: "done" },
       ]);
@@ -192,19 +205,21 @@ describe("cli-execution-loop", () => {
       expect(parsed.state).toBe("output-available");
     });
 
-    it("should emit tool-result with output-error state on failure", async () => {
+    it("should emit tool-result with output-error state when CLI sends error result", async () => {
       const progressCallback = vi.fn();
-      const toolExecutor = createMockToolExecutor({
-        success: false,
-        result: "",
-        error: "File not found",
-      });
+      const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
           type: "tool_use",
           id: "tool-error",
           name: "Read",
           input: { file_path: "/nonexistent.ts" },
+        },
+        // CLI executes the tool and sends back error result
+        {
+          type: "tool_result",
+          id: "tool-error",
+          content: '{"success": false, "error": "File not found"}',
         },
         { type: "done" },
       ]);
@@ -225,17 +240,20 @@ describe("cli-execution-loop", () => {
       expect(parsed.state).toBe("output-error");
     });
 
-    it("should send result back to CLI via sendToolResult", async () => {
-      const toolExecutor = createMockToolExecutor({
-        success: true,
-        result: '{"data": "result"}',
-      });
+    it("should NOT send result back to CLI for built-in tools (CLI handles them)", async () => {
+      const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
           type: "tool_use",
           id: "tool-send",
           name: "Glob",
           input: { pattern: "*.ts" },
+        },
+        // CLI executes the tool and sends back tool_result
+        {
+          type: "tool_result",
+          id: "tool-send",
+          content: '{"files": ["test.ts"]}',
         },
         { type: "done" },
       ]);
@@ -245,10 +263,8 @@ describe("cli-execution-loop", () => {
         toolExecutor,
       }).pipe(Runtime.runPromise(runtime));
 
-      expect(cliHandle.sendToolResult).toHaveBeenCalledWith(
-        "tool-send",
-        '{"data": "result"}',
-      );
+      // sendToolResult should NOT be called for CLI built-in tools
+      expect(cliHandle.sendToolResult).not.toHaveBeenCalled();
     });
   });
 
@@ -336,18 +352,21 @@ describe("cli-execution-loop", () => {
   });
 
   describe("Result parsing", () => {
-    it("should parse JSON results for UI", async () => {
+    it("should parse JSON results from CLI tool_result for UI", async () => {
       const progressCallback = vi.fn();
-      const toolExecutor = createMockToolExecutor({
-        success: true,
-        result: '{"files": [{"path": "/a.ts"}], "totalMatches": 1}',
-      });
+      const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
           type: "tool_use",
           id: "tool-json",
           name: "Glob",
           input: { pattern: "*.ts" },
+        },
+        // CLI executes the tool and sends back tool_result
+        {
+          type: "tool_result",
+          id: "tool-json",
+          content: '{"files": [{"path": "/a.ts"}], "totalMatches": 1}',
         },
         { type: "done" },
       ]);
@@ -371,16 +390,19 @@ describe("cli-execution-loop", () => {
 
     it("should keep string results when not valid JSON", async () => {
       const progressCallback = vi.fn();
-      const toolExecutor = createMockToolExecutor({
-        success: true,
-        result: "plain text result",
-      });
+      const toolExecutor = createMockToolExecutor();
       const cliHandle = createMockCliHandle([
         {
           type: "tool_use",
           id: "tool-string",
           name: "Bash",
           input: { command: "echo test" },
+        },
+        // CLI executes the tool and sends back tool_result (plain text)
+        {
+          type: "tool_result",
+          id: "tool-string",
+          content: "plain text result",
         },
         { type: "done" },
       ]);
@@ -405,10 +427,7 @@ describe("cli-execution-loop", () => {
   describe("Full execution flow", () => {
     it("should handle complete conversation with multiple events", async () => {
       const progressCallback = vi.fn();
-      const toolExecutor = createMockToolExecutor({
-        success: true,
-        result: '{"content": "file data"}',
-      });
+      const toolExecutor = createMockToolExecutor();
 
       const cliHandle = createMockCliHandle([
         { type: "thinking", content: "Let me read the file" },
@@ -418,6 +437,12 @@ describe("cli-execution-loop", () => {
           id: "tool-full",
           name: "Read",
           input: { file_path: "/src/index.ts" },
+        },
+        // CLI executes the tool and sends back tool_result
+        {
+          type: "tool_result",
+          id: "tool-full",
+          content: '{"content": "file data"}',
         },
         { type: "text", content: "Here's what I found." },
         { type: "done" },
@@ -438,6 +463,458 @@ describe("cli-execution-loop", () => {
       expect(progressCallback).toHaveBeenCalledWith("content_streamed", expect.any(String));
       expect(progressCallback).toHaveBeenCalledWith("tool-call", expect.any(String));
       expect(progressCallback).toHaveBeenCalledWith("tool-result", expect.any(String));
+    });
+  });
+
+  describe("MCP Tool Detection", () => {
+    it("should detect MCP tools by mcp__ prefix and emit tool-call event", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-tool-1",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            name: "Test Plan",
+            overview: "Test overview",
+            planContent: "# Plan content",
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should emit tool-call event with isMcpTool flag
+      const toolCallEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-call",
+      );
+      expect(toolCallEvent).toBeDefined();
+      const parsed = JSON.parse(toolCallEvent?.[1]);
+      expect(parsed.toolName).toBe("proposeTestPlan");
+      expect(parsed.isMcpTool).toBe(true);
+    });
+
+    it("should NOT execute MCP tools locally (delegated to MCP server)", async () => {
+      const progressCallback = vi.fn();
+      const toolExecutor = createMockToolExecutor();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "propose-1",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            name: "Authentication Tests",
+            overview: "Tests for auth module",
+            suites: [
+              {
+                id: "suite-1",
+                name: "Unit Tests",
+                testType: "unit",
+                targetFilePath: "src/auth/__tests__/auth.test.ts",
+                sourceFiles: ["src/auth/auth.ts"],
+              },
+            ],
+            mockDependencies: [],
+            discoveredPatterns: {
+              testFramework: "vitest",
+              mockFactoryPaths: [],
+              testPatterns: [],
+            },
+            planContent: "# Authentication Tests\n\nTest plan content here",
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor,
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should NOT call toolExecutor for MCP tools (handled by MCP server)
+      expect(toolExecutor.executeToolCall).not.toHaveBeenCalled();
+
+      // Should NOT send tool result back to CLI (MCP server handles it)
+      expect(cliHandle.sendToolResult).not.toHaveBeenCalled();
+
+      // Verify tool-call event was emitted with isMcpTool flag
+      const toolCallEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-call",
+      );
+      expect(toolCallEvent).toBeDefined();
+      const toolCallParsed = JSON.parse(toolCallEvent?.[1]);
+      expect(toolCallParsed.toolName).toBe("proposeTestPlan");
+      expect(toolCallParsed.isMcpTool).toBe(true);
+    });
+
+    it("should emit plan-content-streaming event for proposeTestPlan", async () => {
+      const { buildFullPlanContent } = await import("../../../utils/frontmatter-utils.js");
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "streaming-test",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            name: "Streaming Test Plan",
+            overview: "Test streaming",
+            planContent: "# Content",
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Verify buildFullPlanContent was called
+      expect(buildFullPlanContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Streaming Test Plan",
+          overview: "Test streaming",
+        }),
+        "# Content",
+      );
+
+      // Verify plan-content-streaming event was emitted
+      const planContentEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "plan-content-streaming",
+      );
+      expect(planContentEvent).toBeDefined();
+      const planParsed = JSON.parse(planContentEvent?.[1]);
+      expect(planParsed.toolCallId).toBe("streaming-test");
+      expect(planParsed.isComplete).toBe(true);
+    });
+
+  });
+
+  describe("tool_result event handling", () => {
+    it("should handle tool_result events from MCP server", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_result",
+          id: "mcp-result-1",
+          content: '{"success": true, "planId": "plan-123", "message": "Plan created"}',
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should emit tool-result event for UI
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      expect(parsed.toolCallId).toBe("mcp-result-1");
+      expect(parsed.state).toBe("output-available");
+      expect(parsed.output.success).toBe(true);
+      expect(parsed.output.planId).toBe("plan-123");
+    });
+
+    it("should detect tool_result errors by success field", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_result",
+          id: "mcp-error-1",
+          content: '{"success": false, "error": "Failed to create plan file"}',
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should emit error state
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      expect(parsed.state).toBe("output-error");
+      expect(parsed.output.success).toBe(false);
+      expect(parsed.output.error).toBe("Failed to create plan file");
+    });
+
+    it("should detect tool_result errors by error field", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_result",
+          id: "mcp-error-2",
+          content: '{"error": "Tool execution failed"}',
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should emit error state
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      expect(parsed.state).toBe("output-error");
+      expect(parsed.output.error).toBe("Tool execution failed");
+    });
+
+    it("should handle non-JSON tool_result content", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_result",
+          id: "mcp-string-1",
+          content: "plain text result",
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should keep as string if not JSON
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      expect(parsed.output).toBe("plain text result");
+      expect(parsed.state).toBe("output-available");
+    });
+  });
+
+  describe("proposeTestPlan plan content emission conditionals", () => {
+    it("should NOT emit plan-content-streaming when planContent is missing", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-no-content",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            name: "Test Plan",
+            overview: "Overview text",
+            suites: [],
+            // NO planContent
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const planEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "plan-content-streaming",
+      );
+      expect(planEvent).toBeUndefined();
+    });
+
+    it("should NOT emit plan-content-streaming when name is missing", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-no-name",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            // NO name
+            overview: "Overview text",
+            planContent: "# Plan content here",
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const planEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "plan-content-streaming",
+      );
+      expect(planEvent).toBeUndefined();
+    });
+
+    it("should emit plan-content-streaming when both name and planContent exist", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-full",
+          name: "mcp__clive-tools__proposeTestPlan",
+          input: {
+            name: "Complete Test Plan",
+            overview: "Full overview",
+            planContent: "# Complete plan content",
+            suites: [],
+          },
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const planEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "plan-content-streaming",
+      );
+      expect(planEvent).toBeDefined();
+    });
+  });
+
+  describe("MCP tool name extraction edge cases", () => {
+    it("should handle MCP tool with only two segments", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-short",
+          name: "mcp__shortname",
+          input: {},
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should use the full name as toolName since only 2 segments
+      const toolCallEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-call",
+      );
+      expect(toolCallEvent).toBeDefined();
+      const parsed = JSON.parse(toolCallEvent?.[1]);
+      expect(parsed.toolName).toBe("mcp__shortname");
+    });
+
+    it("should handle MCP tool with extra underscores in name", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "mcp-extra",
+          name: "mcp__server__tool_with_underscores",
+          input: {},
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const toolCallEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-call",
+      );
+      expect(toolCallEvent).toBeDefined();
+      const parsed = JSON.parse(toolCallEvent?.[1]);
+      expect(parsed.toolName).toBe("tool_with_underscores");
+    });
+  });
+
+  describe("tool_result error detection edge cases", () => {
+    it("should detect error when both success:false AND error field exist", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "tool-both-errors",
+          name: "Read",
+          input: { file_path: "/test.ts" },
+        },
+        {
+          type: "tool_result",
+          id: "tool-both-errors",
+          content: '{"success": false, "error": "File not found"}',
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      expect(parsed.state).toBe("output-error");
+    });
+
+    it("should treat empty error string as success", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        {
+          type: "tool_use",
+          id: "tool-empty-error",
+          name: "Read",
+          input: { file_path: "/test.ts" },
+        },
+        {
+          type: "tool_result",
+          id: "tool-empty-error",
+          content: '{"data": "result", "error": ""}',
+        },
+        { type: "done" },
+      ]);
+
+      await runCliExecutionLoop({
+        cliHandle,
+        toolExecutor: createMockToolExecutor(),
+        progressCallback,
+      }).pipe(Runtime.runPromise(runtime));
+
+      const toolResultEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "tool-result",
+      );
+      expect(toolResultEvent).toBeDefined();
+      const parsed = JSON.parse(toolResultEvent?.[1]);
+      // Empty string error should be treated as success
+      expect(parsed.state).toBe("output-available");
     });
   });
 });

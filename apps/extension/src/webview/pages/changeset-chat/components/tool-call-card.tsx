@@ -28,7 +28,7 @@ import {
   extractFilename,
   truncatePath,
   isFileWritingTool,
-  generateToolSummary,
+  getToolDisplayInfo,
   parseGrepOutput,
   parseFindOutput,
   extractFileInfo,
@@ -56,7 +56,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   toolCallId,
   subscriptionId,
 }) => {
-  const summary = generateToolSummary(toolName, input, output);
+  const displayInfo = getToolDisplayInfo(toolName, input, output);
   const hasError = state === "output-error" || !!errorText;
   const filePaths = extractFilePaths(toolName, input, output);
 
@@ -193,9 +193,11 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
     return null;
   }, [toolName, output, errorText]);
 
-  // Determine title for TaskTrigger
+  // Determine title for TaskTrigger (tooltip)
   const triggerTitle =
-    isCodeWritingTool && fileInfo ? extractFilename(fileInfo.filePath) : summary;
+    isCodeWritingTool && fileInfo
+      ? extractFilename(fileInfo.filePath)
+      : displayInfo.context || displayInfo.label;
 
   const statusBadge = getStatusBadge(state);
   const toolIcon = getToolIcon(toolName);
@@ -228,7 +230,17 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
                 </button>
               </>
             ) : (
-              <span className="text-sm">{summary}</span>
+              <>
+                <span className="text-sm shrink-0">{displayInfo.label}</span>
+                {displayInfo.context && (
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded bg-muted text-xs font-mono text-muted-foreground truncate max-w-[300px]"
+                    title={displayInfo.context}
+                  >
+                    {displayInfo.context}
+                  </span>
+                )}
+              </>
             )}
           </div>
           {statusBadge && <div className="flex items-center gap-2 shrink-0">{statusBadge}</div>}

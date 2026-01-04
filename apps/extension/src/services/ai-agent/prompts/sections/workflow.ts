@@ -5,9 +5,15 @@
 
 import { Effect } from "effect";
 import type { Section } from "../types.js";
+import { getToolName } from "../tool-names.js";
 
 export const workflow: Section = (config) => {
   const isActMode = config.mode === "act";
+
+  // Get dynamic tool names based on AI provider
+  const proposeTestPlan = getToolName("proposeTestPlan", config);
+  const completeTask = getToolName("completeTask", config);
+  const searchKnowledge = getToolName("searchKnowledge", config);
 
   if (isActMode) {
     // Act mode: Focus on execution of approved plan
@@ -53,7 +59,7 @@ ${config.planFilePath ? `  - **Plan file available**: Read the approved test pla
   - You don't need to re-propose or restart - just keep working on the task at hand
 
 **COMPLETION**:
-  - When all tests for the current suite are written and passing, use the completeTask tool
+  - When all tests for the current suite are written and passing, use the ${completeTask} tool
   - The system will automatically advance to the next queued suite if there is one
 </workflow>`,
     );
@@ -79,13 +85,13 @@ You are in planning mode. Your goal is to analyze code and propose a comprehensi
        * Run ONLY the related test files (not the full suite)
        * Analyze any failures against changeset files
        * Classify as expected (changeset-related) or unexpected (side effect)
-       * Include regressionAnalysis in proposeTestPlan
+       * Include regressionAnalysis in ${proposeTestPlan}
      - If no related tests found or user declines:
        * Skip regression detection
        * Proceed to pattern discovery
   
   3. **Identify test framework and patterns**:
-     - Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR searchKnowledge for "test-execution"
+     - Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)" OR ${searchKnowledge} for "test-execution"
      - Find similar test files: find . -name "*.test.*" -o -name "*.spec.*" 2>/dev/null | head -10
      - Read at least 1-2 similar test files to understand patterns
   
@@ -110,7 +116,7 @@ You are in planning mode. Your goal is to analyze code and propose a comprehensi
 
 **ANALYSIS & PROPOSAL**:
   - Analyze all gathered information
-  - Use proposeTestPlan tool ONCE with ALL required fields populated:
+  - Use ${proposeTestPlan} tool ONCE with ALL required fields populated:
     * IMPORTANT: Only call this tool ONE time per planning session
     * If you need to revise, respond in natural language - the user can request changes
     * mockDependencies: List EVERY dependency that needs mocking
@@ -118,9 +124,9 @@ You are in planning mode. Your goal is to analyze code and propose a comprehensi
     * externalDependencies: List databases, APIs, and other external services
   - The plan will be displayed in a structured UI for user review
   - User will approve via UI buttons when ready
-  
-  **Critical Requirements**: 
-  - You MUST populate mockDependencies, discoveredPatterns fields in proposeTestPlan
+
+  **Critical Requirements**:
+  - You MUST populate mockDependencies, discoveredPatterns fields in ${proposeTestPlan}
   - Do NOT skip discovery steps - act mode depends on this context
   - Write test files ONLY after user approval
 

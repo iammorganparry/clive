@@ -413,6 +413,8 @@ export function useChangesetChat({
     messages: state.context.messages,
     reasoningContent: state.context.reasoningContent,
     isReasoningStreaming: state.context.isReasoningStreaming,
+    isTextStreaming: state.context.isTextStreaming,
+    isAnalyzing: state.matches("analyzing"),
     error: state.context.error,
     isLoading: state.matches("analyzing") || state.matches("streaming"),
     isLoadingHistory: !state.context.historyLoaded,

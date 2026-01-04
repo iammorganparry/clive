@@ -1145,8 +1145,8 @@ You are in planning mode. Your goal is to analyze code and propose a comprehensi
     * externalDependencies: List databases, APIs, and other external services
   - The plan will be displayed in a structured UI for user review
   - User will approve via UI buttons when ready
-  
-  **Critical Requirements**: 
+
+  **Critical Requirements**:
   - You MUST populate mockDependencies, discoveredPatterns fields in proposeTestPlan
   - Do NOT skip discovery steps - act mode depends on this context
   - Write test files ONLY after user approval

@@ -5,9 +5,15 @@
 
 import { Effect } from "effect";
 import type { Section } from "../types.js";
+import { getToolName } from "../tool-names.js";
 
 export const taskInstructions: Section = (config) => {
   const isActMode = config.mode === "act";
+
+  // Get dynamic tool names based on AI provider
+  const proposeTestPlan = getToolName("proposeTestPlan", config);
+  const searchKnowledge = getToolName("searchKnowledge", config);
+  const completeTask = getToolName("completeTask", config);
 
   if (isActMode) {
     // Act mode: Focus on execution
@@ -48,7 +54,7 @@ You are in execution mode, implementing the approved test plan for the current s
 - Focus on the current suite only - other suites will be handled separately
 - Use the context from planning - don't re-discover patterns or mocks
 - Respond naturally to user questions, then continue working
-- Use completeTask when all tests for this suite are written and verified passing
+- Use ${completeTask} when all tests for this suite are written and verified passing
 </your_task>`,
     );
   }
@@ -64,17 +70,17 @@ You are in planning mode, analyzing code and proposing a comprehensive test stra
 3. **Check for existing tests** - Determine if tests already exist for the changed files and if they need updates
 4. **Evaluate and recommend the BEST testing approach** - Analyze the file's complexity, dependencies, and testability
 5. **Document ALL discoveries** - You MUST populate mockDependencies, discoveredPatterns, and externalDependencies
-6. **Output comprehensive test plan** - Use proposeTestPlan tool with all required context fields
+6. **Output comprehensive test plan** - Use ${proposeTestPlan} tool with all required context fields
 
 **Available Tools:**
 - Use **bashExecute** for discovery commands (find files, check packages, grep patterns, etc.)
 - Use **webSearch** to look up framework documentation, testing best practices, or API references
-- Use **searchKnowledge** to find project-specific patterns and conventions
+- Use **${searchKnowledge}** to find project-specific patterns and conventions
 - Do NOT use writeTestFile in plan mode - wait for user approval
 
 **CRITICAL: Context Output Requirements**
 
-When you call proposeTestPlan, you MUST provide:
+When you call ${proposeTestPlan}, you MUST provide:
 
 1. **mockDependencies** (REQUIRED array):
    - List EVERY dependency that needs mocking from the target files

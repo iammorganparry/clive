@@ -15,6 +15,7 @@ import { Effect } from "effect";
 import type { ToolSet, Tool } from "ai";
 import { logToOutput } from "../../utils/logger.js";
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { glob } from "glob";
@@ -95,6 +96,7 @@ const BLOCKED_PATTERNS = [
  * Read-only command patterns that are always allowed
  */
 const READ_ONLY_PATTERNS = [
+  /^cd(\s|$)/, // Change directory (read-only - doesn't modify files)
   /^cat\s/, // Read file
   /^head\s/, // Read first lines
   /^tail\s/, // Read last lines
@@ -127,13 +129,22 @@ const READ_ONLY_PATTERNS = [
 function isReadOnlyCommand(command: string): boolean {
   const trimmed = command.trim();
 
-  // Check for output redirection (>, >>) - these indicate write operations
-  if (/>/.test(trimmed)) {
+  // Check for stdout redirection (>, >>) but allow stderr (2>, 2>>) and fd dup (>&)
+  // Negative lookbehind: don't match if preceded by 2 or &
+  // Negative lookahead: don't match if followed by &
+  if (/(?<![2&])>(?!&)/.test(trimmed)) {
     return false;
   }
 
-  // Check for read-only patterns
-  return READ_ONLY_PATTERNS.some((pattern) => pattern.test(trimmed));
+  // Split compound commands (&&, ;, ||) and check each part
+  const subCommands = trimmed.split(/\s*(?:&&|;|\|\|)\s*/);
+
+  // All sub-commands must be read-only
+  return subCommands.every((subCmd) => {
+    const trimmedSub = subCmd.trim();
+    if (!trimmedSub) return true; // Empty part is OK
+    return READ_ONLY_PATTERNS.some((pattern) => pattern.test(trimmedSub));
+  });
 }
 
 /**
@@ -171,8 +182,20 @@ function checkWritePermission(mode: ToolExecutorMode): { allowed: boolean; reaso
 /**
  * Create built-in tool handlers with mode-aware permission checks
  * @param mode - Execution mode ("plan" for read-only, "act" for write operations)
+ * @param workspaceRoot - Workspace root directory for command execution
  */
-function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, BuiltinToolHandler> {
+function createBuiltinToolHandlers(
+  mode: ToolExecutorMode,
+  workspaceRoot?: string,
+): Record<string, BuiltinToolHandler> {
+  // Helper to resolve relative paths against workspace root
+  const resolvePath = (filePath: string): string => {
+    if (path.isAbsolute(filePath)) {
+      return filePath;
+    }
+    return workspaceRoot ? path.join(workspaceRoot, filePath) : filePath;
+  };
+
   return {
     /**
      * Read file contents
@@ -180,14 +203,19 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * Always allowed in both modes
      */
     Read: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Read] Args received: ${JSON.stringify(args)}`);
+
       const { file_path, offset, limit } = args as {
         file_path: string;
         offset?: number;
         limit?: number;
       };
 
+      const resolvedPath = resolvePath(file_path);
+      logToOutput(`[CliToolExecutor:Read] Resolved path: ${resolvedPath} (from ${file_path})`);
+
       try {
-        const content = await fs.readFile(file_path, "utf-8");
+        const content = await fs.readFile(resolvedPath, "utf-8");
         const lines = content.split("\n");
 
         // Apply offset and limit if specified
@@ -212,6 +240,7 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
+        logToOutput(`[CliToolExecutor:Read] Error reading file: ${msg}`);
         return { success: false, result: "", error: `Failed to read file: ${msg}` };
       }
     },
@@ -221,6 +250,8 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * Only allowed in "act" mode
      */
     Write: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Write] Args received: ${JSON.stringify(args)}`);
+
       // Check write permission based on mode
       const permission = checkWritePermission(mode);
       if (!permission.allowed) {
@@ -233,8 +264,10 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         content: string;
       };
 
+      const resolvedPath = resolvePath(file_path);
+
       try {
-        await fs.writeFile(file_path, content, "utf-8");
+        await fs.writeFile(resolvedPath, content, "utf-8");
         return { success: true, result: `Successfully wrote to ${file_path}` };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -247,6 +280,8 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * Only allowed in "act" mode
      */
     Edit: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Edit] Args received: ${JSON.stringify(args)}`);
+
       // Check write permission based on mode
       const permission = checkWritePermission(mode);
       if (!permission.allowed) {
@@ -261,8 +296,10 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         replace_all?: boolean;
       };
 
+      const resolvedPath = resolvePath(file_path);
+
       try {
-        const content = await fs.readFile(file_path, "utf-8");
+        const content = await fs.readFile(resolvedPath, "utf-8");
 
         let newContent: string;
         if (replace_all) {
@@ -282,7 +319,7 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
             content.substring(idx + old_string.length);
         }
 
-        await fs.writeFile(file_path, newContent, "utf-8");
+        await fs.writeFile(resolvedPath, newContent, "utf-8");
         return { success: true, result: `Successfully edited ${file_path}` };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -297,15 +334,21 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * In "act" mode, write commands are also allowed (except blocked patterns)
      */
     Bash: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Bash] Args received: ${JSON.stringify(args)}`);
+
       const { command, timeout } = args as {
         command: string;
         timeout?: number;
       };
 
+      logToOutput(`[CliToolExecutor:Bash] Command: ${command}, timeout: ${timeout}`);
+
       // Check bash permission based on mode
       const permission = checkBashPermission(command, mode);
+      logToOutput(`[CliToolExecutor:Bash] Permission check: allowed=${permission.allowed}, reason=${permission.reason || 'none'}`);
+
       if (!permission.allowed) {
-        logToOutput(`[CliToolExecutor] Bash blocked: ${permission.reason} (command: ${command})`);
+        logToOutput(`[CliToolExecutor:Bash] Bash blocked: ${permission.reason} (command: ${command})`);
         return { success: false, result: "", error: permission.reason };
       }
 
@@ -313,7 +356,10 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         const { stdout, stderr } = await execAsync(command, {
           timeout: timeout ?? 120000, // 2 minute default
           maxBuffer: 10 * 1024 * 1024, // 10MB
+          cwd: workspaceRoot || process.cwd(), // Execute in workspace directory
         });
+
+        logToOutput(`[CliToolExecutor:Bash] Command succeeded: stdout.length=${stdout.length}, stderr.length=${stderr?.length || 0}`);
 
         // Return structured output for tool call UI component
         return {
@@ -335,17 +381,26 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         };
         const exitCode = execError.code ?? 1;
         const stdout = execError.stdout || "";
-        const stderr = execError.stderr || execError.message || String(error);
+        const stderr = execError.stderr || "";
+        const errorMessage = execError.message || String(error);
+
+        logToOutput(`[CliToolExecutor:Bash] Caught error: exitCode=${exitCode}, stdout.length=${stdout.length}, stderr=${stderr.slice(0, 200)}`);
+
+        // Treat as success if:
+        // 1. Exit code is 0, OR
+        // 2. We have stdout output (command produced useful results), OR
+        // 3. stderr is empty (not a real error, just no results found - e.g., ls on empty dir, grep with no matches)
+        const isSuccessful = exitCode === 0 || stdout.trim().length > 0 || stderr.trim().length === 0;
 
         return {
-          success: exitCode === 0,
+          success: isSuccessful,
           result: JSON.stringify({
             command,
             stdout,
-            stderr,
+            stderr: stderr || errorMessage,
             exitCode,
           }),
-          error: exitCode !== 0 ? `Command failed with exit code ${exitCode}` : undefined,
+          error: !isSuccessful ? `Command failed with exit code ${exitCode}` : undefined,
         };
       }
     },
@@ -356,13 +411,17 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * Always allowed in both modes (read-only operation)
      */
     Glob: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Glob] Args received: ${JSON.stringify(args)}`);
+
       const { pattern, path: basePath } = args as {
         pattern: string;
         path?: string;
       };
 
+      logToOutput(`[CliToolExecutor:Glob] Pattern: ${pattern}, basePath: ${basePath}`);
+
       try {
-        const cwd = basePath ?? process.cwd();
+        const cwd = resolvePath(basePath ?? ".");
         const matches = await glob(pattern, {
           cwd,
           absolute: true,
@@ -389,11 +448,15 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
      * Always allowed in both modes (read-only operation)
      */
     Grep: async (args: unknown): Promise<CliToolResult> => {
+      logToOutput(`[CliToolExecutor:Grep] Args received: ${JSON.stringify(args)}`);
+
       const { pattern, path: searchPath, glob: globPattern } = args as {
         pattern: string;
         path?: string;
         glob?: string;
       };
+
+      logToOutput(`[CliToolExecutor:Grep] Pattern: ${pattern}, searchPath: ${searchPath}, glob: ${globPattern}`);
 
       try {
         // Build ripgrep command with proper escaping
@@ -417,6 +480,7 @@ function createBuiltinToolHandlers(mode: ToolExecutorMode): Record<string, Built
         const { stdout } = await execAsync(`rg ${rgArgs.join(" ")}`, {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 30000, // 30 second timeout
+          cwd: workspaceRoot || process.cwd(), // Execute in workspace directory
         });
 
         // Parse output into structured format
@@ -473,6 +537,8 @@ export interface CliToolExecutorOptions {
   progressCallback?: (status: string, message: string) => void;
   /** Execution mode - "plan" for read-only, "act" for write operations */
   mode?: ToolExecutorMode;
+  /** Workspace root directory for command execution */
+  workspaceRoot?: string;
 }
 
 /**
@@ -500,10 +566,10 @@ export interface CliToolExecutor {
 export function createCliToolExecutor(
   options: CliToolExecutorOptions,
 ): CliToolExecutor {
-  const { tools, progressCallback, mode = "plan" } = options;
+  const { tools, progressCallback, mode = "plan", workspaceRoot } = options;
 
   // Create built-in handlers with mode-aware permissions
-  const builtinToolHandlers = createBuiltinToolHandlers(mode);
+  const builtinToolHandlers = createBuiltinToolHandlers(mode, workspaceRoot);
 
   logToOutput(`[CliToolExecutor] Created executor with mode: ${mode}`);
 

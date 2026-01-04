@@ -5,13 +5,16 @@
 
 import { Effect } from "effect";
 import type { Section } from "../types.js";
+import { getToolName } from "../tool-names.js";
 
-export const patternDiscovery: Section = (_config) =>
-  Effect.succeed(
+export const patternDiscovery: Section = (config) => {
+  const proposeTestPlan = getToolName("proposeTestPlan", config);
+
+  return Effect.succeed(
     `<pattern_discovery>
 **MANDATORY CHECKLIST: Complete Before Proposing Tests**
 
-This is a REQUIRED checklist for plan mode. You MUST complete all steps and document findings in proposeTestPlan.
+This is a REQUIRED checklist for plan mode. You MUST complete all steps and document findings in ${proposeTestPlan}.
 
 **1. FIND SIMILAR TEST FILES** (MANDATORY):
    - **Unit tests**: Search comprehensively using multiple patterns:
@@ -121,3 +124,4 @@ const mockService = {
 - **Prevents Re-planning**: Act mode has everything it needs
 </pattern_discovery>`,
   );
+};

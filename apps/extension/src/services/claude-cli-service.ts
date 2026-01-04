@@ -331,8 +331,24 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             return null;
           }
 
-          // Ignore user events (tool results echoed back by CLI)
+          // Parse user events to extract tool_result for UI updates
+          // These are tool results echoed back by CLI (from MCP server)
           if (data.type === "user") {
+            const content = data.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === "tool_result" && block.tool_use_id) {
+                  // Return tool_result event for UI status updates
+                  return {
+                    type: "tool_result" as const,
+                    id: block.tool_use_id,
+                    content: typeof block.content === "string"
+                      ? block.content
+                      : JSON.stringify(block.content),
+                  };
+                }
+              }
+            }
             return null;
           }
 
@@ -469,6 +485,19 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               "TodoWrite", // Disable unsupported TodoWrite tool
             ];
 
+            // Sandbox file access to workspace directory only
+            if (options.workspaceRoot) {
+              args.push("--add-dir", options.workspaceRoot);
+              logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
+            }
+
+            // Auto-accept edit permissions within allowed directories
+            // TODO: Make this configurable based on agent mode (plan vs act)
+            args.push("--permission-mode", "acceptEdits");
+
+            // Allow MCP tools to be used without permission prompts
+            args.push("--allowedTools", "mcp__clive-tools__*");
+
             // Add MCP server configuration if provided
             if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
               const mcpConfig = {
@@ -521,6 +550,7 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             const child = spawn(cliPath, args, {
               stdio: ["pipe", "pipe", "pipe"],
               env: { ...process.env },
+              cwd: options.workspaceRoot || process.cwd(),
             });
 
             logToOutput(`[ClaudeCliService] Process spawned with PID: ${child.pid}`);
