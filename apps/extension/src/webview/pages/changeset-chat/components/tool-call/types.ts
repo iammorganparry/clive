@@ -159,6 +159,17 @@ export interface ExtractedFileInfo {
   language: BundledLanguage;
 }
 
+/**
+ * Tool display info for header rendering
+ * Separates tool label from contextual information
+ */
+export interface ToolDisplayInfo {
+  /** Tool label (e.g., "Read file", "git", "Edit") */
+  label: string;
+  /** Contextual info chip (e.g., filename, command preview) */
+  context?: string;
+}
+
 // Type Guards
 
 export const isBashExecuteArgs = (input: unknown): input is BashExecuteArgs =>

@@ -278,6 +278,88 @@ describe("cli-tool-executor", () => {
       expect(parsed.exitCode).toBe(0);
     });
 
+    it("should allow cd command in plan mode", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "cd /some/dir" }, "tool-10-cd")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        "cd /some/dir",
+        expect.any(Object),
+      );
+    });
+
+    it("should allow stderr redirection in plan mode", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "output\n", stderr: "" });
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "ls /test 2>/dev/null" }, "tool-10-stderr")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        "ls /test 2>/dev/null",
+        expect.any(Object),
+      );
+    });
+
+    it("should allow file descriptor duplication in plan mode", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "output\n", stderr: "" });
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "ls /test >&2" }, "tool-10-fd-dup")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        "ls /test >&2",
+        expect.any(Object),
+      );
+    });
+
+    it("should block stdout redirection in plan mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "echo test > output.txt" }, "tool-10-stdout-redirect")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+      expect(mockExecAsync).not.toHaveBeenCalled();
+    });
+
+    it("should allow compound read-only commands in plan mode", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "result\n", stderr: "" });
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "ls /test && cat file.txt" }, "tool-10-compound-readonly")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        "ls /test && cat file.txt",
+        expect.any(Object),
+      );
+    });
+
+    it("should block compound commands with write operations in plan mode", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "ls /test && mkdir newdir" }, "tool-10-compound-write")
+        .pipe(Runtime.runPromise(runtime));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+      expect(mockExecAsync).not.toHaveBeenCalled();
+    });
+
     it("should block write commands in plan mode", async () => {
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
@@ -575,6 +657,259 @@ describe("cli-tool-executor", () => {
       expect(progressCallback).toHaveBeenCalledWith(
         "tool-completed",
         expect.stringContaining("tool-26"),
+      );
+    });
+  });
+
+  describe("Path resolution with workspaceRoot", () => {
+    it("should resolve relative paths against workspaceRoot for Read", async () => {
+      mockReadFile.mockResolvedValue("file content");
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        workspaceRoot: "/workspace",
+      });
+      await executor
+        .executeToolCall("Read", { file_path: "src/index.ts" }, "tool-path-1")
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockReadFile).toHaveBeenCalledWith(
+        "/workspace/src/index.ts",
+        "utf-8",
+      );
+    });
+
+    it("should not modify absolute paths for Read", async () => {
+      mockReadFile.mockResolvedValue("file content");
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        workspaceRoot: "/workspace",
+      });
+      await executor
+        .executeToolCall(
+          "Read",
+          { file_path: "/absolute/path.ts" },
+          "tool-path-2",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockReadFile).toHaveBeenCalledWith("/absolute/path.ts", "utf-8");
+    });
+
+    it("should resolve relative paths for Write", async () => {
+      mockWriteFile.mockResolvedValue(undefined);
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        workspaceRoot: "/workspace",
+      });
+      await executor
+        .executeToolCall(
+          "Write",
+          { file_path: "output.txt", content: "test" },
+          "tool-path-3",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        "/workspace/output.txt",
+        "test",
+        "utf-8",
+      );
+    });
+
+    it("should resolve relative paths for Edit", async () => {
+      mockReadFile.mockResolvedValue("old content here");
+      mockWriteFile.mockResolvedValue(undefined);
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        workspaceRoot: "/workspace",
+      });
+      await executor
+        .executeToolCall(
+          "Edit",
+          {
+            file_path: "file.ts",
+            old_string: "old",
+            new_string: "new",
+          },
+          "tool-path-4",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockReadFile).toHaveBeenCalledWith("/workspace/file.ts", "utf-8");
+    });
+
+    it("should resolve relative paths for Glob", async () => {
+      mockGlob.mockResolvedValue(["/workspace/src/a.ts"]);
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        workspaceRoot: "/workspace",
+      });
+      await executor
+        .executeToolCall(
+          "Glob",
+          { pattern: "*.ts", path: "src" },
+          "tool-path-5",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockGlob).toHaveBeenCalledWith(
+        "*.ts",
+        expect.objectContaining({
+          cwd: "/workspace/src",
+        }),
+      );
+    });
+
+    it("should keep relative paths when workspaceRoot is undefined", async () => {
+      mockReadFile.mockResolvedValue("content");
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "act",
+        // no workspaceRoot
+      });
+      await executor
+        .executeToolCall("Read", { file_path: "relative/path.ts" }, "tool-path-6")
+        .pipe(Runtime.runPromise(runtime));
+      // Should be called with relative path as-is
+      expect(mockReadFile).toHaveBeenCalledWith("relative/path.ts", "utf-8");
+    });
+  });
+
+  describe("Bash exit code success detection", () => {
+    it("should treat exit code 1 with empty stderr as success (no results)", async () => {
+      const error = new Error("Command failed") as Error & {
+        code: number;
+        stdout: string;
+        stderr: string;
+      };
+      error.code = 1;
+      error.stdout = "";
+      error.stderr = "";
+      mockExecAsync.mockRejectedValue(error);
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Bash",
+          { command: "grep pattern file.txt" },
+          "exit-1",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(true);
+      const parsed = JSON.parse(result.result);
+      expect(parsed.exitCode).toBe(1);
+    });
+
+    it("should treat exit code 1 with stdout output as success", async () => {
+      const error = new Error("Command failed") as Error & {
+        code: number;
+        stdout: string;
+        stderr: string;
+      };
+      error.code = 1;
+      error.stdout = "partial results here";
+      error.stderr = "";
+      mockExecAsync.mockRejectedValue(error);
+
+      // Use a read-only command that's allowed in plan mode
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "cat somefile.txt" }, "exit-2")
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(true);
+    });
+
+    it("should treat exit code 1 with stderr content as failure", async () => {
+      const error = new Error("Command failed") as Error & {
+        code: number;
+        stdout: string;
+        stderr: string;
+      };
+      error.code = 1;
+      error.stdout = "";
+      error.stderr = "Error: file not found";
+      mockExecAsync.mockRejectedValue(error);
+
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall("Bash", { command: "cat missing.txt" }, "exit-3")
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("Compound command handling in plan mode", () => {
+    it("should allow OR operator with read-only commands", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "result", stderr: "" });
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Bash",
+          { command: "cat file.txt || echo 'not found'" },
+          "compound-or",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(true);
+      expect(mockExecAsync).toHaveBeenCalled();
+    });
+
+    it("should block OR operator with write commands", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Bash",
+          { command: "cat file.txt || mkdir backup" },
+          "compound-or-write",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not allowed in plan mode");
+    });
+
+    it("should allow semicolon with read-only commands", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "result", stderr: "" });
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Bash",
+          { command: "ls; pwd; cat file.txt" },
+          "compound-semi",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(true);
+    });
+
+    it("should block semicolon with write commands", async () => {
+      const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
+      const result = await executor
+        .executeToolCall(
+          "Bash",
+          { command: "ls; rm file.txt" },
+          "compound-semi-write",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("Grep handler with workspaceRoot", () => {
+    it("should use workspaceRoot as cwd for grep command", async () => {
+      mockExecAsync.mockResolvedValue({ stdout: "file.ts:1:match", stderr: "" });
+      const executor = createCliToolExecutor({
+        tools: {},
+        mode: "plan",
+        workspaceRoot: "/my/workspace",
+      });
+      await executor
+        .executeToolCall(
+          "Grep",
+          { pattern: "searchTerm", path: "src" },
+          "grep-cwd",
+        )
+        .pipe(Runtime.runPromise(runtime));
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: "/my/workspace" }),
       );
     });
   });

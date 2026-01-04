@@ -133,6 +133,7 @@ export interface ChangesetChatContext {
   error: ChangesetChatError | null;
   reasoningContent: string;
   isReasoningStreaming: boolean;
+  isTextStreaming: boolean;
   hasCompletedAnalysis: boolean;
   scratchpadTodos: ScratchpadTodo[];
   historyLoaded: boolean;
@@ -285,10 +286,13 @@ export const changesetChatMachine = setup({
     appendStreamingContent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "message")
         return {};
+      // Text has arrived - hide the typing indicator
       return {
         streamingContent: context.streamingContent + (event.content || ""),
+        isTextStreaming: false,
       };
     }),
+    startTextStreaming: assign({ isTextStreaming: () => true }),
     clearStreamingContent: assign({ streamingContent: () => "" }),
     closeActiveReasoningPart: assign(({ context, event }) => {
       // Only close reasoning parts when non-reasoning content arrives
@@ -397,6 +401,7 @@ export const changesetChatMachine = setup({
 
       return {
         isReasoningStreaming: false,
+        isTextStreaming: false,
         messages: updatedMessages,
       };
     }),
@@ -413,12 +418,13 @@ export const changesetChatMachine = setup({
       );
       if (existing) {
         return {
+          isTextStreaming: false,
           toolEvents: context.toolEvents.map((t) =>
             t.toolCallId === toolEvent.toolCallId ? { ...t, ...toolEvent } : t,
           ),
         };
       }
-      return { toolEvents: [...context.toolEvents, toolEvent] };
+      return { isTextStreaming: false, toolEvents: [...context.toolEvents, toolEvent] };
     }),
     updateToolEvent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "tool-result")
@@ -1141,6 +1147,7 @@ export const changesetChatMachine = setup({
       const updates: Partial<ChangesetChatContext> = {
         hasCompletedAnalysis: true, // Re-enable input
         isReasoningStreaming: false,
+        isTextStreaming: false,
         currentSuiteId: null,
         isProcessingQueue: false,
       };
@@ -1217,6 +1224,7 @@ export const changesetChatMachine = setup({
     error: null,
     reasoningContent: "",
     isReasoningStreaming: false,
+    isTextStreaming: false,
     hasCompletedAnalysis: false,
     scratchpadTodos: [],
     historyLoaded: false,
@@ -1294,6 +1302,7 @@ export const changesetChatMachine = setup({
         RESPONSE_CHUNK: {
           target: "streaming",
           actions: [
+            "startTextStreaming",
             "closeActiveReasoningPart",
             "appendStreamingContent",
             "appendReasoningContent",

@@ -5,9 +5,12 @@
 
 import { Effect } from "effect";
 import type { Section } from "../types.js";
+import { getToolName } from "../tool-names.js";
 
-export const regressionDetection: Section = (_config) =>
-  Effect.succeed(
+export const regressionDetection: Section = (config) => {
+  const proposeTestPlan = getToolName("proposeTestPlan", config);
+
+  return Effect.succeed(
     `<regression_detection>
 **OPT-IN: Regression Detection for Related Tests**
 
@@ -64,7 +67,7 @@ For each failing test:
   - **Suggested Action**: investigate or fix_code
 
 **Step 5: Document in Plan**
-Include regressionAnalysis in proposeTestPlan with:
+Include regressionAnalysis in ${proposeTestPlan} with:
 - relatedTestFiles: List of test files that were run
 - testsRun, passed, failed counts
 - List of failures with classification and suggested action
@@ -72,7 +75,8 @@ Include regressionAnalysis in proposeTestPlan with:
 
 **If No Related Tests Found or User Declines:**
 - Skip regression detection entirely
-- Do NOT include regressionAnalysis in proposeTestPlan
+- Do NOT include regressionAnalysis in ${proposeTestPlan}
 - Proceed directly to pattern discovery and test planning
 </regression_detection>`,
   );
+};

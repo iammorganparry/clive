@@ -13,6 +13,7 @@ import {
   generateActionList,
   detectCancellation,
   getBashCommand,
+  getToolDisplayInfo,
 } from "../utils.js";
 
 describe("utils", () => {
@@ -340,6 +341,296 @@ describe("utils", () => {
     it("should return empty string when not available", () => {
       expect(getBashCommand(null, null)).toBe("");
       expect(getBashCommand({}, {})).toBe("");
+    });
+  });
+
+  describe("getToolDisplayInfo", () => {
+    describe("Read/read_file tool", () => {
+      it("should return label and filename for Read tool", () => {
+        const input = { filePath: "/path/to/file.ts" };
+        expect(getToolDisplayInfo("Read", input)).toEqual({
+          label: "Read file",
+          context: "file.ts",
+        });
+      });
+
+      it("should accept read_file tool name", () => {
+        const input = { filePath: "/path/to/file.ts" };
+        expect(getToolDisplayInfo("read_file", input)).toEqual({
+          label: "Read file",
+          context: "file.ts",
+        });
+      });
+
+      it("should include line range from output", () => {
+        const input = { filePath: "/path/to/file.ts" };
+        const output = { startLine: 10, endLine: 20 };
+        expect(getToolDisplayInfo("Read", input, output)).toEqual({
+          label: "Read file",
+          context: "file.ts (lines 10-20)",
+        });
+      });
+
+      it("should include line range from input offset/limit", () => {
+        const input = { filePath: "/path/to/file.ts", offset: 5, limit: 10 };
+        expect(getToolDisplayInfo("Read", input)).toEqual({
+          label: "Read file",
+          context: "file.ts (lines 5-15)",
+        });
+      });
+
+      it("should handle targetPath alternative", () => {
+        const input = { targetPath: "/path/to/file.ts" };
+        expect(getToolDisplayInfo("Read", input)).toEqual({
+          label: "Read file",
+          context: "file.ts",
+        });
+      });
+
+      it("should return label only when no path available", () => {
+        expect(getToolDisplayInfo("Read", {})).toEqual({
+          label: "Read file",
+        });
+      });
+    });
+
+    describe("Bash/bashExecute tool", () => {
+      it("should return first word as label and full command as context", () => {
+        const input = { command: "git status" };
+        expect(getToolDisplayInfo("Bash", input)).toEqual({
+          label: "git",
+          context: "git status",
+        });
+      });
+
+      it("should accept bashExecute tool name", () => {
+        const input = { command: "echo test" };
+        expect(getToolDisplayInfo("bashExecute", input)).toEqual({
+          label: "echo",
+          context: "echo test",
+        });
+      });
+
+      it("should truncate long commands", () => {
+        const longCmd = "a".repeat(70);
+        const input = { command: longCmd };
+        const result = getToolDisplayInfo("Bash", input);
+        expect(result.label).toBe("a".repeat(70).split(/\s+/)[0]);
+        expect(result.context?.length).toBeLessThanOrEqual(60);
+        expect(result.context).toContain("...");
+      });
+
+      it("should extract first word for various commands", () => {
+        expect(getToolDisplayInfo("Bash", { command: "cat file.txt" }).label).toBe("cat");
+        expect(getToolDisplayInfo("Bash", { command: "grep pattern" }).label).toBe("grep");
+        expect(getToolDisplayInfo("Bash", { command: "find ." }).label).toBe("find");
+      });
+
+      it("should return default label when no command available", () => {
+        expect(getToolDisplayInfo("Bash", {})).toEqual({
+          label: "Bash",
+        });
+      });
+    });
+
+    describe("Edit/editFileContent tool", () => {
+      it("should return Edit label with filename", () => {
+        const input = { targetPath: "/path/to/file.ts" };
+        expect(getToolDisplayInfo("editFileContent", input)).toEqual({
+          label: "Edit",
+          context: "file.ts",
+        });
+      });
+
+      it("should accept Edit tool name", () => {
+        const input = { filePath: "/path/to/file.ts" };
+        expect(getToolDisplayInfo("Edit", input)).toEqual({
+          label: "Edit",
+          context: "file.ts",
+        });
+      });
+
+      it("should return label only when no path available", () => {
+        expect(getToolDisplayInfo("editFileContent", {})).toEqual({
+          label: "Edit",
+        });
+      });
+    });
+
+    describe("Write/writeTestFile tool", () => {
+      it("should return Write label with filename", () => {
+        const input = { filePath: "/path/to/test.spec.ts" };
+        expect(getToolDisplayInfo("writeTestFile", input)).toEqual({
+          label: "Write",
+          context: "test.spec.ts",
+        });
+      });
+
+      it("should accept Write tool name", () => {
+        const input = { targetPath: "/path/to/test.spec.ts" };
+        expect(getToolDisplayInfo("Write", input)).toEqual({
+          label: "Write",
+          context: "test.spec.ts",
+        });
+      });
+
+      it("should handle targetTestPath alternative", () => {
+        const input = { targetTestPath: "/path/to/test.spec.ts" };
+        expect(getToolDisplayInfo("writeTestFile", input)).toEqual({
+          label: "Write",
+          context: "test.spec.ts",
+        });
+      });
+
+      it("should return label only when no path available", () => {
+        expect(getToolDisplayInfo("writeTestFile", {})).toEqual({
+          label: "Write",
+        });
+      });
+    });
+
+    describe("writeKnowledgeFile tool", () => {
+      it("should return Write label with filename", () => {
+        const input = { filePath: "/knowledge/auth.md" };
+        expect(getToolDisplayInfo("writeKnowledgeFile", input)).toEqual({
+          label: "Write",
+          context: "auth.md",
+        });
+      });
+
+      it("should return category as context when no filePath", () => {
+        const input = { category: "authentication" };
+        expect(getToolDisplayInfo("writeKnowledgeFile", input)).toEqual({
+          label: "Write",
+          context: "authentication",
+        });
+      });
+
+      it("should return default label when no path or category", () => {
+        expect(getToolDisplayInfo("writeKnowledgeFile", {})).toEqual({
+          label: "Write knowledge",
+        });
+      });
+    });
+
+    describe("searchKnowledge tool", () => {
+      it("should return Search label with query", () => {
+        const input = { query: "authentication" };
+        expect(getToolDisplayInfo("searchKnowledge", input)).toEqual({
+          label: "Search",
+          context: "authentication",
+        });
+      });
+
+      it("should truncate long queries", () => {
+        const longQuery = "a".repeat(50);
+        const input = { query: longQuery };
+        const result = getToolDisplayInfo("searchKnowledge", input);
+        expect(result.label).toBe("Search");
+        expect(result.context?.length).toBeLessThanOrEqual(40);
+        expect(result.context).toContain("...");
+      });
+
+      it("should return default label when no query", () => {
+        expect(getToolDisplayInfo("searchKnowledge", {})).toEqual({
+          label: "Search knowledge",
+        });
+      });
+    });
+
+    describe("webSearch tool", () => {
+      it("should return Web search label with query", () => {
+        const input = { query: "react testing" };
+        expect(getToolDisplayInfo("webSearch", input)).toEqual({
+          label: "Web search",
+          context: "react testing",
+        });
+      });
+
+      it("should truncate long queries", () => {
+        const longQuery = "b".repeat(50);
+        const input = { query: longQuery };
+        const result = getToolDisplayInfo("webSearch", input);
+        expect(result.label).toBe("Web search");
+        expect(result.context?.length).toBeLessThanOrEqual(40);
+        expect(result.context).toContain("...");
+      });
+
+      it("should return default label when no query", () => {
+        expect(getToolDisplayInfo("webSearch", {})).toEqual({
+          label: "Web search",
+        });
+      });
+    });
+
+    describe("proposeTest tool", () => {
+      it("should return Propose test label with source filename", () => {
+        const input = { sourceFile: "/src/auth/login.ts" };
+        expect(getToolDisplayInfo("proposeTest", input)).toEqual({
+          label: "Propose test",
+          context: "login.ts",
+        });
+      });
+
+      it("should return default label when no source file", () => {
+        expect(getToolDisplayInfo("proposeTest", {})).toEqual({
+          label: "Propose test",
+        });
+      });
+    });
+
+    describe("Glob tool", () => {
+      it("should return Glob label with pattern", () => {
+        const input = { pattern: "**/*.ts" };
+        expect(getToolDisplayInfo("Glob", input)).toEqual({
+          label: "Glob",
+          context: "**/*.ts",
+        });
+      });
+
+      it("should return default label when no pattern", () => {
+        expect(getToolDisplayInfo("Glob", {})).toEqual({
+          label: "Glob",
+        });
+      });
+    });
+
+    describe("Grep tool", () => {
+      it("should return Grep label with pattern", () => {
+        const input = { pattern: "TODO" };
+        expect(getToolDisplayInfo("Grep", input)).toEqual({
+          label: "Grep",
+          context: "TODO",
+        });
+      });
+
+      it("should include path in context when available", () => {
+        const input = { pattern: "TODO", path: "/src/components" };
+        expect(getToolDisplayInfo("Grep", input)).toEqual({
+          label: "Grep",
+          context: "TODO in components",
+        });
+      });
+
+      it("should return default label when no pattern", () => {
+        expect(getToolDisplayInfo("Grep", {})).toEqual({
+          label: "Grep",
+        });
+      });
+    });
+
+    describe("Unknown tools", () => {
+      it("should return tool name as label for unknown tools", () => {
+        expect(getToolDisplayInfo("unknownTool")).toEqual({
+          label: "unknownTool",
+        });
+      });
+
+      it("should handle tool with no input/output", () => {
+        expect(getToolDisplayInfo("someTool", undefined, undefined)).toEqual({
+          label: "someTool",
+        });
+      });
     });
   });
 });

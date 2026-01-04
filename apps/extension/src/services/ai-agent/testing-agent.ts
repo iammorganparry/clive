@@ -206,6 +206,9 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             const workspaceRootUri = yield* vsCodeService.getWorkspaceRoot();
             const workspaceRoot = workspaceRootUri.fsPath;
 
+            // Get AI provider early (needed for prompt building)
+            const aiProvider = yield* settingsService.getAiProvider();
+
             // Build tools
             const tools = yield* createToolSet({
               mode,
@@ -250,6 +253,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               mode,
               planFilePath, // Include plan file path for act mode context
               includeUserRules: true,
+              aiProvider, // Pass provider for correct tool name resolution
             });
 
             // Context management
@@ -280,8 +284,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
               emitAgentError(error, progressCallback);
             };
 
-            // Get the AI provider setting to determine execution path
-            const aiProvider = yield* settingsService.getAiProvider();
+            // Log the AI provider for debugging
             logToOutput(
               `[TestingAgent:${correlationId}] AI Provider: ${aiProvider}`,
             );
@@ -318,16 +321,12 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 );
               }
 
-              // Execute via CLI with extended thinking in plan mode
+              // Execute via CLI
               const cliHandle = yield* claudeCliService.execute({
                 prompt: userMessages,
                 systemPrompt: systemPromptWithWorkspace,
                 signal,
                 model: "sonnet", // Use Sonnet model
-                betas:
-                  mode === "plan"
-                    ? ["interleaved-thinking-2025-05-14"]
-                    : undefined,
                 // MCP bridge config for custom tools (proposeTestPlan, etc.)
                 mcpSocketPath: options?.mcpSocketPath,
                 mcpServerPath: options?.mcpServerPath,
@@ -339,6 +338,7 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 tools,
                 progressCallback,
                 mode,
+                workspaceRoot,
               });
 
               // Run the CLI execution loop

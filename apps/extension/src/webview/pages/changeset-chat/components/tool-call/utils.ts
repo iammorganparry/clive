@@ -5,6 +5,7 @@ import type {
   FileMatch,
   ReadFileOutput,
   SearchKnowledgeOutput,
+  ToolDisplayInfo,
   WriteKnowledgeFileOutput,
   WriteTestFileOutput,
 } from "./types.js";
@@ -567,4 +568,150 @@ export const getBashCommand = (input: unknown, output: unknown): string => {
     return (output as BashExecuteOutput).command || "";
   }
   return "";
+};
+
+/**
+ * Get display info for tool header (label + context chip)
+ * Used to show tool name and contextual information like filenames or commands
+ */
+export const getToolDisplayInfo = (
+  toolName: string,
+  input?: unknown,
+  output?: unknown,
+): ToolDisplayInfo => {
+  // Read tool - show filename with optional line range
+  if (toolName === "read_file" || toolName === "Read") {
+    if (isReadFileArgs(input)) {
+      const path = input.filePath || input.targetPath;
+      if (path) {
+        const filename = extractFilename(path);
+        // Check output for line range info
+        if (output && typeof output === "object") {
+          const fileOutput = output as ReadFileOutput;
+          if (fileOutput.startLine && fileOutput.endLine) {
+            return {
+              label: "Read file",
+              context: `${filename} (lines ${fileOutput.startLine}-${fileOutput.endLine})`,
+            };
+          }
+        }
+        // Check input for offset/limit
+        const inputObj = input as Record<string, unknown>;
+        if (
+          typeof inputObj.offset === "number" &&
+          typeof inputObj.limit === "number"
+        ) {
+          const endLine = inputObj.offset + inputObj.limit;
+          return {
+            label: "Read file",
+            context: `${filename} (lines ${inputObj.offset}-${endLine})`,
+          };
+        }
+        return { label: "Read file", context: filename };
+      }
+    }
+    return { label: "Read file" };
+  }
+
+  // Bash tool - show command preview
+  if (toolName === "bashExecute" || toolName === "Bash") {
+    if (isBashExecuteArgs(input)) {
+      const cmd = input.command.trim();
+      // Extract first word as label (git, cat, grep, find, etc.)
+      const firstWord = cmd.split(/\s+/)[0];
+      // Truncate long commands
+      const truncatedCmd = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
+      return { label: firstWord, context: truncatedCmd };
+    }
+    return { label: "Bash" };
+  }
+
+  // Edit tool - show target filename
+  if (toolName === "editFileContent" || toolName === "Edit") {
+    if (isEditFileContentArgs(input)) {
+      const path = input.targetPath || input.filePath;
+      if (path) {
+        return { label: "Edit", context: extractFilename(path) };
+      }
+    }
+    return { label: "Edit" };
+  }
+
+  // Write test file - show target filename
+  if (toolName === "writeTestFile" || toolName === "Write") {
+    if (isWriteTestFileArgs(input)) {
+      const path = input.filePath || input.targetTestPath || input.targetPath;
+      if (path) {
+        return { label: "Write", context: extractFilename(path) };
+      }
+    }
+    return { label: "Write" };
+  }
+
+  // Write knowledge file - show filename or category
+  if (toolName === "writeKnowledgeFile") {
+    if (isWriteKnowledgeFileArgs(input)) {
+      if (input.filePath) {
+        return { label: "Write", context: extractFilename(input.filePath) };
+      }
+      if (input.category) {
+        return { label: "Write", context: input.category };
+      }
+    }
+    return { label: "Write knowledge" };
+  }
+
+  // Search knowledge - show query
+  if (toolName === "searchKnowledge") {
+    if (isSearchKnowledgeArgs(input) && input.query) {
+      const truncatedQuery =
+        input.query.length > 40 ? `${input.query.slice(0, 37)}...` : input.query;
+      return { label: "Search", context: truncatedQuery };
+    }
+    return { label: "Search knowledge" };
+  }
+
+  // Web search - show query
+  if (toolName === "webSearch") {
+    if (isWebSearchArgs(input) && input.query) {
+      const truncatedQuery =
+        input.query.length > 40 ? `${input.query.slice(0, 37)}...` : input.query;
+      return { label: "Web search", context: truncatedQuery };
+    }
+    return { label: "Web search" };
+  }
+
+  // Propose test - show source file
+  if (toolName === "proposeTest") {
+    if (isProposeTestArgs(input) && input.sourceFile) {
+      return { label: "Propose test", context: extractFilename(input.sourceFile) };
+    }
+    return { label: "Propose test" };
+  }
+
+  // Glob tool
+  if (toolName === "Glob") {
+    const inputObj = input as Record<string, unknown> | undefined;
+    if (inputObj?.pattern && typeof inputObj.pattern === "string") {
+      return { label: "Glob", context: inputObj.pattern };
+    }
+    return { label: "Glob" };
+  }
+
+  // Grep tool
+  if (toolName === "Grep") {
+    const inputObj = input as Record<string, unknown> | undefined;
+    if (inputObj?.pattern && typeof inputObj.pattern === "string") {
+      const pattern = inputObj.pattern;
+      const path = inputObj.path as string | undefined;
+      if (path) {
+        return { label: "Grep", context: `${pattern} in ${extractFilename(path)}` };
+      }
+      return { label: "Grep", context: pattern };
+    }
+    return { label: "Grep" };
+  }
+
+  // Default - just return tool name
+  return { label: toolName };
 };
