@@ -771,6 +771,9 @@ export function createMockClaudeCliServiceLayer(
           sendToolResult: (_toolCallId: string, _result: string) => {
             // No-op for mock
           },
+          close: () => {
+            // No-op for mock
+          },
           kill: () => {
             // No-op for mock
           },

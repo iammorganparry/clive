@@ -49,6 +49,7 @@ export const routerShape: RouterRecord = {
     setAiProvider: createProcedureShape("mutation"),
     getClaudeCliStatus: createProcedureShape("query"),
     authenticateClaudeCli: createProcedureShape("mutation"),
+    getMcpBridgeStatus: createProcedureShape("query"),
   },
   conversations: {
     start: createProcedureShape("mutation"),

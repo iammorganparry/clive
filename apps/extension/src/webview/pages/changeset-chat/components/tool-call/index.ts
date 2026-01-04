@@ -12,6 +12,3 @@ export * from "./icons.js";
 
 // Output formatting
 export * from "./format-output.js";
-
-// Components
-export { BashExecuteTerminal } from "./bash-execute-terminal.js";

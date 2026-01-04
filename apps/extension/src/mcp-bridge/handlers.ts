@@ -4,19 +4,30 @@
  */
 
 import { Effect, Runtime, pipe } from "effect";
-import type { BridgeHandlers } from "./types.js";
+import type {
+  ApprovePlanBridgeResponse,
+  ProposeTestPlanBridgeResponse,
+  SummarizeContextBridgeResponse,
+  TypedBridgeHandlers,
+} from "./types.js";
 import {
   initializePlanStreamingWriteEffect,
   appendPlanStreamingContentEffect,
   finalizePlanStreamingWriteEffect,
 } from "../services/ai-agent/tools/propose-test-plan.js";
 import { VSCodeService } from "../services/vs-code.js";
+import type { CliveViewProvider } from "../views/clive-view-provider.js";
+import { buildFullPlanContent } from "../utils/frontmatter-utils.js";
 
 /**
  * Create bridge handlers for the extension
  * These handlers respond to calls from the MCP server
+ *
+ * @param webviewProvider - Optional webview provider for emitting events to the frontend
  */
-export function createBridgeHandlers(): BridgeHandlers {
+export function createBridgeHandlers(
+  webviewProvider?: CliveViewProvider | null,
+): TypedBridgeHandlers {
   const runtime = Runtime.defaultRuntime;
 
   return {
@@ -24,9 +35,30 @@ export function createBridgeHandlers(): BridgeHandlers {
      * Handle proposeTestPlan requests
      * Streams the plan content to a file in the VSCode editor
      */
-    proposeTestPlan: async (params: unknown) => {
+    proposeTestPlan: async (
+      params: unknown,
+    ): Promise<ProposeTestPlanBridgeResponse> => {
       const input = params as {
         name: string;
+        overview?: string;
+        suites?: Array<{
+          id: string;
+          name: string;
+          testType: "unit" | "integration" | "e2e";
+          targetFilePath: string;
+          sourceFiles: string[];
+          description?: string;
+        }>;
+        mockDependencies?: Array<{
+          dependency: string;
+          existingMock?: string;
+          mockStrategy: "factory" | "inline" | "spy";
+        }>;
+        discoveredPatterns?: {
+          testFramework: string;
+          mockFactoryPaths: string[];
+          testPatterns: string[];
+        };
         planContent: string;
         toolCallId: string;
       };
@@ -40,6 +72,16 @@ export function createBridgeHandlers(): BridgeHandlers {
           .substring(0, 50);
         const filePath = `.clive/plans/${sanitizedName}-${planId.slice(-6)}.md`;
 
+        // Build full content with YAML frontmatter using shared utility
+        const fullContent = buildFullPlanContent(
+          {
+            name: input.name,
+            overview: input.overview,
+            suites: input.suites,
+          },
+          input.planContent,
+        );
+
         // Initialize the streaming write
         await pipe(
           initializePlanStreamingWriteEffect(filePath, input.toolCallId),
@@ -47,9 +89,9 @@ export function createBridgeHandlers(): BridgeHandlers {
           Runtime.runPromise(runtime),
         );
 
-        // Write the plan content
+        // Write the plan content with YAML frontmatter
         await pipe(
-          appendPlanStreamingContentEffect(input.toolCallId, input.planContent),
+          appendPlanStreamingContentEffect(input.toolCallId, fullContent),
           Effect.provide(VSCodeService.Default),
           Runtime.runPromise(runtime),
         );
@@ -79,18 +121,28 @@ export function createBridgeHandlers(): BridgeHandlers {
 
     /**
      * Handle approvePlan requests
-     * Switches the agent mode from plan to act
+     * Switches the agent mode from plan to act by emitting an event to the webview
      */
-    approvePlan: async (params: unknown) => {
+    approvePlan: async (params: unknown): Promise<ApprovePlanBridgeResponse> => {
       const input = params as {
         approved: boolean;
         planId?: string;
         feedback?: string;
       };
 
-      // TODO: Implement mode switching logic
-      // This would typically update the agent state machine
-      // For now, just acknowledge the request
+      // Emit event to webview for state machine integration
+      const webview = webviewProvider?.getWebview();
+      if (webview) {
+        webview.webview.postMessage({
+          type: "mcp-bridge-event",
+          event: "plan-approval",
+          data: {
+            approved: input.approved,
+            planId: input.planId,
+            feedback: input.feedback,
+          },
+        });
+      }
 
       if (input.approved) {
         return {
@@ -111,9 +163,11 @@ export function createBridgeHandlers(): BridgeHandlers {
 
     /**
      * Handle summarizeContext requests
-     * Manages the AI message history
+     * Manages the AI message history by emitting an event to the webview
      */
-    summarizeContext: async (params: unknown) => {
+    summarizeContext: async (
+      params: unknown,
+    ): Promise<SummarizeContextBridgeResponse> => {
       const input = params as {
         summary: string;
         tokensBefore?: number;
@@ -121,12 +175,23 @@ export function createBridgeHandlers(): BridgeHandlers {
         preserveKnowledge?: boolean;
       };
 
-      // TODO: Implement context summarization
-      // This would typically manipulate the message history in the agent
-      // For now, just acknowledge the request
-
       const tokensBefore = input.tokensBefore || 10000;
       const tokensAfter = input.tokensAfter || 2000;
+
+      // Emit event to webview for context management
+      const webview = webviewProvider?.getWebview();
+      if (webview) {
+        webview.webview.postMessage({
+          type: "mcp-bridge-event",
+          event: "summarize-context",
+          data: {
+            summary: input.summary,
+            tokensBefore,
+            tokensAfter,
+            preserveKnowledge: input.preserveKnowledge ?? true,
+          },
+        });
+      }
 
       return {
         success: true,

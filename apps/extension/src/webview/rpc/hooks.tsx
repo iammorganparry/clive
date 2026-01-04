@@ -11,6 +11,10 @@ import type {
   QueryHookReturn,
 } from "@clive/webview-rpc";
 import type { VSCodeAPI } from "../services/vscode.js";
+import {
+  mcpBridgeEventEmitter,
+  type McpBridgeEvents,
+} from "../services/mcp-bridge-events.js";
 
 // Pending request storage
 const pendingRequests = new Map<
@@ -39,6 +43,30 @@ export function generateId(): string {
 }
 
 /**
+ * MCP Bridge event message structure
+ */
+interface McpBridgeEventMessage {
+  type: "mcp-bridge-event";
+  event: keyof McpBridgeEvents;
+  data: McpBridgeEvents[keyof McpBridgeEvents];
+}
+
+/**
+ * Type guard for MCP bridge event messages
+ */
+function isMcpBridgeEventMessage(
+  message: unknown,
+): message is McpBridgeEventMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as McpBridgeEventMessage).type === "mcp-bridge-event" &&
+    typeof (message as McpBridgeEventMessage).event === "string" &&
+    (message as McpBridgeEventMessage).data !== undefined
+  );
+}
+
+/**
  * Initialize RPC message handling - call this once in your app
  */
 export function initializeRpcMessageHandler(
@@ -46,6 +74,12 @@ export function initializeRpcMessageHandler(
 ): (event: MessageEvent) => void {
   return (event: MessageEvent) => {
     const data = event.data as Record<string, unknown>;
+
+    // Handle MCP bridge events from extension
+    if (isMcpBridgeEventMessage(data)) {
+      mcpBridgeEventEmitter.emit(data.event, data.data as never);
+      return;
+    }
 
     // Handle RPC response
     if ("id" in data && "success" in data && typeof data.id === "string") {

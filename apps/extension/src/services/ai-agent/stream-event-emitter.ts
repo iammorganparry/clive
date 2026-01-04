@@ -1,0 +1,187 @@
+/**
+ * Stream Event Emitter
+ * Helper functions for emitting stream events consistently across providers
+ */
+
+import type { ProgressCallback } from "./event-handlers.js";
+import type {
+  AgentStreamEvent,
+  ToolCallState,
+} from "./stream-events.js";
+
+/**
+ * Emit a stream event via the progress callback
+ */
+export function emitStreamEvent(
+  callback: ProgressCallback | undefined,
+  event: AgentStreamEvent,
+): void {
+  if (!callback) return;
+  callback(event.type, JSON.stringify(event));
+}
+
+/**
+ * Convenience functions for emitting common events
+ * Provides type-safe event emission with consistent structure
+ */
+export const emit = {
+  /**
+   * Emit text content streaming event
+   */
+  contentStreamed: (
+    callback: ProgressCallback | undefined,
+    content: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "content_streamed",
+      content,
+    });
+  },
+
+  /**
+   * Emit reasoning/thinking event
+   */
+  reasoning: (
+    callback: ProgressCallback | undefined,
+    content: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "reasoning",
+      content,
+    });
+  },
+
+  /**
+   * Emit tool call event
+   */
+  toolCall: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    state: ToolCallState,
+    isMcpTool?: boolean,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "tool-call",
+      toolCallId,
+      toolName,
+      args,
+      state,
+      isMcpTool,
+    });
+  },
+
+  /**
+   * Emit tool result event
+   */
+  toolResult: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    toolName: string,
+    output: unknown,
+    state: "output-available" | "output-error" | "output-cancelled" | "output-denied",
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "tool-result",
+      toolCallId,
+      toolName,
+      output,
+      state,
+    });
+  },
+
+  /**
+   * Emit plan content streaming event
+   */
+  planContent: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    content: string,
+    isComplete: boolean,
+    filePath?: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "plan-content-streaming",
+      toolCallId,
+      content,
+      isComplete,
+      filePath,
+    });
+  },
+
+  /**
+   * Emit file created event
+   */
+  fileCreated: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    filePath: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "file-created",
+      toolCallId,
+      filePath,
+    });
+  },
+
+  /**
+   * Emit error event
+   */
+  error: (
+    callback: ProgressCallback | undefined,
+    message: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "error",
+      message,
+    });
+  },
+
+  /**
+   * Emit tool skipped event
+   */
+  toolSkipped: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    toolName: string | undefined,
+    reason: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "tool-skipped",
+      toolCallId,
+      toolName,
+      reason,
+    });
+  },
+
+  /**
+   * Emit diagnostic problems event
+   */
+  diagnosticProblems: (
+    callback: ProgressCallback | undefined,
+    toolCallId?: string,
+    toolName?: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "diagnostic-problems",
+      toolCallId,
+      toolName,
+    });
+  },
+
+  /**
+   * Emit mistake limit event
+   */
+  mistakeLimit: (
+    callback: ProgressCallback | undefined,
+    count: number,
+    message: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "mistake-limit",
+      count,
+      message,
+    });
+  },
+};

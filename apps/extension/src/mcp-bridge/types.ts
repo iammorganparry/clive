@@ -30,9 +30,26 @@ export type BridgeHandler<TParams = unknown, TResult = unknown> = (
 
 /**
  * Map of method names to their handlers
+ * Includes typed handlers for known methods and index signature for extensibility
  */
 export interface BridgeHandlers {
-  [method: string]: BridgeHandler;
+  proposeTestPlan?: (params: unknown) => Promise<ProposeTestPlanBridgeResponse>;
+  approvePlan?: (params: unknown) => Promise<ApprovePlanBridgeResponse>;
+  summarizeContext?: (
+    params: unknown,
+  ) => Promise<SummarizeContextBridgeResponse>;
+  [method: string]: BridgeHandler | undefined;
+}
+
+/**
+ * Typed bridge handlers returned by createBridgeHandlers
+ * All methods are guaranteed to exist
+ * Extends BridgeHandlers for compatibility with functions expecting partial handlers
+ */
+export interface TypedBridgeHandlers extends BridgeHandlers {
+  proposeTestPlan: (params: unknown) => Promise<ProposeTestPlanBridgeResponse>;
+  approvePlan: (params: unknown) => Promise<ApprovePlanBridgeResponse>;
+  summarizeContext: (params: unknown) => Promise<SummarizeContextBridgeResponse>;
 }
 
 /**
@@ -106,4 +123,33 @@ export interface CompleteTaskBridgeParams {
   testsWritten: number;
   testsPassed: number;
   confirmation: boolean;
+}
+
+/**
+ * proposeTestPlan bridge response
+ */
+export interface ProposeTestPlanBridgeResponse {
+  success: boolean;
+  planId: string;
+  filePath?: string;
+  message: string;
+}
+
+/**
+ * approvePlan bridge response
+ */
+export interface ApprovePlanBridgeResponse {
+  success: boolean;
+  mode: "plan" | "act";
+  message: string;
+}
+
+/**
+ * summarizeContext bridge response
+ */
+export interface SummarizeContextBridgeResponse {
+  success: boolean;
+  tokensBefore: number;
+  tokensAfter: number;
+  message: string;
 }

@@ -4,6 +4,72 @@
  */
 
 /**
+ * Test plan suite definition for YAML frontmatter
+ */
+export interface TestPlanSuite {
+  id: string;
+  name: string;
+  testType: "unit" | "integration" | "e2e";
+  targetFilePath: string;
+  sourceFiles?: string[];
+  description?: string;
+}
+
+/**
+ * Input for building test plan frontmatter
+ */
+export interface TestPlanFrontmatterInput {
+  name: string;
+  overview?: string;
+  suites?: TestPlanSuite[];
+}
+
+/**
+ * Build YAML frontmatter string from test plan input
+ */
+export function buildTestPlanFrontmatter(
+  input: TestPlanFrontmatterInput,
+): string {
+  let yaml = "---\n";
+  yaml += `name: ${input.name}\n`;
+
+  if (input.overview) {
+    yaml += `overview: ${input.overview}\n`;
+  }
+
+  if (input.suites && input.suites.length > 0) {
+    yaml += "suites:\n";
+    for (const suite of input.suites) {
+      yaml += `  - id: ${suite.id}\n`;
+      yaml += `    name: ${suite.name}\n`;
+      yaml += `    testType: ${suite.testType}\n`;
+      yaml += `    targetFilePath: ${suite.targetFilePath}\n`;
+      if (suite.sourceFiles && suite.sourceFiles.length > 0) {
+        yaml += `    sourceFiles: [${suite.sourceFiles.join(", ")}]\n`;
+      }
+      if (suite.description) {
+        yaml += `    description: ${suite.description}\n`;
+      }
+    }
+  }
+
+  yaml += "---\n\n";
+  return yaml;
+}
+
+/**
+ * Build full plan content with YAML frontmatter
+ * If planContent already has frontmatter, returns as-is
+ */
+export function buildFullPlanContent(
+  input: TestPlanFrontmatterInput,
+  planContent: string,
+): string {
+  const hasFrontmatter = planContent.trim().startsWith("---");
+  return hasFrontmatter ? planContent : buildTestPlanFrontmatter(input) + planContent;
+}
+
+/**
  * Parse frontmatter from markdown content
  * Returns frontmatter object and body content
  */

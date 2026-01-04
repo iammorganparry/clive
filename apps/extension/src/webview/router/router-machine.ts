@@ -31,7 +31,8 @@ export const routerMachine = setup({
       | { type: "LOGIN_SUCCESS" }
       | { type: "ONBOARDING_COMPLETE" }
       | { type: "LOGOUT" }
-      | { type: "NAVIGATE"; route: Route; params?: Record<string, string> },
+      | { type: "NAVIGATE"; route: Route; params?: Record<string, string> }
+      | { type: "MCP_BRIDGE_RESULT"; ready: boolean },
   },
 }).createMachine({
   id: "router",
@@ -87,11 +88,27 @@ export const routerMachine = setup({
     checkingConversation: {
       on: {
         CONVERSATION_RESULT: {
-          target: "ready",
+          target: "checkingMcpBridge",
           actions: assign({
             route: ({ event }) => event.route,
             routeParams: ({ event }) => event.params || {},
           }),
+        },
+        LOGOUT: {
+          target: "unauthenticated",
+          actions: assign({
+            isAuthenticated: false,
+            onboardingComplete: false,
+            route: Routes.login,
+            routeParams: {},
+          }),
+        },
+      },
+    },
+    checkingMcpBridge: {
+      on: {
+        MCP_BRIDGE_RESULT: {
+          target: "ready",
         },
         LOGOUT: {
           target: "unauthenticated",
@@ -176,4 +193,5 @@ export type RouterMachineEvent =
   | { type: "LOGIN_SUCCESS" }
   | { type: "ONBOARDING_COMPLETE" }
   | { type: "LOGOUT" }
-  | { type: "NAVIGATE"; route: Route; params?: Record<string, string> };
+  | { type: "NAVIGATE"; route: Route; params?: Record<string, string> }
+  | { type: "MCP_BRIDGE_RESULT"; ready: boolean };

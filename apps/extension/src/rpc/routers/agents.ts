@@ -1,5 +1,6 @@
 import { createRouter, type RpcSubscriptionMessage } from "@clive/webview-rpc";
 import { Effect, Runtime } from "effect";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { z } from "zod";
 import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
@@ -107,6 +108,25 @@ export const agentsRouter = {
 
       // Create accumulator for tracking streamed content (provider-agnostic)
       const accumulator = new StreamAccumulator();
+
+      // Get MCP config if bridge is running (for Claude CLI mode)
+      let mcpSocketPath: string | undefined;
+      let mcpServerPath: string | undefined;
+
+      if (ctx.mcpBridgeRuntime) {
+        try {
+          const isRunning = await ctx.mcpBridgeRuntime.isRunning();
+          if (isRunning) {
+            mcpSocketPath =
+              (await ctx.mcpBridgeRuntime.getSocketPath()) ?? undefined;
+            // MCP server is built to dist/mcp-server.mjs relative to extension
+            const extensionPath = ctx.context.extensionUri.fsPath;
+            mcpServerPath = path.join(extensionPath, "dist", "mcp-server.mjs");
+          }
+        } catch (error) {
+          console.warn("[RpcRouter] Failed to get MCP config:", error);
+        }
+      }
 
       const effectProgram = Effect.gen(function* () {
         const requestId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -248,6 +268,9 @@ export const agentsRouter = {
           signal,
           waitForApproval,
           getApprovalSetting,
+          // MCP bridge config for Claude CLI custom tools
+          mcpSocketPath,
+          mcpServerPath,
         });
 
         // Persist conversation messages to database

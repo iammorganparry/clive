@@ -15,7 +15,7 @@ import {
 } from "@clive/ui/task";
 import { Icon, addCollection } from "@iconify/react";
 import vscodeIconsData from "@iconify-json/vscode-icons/icons.json";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, Loader2, X } from "lucide-react";
 import type React from "react";
 import { useCallback } from "react";
 
@@ -38,8 +38,7 @@ import {
 } from "./tool-call/index.js";
 import { getToolIcon, getStatusBadge } from "./tool-call/icons.js";
 import { formatToolOutput } from "./tool-call/format-output.js";
-import { useToolApproval, useOpenFile } from "./tool-call/hooks.js";
-import { BashExecuteTerminal } from "./tool-call/bash-execute-terminal.js";
+import { useToolApproval, useToolAbort, useOpenFile } from "./tool-call/hooks.js";
 
 // Add vscode-icons collection for offline use
 addCollection(vscodeIconsData);
@@ -62,6 +61,7 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const filePaths = extractFilePaths(toolName, input, output);
 
   const { handleApprove, handleReject, canApprove } = useToolApproval(toolCallId, subscriptionId);
+  const { handleCancel, canAbort, isAborting } = useToolAbort(toolCallId, subscriptionId);
   const { handleOpenFile } = useOpenFile();
 
   // Check if this is a file-writing tool with code content
@@ -200,19 +200,6 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const statusBadge = getStatusBadge(state);
   const toolIcon = getToolIcon(toolName);
 
-  // For bash execute, render TerminalCard directly
-  if (toolName === "bashExecute" || toolName === "Bash") {
-    return (
-      <BashExecuteTerminal
-        input={input}
-        output={output}
-        state={state}
-        toolCallId={toolCallId}
-        subscriptionId={subscriptionId}
-      />
-    );
-  }
-
   // For editFileContent, render DiffPreview with Claude Code-style diff view
   if (toolName === "editFileContent" && isEditFileContentArgs(input) && input.diff) {
     const filePath = input.targetPath || input.filePath || "unknown";
@@ -309,6 +296,32 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               </Button>
               <Button onClick={handleApprove} variant="default" size="sm">
                 Approve
+              </Button>
+            </div>
+          )}
+        {/* Cancel button for running bash commands */}
+        {(state === "input-streaming" || state === "input-available") &&
+          canAbort &&
+          (toolName === "bashExecute" || toolName === "Bash") && (
+            <div className="flex justify-end gap-2 border-t pt-2 mt-2">
+              <Button
+                onClick={handleCancel}
+                variant="outline"
+                size="sm"
+                disabled={isAborting}
+                className="gap-1.5"
+              >
+                {isAborting ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin" />
+                    Cancelling...
+                  </>
+                ) : (
+                  <>
+                    <X className="size-3" />
+                    Cancel
+                  </>
+                )}
               </Button>
             </div>
           )}

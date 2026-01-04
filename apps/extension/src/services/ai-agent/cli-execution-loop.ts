@@ -10,10 +10,16 @@
  */
 
 import { Effect, Stream } from "effect";
-import type { CliExecutionHandle, ClaudeCliEvent } from "../claude-cli-service.js";
+import type {
+  CliExecutionHandle,
+  ClaudeCliEvent,
+} from "../claude-cli-service.js";
 import type { CliToolExecutor } from "./cli-tool-executor.js";
 import type { ProgressCallback } from "./event-handlers.js";
 import { logToOutput } from "../../utils/logger.js";
+import { createBridgeHandlers } from "../../mcp-bridge/handlers.js";
+import { buildFullPlanContent } from "../../utils/frontmatter-utils.js";
+import { emit } from "./stream-event-emitter.js";
 
 /**
  * Options for running the CLI execution loop
@@ -63,12 +69,16 @@ export const runCliExecutionLoop = (
     let accumulatedResponse = "";
     let taskCompleted = false;
 
-    logToOutput(`[CliExecutionLoop:${correlationId}] Starting CLI execution loop`);
+    logToOutput(
+      `[CliExecutionLoop:${correlationId}] Starting CLI execution loop`,
+    );
 
     // Handle abort signal
     if (signal) {
       signal.addEventListener("abort", () => {
-        logToOutput(`[CliExecutionLoop:${correlationId}] Abort signal received`);
+        logToOutput(
+          `[CliExecutionLoop:${correlationId}] Abort signal received`,
+        );
         cliHandle.kill();
       });
     }
@@ -79,7 +89,9 @@ export const runCliExecutionLoop = (
         Effect.gen(function* () {
           // Check for abort
           if (signal?.aborted) {
-            logToOutput(`[CliExecutionLoop:${correlationId}] Aborted, stopping loop`);
+            logToOutput(
+              `[CliExecutionLoop:${correlationId}] Aborted, stopping loop`,
+            );
             cliHandle.kill();
             return;
           }
@@ -146,26 +158,14 @@ const handleCliEvent = (
     switch (event.type) {
       case "text": {
         // Emit text delta for UI
-        progressCallback?.(
-          "content_streamed",
-          JSON.stringify({
-            type: "content_streamed",
-            content: event.content,
-          }),
-        );
+        emit.contentStreamed(progressCallback, event.content);
         state.addToResponse(event.content);
         break;
       }
 
       case "thinking": {
         // Emit as reasoning for UI (UI expects "reasoning" type)
-        progressCallback?.(
-          "reasoning",
-          JSON.stringify({
-            type: "reasoning",
-            content: event.content,
-          }),
-        );
+        emit.reasoning(progressCallback, event.content);
         break;
       }
 
@@ -174,17 +174,146 @@ const handleCliEvent = (
           `[CliExecutionLoop:${correlationId}] Tool use: ${event.name} (${event.id})`,
         );
 
+        // Check if this is an MCP tool (prefixed with "mcp__")
+        // MCP tools are executed locally via bridge handlers and results sent back to CLI
+        const isMcpTool = event.name.startsWith("mcp__");
+
+        if (isMcpTool) {
+          // Extract the actual tool name (e.g., "mcp__clive-tools__proposeTestPlan" -> "proposeTestPlan")
+          const toolParts = event.name.split("__");
+          const toolName = toolParts.length >= 3 ? toolParts[2] : event.name;
+
+          logToOutput(
+            `[CliExecutionLoop:${correlationId}] MCP tool detected: ${toolName}, executing via bridge handler`,
+          );
+
+          // Emit tool-call event for UI
+          emit.toolCall(progressCallback, event.id, toolName, event.input, "input-available", true);
+
+          // Execute MCP tool via bridge handlers
+          // Note: createBridgeHandlers(null) works for proposeTestPlan since it only needs VSCodeService
+          let mcpResult: {
+            success: boolean;
+            result: unknown;
+            error?: string;
+          };
+
+          try {
+            const handlers = createBridgeHandlers(null);
+
+            switch (toolName) {
+              case "proposeTestPlan": {
+                // Pass all input fields to the handler for YAML frontmatter construction
+                const input = event.input as {
+                  name: string;
+                  overview?: string;
+                  suites?: Array<{
+                    id: string;
+                    name: string;
+                    testType: "unit" | "integration" | "e2e";
+                    targetFilePath: string;
+                    sourceFiles: string[];
+                    description?: string;
+                  }>;
+                  mockDependencies?: Array<{
+                    dependency: string;
+                    existingMock?: string;
+                    mockStrategy: "factory" | "inline" | "spy";
+                  }>;
+                  discoveredPatterns?: {
+                    testFramework: string;
+                    mockFactoryPaths: string[];
+                    testPatterns: string[];
+                  };
+                  planContent: string;
+                };
+                const result = yield* Effect.tryPromise({
+                  try: () =>
+                    handlers.proposeTestPlan({
+                      ...input,
+                      toolCallId: event.id,
+                    }),
+                  catch: (e) =>
+                    new Error(e instanceof Error ? e.message : "Unknown error"),
+                });
+                mcpResult = { success: result.success, result };
+
+                // Emit plan-content-streaming event to update state machine planContent
+                // This is required for the floating approval bar to show the correct suite count
+                if (result.success) {
+                  // Build full content with YAML frontmatter using shared utility
+                  const fullContent = buildFullPlanContent(
+                    {
+                      name: input.name,
+                      overview: input.overview,
+                      suites: input.suites,
+                    },
+                    input.planContent,
+                  );
+
+                  emit.planContent(progressCallback, event.id, fullContent, true);
+                }
+                break;
+              }
+              case "approvePlan": {
+                const result = yield* Effect.tryPromise({
+                  try: () => handlers.approvePlan(event.input),
+                  catch: (e) =>
+                    new Error(e instanceof Error ? e.message : "Unknown error"),
+                });
+                mcpResult = { success: result.success, result };
+                break;
+              }
+              case "summarizeContext": {
+                const result = yield* Effect.tryPromise({
+                  try: () => handlers.summarizeContext(event.input),
+                  catch: (e) =>
+                    new Error(e instanceof Error ? e.message : "Unknown error"),
+                });
+                mcpResult = { success: result.success, result };
+                break;
+              }
+              default:
+                mcpResult = {
+                  success: false,
+                  result: null,
+                  error: `Unknown MCP tool: ${toolName}`,
+                };
+            }
+          } catch (error) {
+            logToOutput(
+              `[CliExecutionLoop:${correlationId}] MCP tool error: ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+            mcpResult = {
+              success: false,
+              result: null,
+              error: error instanceof Error ? error.message : "Unknown error",
+            };
+          }
+
+          // Emit tool-result event for UI
+          const mcpResultState = mcpResult.success ? "output-available" : "output-error";
+          emit.toolResult(
+            progressCallback,
+            event.id,
+            toolName,
+            mcpResult.success ? mcpResult.result : { error: mcpResult.error },
+            mcpResultState,
+          );
+
+          // Send result back to Claude CLI
+          logToOutput(
+            `[CliExecutionLoop:${correlationId}] Sending MCP tool result back to CLI`,
+          );
+          const resultToSend = mcpResult.success
+            ? JSON.stringify(mcpResult.result)
+            : JSON.stringify({ error: mcpResult.error });
+          cliHandle.sendToolResult(event.id, resultToSend);
+          break;
+        }
+
         // Emit tool-call event for UI (input available)
-        progressCallback?.(
-          "tool-call",
-          JSON.stringify({
-            type: "tool-call",
-            toolCallId: event.id,
-            toolName: event.name,
-            args: event.input,
-            state: "input-available",
-          }),
-        );
+        emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
 
         // Execute the tool
         const result = yield* toolExecutor.executeToolCall(
@@ -210,16 +339,7 @@ const handleCliEvent = (
           outputObject = { error: result.error };
         }
 
-        progressCallback?.(
-          "tool-result",
-          JSON.stringify({
-            type: "tool-result",
-            toolCallId: event.id,
-            toolName: event.name,
-            output: outputObject,
-            state: resultState,
-          }),
-        );
+        emit.toolResult(progressCallback, event.id, event.name, outputObject, resultState);
 
         // Send result back to CLI (as string)
         const resultToSend = result.success
@@ -246,19 +366,15 @@ const handleCliEvent = (
         logToOutput(
           `[CliExecutionLoop:${correlationId}] CLI error: ${event.message}`,
         );
-        progressCallback?.(
-          "error",
-          JSON.stringify({
-            type: "error",
-            message: event.message,
-          }),
-        );
+        emit.error(progressCallback, event.message);
         break;
       }
 
       case "done": {
         logToOutput(`[CliExecutionLoop:${correlationId}] CLI done`);
         state.setTaskCompleted();
+        // Close stdin to signal we're done sending tool results
+        cliHandle.close();
         break;
       }
     }

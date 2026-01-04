@@ -108,6 +108,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             signal?: AbortSignal;
             waitForApproval?: (toolCallId: string) => Promise<unknown>;
             getApprovalSetting?: () => Effect.Effect<"always" | "auto">;
+            /** MCP bridge socket path for custom tools */
+            mcpSocketPath?: string;
+            /** Path to MCP server JavaScript file */
+            mcpServerPath?: string;
           },
         ) =>
           Effect.gen(function* () {
@@ -278,13 +282,17 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // Get the AI provider setting to determine execution path
             const aiProvider = yield* settingsService.getAiProvider();
-            logToOutput(`[TestingAgent:${correlationId}] AI Provider: ${aiProvider}`);
+            logToOutput(
+              `[TestingAgent:${correlationId}] AI Provider: ${aiProvider}`,
+            );
 
             // Branch based on AI provider
             if (aiProvider === "claude-cli") {
               // CLI Execution Path
               // Use Claude CLI for bi-directional tool execution
-              logToOutput(`[TestingAgent:${correlationId}] Using Claude CLI execution path`);
+              logToOutput(
+                `[TestingAgent:${correlationId}] Using Claude CLI execution path`,
+              );
 
               // Build the prompt from messages
               const currentState = yield* Ref.get(agentState);
@@ -293,17 +301,44 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 .map((m) => m.content)
                 .join("\n\n");
 
-              // Execute via CLI
+              logToOutput(
+                `[TestingAgent:${correlationId}] User messages count: ${currentState.messages.filter((m) => m.role === "user").length}`,
+              );
+              logToOutput(
+                `[TestingAgent:${correlationId}] Prompt length: ${userMessages.length}`,
+              );
+
+              // Validate that we have a prompt
+              if (!userMessages || userMessages.trim().length === 0) {
+                logToOutput(
+                  `[TestingAgent:${correlationId}] ERROR: No user messages to send to CLI`,
+                );
+                return yield* Effect.fail(
+                  new Error("No user messages available for CLI execution"),
+                );
+              }
+
+              // Execute via CLI with extended thinking in plan mode
               const cliHandle = yield* claudeCliService.execute({
                 prompt: userMessages,
                 systemPrompt: systemPromptWithWorkspace,
                 signal,
+                model: "sonnet", // Use Sonnet model
+                betas:
+                  mode === "plan"
+                    ? ["interleaved-thinking-2025-05-14"]
+                    : undefined,
+                // MCP bridge config for custom tools (proposeTestPlan, etc.)
+                mcpSocketPath: options?.mcpSocketPath,
+                mcpServerPath: options?.mcpServerPath,
+                workspaceRoot,
               });
 
-              // Create tool executor with the same tools
+              // Create tool executor with the same tools and mode for permission checks
               const toolExecutor = createCliToolExecutor({
                 tools,
                 progressCallback,
+                mode,
               });
 
               // Run the CLI execution loop

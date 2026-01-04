@@ -4,8 +4,7 @@
  */
 
 import { vi } from "vitest";
-import { EventEmitter } from "events";
-import type { Socket, Server } from "net";
+import { EventEmitter } from "node:events";
 import type {
   BridgeHandlers,
   BridgeRequest,
@@ -72,7 +71,7 @@ export interface MockNetServer extends EventEmitter {
 
 export function createMockNetServer(): MockNetServer {
   const server = new EventEmitter() as MockNetServer;
-  server.listen = vi.fn().mockImplementation((path: string, callback?: () => void) => {
+  server.listen = vi.fn().mockImplementation((_path: string, callback?: () => void) => {
     if (callback) {
       setImmediate(callback);
     }

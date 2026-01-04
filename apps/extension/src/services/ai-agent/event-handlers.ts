@@ -34,6 +34,7 @@ import {
   generatePlanFilename,
 } from "./testing-agent-helpers.js";
 import { logToOutput } from "../../utils/logger.js";
+import { emit } from "./stream-event-emitter.js";
 import {
   initializeStreamingWrite,
   appendStreamingContent,
@@ -87,16 +88,7 @@ export const handleToolCallStreamingStart = (
 
       // Emit tool-call event immediately so UI shows the card
       yield* Effect.sync(() => {
-        progressCallback?.(
-          "tool-call",
-          JSON.stringify({
-            type: "tool-call",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            args: undefined, // Args not yet available
-            state: "input-streaming",
-          }),
-        );
+        emit.toolCall(progressCallback, event.toolCallId ?? "", event.toolName ?? "", undefined, "input-streaming");
       });
     }
   });
@@ -193,14 +185,7 @@ const handleProposeTestPlanDelta = (
         initializePlanStreamingWriteEffect(placeholderPath, toolCallId),
         Effect.tap(() =>
           Effect.sync(() => {
-            progressCallback?.(
-              "file-created",
-              JSON.stringify({
-                type: "file-created",
-                toolCallId,
-                filePath: placeholderPath,
-              }),
-            );
+            emit.fileCreated(progressCallback, toolCallId, placeholderPath);
           }),
         ),
         Effect.tap(() =>
@@ -216,13 +201,7 @@ const handleProposeTestPlanDelta = (
               toolCallId,
               Promise.resolve(false),
             );
-            progressCallback?.(
-              "error",
-              JSON.stringify({
-                type: "error",
-                message: `Failed to open plan file: ${error.message ?? "Unknown error"}`,
-              }),
-            );
+            emit.error(progressCallback, `Failed to open plan file: ${error.message ?? "Unknown error"}`);
           }),
         ),
       );
@@ -241,14 +220,7 @@ const handleProposeTestPlanDelta = (
             ),
             Effect.tap((newPath: string) =>
               Effect.sync(() => {
-                progressCallback?.(
-                  "file-created",
-                  JSON.stringify({
-                    type: "file-created",
-                    toolCallId,
-                    filePath: newPath,
-                  }),
-                );
+                emit.fileCreated(progressCallback, toolCallId, newPath);
               }),
             ),
             Effect.catchAll((error) =>
@@ -284,14 +256,7 @@ const handleProposeTestPlanDelta = (
           ),
           Effect.tap((newPath) =>
             Effect.sync(() => {
-              progressCallback?.(
-                "file-created",
-                JSON.stringify({
-                  type: "file-created",
-                  toolCallId,
-                  filePath: newPath,
-                }),
-              );
+              emit.fileCreated(progressCallback, toolCallId, newPath);
             }),
           ),
           Effect.catchAll((error) =>
@@ -317,16 +282,7 @@ const handleProposeTestPlanDelta = (
     // FIRST: Emit the event to the webview (always succeeds, even if filePath is empty)
     // The webview needs the content for display regardless of file creation success
     yield* Effect.sync(() => {
-      progressCallback?.(
-        "plan-content-streaming",
-        JSON.stringify({
-          type: "plan-content-streaming",
-          toolCallId,
-          content: planContentChunk,
-          isComplete: false,
-          filePath: targetPath || undefined, // Send undefined if empty string
-        }),
-      );
+      emit.planContent(progressCallback, toolCallId, planContentChunk, false, targetPath || undefined);
     });
 
     // THEN: Attempt to write to file (may fail, but event was already sent)
@@ -428,15 +384,7 @@ export const handleToolCall = (
       yield* Effect.logDebug(
         `[TestingAgent:${correlationId}] Skipping tool ${event.toolName} due to rejection cascade`,
       );
-      progressCallback?.(
-        "tool-skipped",
-        JSON.stringify({
-          type: "tool-skipped",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          reason: "Previous tool was rejected",
-        }),
-      );
+      emit.toolSkipped(progressCallback, event.toolCallId, event.toolName, "Previous tool was rejected");
       return;
     }
 
@@ -485,16 +433,7 @@ export const handleToolCall = (
     yield* emitToolProgress(event, progressCallback);
 
     // Emit event
-    progressCallback?.(
-      "tool-call",
-      JSON.stringify({
-        type: "tool-call",
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        args: event.toolArgs,
-        state: "input-available",
-      }),
-    );
+    emit.toolCall(progressCallback, event.toolCallId, event.toolName ?? "", event.toolArgs, "input-available");
   });
 
 /**
@@ -551,14 +490,7 @@ export const handleTextDelta = (
 ) =>
   Effect.sync(() => {
     if (!event.content) return;
-
-    progressCallback?.(
-      "content_streamed",
-      JSON.stringify({
-        type: "content_streamed",
-        content: event.content,
-      }),
-    );
+    emit.contentStreamed(progressCallback, event.content);
   });
 
 /**
@@ -578,13 +510,7 @@ export const handleThinking = (
     );
 
     yield* Effect.sync(() => {
-      progressCallback?.(
-        "reasoning",
-        JSON.stringify({
-          type: "reasoning",
-          content: event.content,
-        }),
-      );
+      emit.reasoning(progressCallback, event.content ?? "");
     });
   });
 
@@ -689,16 +615,7 @@ export const handleToolResult = (
         : "output-available";
 
     // Emit tool result
-    progressCallback?.(
-      "tool-result",
-      JSON.stringify({
-        type: "tool-result",
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        output: actualOutput,
-        state: resultState,
-      }),
-    );
+    emit.toolResult(progressCallback, event.toolCallId ?? "", event.toolName ?? "", actualOutput, resultState);
   });
 
 /**
@@ -765,16 +682,7 @@ const handleProposeTestPlanResult = (
 
         // Emit final plan content as complete with file path (may be empty if file creation failed)
         yield* Effect.sync(() => {
-          progressCallback?.(
-            "plan-content-streaming",
-            JSON.stringify({
-              type: "plan-content-streaming",
-              toolCallId,
-              content: planContent,
-              isComplete: true,
-              filePath: targetPath || undefined, // Send undefined if empty string
-            }),
-          );
+          emit.planContent(progressCallback, toolCallId, planContent, true, targetPath || undefined);
         });
       }
 
@@ -784,16 +692,7 @@ const handleProposeTestPlanResult = (
       // If no accumulated content (tool executed without streaming deltas),
       // emit a final event with just the filePath so frontend can display it
       yield* Effect.sync(() => {
-        progressCallback?.(
-          "plan-content-streaming",
-          JSON.stringify({
-            type: "plan-content-streaming",
-            toolCallId,
-            content: "",
-            isComplete: true,
-            filePath: targetPath,
-          }),
-        );
+        emit.planContent(progressCallback, toolCallId, "", true, targetPath);
       });
     }
   });
@@ -835,25 +734,15 @@ const trackMistakes = (
 
       // Emit diagnostic problems event if detected
       if (hasNewProblems) {
-        progressCallback?.(
-          "diagnostic-problems",
-          JSON.stringify({
-            type: "diagnostic-problems",
-            toolCallId,
-            toolName,
-          }),
-        );
+        emit.diagnosticProblems(progressCallback, toolCallId, toolName);
       }
 
       // Check if mistake limit reached
       if (mistakeCount >= MAX_CONSECUTIVE_MISTAKES) {
-        progressCallback?.(
-          "mistake-limit",
-          JSON.stringify({
-            type: "mistake-limit",
-            count: mistakeCount,
-            message: `Too many consecutive errors (${mistakeCount}). The model may need guidance or a different approach.`,
-          }),
+        emit.mistakeLimit(
+          progressCallback,
+          mistakeCount,
+          `Too many consecutive errors (${mistakeCount}). The model may need guidance or a different approach.`,
         );
 
         yield* Effect.logWarning(

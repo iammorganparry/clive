@@ -33,6 +33,19 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
       enabled: isAuthenticated && state.matches("checkingConversation"),
     });
 
+  // Fetch AI provider when checking MCP bridge
+  const { data: providerData } = rpc.config.getAiProvider.useQuery({
+    enabled: state.matches("checkingMcpBridge"),
+  });
+
+  // Fetch MCP bridge status when using Claude CLI
+  const { data: mcpStatus } = rpc.config.getMcpBridgeStatus.useQuery({
+    enabled:
+      state.matches("checkingMcpBridge") &&
+      providerData?.provider === "claude-cli",
+    refetchInterval: 500, // Poll frequently during init
+  });
+
   // Send AUTH_RESULT when auth loading completes
   useEffect(() => {
     if (!authLoading && state.matches("initializing")) {
@@ -70,6 +83,21 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     send,
   ]);
 
+  // Send MCP_BRIDGE_RESULT when MCP bridge check completes
+  useEffect(() => {
+    if (state.matches("checkingMcpBridge")) {
+      // If not using claude-cli, skip immediately
+      if (providerData && providerData.provider !== "claude-cli") {
+        send({ type: "MCP_BRIDGE_RESULT", ready: true });
+        return;
+      }
+      // If using claude-cli and bridge is ready, proceed
+      if (providerData?.provider === "claude-cli" && mcpStatus?.bridgeReady) {
+        send({ type: "MCP_BRIDGE_RESULT", ready: true });
+      }
+    }
+  }, [state, providerData, mcpStatus, send]);
+
   // React to auth state changes - send LOGOUT when isAuthenticated becomes false
   // This handles the logout flow reactively, avoiding race conditions
   useEffect(() => {
@@ -77,6 +105,7 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
       state.matches("ready") ||
       state.matches("checkingOnboarding") ||
       state.matches("checkingConversation") ||
+      state.matches("checkingMcpBridge") ||
       state.matches("needsOnboarding");
 
     if (!isAuthenticated && !authLoading && isInAuthenticatedState) {
@@ -88,7 +117,8 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
   const isInitializing =
     state.matches("initializing") ||
     state.matches("checkingOnboarding") ||
-    state.matches("checkingConversation");
+    state.matches("checkingConversation") ||
+    state.matches("checkingMcpBridge");
 
   // Get current route and params from machine context
   const route = state.context.route;

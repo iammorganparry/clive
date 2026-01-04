@@ -2,7 +2,6 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Stream, Effect, Runtime, Chunk } from "effect";
 import type { ClaudeCliEvent } from "../../claude-cli-service.js";
 import { streamFromCli, streamFromCliGenerator } from "../cli-stream-adapter.js";
-import type { AgentStreamEvent } from "../../../utils/stream-utils.js";
 
 // Mock the logger to avoid noise in tests
 vi.mock("../../../utils/logger.js", () => ({

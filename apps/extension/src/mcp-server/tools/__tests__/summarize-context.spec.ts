@@ -254,7 +254,7 @@ describe("summarizeContext MCP Tool", () => {
 
   describe("edge cases", () => {
     it("handles empty summary", async () => {
-      const result = await toolHandler({ summary: "" });
+      await toolHandler({ summary: "" });
 
       expect(mockBridge.call).toHaveBeenCalledWith(
         "summarizeContext",
