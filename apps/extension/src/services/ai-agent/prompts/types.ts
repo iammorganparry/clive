@@ -36,7 +36,7 @@ export interface BuildConfig {
   readonly mode?: "plan" | "act";
   readonly includeUserRules?: boolean;
   readonly planFilePath?: string; // Path to approved test plan file (for act mode context)
-  readonly aiProvider?: "claude-cli" | "anthropic"; // AI provider for tool name resolution
+  readonly aiProvider?: "claude-cli" | "anthropic" | "gateway"; // AI provider for tool name resolution
 }
 
 /**

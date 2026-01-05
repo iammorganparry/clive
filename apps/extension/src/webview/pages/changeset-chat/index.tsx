@@ -30,16 +30,14 @@ import {
 } from "@clive/ui/components/ai-elements/reasoning";
 import { useChangesetChat } from "./hooks/use-changeset-chat.js";
 import { ToolCallCard } from "./components/tool-call-card.js";
-import { FloatingApprovalBar } from "./components/floating-approval-bar.js";
+import { PlanApprovalCard } from "./components/plan-approval-card.js";
 import { TestPlanPreview } from "./components/test-plan-preview.js";
 import { ErrorBanner } from "./components/error-banner.js";
-import { TestSuiteQueue } from "./components/test-suite-queue.js";
-import { DevTestingToolbar } from "./components/dev-testing-toolbar.js";
+import { LoopProgressDisplay } from "./components/loop-progress-display.js";
 import { UserMessageText } from "./components/user-message-text.js";
 import { AgentStatusIndicator } from "./components/agent-status-indicator.js";
-import { parsePlan, parsePlanSections } from "./utils/parse-plan.js";
-import type { MessagePart, ChatMessage } from "../../types/chat.js";
-import type { TestSuiteQueueItem } from "./machines/changeset-chat-machine.js";
+import { parsePlan } from "./utils/parse-plan.js";
+import type { MessagePart } from "../../types/chat.js";
 
 export const ChangesetChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -71,30 +69,18 @@ export const ChangesetChatPage: React.FC = () => {
     usage,
     planContent,
     planFilePath,
-    testSuiteQueue,
-    currentSuiteId,
     agentMode,
     subscriptionId,
-    hasPendingPlanApproval,
-    isProcessingQueue,
+    approvalMode,
+    // Ralph Wiggum loop state
+    loopTodos,
+    loopProgress,
+    loopIteration,
+    loopMaxIterations,
+    loopExitReason,
     send,
     cancelStream,
   } = useChangesetChat({ files, branchName, baseBranch, mode, commitHash });
-
-  // Parse plan content if available
-  const parsedPlan = planContent ? parsePlan(planContent) : null;
-  
-  // Get suite count from parsed plan or parse sections from planContent
-  const suiteCount = useMemo(() => {
-    if (parsedPlan?.suites) {
-      return parsedPlan.suites.length;
-    }
-    if (planContent) {
-      const sections = parsePlanSections(planContent);
-      return sections.length;
-    }
-    return 0;
-  }, [parsedPlan, planContent]);
 
   // Render conversation content based on loading states
   const renderConversationContent = useCallback((): React.ReactNode => {
@@ -214,65 +200,9 @@ export const ChangesetChatPage: React.FC = () => {
     });
   }, [isLoadingHistory, isLoading, messages, files.length, planFilePath, subscriptionId]);
 
-  // Extract planContent from proposeTestPlan tool output in messages
-  const extractPlanContentFromMessages = useCallback((messages: ChatMessage[]): string | null => {
-    for (const msg of messages) {
-      for (const part of msg.parts) {
-        if (
-          part.type.startsWith("tool-") &&
-          "toolName" in part &&
-          part.toolName === "proposeTestPlan" &&
-          "input" in part &&
-          part.input &&
-          typeof part.input === "object" &&
-          "planContent" in part.input
-        ) {
-          return (part.input as { planContent?: string }).planContent || null;
-        }
-      }
-    }
-    return null;
-  }, []);
-
-  const handleApprove = () => {
-    // Try planContent from state, fallback to extracting from tool call messages
-    const content = planContent || extractPlanContentFromMessages(messages);
-    
-    console.log("[handleApprove] planContent:", planContent ? "present" : "null");
-    console.log("[handleApprove] content (with fallback):", content ? "present" : "null");
-    
-    if (!content) {
-      console.warn("[handleApprove] No plan content available");
-      return;
-    }
-
-    // Parse Implementation Plan sections from plan content
-    const sections = parsePlanSections(content);
-    
-    console.log("[handleApprove] sections parsed:", sections.length);
-
-    if (sections.length === 0) {
-      // Fallback: send message if parsing fails
-      send({
-        type: "SEND_MESSAGE",
-        content: "Please write the tests as proposed in your analysis.",
-      });
-      return;
-    }
-
-    // Convert to queue items
-    const suites: TestSuiteQueueItem[] = sections.map((section) => ({
-      id: `suite-${section.sectionNumber}`,
-      name: section.name,
-      testType: section.testType,
-      targetFilePath: section.targetFilePath,
-      sourceFiles: files, // Use the files being analyzed
-      status: "pending",
-      description: section.description,
-    }));
-
-    // Dispatch APPROVE_PLAN event to populate queue and switch to act mode
-    send({ type: "APPROVE_PLAN", suites });
+  const handleApprove = (approvalMode: "auto" | "manual" = "auto") => {
+    // Dispatch APPROVE_PLAN event with empty suites - agent will read plan from conversation context
+    send({ type: "APPROVE_PLAN", suites: [], approvalMode });
   };
 
   const handleNewChat = () => {
@@ -361,23 +291,31 @@ export const ChangesetChatPage: React.FC = () => {
             <ConversationScrollButton />
           </Conversation>
 
-          {/* Test Suite Queue - shows progress when in act mode */}
-          {agentMode === "act" && testSuiteQueue.length > 0 && (
-            <div className="border-t bg-background py-2">
-              <TestSuiteQueue 
-                queue={testSuiteQueue} 
-                currentSuiteId={currentSuiteId}
-                onSkipSuite={(suiteId) => send({ type: "SKIP_SUITE", suiteId })}
+          {/* Loop Progress Display - shows progress when in act mode */}
+          {agentMode === "act" && loopTodos.length > 0 && (
+            <div className="border-t bg-background">
+              <LoopProgressDisplay
+                todos={loopTodos}
+                progress={loopProgress}
+                iteration={loopIteration}
+                maxIterations={loopMaxIterations}
+                exitReason={loopExitReason}
               />
             </div>
           )}
 
-          {/* Floating Approval Bar - only show when there's a test proposal */}
-          <FloatingApprovalBar
-            isVisible={hasCompletedAnalysis && !isLoading && hasPendingPlanApproval && agentMode === "plan"}
-            onApprove={handleApprove}
-            suiteCount={suiteCount}
-          />
+          {/* Plan Approval Card - show when agent completes in plan mode with plan content */}
+          {hasCompletedAnalysis && !isLoading && agentMode === "plan" && approvalMode === null && planContent && (
+            <div className="border-t bg-background p-3">
+              <PlanApprovalCard
+                isStreaming={false}
+                onApprove={handleApprove}
+                onReject={(feedback) => {
+                  send({ type: "SEND_MESSAGE", content: feedback });
+                }}
+              />
+            </div>
+          )}
 
           {/* Input Area */}
           <div className="border-t bg-background">
@@ -388,7 +326,7 @@ export const ChangesetChatPage: React.FC = () => {
                     ? "Type your feedback or questions..."
                     : "Chat will be enabled after analysis completes..."
                 }
-                disabled={(!hasCompletedAnalysis && !isProcessingQueue) || isLoading}
+                disabled={!hasCompletedAnalysis || isLoading}
               />
               <PromptInputFooter>
                 <PromptInputContext
@@ -422,7 +360,7 @@ export const ChangesetChatPage: React.FC = () => {
         </div>
       </div>
       {/* Dev Testing Toolbar - only in development */}
-      <DevTestingToolbar send={send} />
+      {/* <DevTestingToolbar send={send} /> */}
     </PromptInputProvider>
   );
 };

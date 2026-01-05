@@ -1,5 +1,5 @@
 import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
-import { type LanguageModel, streamText } from "ai";
+import { type LanguageModel, type ToolSet, streamText } from "ai";
 import { Data, Effect, HashMap, Match, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
 import { VSCodeService } from "../vs-code.js";
@@ -15,7 +15,20 @@ import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { SettingsService } from "../settings-service.js";
 import { ClaudeCliService } from "../claude-cli-service.js";
 import { createCliToolExecutor } from "./cli-tool-executor.js";
-import { runCliExecutionLoop } from "./cli-execution-loop.js";
+import { runCliExecutionLoop, runRalphWiggumCliLoop } from "./cli-execution-loop.js";
+import {
+  createLoopState,
+  createEmptyLoopState,
+  shouldContinueLoop,
+  getExitReason,
+  incrementIteration,
+  getProgressSummary,
+  buildIterationPrompt,
+  type LoopState,
+  type TestSuiteInfo,
+} from "./loop-state.js";
+import { emit } from "./stream-event-emitter.js";
+import type { TodoDisplayItem } from "./stream-events.js";
 import { SummaryService } from "./summary-service.js";
 import { emitAgentError } from "./agent-error-utils.js";
 import { CompletionDetector } from "./completion-detector.js";
@@ -112,6 +125,10 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
             mcpSocketPath?: string;
             /** Path to MCP server JavaScript file */
             mcpServerPath?: string;
+            /** Test suites for Ralph Wiggum loop (act mode) */
+            testSuites?: TestSuiteInfo[];
+            /** Maximum iterations for Ralph Wiggum loop */
+            maxIterations?: number;
           },
         ) =>
           Effect.gen(function* () {
@@ -321,18 +338,6 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 );
               }
 
-              // Execute via CLI
-              const cliHandle = yield* claudeCliService.execute({
-                prompt: userMessages,
-                systemPrompt: systemPromptWithWorkspace,
-                signal,
-                model: "sonnet", // Use Sonnet model
-                // MCP bridge config for custom tools (proposeTestPlan, etc.)
-                mcpSocketPath: options?.mcpSocketPath,
-                mcpServerPath: options?.mcpServerPath,
-                workspaceRoot,
-              });
-
               // Create tool executor with the same tools and mode for permission checks
               const toolExecutor = createCliToolExecutor({
                 tools,
@@ -341,13 +346,73 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
                 workspaceRoot,
               });
 
-              // Run the CLI execution loop
+              // Act mode with Ralph Wiggum loop
+              if (mode === "act") {
+                logToOutput(
+                  `[TestingAgent:${correlationId}] Using Ralph Wiggum loop for act mode`,
+                );
+
+                // Create loop state from test suites
+                const loopState = options?.testSuites
+                  ? createLoopState(options.testSuites, options?.maxIterations)
+                  : createEmptyLoopState();
+                const loopStateRef = yield* Ref.make(loopState);
+
+                // Run Ralph Wiggum loop
+                const cliResult = yield* runRalphWiggumCliLoop({
+                  loopStateRef,
+                  claudeCliService,
+                  cliOptions: {
+                    systemPrompt: systemPromptWithWorkspace,
+                    model: "sonnet",
+                    mcpSocketPath: options?.mcpSocketPath,
+                    mcpServerPath: options?.mcpServerPath,
+                    workspaceRoot,
+                  },
+                  toolExecutor,
+                  progressCallback,
+                  signal,
+                  correlationId,
+                  workspaceRoot,
+                  planFilePath,
+                });
+
+                const totalDuration = Date.now() - startTime;
+                const finalAgentState = yield* Ref.get(agentState);
+                const finalLoopState = yield* Ref.get(loopStateRef);
+
+                yield* Effect.logDebug(
+                  `[TestingAgent:${correlationId}] Ralph Wiggum loop completed in ${totalDuration}ms. ` +
+                    `Iterations: ${finalLoopState.iteration}, All tests passed: ${finalLoopState.allTestsPassed}`,
+                );
+
+                return {
+                  executions: finalAgentState.executions,
+                  response: cliResult.response,
+                  taskCompleted: cliResult.taskCompleted,
+                  toolRejected: finalAgentState.didRejectTool,
+                };
+              }
+
+              // Plan mode: Single iteration execution
+              const cliHandle = yield* claudeCliService.execute({
+                prompt: userMessages,
+                systemPrompt: systemPromptWithWorkspace,
+                signal,
+                model: "sonnet",
+                mcpSocketPath: options?.mcpSocketPath,
+                mcpServerPath: options?.mcpServerPath,
+                workspaceRoot,
+              });
+
+              // Run single CLI execution loop
               const cliResult = yield* runCliExecutionLoop({
                 cliHandle,
                 toolExecutor,
                 progressCallback,
                 signal,
                 correlationId,
+                workspaceRoot,
               });
 
               const totalDuration = Date.now() - startTime;
@@ -367,6 +432,85 @@ export class TestingAgent extends Effect.Service<TestingAgent>()(
 
             // API Execution Path (default)
             // Use Anthropic API via Vercel AI SDK
+
+            // Act mode with Ralph Wiggum loop
+            if (mode === "act") {
+              logToOutput(
+                `[TestingAgent:${correlationId}] Using Ralph Wiggum API loop for act mode`,
+              );
+
+              // Create loop state from test suites
+              const loopState = options?.testSuites
+                ? createLoopState(options.testSuites, options?.maxIterations)
+                : createEmptyLoopState();
+              const loopStateRef = yield* Ref.make(loopState);
+
+              // Create model for streaming
+              const model = anthropic(AIModels.testing.medium);
+
+              // Build tools with loop state ref (enables TodoWrite tool)
+              const toolsWithLoop = yield* createToolSet({
+                mode,
+                budget,
+                firecrawlEnabled: !!firecrawlApiKey,
+                knowledgeFileService,
+                summaryService,
+                summaryModel,
+                getMessages: Ref.get(agentState).pipe(
+                  Effect.map((state) => state.messages),
+                ),
+                setMessages: (messages: Message[]) =>
+                  setMessages(agentState, messages),
+                getKnowledgeContext: Effect.sync(() =>
+                  knowledgeContext.formatForPrompt(),
+                ),
+                progressCallback,
+                bashStreamingCallback: createBashStreamingCallback(
+                  streamingState,
+                  progressCallback,
+                ),
+                fileStreamingCallback: createFileStreamingCallback(
+                  streamingState,
+                  progressCallback,
+                ),
+                onKnowledgeRetrieved: (results) => {
+                  knowledgeContext.addFromSearchResults(results);
+                },
+                waitForApproval,
+                getApprovalSetting,
+                signal,
+                loopStateRef, // Enable TodoWrite tool
+              });
+
+              // Run Ralph Wiggum loop
+              const loopResult = yield* runApiExecutionLoop({
+                loopStateRef,
+                agentState,
+                streamingState,
+                model,
+                tools: toolsWithLoop,
+                systemPrompt: systemPromptWithWorkspace,
+                signal,
+                progressCallback,
+                correlationId,
+                workspaceRoot,
+                planFilePath,
+                completionDetector,
+                emitError,
+              });
+
+              const totalDuration = Date.now() - startTime;
+              const finalLoopState = yield* Ref.get(loopStateRef);
+
+              yield* Effect.logDebug(
+                `[TestingAgent:${correlationId}] Ralph Wiggum API loop completed in ${totalDuration}ms. ` +
+                  `Iterations: ${finalLoopState.iteration}, All tests passed: ${finalLoopState.allTestsPassed}`,
+              );
+
+              return loopResult;
+            }
+
+            // Plan mode: Single iteration execution
 
             // Create completion state for detecting [COMPLETE] delimiter
             const completionStateRef = yield* completionDetector.createState();
@@ -827,6 +971,342 @@ const emitUsage = (
     });
 
     progressCallback?.("usage", stringifyEvent(usageEvent));
+  });
+
+/**
+ * Convert LoopState todos to TodoDisplayItem for UI
+ */
+const todosToDisplayItems = (state: LoopState): TodoDisplayItem[] =>
+  state.todos.map((t) => ({
+    content: t.content,
+    status: t.status,
+    activeForm: t.activeForm,
+  }));
+
+/**
+ * Options for running the API execution loop
+ */
+interface ApiExecutionLoopOptions {
+  loopStateRef: Ref.Ref<LoopState>;
+  agentState: Ref.Ref<AgentState>;
+  streamingState: Ref.Ref<StreamingState>;
+  model: ReturnType<ReturnType<typeof createAnthropicProvider>>;
+  tools: ToolSet;
+  systemPrompt: string;
+  signal?: AbortSignal;
+  progressCallback?: ProgressCallback;
+  correlationId: string;
+  workspaceRoot: string;
+  planFilePath?: string;
+  completionDetector: CompletionDetector;
+  emitError: (error: unknown) => void;
+}
+
+/**
+ * Ralph Wiggum loop for API path
+ *
+ * Continuously runs API iterations until all tests pass or safety limits reached.
+ * Each iteration:
+ * 1. Resets messages to a fresh iteration prompt
+ * 2. Runs streamText for single iteration
+ * 3. Checks completion status and updates loop state
+ * 4. Repeats if needed
+ */
+const runApiExecutionLoop = (
+  options: ApiExecutionLoopOptions,
+): Effect.Effect<
+  {
+    executions: Array<{ testId: string; filePath?: string }>;
+    response: string;
+    taskCompleted: boolean;
+    toolRejected: boolean;
+  },
+  TestingAgentError,
+  VSCodeService
+> =>
+  Effect.gen(function* () {
+    const {
+      loopStateRef,
+      agentState,
+      streamingState,
+      model,
+      tools,
+      systemPrompt,
+      signal,
+      progressCallback,
+      correlationId,
+      workspaceRoot,
+      planFilePath,
+      completionDetector,
+      emitError,
+    } = options;
+
+    let accumulatedResponse = "";
+
+    logToOutput(
+      `[RunApiExecutionLoop:${correlationId}] Starting Ralph Wiggum API loop`,
+    );
+
+    // Main loop
+    while (true) {
+      // Check abort signal
+      if (signal?.aborted) {
+        logToOutput(
+          `[RunApiExecutionLoop:${correlationId}] Aborted by signal`,
+        );
+        yield* Ref.update(loopStateRef, (s) => ({
+          ...s,
+          exitReason: "cancelled" as const,
+        }));
+        break;
+      }
+
+      // Get current state
+      const state = yield* Ref.get(loopStateRef);
+
+      // Check if we should continue
+      if (!shouldContinueLoop(state)) {
+        const reason = getExitReason(state);
+        logToOutput(
+          `[RunApiExecutionLoop:${correlationId}] Loop exit: ${reason}`,
+        );
+
+        // Emit loop complete event
+        const progress = getProgressSummary(state);
+        emit.loopComplete(
+          progressCallback,
+          reason ?? "complete",
+          state.iteration,
+          todosToDisplayItems(state),
+          progress,
+        );
+        break;
+      }
+
+      // Increment iteration
+      yield* Ref.update(loopStateRef, incrementIteration);
+      const newState = yield* Ref.get(loopStateRef);
+
+      logToOutput(
+        `[RunApiExecutionLoop:${correlationId}] Starting iteration ${newState.iteration}/${newState.maxIterations}`,
+      );
+
+      // Emit iteration start event
+      emit.loopIterationStart(
+        progressCallback,
+        newState.iteration,
+        newState.maxIterations,
+      );
+
+      // Build iteration prompt - agent sees filesystem state
+      const iterationPrompt = buildIterationPrompt(
+        newState,
+        workspaceRoot,
+        planFilePath,
+      );
+
+      // Reset agent messages to just the iteration prompt
+      yield* setMessages(agentState, [
+        { role: "user" as const, content: iterationPrompt },
+      ]);
+
+      // Create completion state for this iteration
+      const completionStateRef = yield* completionDetector.createState();
+      const stopWhenComplete =
+        completionDetector.createStopCondition(completionStateRef);
+
+      // Build messages for streaming
+      const iterationMessages = [
+        { role: "system" as const, content: systemPrompt },
+        { role: "user" as const, content: iterationPrompt },
+      ];
+
+      // Apply cache control
+      const cachedMessages = addCacheControlToMessages(
+        iterationMessages,
+        model,
+      );
+
+      // Run single iteration
+      const streamResult = yield* Effect.try({
+        try: () =>
+          streamText({
+            model,
+            tools,
+            maxRetries: 0,
+            stopWhen: stopWhenComplete,
+            abortSignal: signal,
+            messages: cachedMessages,
+            providerOptions: {
+              anthropic: {}, // No thinking in act mode
+            },
+          }),
+        catch: (error) => {
+          emitError(error);
+          return new TestingAgentError({
+            message:
+              error instanceof Error ? error.message : "Unknown error",
+            cause: error,
+          });
+        },
+      });
+
+      // Process stream
+      const eventStream = streamFromAI(streamResult);
+      yield* eventStream.pipe(
+        Stream.mapError((error) => {
+          emitError(error);
+          return new TestingAgentError({
+            message:
+              error instanceof Error ? error.message : "Unknown error",
+            cause: error,
+          });
+        }),
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            if (signal?.aborted) {
+              return yield* Effect.fail(
+                new TestingAgentError({
+                  message: "Operation cancelled by user",
+                }),
+              );
+            }
+
+            // Route events to handlers (simplified - only key events)
+            yield* Match.value(event).pipe(
+              Match.when({ type: "tool-call-streaming-start" }, (e) =>
+                handleToolCallStreamingStart(
+                  e,
+                  streamingState,
+                  progressCallback,
+                  correlationId,
+                ),
+              ),
+              Match.when({ type: "tool-call-delta" }, (e) =>
+                handleToolCallDelta(
+                  e,
+                  streamingState,
+                  progressCallback,
+                  correlationId,
+                ),
+              ),
+              Match.when({ type: "tool-call" }, (e) =>
+                handleToolCall(
+                  e,
+                  agentState,
+                  streamingState,
+                  progressCallback,
+                  correlationId,
+                  undefined, // No approval in loop mode
+                  undefined,
+                ),
+              ),
+              Match.when(
+                (e) => e.type === "text-delta" && !!e.content,
+                (e) => handleTextDelta(e, progressCallback),
+              ),
+              Match.when({ type: "tool-result" }, (e) =>
+                handleToolResult(
+                  e,
+                  agentState,
+                  streamingState,
+                  progressCallback,
+                  correlationId,
+                ),
+              ),
+              Match.orElse(() => Effect.void),
+            );
+          }),
+        ),
+      );
+
+      // Get iteration response
+      const result = yield* Effect.tryPromise({
+        try: async () => await streamResult,
+        catch: (error) => {
+          emitError(error);
+          return new TestingAgentError({
+            message:
+              error instanceof Error ? error.message : "Unknown error",
+            cause: error,
+          });
+        },
+      });
+
+      const responseText = yield* Effect.tryPromise({
+        try: async () => (await result.text) || "",
+        catch: () =>
+          new TestingAgentError({
+            message: "Failed to get response text",
+          }),
+      }).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+      accumulatedResponse += completionDetector.stripDelimiter(responseText);
+
+      // Check progress
+      const updatedState = yield* Ref.get(loopStateRef);
+      const beforeProgress = getProgressSummary(newState);
+      const afterProgress = getProgressSummary(updatedState);
+
+      const madeProgress = afterProgress.completed > beforeProgress.completed;
+      const iterAgentState = yield* Ref.get(agentState);
+
+      if (madeProgress || iterAgentState.taskCompleted) {
+        // Reset failure counter on progress
+        yield* Ref.update(loopStateRef, (s) => ({
+          ...s,
+          consecutiveFailures: 0,
+        }));
+        logToOutput(
+          `[RunApiExecutionLoop:${correlationId}] Iteration ${newState.iteration} made progress`,
+        );
+      } else {
+        // Record failure if no progress
+        yield* Ref.update(loopStateRef, (s) => ({
+          ...s,
+          consecutiveFailures: s.consecutiveFailures + 1,
+        }));
+        logToOutput(
+          `[RunApiExecutionLoop:${correlationId}] Iteration ${newState.iteration} made no progress`,
+        );
+      }
+
+      // Emit iteration complete event
+      const finalIterState = yield* Ref.get(loopStateRef);
+      emit.loopIterationComplete(
+        progressCallback,
+        finalIterState.iteration,
+        todosToDisplayItems(finalIterState),
+        getProgressSummary(finalIterState),
+      );
+
+      // If all tests passed, exit
+      if (finalIterState.allTestsPassed) {
+        yield* Ref.update(loopStateRef, (s) => ({
+          ...s,
+          exitReason: "complete" as const,
+        }));
+        logToOutput(
+          `[RunApiExecutionLoop:${correlationId}] All tests passed, exiting`,
+        );
+      }
+    }
+
+    // Get final states
+    const finalLoopState = yield* Ref.get(loopStateRef);
+    const finalAgentState = yield* Ref.get(agentState);
+
+    logToOutput(
+      `[RunApiExecutionLoop:${correlationId}] Loop completed after ${finalLoopState.iteration} iterations. ` +
+        `Exit reason: ${finalLoopState.exitReason}. All tests passed: ${finalLoopState.allTestsPassed}`,
+    );
+
+    return {
+      executions: finalAgentState.executions,
+      response: accumulatedResponse,
+      taskCompleted: finalLoopState.allTestsPassed,
+      toolRejected: finalAgentState.didRejectTool,
+    };
   });
 
 /**

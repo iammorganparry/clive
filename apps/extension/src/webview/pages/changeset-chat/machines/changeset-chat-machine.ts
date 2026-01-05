@@ -124,6 +124,25 @@ export interface TestSuiteQueueItem {
   description?: string; // From plan section
 }
 
+/**
+ * Todo item for Ralph Wiggum loop display
+ */
+export interface LoopTodoItem {
+  content: string;
+  status: string;
+  activeForm: string;
+}
+
+/**
+ * Loop progress summary
+ */
+export interface LoopProgress {
+  completed: number;
+  pending: number;
+  total: number;
+  percentComplete: number;
+}
+
 export interface ChangesetChatContext {
   files: string[];
   branchName: string;
@@ -143,12 +162,16 @@ export interface ChangesetChatContext {
   testExecutions: TestFileExecution[]; // Accumulated test execution results
   accumulatedTestOutput: Map<string, string>; // Map of toolCallId -> accumulated output for streaming
   accumulatedFileContent: Map<string, string>; // Map of toolCallId -> accumulated file content for streaming
-  testSuiteQueue: TestSuiteQueueItem[]; // Queue of test suites to process
-  currentSuiteId: string | null; // ID of currently processing suite
+  testSuiteQueue: TestSuiteQueueItem[]; // Test suites for display (agent handles iteration)
   agentMode: "plan" | "act"; // Current agent mode
   subscriptionId: string | null; // Active subscription ID for tool approvals
-  hasPendingPlanApproval: boolean; // True when proposeTestPlan tool completes successfully
-  isProcessingQueue: boolean; // True when actively processing suites in act mode
+  approvalMode: "auto" | "manual" | null; // Approval mode selected by user (null = not yet approved)
+  // Ralph Wiggum loop state (for display)
+  loopIteration: number; // Current iteration number
+  loopMaxIterations: number; // Maximum iterations allowed
+  loopTodos: LoopTodoItem[]; // Agent-reported todos
+  loopProgress: LoopProgress | null; // Progress summary
+  loopExitReason: string | null; // Why loop exited
 }
 
 interface BackendHistoryMessage {
@@ -178,7 +201,7 @@ export type ChangesetChatEvent =
         | "file-output-streaming"
         | "reasoning"
         | "usage"
-        | "plan-content-streaming";
+        | "plan-content";
       content?: string;
       toolEvent?: ToolEvent;
       toolResult?: { toolCallId: string; updates: Partial<ToolEvent> };
@@ -193,13 +216,9 @@ export type ChangesetChatEvent =
         content: string;
         isComplete: boolean;
       };
-      streamingPlanContent?: {
-        toolCallId: string;
-        content: string;
-        isComplete: boolean;
-        filePath?: string;
-      };
       usage?: LanguageModelUsage;
+      planContent?: string;
+      planFilePath?: string;
     }
   | { type: "RESPONSE_COMPLETE"; taskCompleted?: boolean }
   | { type: "RESPONSE_ERROR"; error: unknown }
@@ -208,21 +227,32 @@ export type ChangesetChatEvent =
   | { type: "SEND_MESSAGE"; content: string }
   | { type: "CANCEL_STREAM" }
   | { type: "CLOSE_TEST_DRAWER" }
-  | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[] }
-  | { type: "START_NEXT_SUITE" }
-  | { type: "SKIP_SUITE"; suiteId: string }
-  | {
-      type: "MARK_SUITE_COMPLETED";
-      suiteId: string;
-      results: TestFileExecution;
-    }
-  | {
-      type: "MARK_SUITE_FAILED";
-      suiteId: string;
-      error: string;
-      results?: TestFileExecution;
-    }
+  | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[]; approvalMode: "auto" | "manual" }
   | { type: "SET_SUBSCRIPTION_ID"; subscriptionId: string | null }
+  // Ralph Wiggum loop events (from stream-events.ts)
+  | {
+      type: "LOOP_ITERATION_START";
+      iteration: number;
+      maxIterations: number;
+    }
+  | {
+      type: "LOOP_ITERATION_COMPLETE";
+      iteration: number;
+      todos: LoopTodoItem[];
+      progress: LoopProgress;
+    }
+  | {
+      type: "LOOP_COMPLETE";
+      reason: "complete" | "max_iterations" | "max_time" | "error" | "cancelled";
+      iteration: number;
+      todos: LoopTodoItem[];
+      progress: LoopProgress;
+    }
+  | {
+      type: "TODOS_UPDATED";
+      todos: LoopTodoItem[];
+      progress: LoopProgress;
+    }
   | {
       type: "DEV_INJECT_STATE";
       updates: Partial<ChangesetChatContext>;
@@ -433,13 +463,7 @@ export const changesetChatMachine = setup({
       const toolResult = event.toolResult;
       const toolCallId = toolResult.toolCallId;
 
-      // Find the tool event to check tool name
-      const toolEvent = context.toolEvents.find(
-        (t) => t.toolCallId === toolCallId,
-      );
-
-      // Detect successful proposeTestPlan completion
-      const updates: Partial<ChangesetChatContext> = {
+      return {
         toolEvents: context.toolEvents.map((t) =>
           t.toolCallId === toolCallId
             ? {
@@ -450,17 +474,6 @@ export const changesetChatMachine = setup({
             : t,
         ),
       };
-
-      // Set hasPendingPlanApproval when proposeTestPlan succeeds
-      if (
-        toolEvent?.toolName === "proposeTestPlan" &&
-        toolResult.updates.state === "output-available" &&
-        !toolResult.updates.errorText
-      ) {
-        updates.hasPendingPlanApproval = true;
-      }
-
-      return updates;
     }),
     updateScratchpadTodos: assign(({ context, event }) => {
       // Check for scratchpad content from bashExecute tool results
@@ -563,7 +576,6 @@ export const changesetChatMachine = setup({
         const updates: Partial<ChangesetChatContext> = {};
 
         // Parse for scratchpad TODOs only (checkboxes in markdown)
-        // Plan content is now extracted exclusively from proposeTestPlan tool via updatePlanContent action
         try {
           const todos = parseScratchpad(textToCheck);
           // Only update if we found actual TODOs
@@ -638,27 +650,10 @@ export const changesetChatMachine = setup({
               updatedExecutions.push(updated);
             }
 
-            // Link testExecutions to testSuiteQueue during streaming
-            const updates: Partial<ChangesetChatContext> = {
+            return {
               testExecutions: updatedExecutions,
               accumulatedTestOutput: updatedAccumulated,
             };
-
-            // Update testSuiteQueue if current suite matches
-            if (context.currentSuiteId) {
-              const currentSuite = context.testSuiteQueue.find(
-                (s) => s.id === context.currentSuiteId,
-              );
-              if (currentSuite && currentSuite.targetFilePath === filePath) {
-                updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
-                  suite.id === context.currentSuiteId
-                    ? { ...suite, testResults: updated }
-                    : suite,
-                );
-              }
-            }
-
-            return updates;
           }
         }
       }
@@ -722,29 +717,10 @@ export const changesetChatMachine = setup({
             const updatedAccumulated = new Map(context.accumulatedTestOutput);
             updatedAccumulated.delete(toolCallId);
 
-            // Update testExecutions for tracking
-            const updates: Partial<ChangesetChatContext> = {
+            return {
               testExecutions: updatedExecutions,
               accumulatedTestOutput: updatedAccumulated,
             };
-
-            // Update testResults on current suite if it matches, but do NOT change status or advance
-            // Suite completion happens on RESPONSE_COMPLETE via completeSuiteOnStreamEnd action
-            if (context.currentSuiteId) {
-              const currentSuite = context.testSuiteQueue.find(
-                (s) => s.id === context.currentSuiteId,
-              );
-              if (currentSuite && currentSuite.targetFilePath === filePath) {
-                // Only update testResults, keep status as in_progress
-                updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
-                  suite.id === context.currentSuiteId
-                    ? { ...suite, testResults: updated }
-                    : suite,
-                );
-              }
-            }
-
-            return updates;
           }
         }
       }
@@ -945,35 +921,12 @@ export const changesetChatMachine = setup({
       };
     }),
     updatePlanContent: assign(({ event }) => {
-      if (
-        event.type !== "RESPONSE_CHUNK" ||
-        event.chunkType !== "plan-content-streaming"
-      )
+      if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "plan-content")
         return {};
-      if (!event.streamingPlanContent) return {};
-      const { content, isComplete, filePath } = event.streamingPlanContent;
-
-      // Accumulate content during streaming, replace only when complete
-      const updates: Partial<ChangesetChatContext> = {};
-
-      if (isComplete) {
-        // Final content - use it as-is
-        updates.planContent = content || null;
-      } else {
-        // Streaming - the content contains the full accumulated content so far
-        // (extracted from the full accumulated JSON args text in testing-agent.ts)
-        // Only update if we have new content
-        if (content) {
-          updates.planContent = content;
-        }
-      }
-
-      // Capture file path if provided
-      if (filePath) {
-        updates.planFilePath = filePath;
-      }
-
-      return updates;
+      return {
+        planContent: event.planContent ?? null,
+        planFilePath: event.planFilePath ?? null,
+      };
     }),
     updateFileStreamingContent: assign(({ context, event }) => {
       if (
@@ -1038,171 +991,67 @@ export const changesetChatMachine = setup({
       testExecutions: () => [],
       accumulatedFileContent: () => new Map(),
       testSuiteQueue: () => [],
-      currentSuiteId: () => null,
       agentMode: () => "plan",
-      hasPendingPlanApproval: () => false,
-      isProcessingQueue: () => false,
+      approvalMode: () => null,
+      // Ralph Wiggum loop state
+      loopIteration: () => 0,
+      loopMaxIterations: () => 10,
+      loopTodos: () => [],
+      loopProgress: () => null,
+      loopExitReason: () => null,
     }),
     approvePlan: assign(({ event }) => {
       if (event.type !== "APPROVE_PLAN") return {};
-      const suites = event.suites;
-      const firstSuite = suites.length > 0 ? suites[0] : null;
+      const { suites, approvalMode } = event;
       return {
-        currentSuiteId: firstSuite?.id || null,
         agentMode: "act" as const,
-        hasPendingPlanApproval: false, // Reset flag after approval
-        isProcessingQueue: suites.length > 0, // Start processing queue if we have suites
-        // Mark first suite as in_progress, remaining as pending
-        testSuiteQueue: suites.map((suite, index) =>
-          index === 0
-            ? { ...suite, status: "in_progress" as const }
-            : { ...suite, status: "pending" as const },
-        ),
+        approvalMode, // Store the approval mode selected by user
+        // Store suites for display - agent handles iteration internally
+        testSuiteQueue: suites.map((suite) => ({
+          ...suite,
+          status: "pending" as const,
+        })),
       };
     }),
-    startNextSuite: assign(({ context }) => {
-      const nextSuite = context.testSuiteQueue.find(
-        (suite) => suite.status === "pending",
-      );
-      if (!nextSuite) {
-        // No more pending suites - stop processing queue
-        return {
-          isProcessingQueue: false,
-        };
-      }
+    // Ralph Wiggum loop event handlers
+    handleLoopIterationStart: assign(({ event }) => {
+      if (event.type !== "LOOP_ITERATION_START") return {};
       return {
-        currentSuiteId: nextSuite.id,
-        isProcessingQueue: true, // Continue processing queue
-        testSuiteQueue: context.testSuiteQueue.map((suite) =>
-          suite.id === nextSuite.id
-            ? { ...suite, status: "in_progress" as const }
-            : suite,
-        ),
+        loopIteration: event.iteration,
+        loopMaxIterations: event.maxIterations,
       };
     }),
-    markSuiteCompleted: assign(({ context, event }) => {
-      if (event.type !== "MARK_SUITE_COMPLETED") return {};
-      const { suiteId, results } = event;
+    handleLoopIterationComplete: assign(({ event }) => {
+      if (event.type !== "LOOP_ITERATION_COMPLETE") return {};
       return {
-        testSuiteQueue: context.testSuiteQueue.map((suite) =>
-          suite.id === suiteId
-            ? {
-                ...suite,
-                status: "completed" as const,
-                testResults: results,
-              }
-            : suite,
-        ),
-        currentSuiteId: null,
+        loopIteration: event.iteration,
+        loopTodos: event.todos,
+        loopProgress: event.progress,
       };
     }),
-    markSuiteFailed: assign(({ context, event }) => {
-      if (event.type !== "MARK_SUITE_FAILED") return {};
-      const { suiteId, results } = event;
+    handleLoopComplete: assign(({ event }) => {
+      if (event.type !== "LOOP_COMPLETE") return {};
       return {
-        testSuiteQueue: context.testSuiteQueue.map((suite) =>
-          suite.id === suiteId
-            ? {
-                ...suite,
-                status: "failed" as const,
-                ...(results && { testResults: results }),
-              }
-            : suite,
-        ),
-        currentSuiteId: null,
-      };
-    }),
-    skipSuite: assign(({ context, event }) => {
-      if (event.type !== "SKIP_SUITE") return {};
-      const { suiteId } = event;
-
-      // Mark suite as skipped
-      let updatedQueue = context.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      // Find next pending suite
-      const nextPendingSuite = updatedQueue.find((s) => s.status === "pending");
-
-      if (nextPendingSuite) {
-        // Mark next pending suite as in_progress
-        updatedQueue = updatedQueue.map((suite) =>
-          suite.id === nextPendingSuite.id
-            ? { ...suite, status: "in_progress" as const }
-            : suite,
-        );
-        return {
-          testSuiteQueue: updatedQueue,
-          currentSuiteId: nextPendingSuite.id,
-        };
-      }
-
-      // No more pending suites
-      return {
-        testSuiteQueue: updatedQueue,
-        currentSuiteId: null,
-      };
-    }),
-    cancelStream: assign(({ context }) => {
-      const updates: Partial<ChangesetChatContext> = {
+        loopIteration: event.iteration,
+        loopTodos: event.todos,
+        loopProgress: event.progress,
+        loopExitReason: event.reason,
         hasCompletedAnalysis: true, // Re-enable input
-        isReasoningStreaming: false,
-        isTextStreaming: false,
-        currentSuiteId: null,
-        isProcessingQueue: false,
       };
-
-      // Mark current suite as cancelled if one is in progress
-      if (context.currentSuiteId) {
-        updates.testSuiteQueue = context.testSuiteQueue.map((suite) =>
-          suite.id === context.currentSuiteId
-            ? { ...suite, status: "cancelled" as const }
-            : suite,
-        );
-      }
-
-      return updates;
     }),
-    completeSuiteOnStreamEnd: assign(({ context, event }) => {
-      // Always mark suite complete when stream ends (work on that suite is done)
-      if (event.type !== "RESPONSE_COMPLETE") {
-        return {};
-      }
-
-      // Only run if we're in act mode with a current suite
-      if (context.agentMode !== "act" || !context.currentSuiteId) {
-        return {};
-      }
-
-      const currentSuite = context.testSuiteQueue.find(
-        (s) => s.id === context.currentSuiteId,
-      );
-
-      if (!currentSuite) {
-        return {};
-      }
-
-      // Determine suite status based on final test results
-      let suiteStatus: "completed" | "failed" = "completed";
-      if (currentSuite.testResults) {
-        const summary = currentSuite.testResults.summary;
-        if (summary && summary.failed > 0) {
-          suiteStatus = "failed";
-        }
-      }
-
-      // Mark current suite as completed/failed
-      const updatedQueue = context.testSuiteQueue.map((suite) =>
-        suite.id === context.currentSuiteId
-          ? { ...suite, status: suiteStatus }
-          : suite,
-      );
-
+    handleTodosUpdated: assign(({ event }) => {
+      if (event.type !== "TODOS_UPDATED") return {};
       return {
-        testSuiteQueue: updatedQueue,
-        currentSuiteId: null, // Clear current suite ID
+        loopTodos: event.todos,
+        loopProgress: event.progress,
       };
     }),
+    cancelStream: assign(() => ({
+      hasCompletedAnalysis: true, // Re-enable input
+      isReasoningStreaming: false,
+      isTextStreaming: false,
+      loopExitReason: "cancelled",
+    })),
     devInjectState: assign(({ context, event }) => {
       if (event.type !== "DEV_INJECT_STATE") return {};
       // Merge the updates into the context
@@ -1235,11 +1084,15 @@ export const changesetChatMachine = setup({
     accumulatedTestOutput: new Map(),
     accumulatedFileContent: new Map(),
     testSuiteQueue: [],
-    currentSuiteId: null,
     agentMode: "plan" as const,
     subscriptionId: null,
-    hasPendingPlanApproval: false,
-    isProcessingQueue: false,
+    approvalMode: null,
+    // Ralph Wiggum loop state
+    loopIteration: 0,
+    loopMaxIterations: 10,
+    loopTodos: [],
+    loopProgress: null,
+    loopExitReason: null,
   }),
   states: {
     idle: {
@@ -1281,10 +1134,6 @@ export const changesetChatMachine = setup({
           actions: ["approvePlan"],
           target: "analyzing",
         },
-        SKIP_SUITE: {
-          actions: ["skipSuite"],
-          target: "analyzing",
-        },
         CANCEL_STREAM: {
           actions: [
             "cancelStream",
@@ -1317,29 +1166,14 @@ export const changesetChatMachine = setup({
             "updatePlanContent",
           ],
         },
-        RESPONSE_COMPLETE: [
-          {
-            guard: ({ context }) => {
-              // In act mode with pending suites - advance queue, go to idle
-              return (
-                context.agentMode === "act" &&
-                context.isProcessingQueue &&
-                context.testSuiteQueue.some((s) => s.status === "pending")
-              );
-            },
-            actions: ["completeSuiteOnStreamEnd", "startNextSuite"],
-            target: "idle", // Go to idle, not analyzing - hook will start next subscription
-          },
-          {
-            target: "idle",
-            actions: [
-              "completeSuiteOnStreamEnd",
-              "clearStreamingContent",
-              "stopReasoningStreaming",
-              "markAnalysisComplete",
-            ],
-          },
-        ],
+        RESPONSE_COMPLETE: {
+          target: "idle",
+          actions: [
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+            "markAnalysisComplete",
+          ],
+        },
         RESPONSE_ERROR: {
           target: "idle",
           actions: ["setResponseError"],
@@ -1355,6 +1189,20 @@ export const changesetChatMachine = setup({
             "clearStreamingContent",
             "stopReasoningStreaming",
           ],
+        },
+        // Ralph Wiggum loop events
+        LOOP_ITERATION_START: {
+          actions: ["handleLoopIterationStart"],
+        },
+        LOOP_ITERATION_COMPLETE: {
+          actions: ["handleLoopIterationComplete"],
+        },
+        LOOP_COMPLETE: {
+          target: "idle",
+          actions: ["handleLoopComplete"],
+        },
+        TODOS_UPDATED: {
+          actions: ["handleTodosUpdated"],
         },
         DEV_INJECT_STATE: {
           actions: ["devInjectState"],
@@ -1384,29 +1232,14 @@ export const changesetChatMachine = setup({
             "updatePlanContent",
           ],
         },
-        RESPONSE_COMPLETE: [
-          {
-            guard: ({ context }) => {
-              // In act mode with pending suites - advance queue, go to idle
-              return (
-                context.agentMode === "act" &&
-                context.isProcessingQueue &&
-                context.testSuiteQueue.some((s) => s.status === "pending")
-              );
-            },
-            actions: ["completeSuiteOnStreamEnd", "startNextSuite"],
-            target: "idle", // Go to idle, not analyzing - hook will start next subscription
-          },
-          {
-            target: "idle",
-            actions: [
-              "completeSuiteOnStreamEnd",
-              "clearStreamingContent",
-              "stopReasoningStreaming",
-              "markAnalysisComplete",
-            ],
-          },
-        ],
+        RESPONSE_COMPLETE: {
+          target: "idle",
+          actions: [
+            "clearStreamingContent",
+            "stopReasoningStreaming",
+            "markAnalysisComplete",
+          ],
+        },
         RESPONSE_ERROR: {
           target: "idle",
           actions: ["setResponseError"],
@@ -1419,17 +1252,19 @@ export const changesetChatMachine = setup({
             "stopReasoningStreaming",
           ],
         },
-        START_NEXT_SUITE: {
-          actions: ["startNextSuite"],
+        // Ralph Wiggum loop events
+        LOOP_ITERATION_START: {
+          actions: ["handleLoopIterationStart"],
         },
-        SKIP_SUITE: {
-          actions: ["skipSuite"],
+        LOOP_ITERATION_COMPLETE: {
+          actions: ["handleLoopIterationComplete"],
         },
-        MARK_SUITE_COMPLETED: {
-          actions: ["markSuiteCompleted"],
+        LOOP_COMPLETE: {
+          target: "idle",
+          actions: ["handleLoopComplete"],
         },
-        MARK_SUITE_FAILED: {
-          actions: ["markSuiteFailed"],
+        TODOS_UPDATED: {
+          actions: ["handleTodosUpdated"],
         },
         DEV_INJECT_STATE: {
           actions: ["devInjectState"],

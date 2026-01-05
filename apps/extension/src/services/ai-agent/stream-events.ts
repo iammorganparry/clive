@@ -74,6 +74,23 @@ export interface PlanContentStreamingEvent extends BaseStreamEvent {
 }
 
 /**
+ * Native plan mode entered event - emitted when Claude Code's EnterPlanMode tool is called
+ */
+export interface NativePlanModeEnteredEvent extends BaseStreamEvent {
+  type: "native-plan-mode-entered";
+  toolCallId: string;
+}
+
+/**
+ * Native plan mode exiting event - emitted when Claude Code's ExitPlanMode tool is called
+ */
+export interface NativePlanModeExitingEvent extends BaseStreamEvent {
+  type: "native-plan-mode-exiting";
+  toolCallId: string;
+  planFilePath?: string;
+}
+
+/**
  * File created event - for file creation notifications
  */
 export interface FileCreatedEvent extends BaseStreamEvent {
@@ -119,6 +136,64 @@ export interface MistakeLimitEvent extends BaseStreamEvent {
 }
 
 /**
+ * Todo display item for UI
+ */
+export interface TodoDisplayItem {
+  content: string;
+  status: string;
+  activeForm: string;
+}
+
+/**
+ * Progress summary for loop
+ */
+export interface LoopProgressSummary {
+  completed: number;
+  pending: number;
+  total: number;
+  percentComplete: number;
+}
+
+/**
+ * Loop iteration start event - Ralph Wiggum loop
+ */
+export interface LoopIterationStartEvent extends BaseStreamEvent {
+  type: "loop-iteration-start";
+  iteration: number;
+  maxIterations: number;
+}
+
+/**
+ * Loop iteration complete event - Ralph Wiggum loop
+ */
+export interface LoopIterationCompleteEvent extends BaseStreamEvent {
+  type: "loop-iteration-complete";
+  iteration: number;
+  todos: TodoDisplayItem[];
+  progress: LoopProgressSummary;
+}
+
+/**
+ * Loop complete event - Ralph Wiggum loop
+ */
+export interface LoopCompleteEvent extends BaseStreamEvent {
+  type: "loop-complete";
+  reason: "complete" | "max_iterations" | "max_time" | "error" | "cancelled";
+  iteration: number;
+  todos: TodoDisplayItem[];
+  progress: LoopProgressSummary;
+}
+
+/**
+ * Todos updated event - Ralph Wiggum loop
+ */
+export interface TodosUpdatedEvent extends BaseStreamEvent {
+  type: "todos-updated";
+  todos: TodoDisplayItem[];
+  progress: LoopProgressSummary;
+}
+
+/**
  * Union of all stream events
  */
 export type AgentStreamEvent =
@@ -127,8 +202,14 @@ export type AgentStreamEvent =
   | ToolCallEvent
   | ToolResultEvent
   | PlanContentStreamingEvent
+  | NativePlanModeEnteredEvent
+  | NativePlanModeExitingEvent
   | FileCreatedEvent
   | ErrorEvent
   | ToolSkippedEvent
   | DiagnosticProblemsEvent
-  | MistakeLimitEvent;
+  | MistakeLimitEvent
+  | LoopIterationStartEvent
+  | LoopIterationCompleteEvent
+  | LoopCompleteEvent
+  | TodosUpdatedEvent;

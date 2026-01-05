@@ -69,12 +69,12 @@ export function useChangesetChat({
 
   // MCP bridge event handlers for plan approval and context summarization
   const handlePlanApproval = useCallback(
-    (data: { approved: boolean; planId?: string; feedback?: string }) => {
+    (data: { approved: boolean; planId?: string; feedback?: string; approvalMode?: "auto" | "manual" }) => {
       console.log("[MCP Bridge] Plan approval event received:", data);
       if (data.approved) {
         // When approved via MCP bridge, dispatch APPROVE_PLAN with current queue
         const suites = state.context.testSuiteQueue;
-        send({ type: "APPROVE_PLAN", suites });
+        send({ type: "APPROVE_PLAN", suites, approvalMode: data.approvalMode || "auto" });
       }
       // Rejection is handled by the MCP response - agent stays in plan mode
     },
@@ -95,16 +95,37 @@ export function useChangesetChat({
     [],
   );
 
+  // Handle plan content streaming from MCP bridge
+  const handlePlanContentStreaming = useCallback(
+    (data: {
+      toolCallId: string;
+      content: string;
+      isComplete: boolean;
+      filePath?: string;
+    }) => {
+      console.log("[MCP Bridge] Plan content streaming event received:", data);
+      send({
+        type: "RESPONSE_CHUNK",
+        chunkType: "plan-content",
+        planContent: data.content,
+        planFilePath: data.filePath,
+      });
+    },
+    [send],
+  );
+
   // Subscribe to MCP bridge events
   useEffect(() => {
     mcpBridgeEventEmitter.on("plan-approval", handlePlanApproval);
     mcpBridgeEventEmitter.on("summarize-context", handleSummarizeContext);
+    mcpBridgeEventEmitter.on("plan-content-streaming", handlePlanContentStreaming);
 
     return () => {
       mcpBridgeEventEmitter.off("plan-approval", handlePlanApproval);
       mcpBridgeEventEmitter.off("summarize-context", handleSummarizeContext);
+      mcpBridgeEventEmitter.off("plan-content-streaming", handlePlanContentStreaming);
     };
-  }, [handlePlanApproval, handleSummarizeContext]);
+  }, [handlePlanApproval, handleSummarizeContext, handlePlanContentStreaming]);
 
   // Subscribe to planTests
   const planTestsSubscription = rpc.agents.planTests.useSubscription({
@@ -225,18 +246,6 @@ export function useChangesetChat({
             },
           });
         }),
-        Match.when({ type: "plan-content-streaming" }, (p) => {
-          send({
-            type: "RESPONSE_CHUNK",
-            chunkType: "plan-content-streaming",
-            streamingPlanContent: {
-              toolCallId: p.toolCallId || "",
-              content: typeof p.content === "string" ? p.content : "",
-              isComplete: p.isComplete === true,
-              filePath: typeof p.filePath === "string" ? p.filePath : undefined,
-            },
-          });
-        }),
         Match.when({ type: "reasoning" }, (p) => {
           if (p.content) {
             send({
@@ -255,15 +264,80 @@ export function useChangesetChat({
             });
           }
         }),
-        Match.when({ type: "plan-approved" }, (p) => {
-          // Agent approved the plan - extract suites and dispatch APPROVE_PLAN
-          const suites = (p.suites as TestSuiteQueueItem[]) || [];
-          console.log(
-            "[plan-approved] Agent approved plan with",
-            suites.length,
-            "suites",
-          );
-          send({ type: "APPROVE_PLAN", suites });
+        // Ralph Wiggum loop events
+        Match.when({ type: "loop-iteration-start" }, (p) => {
+          const loopEvent = p as unknown as {
+            iteration: number;
+            maxIterations: number;
+          };
+          send({
+            type: "LOOP_ITERATION_START",
+            iteration: loopEvent.iteration,
+            maxIterations: loopEvent.maxIterations,
+          });
+        }),
+        Match.when({ type: "loop-iteration-complete" }, (p) => {
+          const loopEvent = p as unknown as {
+            iteration: number;
+            todos: Array<{ content: string; status: string; activeForm: string }>;
+            progress: { completed: number; pending: number; total: number; percentComplete: number };
+          };
+          send({
+            type: "LOOP_ITERATION_COMPLETE",
+            iteration: loopEvent.iteration,
+            todos: loopEvent.todos,
+            progress: loopEvent.progress,
+          });
+        }),
+        Match.when({ type: "loop-complete" }, (p) => {
+          const loopEvent = p as unknown as {
+            reason: "complete" | "max_iterations" | "max_time" | "error" | "cancelled";
+            iteration: number;
+            todos: Array<{ content: string; status: string; activeForm: string }>;
+            progress: { completed: number; pending: number; total: number; percentComplete: number };
+          };
+          send({
+            type: "LOOP_COMPLETE",
+            reason: loopEvent.reason,
+            iteration: loopEvent.iteration,
+            todos: loopEvent.todos,
+            progress: loopEvent.progress,
+          });
+        }),
+        Match.when({ type: "todos-updated" }, (p) => {
+          const loopEvent = p as unknown as {
+            todos: Array<{ content: string; status: string; activeForm: string }>;
+            progress: { completed: number; pending: number; total: number; percentComplete: number };
+          };
+          send({
+            type: "TODOS_UPDATED",
+            todos: loopEvent.todos,
+            progress: loopEvent.progress,
+          });
+        }),
+        // Native plan mode events (Claude Code's EnterPlanMode/ExitPlanMode)
+        Match.when({ type: "native-plan-mode-entered" }, (p) => {
+          console.log("[useChangesetChat] Native plan mode entered:", p.toolCallId);
+          // Optional: Could dispatch event to show "Planning in progress..." indicator
+        }),
+        Match.when({ type: "native-plan-mode-exiting" }, (p) => {
+          console.log("[useChangesetChat] Native plan mode exiting:", p.toolCallId);
+          // Plan content is emitted separately via plan-content-streaming
+        }),
+        // Plan content streaming (from both MCP proposeTestPlan and native plan mode)
+        Match.when({ type: "plan-content-streaming" }, (p) => {
+          const planEvent = p as unknown as {
+            toolCallId: string;
+            content: string;
+            isComplete: boolean;
+            filePath?: string;
+          };
+          send({
+            type: "RESPONSE_CHUNK",
+            chunkType: "plan-content",
+            planContent: planEvent.content,
+            planFilePath: planEvent.filePath,
+          });
         }),
         Match.when({ type: "error" }, (p) => {
           const errorMessage =
@@ -293,76 +367,12 @@ export function useChangesetChat({
     },
   });
 
-  // Build focused context for a specific suite
-  const buildSuiteContext = useCallback(
-    (
-      suite: TestSuiteQueueItem,
-    ): Array<{ role: "user" | "assistant" | "system"; content: string }> => {
-      const planRef = state.context.planFilePath
-        ? `Refer to the approved test plan at: ${state.context.planFilePath}`
-        : "";
-
-      return [
-        {
-          role: "user",
-          content: `Execute the following test suite from the approved plan:
-
-      Suite: ${suite.name}
-      Target file: ${suite.targetFilePath}
-      Test type: ${suite.testType}
-      Source files: ${suite.sourceFiles.join(", ")}
-
-      ${suite.description || ""}
-
-      ${planRef}
-
-      IMPORTANT: Focus ONLY on this suite. Write the test file and run it. Do not work on other suites.`,
-        },
-      ];
-    },
-    [state.context.planFilePath],
-  );
-
   // Start analysis subscription when START_ANALYSIS is triggered or when user sends message
-  // In act mode with queue processing, create isolated subscription per suite
+  // The agent handles all iteration internally via Ralph Wiggum loop
   useEffect(() => {
-    // Handle act mode queue processing - create isolated subscription per suite
     if (
-      state.context.agentMode === "act" &&
-      state.context.isProcessingQueue &&
-      state.context.currentSuiteId &&
-      (state.matches("analyzing") || state.matches("idle")) &&
-      (planTestsSubscription.status === "idle" ||
-        planTestsSubscription.status === "complete")
-    ) {
-      const currentSuite = state.context.testSuiteQueue.find(
-        (s) => s.id === state.context.currentSuiteId,
-      );
-
-      if (currentSuite?.status === "in_progress") {
-        // If subscription is complete, unsubscribe first to reset it
-        if (planTestsSubscription.status === "complete") {
-          planTestsSubscription.unsubscribe();
-        }
-
-        // Create focused subscription for THIS suite only
-        planTestsSubscription.subscribe({
-          files: currentSuite.sourceFiles, // Only source files for this suite
-          branchName: state.context.branchName,
-          baseBranch,
-          conversationType: mode,
-          commitHash,
-          mode: "act",
-          planFilePath: state.context.planFilePath || undefined,
-          conversationHistory: buildSuiteContext(currentSuite), // Focused context
-        });
-      }
-    }
-    // Handle plan mode or regular analysis - use all files and full conversation history
-    else if (
       files.length > 0 &&
       state.matches("analyzing") &&
-      !state.context.isProcessingQueue &&
       (planTestsSubscription.status === "idle" ||
         planTestsSubscription.status === "complete")
     ) {
@@ -382,14 +392,15 @@ export function useChangesetChat({
             .join(""),
         }));
 
+      // Agent gets test suites from the plan file path in act mode
       planTestsSubscription.subscribe({
         files,
         branchName: state.context.branchName,
         baseBranch,
         conversationType: mode,
         commitHash,
-        mode: state.context.agentMode, // Pass agent mode (plan or act)
-        planFilePath: state.context.planFilePath || undefined, // Pass plan file path for act mode context
+        mode: state.context.agentMode,
+        planFilePath: state.context.planFilePath || undefined,
         conversationHistory:
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
@@ -401,7 +412,6 @@ export function useChangesetChat({
     mode,
     commitHash,
     baseBranch,
-    buildSuiteContext,
   ]);
 
   // Abort all running tool calls mutation
@@ -425,11 +435,15 @@ export function useChangesetChat({
     planFilePath: state.context.planFilePath,
     testExecutions: state.context.testExecutions,
     testSuiteQueue: state.context.testSuiteQueue,
-    currentSuiteId: state.context.currentSuiteId,
     agentMode: state.context.agentMode,
     subscriptionId: state.context.subscriptionId,
-    hasPendingPlanApproval: state.context.hasPendingPlanApproval,
-    isProcessingQueue: state.context.isProcessingQueue,
+    approvalMode: state.context.approvalMode,
+    // Ralph Wiggum loop state
+    loopIteration: state.context.loopIteration,
+    loopMaxIterations: state.context.loopMaxIterations,
+    loopTodos: state.context.loopTodos,
+    loopProgress: state.context.loopProgress,
+    loopExitReason: state.context.loopExitReason,
     cancelStream: async () => {
       // First abort all running tool calls and WAIT for completion
       // This ensures tools are properly terminated before we unsubscribe

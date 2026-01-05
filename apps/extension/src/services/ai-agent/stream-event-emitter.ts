@@ -7,6 +7,9 @@ import type { ProgressCallback } from "./event-handlers.js";
 import type {
   AgentStreamEvent,
   ToolCallState,
+  TodoDisplayItem,
+  LoopProgressSummary,
+  LoopCompleteEvent,
 } from "./stream-events.js";
 
 /**
@@ -111,6 +114,36 @@ export const emit = {
   },
 
   /**
+   * Emit native plan mode entered event
+   * Called when Claude Code's EnterPlanMode tool is detected
+   */
+  nativePlanModeEntered: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "native-plan-mode-entered",
+      toolCallId,
+    });
+  },
+
+  /**
+   * Emit native plan mode exiting event
+   * Called when Claude Code's ExitPlanMode tool is detected
+   */
+  nativePlanModeExiting: (
+    callback: ProgressCallback | undefined,
+    toolCallId: string,
+    planFilePath?: string,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "native-plan-mode-exiting",
+      toolCallId,
+      planFilePath,
+    });
+  },
+
+  /**
    * Emit file created event
    */
   fileCreated: (
@@ -182,6 +215,72 @@ export const emit = {
       type: "mistake-limit",
       count,
       message,
+    });
+  },
+
+  /**
+   * Emit loop iteration start event - Ralph Wiggum loop
+   */
+  loopIterationStart: (
+    callback: ProgressCallback | undefined,
+    iteration: number,
+    maxIterations: number,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "loop-iteration-start",
+      iteration,
+      maxIterations,
+    });
+  },
+
+  /**
+   * Emit loop iteration complete event - Ralph Wiggum loop
+   */
+  loopIterationComplete: (
+    callback: ProgressCallback | undefined,
+    iteration: number,
+    todos: TodoDisplayItem[],
+    progress: LoopProgressSummary,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "loop-iteration-complete",
+      iteration,
+      todos,
+      progress,
+    });
+  },
+
+  /**
+   * Emit loop complete event - Ralph Wiggum loop
+   */
+  loopComplete: (
+    callback: ProgressCallback | undefined,
+    reason: LoopCompleteEvent["reason"],
+    iteration: number,
+    todos: TodoDisplayItem[],
+    progress: LoopProgressSummary,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "loop-complete",
+      reason,
+      iteration,
+      todos,
+      progress,
+    });
+  },
+
+  /**
+   * Emit todos updated event - Ralph Wiggum loop
+   */
+  todosUpdated: (
+    callback: ProgressCallback | undefined,
+    todos: TodoDisplayItem[],
+    progress: LoopProgressSummary,
+  ): void => {
+    emitStreamEvent(callback, {
+      type: "todos-updated",
+      todos,
+      progress,
     });
   },
 };

@@ -69,7 +69,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       type: "DEV_INJECT_STATE",
       updates: {
         testSuiteQueue: [],
-        currentSuiteId: null,
         agentMode: "plan",
       },
     });
@@ -82,7 +81,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       type: "DEV_INJECT_STATE",
       updates: {
         testSuiteQueue: queue,
-        currentSuiteId: queue[0]?.id || null,
         agentMode: "act",
       },
     });
@@ -95,7 +93,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       type: "DEV_INJECT_STATE",
       updates: {
         testSuiteQueue: queue,
-        currentSuiteId: queue.find((s) => s.status === "in_progress")?.id || null,
         agentMode: "act",
       },
     });
@@ -108,7 +105,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       type: "DEV_INJECT_STATE",
       updates: {
         testSuiteQueue: queue,
-        currentSuiteId: null,
         agentMode: "act",
       },
     });
@@ -121,7 +117,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       type: "DEV_INJECT_STATE",
       updates: {
         testSuiteQueue: queue,
-        currentSuiteId: null,
         agentMode: "act",
       },
     });
@@ -134,7 +129,6 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
       updates: {
         planContent: null,
         testSuiteQueue: [],
-        currentSuiteId: null,
         agentMode: "plan",
         hasCompletedAnalysis: false,
       },
