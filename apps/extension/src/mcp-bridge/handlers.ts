@@ -103,6 +103,21 @@ export function createBridgeHandlers(
           Runtime.runPromise(runtime),
         );
 
+        // Emit plan content event to webview so UI can display approval card
+        const webview = webviewProvider?.getWebview();
+        if (webview) {
+          webview.webview.postMessage({
+            type: "mcp-bridge-event",
+            event: "plan-content-streaming",
+            data: {
+              toolCallId: input.toolCallId,
+              content: fullContent,
+              isComplete: true,
+              filePath: finalPath,
+            },
+          });
+        }
+
         return {
           success: true,
           planId,

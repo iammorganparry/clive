@@ -13,12 +13,19 @@ export interface McpBridgeEvents {
     approved: boolean;
     planId?: string;
     feedback?: string;
+    approvalMode?: "auto" | "manual";
   };
   "summarize-context": {
     summary: string;
     tokensBefore?: number;
     tokensAfter?: number;
     preserveKnowledge: boolean;
+  };
+  "plan-content-streaming": {
+    toolCallId: string;
+    content: string;
+    isComplete: boolean;
+    filePath?: string;
   };
 }
 
@@ -41,7 +48,7 @@ class McpBridgeEventEmitter {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(listener as Listener<unknown>);
+    this.listeners.get(event)?.add(listener as Listener<unknown>);
   }
 
   /**

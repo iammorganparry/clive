@@ -7,6 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBridgeHandlers } from "../handlers.js";
 import type { CliveViewProvider } from "../../views/clive-view-provider.js";
 
+// Mock vscode globally
+vi.mock("vscode", async () => {
+  const { createVSCodeMock } = await import(
+    "../../__tests__/mock-factories/vscode-mock.js"
+  );
+  return createVSCodeMock();
+});
+
 /**
  * Create a mock CliveViewProvider for testing
  */
@@ -70,18 +78,32 @@ describe("MCP Bridge Handlers", () => {
       expect(typeof result.message).toBe("string");
     });
 
-    it("returns error when streaming fails", async () => {
+    it("returns success when vscode is mocked", async () => {
       const handlers = createBridgeHandlers();
 
       const result = await handlers.proposeTestPlan({
-        name: "Failing Plan",
+        name: "Successful Plan",
         planContent: "# Content",
         toolCallId: "tool-456",
       });
 
-      // Without proper VSCode context, this will fail
-      expect(result.success).toBe(false);
+      // With vscode mock in place, this should succeed
+      expect(result.success).toBe(true);
       expect(result.message).toBeDefined();
+    });
+
+    it("works without webview provider for plan-content-streaming", async () => {
+      const handlers = createBridgeHandlers(null);
+
+      const result = await handlers.proposeTestPlan({
+        name: "Plan Without Webview",
+        planContent: "# Content",
+        toolCallId: "tool-789",
+      });
+
+      // Should not crash when webviewProvider is null
+      expect(result).toBeDefined();
+      expect(typeof result.message).toBe("string");
     });
   });
 

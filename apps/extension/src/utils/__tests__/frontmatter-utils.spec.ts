@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildTestPlanFrontmatter,
-  buildFullPlanContent,
-  parseFrontmatter,
-  generateFrontmatter,
-  isPlanStatus,
   type TestPlanFrontmatterInput,
-  type TestPlanSuite,
 } from "../frontmatter-utils";
 
 describe("frontmatter-utils", () => {

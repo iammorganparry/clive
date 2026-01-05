@@ -4,11 +4,12 @@
  * Handles mode-based tool selection and callback wiring
  */
 
-import { Effect } from "effect";
+import { Effect, type Ref } from "effect";
 import type { KnowledgeFileService } from "../knowledge-file-service.js";
 import type { SummaryService } from "./summary-service.js";
 import type { Message } from "./context-tracker.js";
 import type { TokenBudget } from "./token-budget.js";
+import type { LoopState } from "./loop-state.js";
 import {
   createBashExecuteTool,
   createSearchKnowledgeTool,
@@ -20,6 +21,7 @@ import {
   createCompleteTaskTool,
   createApprovePlanTool,
   createEditFileContentTool,
+  createTodoWriteTool,
 } from "./tools/index.js";
 import type { LanguageModel, ToolSet } from "ai";
 
@@ -72,6 +74,8 @@ export interface ToolConfig {
   waitForApproval?: (toolCallId: string) => Promise<unknown>;
   getApprovalSetting?: () => Effect.Effect<"always" | "auto">;
   signal?: AbortSignal;
+  /** Loop state ref for Ralph Wiggum loop (enables TodoWrite tool) */
+  loopStateRef?: Ref.Ref<LoopState>;
 }
 
 /**
@@ -104,6 +108,11 @@ const createBaseTools = (config: ToolConfig) =>
 
     const completeTask = createCompleteTaskTool();
 
+    // TodoWrite tool for Ralph Wiggum loop (only when loopStateRef provided)
+    const todoWrite = config.loopStateRef
+      ? createTodoWriteTool(config.loopStateRef, config.progressCallback)
+      : null;
+
     const webTools = config.firecrawlEnabled
       ? createWebTools({ enableSearch: true })
       : {};
@@ -113,6 +122,7 @@ const createBaseTools = (config: ToolConfig) =>
       searchKnowledge,
       summarizeContext,
       completeTask,
+      ...(todoWrite && { todoWrite }),
       ...webTools,
     } as ToolSet;
 

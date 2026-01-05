@@ -38,3 +38,6 @@ export { createWebTools, searchTool, scrapeTool } from "./web-tools.js";
 
 // Context management tool
 export { createSummarizeContextTool } from "./summarize-context.js";
+
+// Todo tracking tool (Ralph Wiggum loop)
+export { createTodoWriteTool } from "./todo-write.js";

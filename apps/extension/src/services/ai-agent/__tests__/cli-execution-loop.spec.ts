@@ -1,8 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Effect, Stream, Runtime } from "effect";
-import { runCliExecutionLoop } from "../cli-execution-loop.js";
+import { Effect, Stream, Runtime, Ref } from "effect";
+import { runCliExecutionLoop, runRalphWiggumCliLoop } from "../cli-execution-loop.js";
 import type { CliExecutionHandle, ClaudeCliEvent } from "../../claude-cli-service.js";
 import type { CliToolExecutor, CliToolResult } from "../cli-tool-executor.js";
+import type { LoopState } from "../loop-state.js";
+import { createEmptyLoopState } from "../loop-state.js";
+
+// Mock vscode globally
+vi.mock("vscode", async () => {
+  const { createVSCodeMock } = await import(
+    "../../../__tests__/mock-factories/vscode-mock.js"
+  );
+  return createVSCodeMock();
+});
 
 // Mock the logger
 vi.mock("../../../utils/logger.js", () => ({
@@ -915,6 +925,195 @@ describe("cli-execution-loop", () => {
       const parsed = JSON.parse(toolResultEvent?.[1]);
       // Empty string error should be treated as success
       expect(parsed.state).toBe("output-available");
+    });
+  });
+
+  describe("Ralph Wiggum Loop", () => {
+    const createMockClaudeCliService = (
+      handle: CliExecutionHandle,
+    ) => {
+      return {
+        execute: vi.fn(() => Effect.succeed(handle)),
+      };
+    };
+
+    it("should start Ralph Wiggum loop and execute first iteration", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        { type: "text", content: "Iteration 1 response" },
+        { type: "done" },
+      ]);
+      const mockService = createMockClaudeCliService(cliHandle);
+
+      const result = await Effect.gen(function* () {
+        const initialState = createEmptyLoopState();
+        const loopStateRef = yield* Ref.make(initialState);
+
+        return yield* runRalphWiggumCliLoop({
+          loopStateRef,
+          claudeCliService: mockService as any,
+          cliOptions: {
+            systemPrompt: "Test system prompt",
+            model: "claude-sonnet-4",
+            maxTokens: 8096,
+          },
+          toolExecutor: createMockToolExecutor(),
+          progressCallback,
+          correlationId: "test-correlation-id",
+          workspaceRoot: "/test/workspace",
+          planFilePath: "/test/plan.md",
+        });
+      }).pipe(Runtime.runPromise(runtime));
+
+      expect(mockService.execute).toHaveBeenCalledTimes(1);
+      expect(result.response).toContain("Iteration 1 response");
+    });
+
+    it("should emit loop-iteration-start event at beginning of each iteration", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        { type: "text", content: "Response" },
+        { type: "done" },
+      ]);
+      const mockService = createMockClaudeCliService(cliHandle);
+
+      await Effect.gen(function* () {
+        const initialState = createEmptyLoopState();
+        const loopStateRef = yield* Ref.make(initialState);
+
+        return yield* runRalphWiggumCliLoop({
+          loopStateRef,
+          claudeCliService: mockService as any,
+          cliOptions: {
+            systemPrompt: "Test system prompt",
+            model: "claude-sonnet-4",
+            maxTokens: 8096,
+          },
+          toolExecutor: createMockToolExecutor(),
+          progressCallback,
+          correlationId: "test-id",
+          workspaceRoot: "/test",
+          planFilePath: "/test/plan.md",
+        });
+      }).pipe(Runtime.runPromise(runtime));
+
+      const iterationStartEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "loop-iteration-start",
+      );
+      expect(iterationStartEvent).toBeDefined();
+      const parsed = JSON.parse(iterationStartEvent?.[1]);
+      expect(parsed.iteration).toBeGreaterThan(0);
+      expect(parsed.maxIterations).toBeGreaterThan(0);
+    });
+
+    it("should emit loop-complete event when loop exits", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        { type: "text", content: "Response" },
+        { type: "done" },
+      ]);
+      const mockService = createMockClaudeCliService(cliHandle);
+
+      await Effect.gen(function* () {
+        const initialState = createEmptyLoopState();
+        const loopStateRef = yield* Ref.make(initialState);
+
+        return yield* runRalphWiggumCliLoop({
+          loopStateRef,
+          claudeCliService: mockService as any,
+          cliOptions: {
+            systemPrompt: "Test system prompt",
+            model: "claude-sonnet-4",
+            maxTokens: 8096,
+          },
+          toolExecutor: createMockToolExecutor(),
+          progressCallback,
+          correlationId: "test-id",
+          workspaceRoot: "/test",
+          planFilePath: "/test/plan.md",
+        });
+      }).pipe(Runtime.runPromise(runtime));
+
+      const loopCompleteEvent = progressCallback.mock.calls.find(
+        (call) => call[0] === "loop-complete",
+      );
+      expect(loopCompleteEvent).toBeDefined();
+      const parsed = JSON.parse(loopCompleteEvent?.[1]);
+      expect(parsed.reason).toBeDefined();
+      expect(parsed.iteration).toBeDefined();
+    });
+
+    it("should handle abort signal during loop execution", async () => {
+      const progressCallback = vi.fn();
+      const abortController = new AbortController();
+      const cliHandle = createMockCliHandle([
+        { type: "text", content: "Response" },
+        { type: "done" },
+      ]);
+      const mockService = createMockClaudeCliService(cliHandle);
+
+      // Abort immediately
+      abortController.abort();
+
+      await Effect.gen(function* () {
+        const initialState = createEmptyLoopState();
+        const loopStateRef = yield* Ref.make(initialState);
+
+        return yield* runRalphWiggumCliLoop({
+          loopStateRef,
+          claudeCliService: mockService as any,
+          cliOptions: {
+            systemPrompt: "Test system prompt",
+            model: "claude-sonnet-4",
+            maxTokens: 8096,
+          },
+          toolExecutor: createMockToolExecutor(),
+          progressCallback,
+          signal: abortController.signal,
+          correlationId: "test-id",
+          workspaceRoot: "/test",
+          planFilePath: "/test/plan.md",
+        });
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Should not execute when aborted
+      expect(mockService.execute).not.toHaveBeenCalled();
+    });
+
+    it("should build iteration prompt with workspace root and plan file path", async () => {
+      const progressCallback = vi.fn();
+      const cliHandle = createMockCliHandle([
+        { type: "text", content: "Response" },
+        { type: "done" },
+      ]);
+      const mockService = createMockClaudeCliService(cliHandle);
+
+      await Effect.gen(function* () {
+        const initialState = createEmptyLoopState();
+        const loopStateRef = yield* Ref.make(initialState);
+
+        return yield* runRalphWiggumCliLoop({
+          loopStateRef,
+          claudeCliService: mockService as any,
+          cliOptions: {
+            systemPrompt: "Test system prompt",
+            model: "claude-sonnet-4",
+            maxTokens: 8096,
+          },
+          toolExecutor: createMockToolExecutor(),
+          progressCallback,
+          correlationId: "test-id",
+          workspaceRoot: "/test/workspace",
+          planFilePath: "/test/plan.md",
+        });
+      }).pipe(Runtime.runPromise(runtime));
+
+      // Verify execute was called with correct prompt that includes workspace root
+      expect(mockService.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: expect.stringContaining("/test/workspace"),
+        }),
+      );
     });
   });
 });

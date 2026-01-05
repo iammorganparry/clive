@@ -9,16 +9,35 @@
  * 4. Emitting progress events for UI display
  */
 
-import { Effect, Stream } from "effect";
+import * as vscode from "vscode";
+import { Effect, Ref, Stream } from "effect";
 import type {
   CliExecutionHandle,
   ClaudeCliEvent,
+  ClaudeCliExecuteOptions,
 } from "../claude-cli-service.js";
+import type { ClaudeCliService } from "../claude-cli-service.js";
 import type { CliToolExecutor } from "./cli-tool-executor.js";
 import type { ProgressCallback } from "./event-handlers.js";
+import {
+  type LoopState,
+  shouldContinueLoop,
+  getExitReason,
+  incrementIteration,
+  recordFailedIteration,
+  resetFailures,
+  setExitReason,
+  buildIterationPrompt,
+  getProgressSummary,
+} from "./loop-state.js";
+import type { TodoDisplayItem } from "./stream-events.js";
 import { logToOutput } from "../../utils/logger.js";
 import { buildFullPlanContent } from "../../utils/frontmatter-utils.js";
 import { emit } from "./stream-event-emitter.js";
+import {
+  discoverPlanFilePath,
+  readPlanContentWithRetry,
+} from "./plan-mode-handler.js";
 
 /**
  * Options for running the CLI execution loop
@@ -34,6 +53,8 @@ export interface CliExecutionLoopOptions {
   signal?: AbortSignal;
   /** Correlation ID for logging */
   correlationId?: string;
+  /** Workspace root for plan file discovery */
+  workspaceRoot?: string;
 }
 
 /**
@@ -62,7 +83,7 @@ export const runCliExecutionLoop = (
   options: CliExecutionLoopOptions,
 ): Effect.Effect<CliExecutionResult, Error> =>
   Effect.gen(function* () {
-    const { cliHandle, toolExecutor, progressCallback, signal, correlationId } =
+    const { cliHandle, toolExecutor, progressCallback, signal, correlationId, workspaceRoot } =
       options;
 
     let accumulatedResponse = "";
@@ -101,6 +122,7 @@ export const runCliExecutionLoop = (
             toolExecutor,
             progressCallback,
             correlationId,
+            workspaceRoot,
             {
               addToResponse: (text: string) => {
                 accumulatedResponse += text;
@@ -146,12 +168,13 @@ const handleCliEvent = (
   _toolExecutor: CliToolExecutor,
   progressCallback: ProgressCallback | undefined,
   correlationId: string | undefined,
+  workspaceRoot: string | undefined,
   state: {
     addToResponse: (text: string) => void;
     setTaskCompleted: () => void;
   },
 ): Effect.Effect<void, Error> =>
-  Effect.sync(() => {
+  Effect.gen(function* () {
     logToOutput(`[CliExecutionLoop:${correlationId}] Event: ${event.type}`);
 
     switch (event.type) {
@@ -172,6 +195,104 @@ const handleCliEvent = (
         logToOutput(
           `[CliExecutionLoop:${correlationId}] Tool use: ${event.name} (${event.id})`,
         );
+
+        // Check for Claude Code's native planning tools
+        const isEnterPlanMode = event.name === "EnterPlanMode";
+        const isExitPlanMode = event.name === "ExitPlanMode";
+
+        if (isEnterPlanMode) {
+          logToOutput(
+            `[CliExecutionLoop:${correlationId}] Native EnterPlanMode detected`,
+          );
+          emit.nativePlanModeEntered(progressCallback, event.id);
+          // Also emit as a tool call for UI visibility
+          emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
+          break;
+        }
+
+        if (isExitPlanMode) {
+          logToOutput(
+            `[CliExecutionLoop:${correlationId}] Native ExitPlanMode detected`,
+          );
+          emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
+
+          // Discover and read the plan file
+          if (workspaceRoot) {
+            const planFilePath = yield* discoverPlanFilePath(workspaceRoot);
+
+            if (planFilePath) {
+              logToOutput(
+                `[CliExecutionLoop:${correlationId}] Found plan file: ${planFilePath}`,
+              );
+
+              // Read plan content with retry (file may still be written)
+              const planContentResult = yield* readPlanContentWithRetry(planFilePath).pipe(
+                Effect.map((content) => ({ success: true as const, content })),
+                Effect.catchAll((error) =>
+                  Effect.succeed({ success: false as const, error: error.message }),
+                ),
+              );
+
+              if (planContentResult.success) {
+                // Emit plan content for approval UI
+                emit.planContent(
+                  progressCallback,
+                  event.id,
+                  planContentResult.content,
+                  true,
+                  planFilePath,
+                );
+                logToOutput(
+                  `[CliExecutionLoop:${correlationId}] Emitted plan content (${planContentResult.content.length} chars)`,
+                );
+
+                // Open the plan file in VSCode editor
+                yield* Effect.tryPromise({
+                  try: async () => {
+                    const fileUri = vscode.Uri.file(planFilePath);
+                    const document =
+                      await vscode.workspace.openTextDocument(fileUri);
+                    await vscode.window.showTextDocument(document, {
+                      preview: false,
+                      preserveFocus: false,
+                    });
+                    logToOutput(
+                      `[CliExecutionLoop:${correlationId}] Opened plan file in editor: ${planFilePath}`,
+                    );
+                  },
+                  catch: (error) =>
+                    new Error(
+                      `Failed to open plan file: ${error instanceof Error ? error.message : String(error)}`,
+                    ),
+                }).pipe(
+                  Effect.catchAll((error) =>
+                    Effect.sync(() => {
+                      logToOutput(
+                        `[CliExecutionLoop:${correlationId}] Warning: Could not open plan file in editor: ${error.message}`,
+                      );
+                    }),
+                  ),
+                );
+              } else {
+                logToOutput(
+                  `[CliExecutionLoop:${correlationId}] Failed to read plan file: ${planContentResult.error}`,
+                );
+                emit.error(progressCallback, `Failed to read plan file: ${planContentResult.error}`);
+              }
+            } else {
+              logToOutput(
+                `[CliExecutionLoop:${correlationId}] No plan file found in .claude/plans/`,
+              );
+            }
+          } else {
+            logToOutput(
+              `[CliExecutionLoop:${correlationId}] Cannot discover plan file: workspaceRoot not provided`,
+            );
+          }
+
+          emit.nativePlanModeExiting(progressCallback, event.id);
+          break;
+        }
 
         // Check if this is an MCP tool (prefixed with "mcp__")
         // MCP tools are executed locally via bridge handlers and results sent back to CLI
@@ -282,3 +403,213 @@ const handleCliEvent = (
       }
     }
   });
+
+/**
+ * Options for running the Ralph Wiggum CLI loop
+ */
+export interface RalphWiggumCliLoopOptions {
+  /** Reference to loop state */
+  loopStateRef: Ref.Ref<LoopState>;
+  /** Claude CLI service for spawning new processes */
+  claudeCliService: ClaudeCliService;
+  /** Base CLI execute options */
+  cliOptions: Omit<ClaudeCliExecuteOptions, "prompt">;
+  /** Tool executor for running tools */
+  toolExecutor: CliToolExecutor;
+  /** Callback for progress updates to UI */
+  progressCallback?: ProgressCallback;
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Correlation ID for logging */
+  correlationId?: string;
+  /** Workspace root for building prompts */
+  workspaceRoot: string;
+  /** Path to the approved test plan file */
+  planFilePath?: string;
+}
+
+/**
+ * Convert LoopState todos to TodoDisplayItem for UI
+ */
+const todosToDisplayItems = (state: LoopState): TodoDisplayItem[] =>
+  state.todos.map((t) => ({
+    content: t.content,
+    status: t.status,
+    activeForm: t.activeForm,
+  }));
+
+/**
+ * Ralph Wiggum loop for CLI path
+ *
+ * Continuously runs CLI iterations until all tests pass or safety limits reached.
+ * Each iteration:
+ * 1. Spawns a fresh CLI process with context-aware prompt
+ * 2. Runs the single-iteration execution loop
+ * 3. Checks completion status and updates loop state
+ * 4. Repeats if needed
+ */
+export const runRalphWiggumCliLoop = (
+  options: RalphWiggumCliLoopOptions,
+): Effect.Effect<CliExecutionResult, Error> =>
+  Effect.gen(function* () {
+    const {
+      loopStateRef,
+      claudeCliService,
+      cliOptions,
+      toolExecutor,
+      progressCallback,
+      signal,
+      correlationId,
+      workspaceRoot,
+      planFilePath,
+    } = options;
+
+    let accumulatedResponse = "";
+    let lastIterationSuccess = false;
+
+    logToOutput(
+      `[RalphWiggumCliLoop:${correlationId}] Starting Ralph Wiggum loop`,
+    );
+
+    // Main loop
+    while (true) {
+      // Check abort signal
+      if (signal?.aborted) {
+        logToOutput(
+          `[RalphWiggumCliLoop:${correlationId}] Aborted by signal`,
+        );
+        yield* Ref.update(loopStateRef, (s) => setExitReason(s, "cancelled"));
+        break;
+      }
+
+      // Get current state
+      const state = yield* Ref.get(loopStateRef);
+
+      // Check if we should continue
+      if (!shouldContinueLoop(state)) {
+        const reason = getExitReason(state);
+        logToOutput(
+          `[RalphWiggumCliLoop:${correlationId}] Loop exit: ${reason}`,
+        );
+
+        // Emit loop complete event
+        const progress = getProgressSummary(state);
+        emit.loopComplete(
+          progressCallback,
+          reason ?? "complete",
+          state.iteration,
+          todosToDisplayItems(state),
+          progress,
+        );
+        break;
+      }
+
+      // Increment iteration
+      yield* Ref.update(loopStateRef, incrementIteration);
+      const newState = yield* Ref.get(loopStateRef);
+
+      logToOutput(
+        `[RalphWiggumCliLoop:${correlationId}] Starting iteration ${newState.iteration}/${newState.maxIterations}`,
+      );
+
+      // Emit iteration start event
+      emit.loopIterationStart(
+        progressCallback,
+        newState.iteration,
+        newState.maxIterations,
+      );
+
+      // Build iteration prompt - agent sees filesystem state
+      const iterationPrompt = buildIterationPrompt(
+        newState,
+        workspaceRoot,
+        planFilePath,
+      );
+
+      // Spawn new CLI process for this iteration
+      const cliHandle = yield* claudeCliService.execute({
+        ...cliOptions,
+        prompt: iterationPrompt,
+        signal,
+      });
+
+      // Run single iteration
+      const iterationResult = yield* runCliExecutionLoop({
+        cliHandle,
+        toolExecutor,
+        progressCallback,
+        signal,
+        correlationId: `${correlationId}-iter${newState.iteration}`,
+        workspaceRoot,
+      });
+
+      accumulatedResponse += iterationResult.response;
+
+      // Determine if this iteration made progress
+      const updatedState = yield* Ref.get(loopStateRef);
+      const beforeProgress = getProgressSummary(newState);
+      const afterProgress = getProgressSummary(updatedState);
+
+      const madeProgress = afterProgress.completed > beforeProgress.completed;
+
+      if (madeProgress || iterationResult.taskCompleted) {
+        // Reset failure counter on progress
+        yield* Ref.update(loopStateRef, resetFailures);
+        lastIterationSuccess = true;
+        logToOutput(
+          `[RalphWiggumCliLoop:${correlationId}] Iteration ${newState.iteration} made progress`,
+        );
+      } else {
+        // Record failure if no progress
+        yield* Ref.update(loopStateRef, recordFailedIteration);
+        lastIterationSuccess = false;
+        logToOutput(
+          `[RalphWiggumCliLoop:${correlationId}] Iteration ${newState.iteration} made no progress`,
+        );
+      }
+
+      // Emit iteration complete event
+      const finalIterState = yield* Ref.get(loopStateRef);
+      emit.loopIterationComplete(
+        progressCallback,
+        finalIterState.iteration,
+        todosToDisplayItems(finalIterState),
+        getProgressSummary(finalIterState),
+      );
+
+      // If task explicitly completed, exit
+      if (iterationResult.taskCompleted && finalIterState.allTestsPassed) {
+        yield* Ref.update(loopStateRef, (s) => setExitReason(s, "complete"));
+        logToOutput(
+          `[RalphWiggumCliLoop:${correlationId}] All tests passed, exiting`,
+        );
+      }
+    }
+
+    // Get final state
+    const finalState = yield* Ref.get(loopStateRef);
+
+    logToOutput(
+      `[RalphWiggumCliLoop:${correlationId}] Loop completed after ${finalState.iteration} iterations. ` +
+        `Exit reason: ${finalState.exitReason}. All tests passed: ${finalState.allTestsPassed}`,
+    );
+
+    return {
+      success: finalState.allTestsPassed || lastIterationSuccess,
+      response: accumulatedResponse,
+      taskCompleted: finalState.allTestsPassed,
+      error: finalState.exitReason === "error" ? "Max failures reached" : undefined,
+    };
+  }).pipe(
+    Effect.catchAll((error) => {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logToOutput(`[RalphWiggumCliLoop] Error: ${errorMsg}`);
+
+      return Effect.succeed({
+        success: false,
+        response: "",
+        taskCompleted: false,
+        error: errorMsg,
+      });
+    }),
+  );

@@ -25,20 +25,24 @@ describe("changeset-chat-machine test execution actions", () => {
       isReasoningStreaming: false,
       isTextStreaming: false,
       hasCompletedAnalysis: false,
-      hasPendingPlanApproval: false,
+      approvalMode: null,
       scratchpadTodos: [],
       historyLoaded: false,
       testExecutions: [],
       accumulatedTestOutput: new Map(),
       accumulatedFileContent: new Map(),
       testSuiteQueue: [],
-      currentSuiteId: null,
       agentMode: "act",
       planContent: null,
       planFilePath: null,
       usage: null,
       subscriptionId: null,
-      isProcessingQueue: false,
+      // Ralph Wiggum loop state
+      loopIteration: 0,
+      loopMaxIterations: 10,
+      loopTodos: [],
+      loopProgress: null,
+      loopExitReason: null,
     };
   });
 
@@ -349,7 +353,6 @@ describe("changeset-chat-machine test execution actions", () => {
         status: "in_progress",
         testResults: undefined,
       });
-      mockContext.currentSuiteId = suiteId;
 
       // Setup tool event
       mockContext.toolEvents.push({
@@ -395,7 +398,6 @@ describe("changeset-chat-machine test execution actions", () => {
         status: "in_progress",
         testResults: undefined,
       });
-      mockContext.currentSuiteId = suiteId;
       mockContext.testExecutions.push(execution);
 
       // Simulate completion logic
@@ -430,7 +432,6 @@ describe("changeset-chat-machine test execution actions", () => {
         status: "in_progress",
         testResults: undefined,
       });
-      mockContext.currentSuiteId = suiteId;
       mockContext.testExecutions.push(execution);
 
       // Simulate completion logic with failures
@@ -505,7 +506,6 @@ describe("changeset-chat-machine test execution actions", () => {
           testResults: undefined,
         },
       );
-      mockContext.currentSuiteId = suiteId1;
 
       const failedExecution = {
         filePath: filePath1,
@@ -520,7 +520,7 @@ describe("changeset-chat-machine test execution actions", () => {
       const hasFailures = failedExecution.summary.failed > 0;
       expect(hasFailures).toBe(true);
 
-      // When tests fail, currentSuiteId should be cleared, not advanced
+      // When tests fail, agent stays in loop to fix - next suite stays pending
       const nextSuite = mockContext.testSuiteQueue.find(
         (s) => s.status === "pending",
       );
@@ -711,7 +711,6 @@ describe("changeset-chat-machine test execution actions", () => {
         status: "in_progress",
         testResults: undefined,
       });
-      mockContext.currentSuiteId = suiteId;
 
       // Setup tool event
       mockContext.toolEvents.push({
@@ -837,20 +836,24 @@ describe("changeset-chat-machine plan content actions", () => {
       isReasoningStreaming: false,
       isTextStreaming: false,
       hasCompletedAnalysis: false,
-      hasPendingPlanApproval: false,
+      approvalMode: null,
       scratchpadTodos: [],
       historyLoaded: false,
       testExecutions: [],
       accumulatedTestOutput: new Map(),
       accumulatedFileContent: new Map(),
       testSuiteQueue: [],
-      currentSuiteId: null,
       agentMode: "plan",
       planContent: null,
       planFilePath: null,
       usage: null,
       subscriptionId: null,
-      isProcessingQueue: false,
+      // Ralph Wiggum loop state
+      loopIteration: 0,
+      loopMaxIterations: 10,
+      loopTodos: [],
+      loopProgress: null,
+      loopExitReason: null,
     };
   });
 
@@ -967,7 +970,7 @@ describe("changeset-chat-machine plan content actions", () => {
   });
 });
 
-describe("changeset-chat-machine hasPendingPlanApproval flag", () => {
+describe("changeset-chat-machine approvalMode state", () => {
   let mockContext: ChangesetChatContext;
 
   beforeEach(() => {
@@ -982,588 +985,67 @@ describe("changeset-chat-machine hasPendingPlanApproval flag", () => {
       isReasoningStreaming: false,
       isTextStreaming: false,
       hasCompletedAnalysis: false,
-      hasPendingPlanApproval: false,
+      approvalMode: null,
       scratchpadTodos: [],
       historyLoaded: false,
       testExecutions: [],
       accumulatedTestOutput: new Map(),
       accumulatedFileContent: new Map(),
       testSuiteQueue: [],
-      currentSuiteId: null,
       agentMode: "plan",
       planContent: null,
       planFilePath: null,
       usage: null,
       subscriptionId: null,
-      isProcessingQueue: false,
+      // Ralph Wiggum loop state
+      loopIteration: 0,
+      loopMaxIterations: 10,
+      loopTodos: [],
+      loopProgress: null,
+      loopExitReason: null,
     };
   });
 
   describe("initial state", () => {
-    it("should be false initially", () => {
-      expect(mockContext.hasPendingPlanApproval).toBe(false);
-    });
-  });
-
-  describe("proposeTestPlan tool completion", () => {
-    it("should set hasPendingPlanApproval to true when proposeTestPlan succeeds", () => {
-      // Add a proposeTestPlan tool event
-      mockContext.toolEvents.push({
-        toolCallId: "tool-1",
-        toolName: "proposeTestPlan",
-        args: {
-          name: "Test Plan",
-          overview: "Testing",
-          suites: [],
-        },
-        state: "output-available",
-        timestamp: new Date(),
-      });
-
-      // Simulate updateToolPart action when proposeTestPlan completes
-      const toolResult = {
-        toolCallId: "tool-1",
-        state: "output-available" as const,
-        output: { success: true, planId: "plan-123" },
-      };
-
-      // Check if this tool event is proposeTestPlan with success
-      const toolEvent = mockContext.toolEvents.find(
-        (t) => t.toolCallId === toolResult.toolCallId,
-      );
-      const shouldSetFlag =
-        toolEvent &&
-        toolEvent.toolName === "proposeTestPlan" &&
-        toolResult.state === "output-available";
-
-      expect(shouldSetFlag).toBe(true);
-
-      // Simulate the flag being set
-      if (shouldSetFlag) {
-        mockContext.hasPendingPlanApproval = true;
-      }
-
-      expect(mockContext.hasPendingPlanApproval).toBe(true);
-    });
-
-    it("should not set flag for other tools", () => {
-      mockContext.toolEvents.push({
-        toolCallId: "tool-2",
-        toolName: "bashExecute",
-        args: { command: "ls" },
-        state: "output-available",
-        timestamp: new Date(),
-      });
-
-      const toolResult = {
-        toolCallId: "tool-2",
-        state: "output-available" as const,
-      };
-
-      const toolEvent = mockContext.toolEvents.find(
-        (t) => t.toolCallId === toolResult.toolCallId,
-      );
-      const shouldSetFlag =
-        toolEvent &&
-        toolEvent.toolName === "proposeTestPlan" &&
-        toolResult.state === "output-available";
-
-      expect(shouldSetFlag).toBe(false);
-      expect(mockContext.hasPendingPlanApproval).toBe(false);
+    it("should be null initially", () => {
+      expect(mockContext.approvalMode).toBe(null);
     });
   });
 
   describe("APPROVE_PLAN event", () => {
-    it("should reset hasPendingPlanApproval to false on approval", () => {
-      mockContext.hasPendingPlanApproval = true;
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
+    it("should set approvalMode to 'auto' and agentMode to 'act' on auto approval", () => {
+      mockContext.planContent = "# Test Plan\n\nSome plan content";
+      mockContext.agentMode = "plan";
 
-      // Simulate approvePlan action
-      mockContext.hasPendingPlanApproval = false;
+      // Simulate approvePlan action with auto mode
+      mockContext.approvalMode = "auto";
       mockContext.agentMode = "act";
-      mockContext.currentSuiteId = "suite-1";
-      mockContext.testSuiteQueue[0].status = "in_progress";
 
-      expect(mockContext.hasPendingPlanApproval).toBe(false);
+      expect(mockContext.approvalMode).toBe("auto");
+      expect(mockContext.agentMode).toBe("act");
+    });
+
+    it("should set approvalMode to 'manual' on manual approval", () => {
+      mockContext.planContent = "# Test Plan\n\nSome plan content";
+      mockContext.agentMode = "plan";
+
+      // Simulate approvePlan action with manual mode
+      mockContext.approvalMode = "manual";
+      mockContext.agentMode = "act";
+
+      expect(mockContext.approvalMode).toBe("manual");
       expect(mockContext.agentMode).toBe("act");
     });
   });
 
   describe("RESET event", () => {
-    it("should reset hasPendingPlanApproval to false", () => {
-      mockContext.hasPendingPlanApproval = true;
+    it("should reset approvalMode to null", () => {
+      mockContext.approvalMode = "auto";
 
       // Simulate reset action
-      mockContext.hasPendingPlanApproval = false;
+      mockContext.approvalMode = null;
 
-      expect(mockContext.hasPendingPlanApproval).toBe(false);
+      expect(mockContext.approvalMode).toBe(null);
     });
   });
 });
-
-describe("changeset-chat-machine SKIP_SUITE event", () => {
-  let mockContext: ChangesetChatContext;
-
-  beforeEach(() => {
-    mockContext = {
-      files: [],
-      branchName: "test-branch",
-      messages: [],
-      streamingContent: "",
-      toolEvents: [],
-      error: null,
-      reasoningContent: "",
-      isReasoningStreaming: false,
-      isTextStreaming: false,
-      hasCompletedAnalysis: false,
-      hasPendingPlanApproval: false,
-      scratchpadTodos: [],
-      historyLoaded: false,
-      testExecutions: [],
-      accumulatedTestOutput: new Map(),
-      accumulatedFileContent: new Map(),
-      testSuiteQueue: [],
-      currentSuiteId: null,
-      agentMode: "act",
-      planContent: null,
-      planFilePath: null,
-      usage: null,
-      subscriptionId: null,
-      isProcessingQueue: false,
-    };
-  });
-
-  describe("skipSuite action", () => {
-    it("should mark a pending suite as skipped", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Simulate skipSuite action for suite-2
-      const suiteId = "suite-2";
-      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      const skippedSuite = mockContext.testSuiteQueue.find((s) => s.id === suiteId);
-      expect(skippedSuite?.status).toBe("skipped");
-    });
-
-    it("should not affect completed or in_progress suites", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "completed",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-      ];
-
-      // Try to skip completed suite
-      const suiteId = "suite-1";
-      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      // The action would mark it as skipped, but in practice this shouldn't happen
-      // This tests that the action itself works mechanically
-      const targetSuite = mockContext.testSuiteQueue.find((s) => s.id === suiteId);
-      expect(targetSuite?.status).toBe("skipped");
-    });
-
-    it("should advance to next pending suite if current suite is skipped", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-        {
-          id: "suite-3",
-          name: "E2E Tests",
-          testType: "e2e",
-          targetFilePath: "test3.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Simulate skipSuite action for current suite
-      const suiteId = "suite-1";
-      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      // If current suite is skipped, advance to next pending
-      if (mockContext.currentSuiteId === suiteId) {
-        const nextPending = mockContext.testSuiteQueue.find((s) => s.status === "pending");
-        mockContext.currentSuiteId = nextPending?.id || null;
-        if (nextPending) {
-          mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-            suite.id === nextPending.id ? { ...suite, status: "in_progress" as const } : suite,
-          );
-        }
-      }
-
-      expect(mockContext.currentSuiteId).toBe("suite-2");
-      const suite2 = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
-      expect(suite2?.status).toBe("in_progress");
-    });
-
-    it("should set currentSuiteId to null if no pending suites remain", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Skip the only suite
-      const suiteId = "suite-1";
-      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      // Advance logic
-      if (mockContext.currentSuiteId === suiteId) {
-        const nextPending = mockContext.testSuiteQueue.find((s) => s.status === "pending");
-        mockContext.currentSuiteId = nextPending?.id || null;
-      }
-
-      expect(mockContext.currentSuiteId).toBeNull();
-    });
-
-    it("should handle skipping a non-current pending suite", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-        {
-          id: "suite-3",
-          name: "E2E Tests",
-          testType: "e2e",
-          targetFilePath: "test3.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Skip suite-3 (not current)
-      const suiteId = "suite-3";
-      mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-        suite.id === suiteId ? { ...suite, status: "skipped" as const } : suite,
-      );
-
-      // Current suite should remain unchanged
-      expect(mockContext.currentSuiteId).toBe("suite-1");
-      const suite3 = mockContext.testSuiteQueue.find((s) => s.id === "suite-3");
-      expect(suite3?.status).toBe("skipped");
-      const suite1 = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
-      expect(suite1?.status).toBe("in_progress");
-    });
-  });
-});
-
-describe("changeset-chat-machine CANCEL_STREAM event", () => {
-  let mockContext: ChangesetChatContext;
-
-  beforeEach(() => {
-    mockContext = {
-      files: [],
-      branchName: "test-branch",
-      messages: [],
-      streamingContent: "",
-      toolEvents: [],
-      error: null,
-      reasoningContent: "",
-      isReasoningStreaming: false,
-      isTextStreaming: false,
-      hasCompletedAnalysis: false,
-      hasPendingPlanApproval: false,
-      scratchpadTodos: [],
-      historyLoaded: false,
-      testExecutions: [],
-      accumulatedTestOutput: new Map(),
-      accumulatedFileContent: new Map(),
-      testSuiteQueue: [],
-      currentSuiteId: null,
-      agentMode: "act",
-      planContent: null,
-      planFilePath: null,
-      usage: null,
-      subscriptionId: null,
-      isProcessingQueue: false,
-    };
-  });
-
-  describe("cancelStream action", () => {
-    it("should set hasCompletedAnalysis to true", () => {
-      mockContext.hasCompletedAnalysis = false;
-
-      // Simulate cancelStream action
-      mockContext.hasCompletedAnalysis = true;
-
-      expect(mockContext.hasCompletedAnalysis).toBe(true);
-    });
-
-    it("should reset isReasoningStreaming to false", () => {
-      mockContext.isReasoningStreaming = true;
-
-      // Simulate cancelStream action
-      mockContext.isReasoningStreaming = false;
-
-      expect(mockContext.isReasoningStreaming).toBe(false);
-    });
-
-    it("should clear currentSuiteId", () => {
-      mockContext.currentSuiteId = "suite-1";
-
-      // Simulate cancelStream action
-      mockContext.currentSuiteId = null;
-
-      expect(mockContext.currentSuiteId).toBeNull();
-    });
-
-    it("should reset isProcessingQueue to false", () => {
-      mockContext.isProcessingQueue = true;
-
-      // Simulate cancelStream action
-      mockContext.isProcessingQueue = false;
-
-      expect(mockContext.isProcessingQueue).toBe(false);
-    });
-
-    it("should mark current suite as cancelled if one is in progress", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Simulate cancelStream action
-      if (mockContext.currentSuiteId) {
-        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-          suite.id === mockContext.currentSuiteId
-            ? { ...suite, status: "cancelled" as const }
-            : suite,
-        );
-      }
-      mockContext.currentSuiteId = null;
-      mockContext.isProcessingQueue = false;
-
-      const cancelledSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
-      expect(cancelledSuite?.status).toBe("cancelled");
-      expect(mockContext.currentSuiteId).toBeNull();
-    });
-
-    it("should not affect completed suites when cancelling", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "completed",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-2";
-
-      // Simulate cancelStream action
-      if (mockContext.currentSuiteId) {
-        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-          suite.id === mockContext.currentSuiteId
-            ? { ...suite, status: "cancelled" as const }
-            : suite,
-        );
-      }
-      mockContext.currentSuiteId = null;
-
-      const completedSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
-      const cancelledSuite = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
-      expect(completedSuite?.status).toBe("completed");
-      expect(cancelledSuite?.status).toBe("cancelled");
-    });
-
-    it("should leave pending suites as pending when cancelling", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "in_progress",
-        },
-        {
-          id: "suite-2",
-          name: "Integration Tests",
-          testType: "integration",
-          targetFilePath: "test2.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-        {
-          id: "suite-3",
-          name: "E2E Tests",
-          testType: "e2e",
-          targetFilePath: "test3.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = "suite-1";
-
-      // Simulate cancelStream action
-      if (mockContext.currentSuiteId) {
-        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-          suite.id === mockContext.currentSuiteId
-            ? { ...suite, status: "cancelled" as const }
-            : suite,
-        );
-      }
-      mockContext.currentSuiteId = null;
-      mockContext.isProcessingQueue = false;
-
-      const suite2 = mockContext.testSuiteQueue.find((s) => s.id === "suite-2");
-      const suite3 = mockContext.testSuiteQueue.find((s) => s.id === "suite-3");
-      expect(suite2?.status).toBe("pending");
-      expect(suite3?.status).toBe("pending");
-    });
-
-    it("should handle cancellation when no suite is in progress", () => {
-      mockContext.testSuiteQueue = [
-        {
-          id: "suite-1",
-          name: "Unit Tests",
-          testType: "unit",
-          targetFilePath: "test.ts",
-          sourceFiles: [],
-          status: "pending",
-        },
-      ];
-      mockContext.currentSuiteId = null;
-      mockContext.isProcessingQueue = false;
-
-      // Simulate cancelStream action - should not throw
-      if (mockContext.currentSuiteId) {
-        mockContext.testSuiteQueue = mockContext.testSuiteQueue.map((suite) =>
-          suite.id === mockContext.currentSuiteId
-            ? { ...suite, status: "cancelled" as const }
-            : suite,
-        );
-      }
-      mockContext.isProcessingQueue = false;
-
-      // All suites should remain pending
-      const suite1 = mockContext.testSuiteQueue.find((s) => s.id === "suite-1");
-      expect(suite1?.status).toBe("pending");
-    });
-
-    it("should allow continuing conversation after cancellation", () => {
-      mockContext.hasCompletedAnalysis = false;
-      mockContext.isReasoningStreaming = true;
-      mockContext.currentSuiteId = "suite-1";
-      mockContext.isProcessingQueue = true;
-
-      // Simulate cancelStream action - re-enables input
-      mockContext.hasCompletedAnalysis = true;
-      mockContext.isReasoningStreaming = false;
-      mockContext.currentSuiteId = null;
-      mockContext.isProcessingQueue = false;
-
-      // User should be able to send new messages
-      expect(mockContext.hasCompletedAnalysis).toBe(true);
-      expect(mockContext.isReasoningStreaming).toBe(false);
-    });
-  });
-});
-
