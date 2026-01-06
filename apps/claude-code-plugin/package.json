@@ -1,0 +1,17 @@
+{
+  "name": "@clive/claude-code-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude Code plugin for AI-powered test planning and execution",
+  "type": "module",
+  "scripts": {
+    "test": "claude --plugin-dir . /clive plan",
+    "lint": "echo 'No linting for markdown plugin'"
+  },
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "testing",
+    "ai"
+  ]
+}

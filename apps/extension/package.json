@@ -130,6 +130,7 @@
     "@clive/api": "*",
     "@clive/core": "*",
     "@clive/db": "*",
+    "@clive/prompts": "*",
     "@clive/ui": "*",
     "@clive/webview-rpc": "*",
     "@iconify-json/vscode-icons": "^1.2.37",
