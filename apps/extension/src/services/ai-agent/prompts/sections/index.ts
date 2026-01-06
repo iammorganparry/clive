@@ -1,27 +1,36 @@
 /**
  * Section Registry
  * Exports all prompt sections and defines their default order
+ *
+ * Shared sections are imported from @clive/prompts
+ * Extension-specific sections are defined locally
  */
 
 import { SectionId, type SectionRegistry } from "../types.js";
+
+// Shared sections from @clive/prompts package
+import {
+  conversation,
+  frameworkGuides,
+  iterativeTesting,
+  knowledgeBase,
+  patternDiscovery,
+  qualityRules,
+  sandbox,
+  testEvaluation,
+  testExecution,
+  testUpdateDetection,
+  verification,
+  workflow,
+} from "@clive/prompts/sections";
+
+// Extension-specific sections (local)
 import { agentRole } from "./agent-role.js";
 import { agentRules } from "./agent-rules.js";
 import { completionSignal } from "./completion-signal.js";
-import { conversation } from "./conversation.js";
 import { fileOperations } from "./file-operations.js";
-import { frameworkGuides } from "./framework-guides.js";
-import { iterativeTesting } from "./iterative-testing.js";
-import { knowledgeBase } from "./knowledge-base.js";
-import { patternDiscovery } from "./pattern-discovery.js";
-import { qualityRules } from "./quality-rules.js";
-import { sandbox } from "./sandbox.js";
-import { taskInstructions } from "./task-instructions.js";
-import { testEvaluation } from "./test-evaluation.js";
-import { testExecution } from "./test-execution.js";
-import { testUpdateDetection } from "./test-update-detection.js";
 import { regressionDetection } from "./regression-detection.js";
-import { verification } from "./verification.js";
-import { workflow } from "./workflow.js";
+import { taskInstructions } from "./task-instructions.js";
 import { workspaceContext } from "./workspace-context.js";
 
 /**

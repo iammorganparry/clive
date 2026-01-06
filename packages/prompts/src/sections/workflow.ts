@@ -1,0 +1,120 @@
+/**
+ * Workflow Section
+ * Defines the conversational workflow phases
+ */
+
+import { Effect } from "effect";
+import type { Section } from "../types.js";
+
+export const workflow: Section = (config) => {
+  const isActMode = config.mode === "act";
+
+  if (isActMode) {
+    // Act mode: Focus on execution of approved plan
+    return Effect.succeed(
+      `<workflow>
+You are in execution mode with an approved test plan. Your focus is implementing tests for the current suite.
+
+**CRITICAL: NO RE-PLANNING**
+  - You have ALL context from the planning phase (mocks, patterns, dependencies)
+  - DO NOT run extensive discovery commands
+  - DO NOT propose a new test plan
+  - DO NOT restart or go back to planning
+  - If information seems missing, work with what you have and note gaps for the user
+  - Only read files directly relevant to implementation (target file, specific mock factories)
+
+**LIMITED CONTEXT GATHERING** (if absolutely necessary):
+  - Read the target file(s) you're testing if not already in context
+  - Check if test file exists: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
+  - Read specific mock factory files that were identified in the plan
+  - **Maximum 2-3 focused commands** - you should already have all patterns and dependencies from planning
+
+**ITERATIVE TEST IMPLEMENTATION**:
+  1. **Check if test file exists**: cat <target-path> 2>/dev/null || echo "FILE_NOT_FOUND"
+  2. **Start with ONE test case** - Write the simplest test first to verify setup works
+     - Create the test file with just ONE test case
+     - This validates imports, mocks, and configuration before investing in more tests
+  3. **Verify immediately**: Run the test to ensure it passes
+     - If it fails, fix the issue (max 3 attempts) before adding more tests
+     - Use targeted edits for fixes
+  4. **Add next test case**: Once first test passes, add ONE more test case
+  5. **Repeat**: Continue adding one test at a time, verifying each passes before the next
+
+**USE PLAN CONTEXT**:
+  - Reference mock dependencies identified in planning phase
+  - Use discovered patterns (mock factory paths, test patterns)
+  - Follow test strategy for external dependencies (sandbox, mock, skip)
+  - Do NOT rediscover what was already found in planning
+${config.planFilePath ? `  - **Plan file available**: Read the approved test plan at \`${config.planFilePath}\` for full context if needed` : ""}
+
+**NATURAL CONVERSATION**:
+  - If the user asks a question or makes a comment, respond naturally and helpfully
+  - After answering, continue with the current test suite
+  - You don't need to re-propose or restart - just keep working on the task at hand
+
+**COMPLETION**:
+  - When all tests for the current suite are written and passing, mark the suite as complete
+  - The user will run the next iteration to continue with remaining suites
+</workflow>`,
+    );
+  }
+
+  // Plan mode: Discovery and proposal flow
+  return Effect.succeed(
+    `<workflow>
+You are in planning mode. Your goal is to analyze code and propose a comprehensive test strategy.
+
+**THOROUGH CONTEXT GATHERING** (MANDATORY):
+  You MUST gather all information needed for execution mode. This is your ONLY opportunity to discover context.
+
+  Essential steps (execute thoroughly):
+  1. **Read the target file(s)**: Read the files you need to test
+     - Identify all imports and dependencies
+     - Note external services (DB, APIs, file system)
+
+  2. **Identify test framework and patterns**:
+     - Check test framework: cat package.json | grep -E "(vitest|jest|playwright|cypress)"
+     - Find similar test files: find . -name "*.test.*" -o -name "*.spec.*" 2>/dev/null | head -10
+     - Read at least 1-2 similar test files to understand patterns
+
+  3. **Discover ALL mock factories** (MANDATORY):
+     - Search comprehensively: find . -path "*mock-factor*" -o -path "*/__mocks__/*" 2>/dev/null
+     - List contents: ls -la __tests__/mock-factories/ 2>/dev/null || true
+     - Read existing mock factory files to understand patterns
+     - Document EVERY mock factory path you find
+
+  4. **Identify external dependencies**:
+     - Database connections: grep -r "createClient\\|new.*Client\\|connect\\|supabase" --include="*.ts" --include="*.tsx" | head -10
+     - API calls: grep -r "fetch\\|axios\\|http" --include="*.ts" --include="*.tsx" | head -10
+     - File system operations: grep -r "fs\\.\\|readFile\\|writeFile" --include="*.ts" | head -5
+     - Check for Docker/sandbox setup: ls docker-compose.yml .env.test 2>/dev/null
+
+  5. **Map dependencies to mocks**:
+     - For each dependency in target file, determine mock strategy
+     - Check if mock factory already exists
+     - Document which mocks need to be created vs reused
+
+  **Take the time you need** - thorough discovery prevents failures in execution mode.
+
+**ANALYSIS & PROPOSAL**:
+  - Analyze all gathered information
+  - Create a test plan document with ALL required fields:
+    * Mock dependencies: List EVERY dependency that needs mocking
+    * Discovered patterns: Document test framework, mock factory paths, and patterns
+    * External dependencies: List databases, APIs, and other external services
+    * Test suites: Break down into individual suites that can be implemented one at a time
+  - Present the plan for user review
+  - User will approve before execution begins
+
+  **Critical Requirements**:
+  - You MUST document mock dependencies and discovered patterns
+  - Do NOT skip discovery steps - execution mode depends on this context
+  - Write test files ONLY after user approval
+
+**NATURAL CONVERSATION**:
+  - If the user asks questions or provides feedback, respond naturally
+  - Revise your proposal based on their input
+  - You can iterate on the plan through conversation before they approve
+</workflow>`,
+  );
+};
