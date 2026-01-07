@@ -1,5 +1,6 @@
 ---
 description: Implement tests from the approved plan using the Ralph Wiggum loop (one suite at a time)
+model: claude-sonnet-4-20250514
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

@@ -1,4 +1,38 @@
 {
+    "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npx biome lint:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(/Users/morganparry/.local/bin/claude:*)",
+      "Bash(npx vitest:*)",
+      "Bash(apps/extension/src/services/ai-agent/__tests__/cli-tool-executor.spec.ts )",
+      "Bash(apps/extension/src/services/ai-agent/__tests__/cli-execution-loop.spec.ts )",
+      "Bash(apps/extension/src/webview/pages/changeset-chat/components/tool-call/__tests__/utils.spec.ts )",
+      "Bash(apps/extension/src/webview/pages/changeset-chat/components/tool-call/__tests__/format-output.spec.tsx )",
+      "Bash(git -C /Users/morganparry/repos/clive log --oneline --all -20)",
+      "Bash(git -C /Users/morganparry/repos/clive show:*)",
+      "Bash(yarn workspace clive test:unit:*)",
+      "Bash(yarn workspace @anthropic/clive-extension test:unit:*)",
+      "Bash(yarn test:unit:*)",
+      "Bash(yarn workspace @anthropic/clive-extension check-types:*)",
+      "Bash(yarn lint:*)",
+      "Bash(yarn check-types:*)",
+      "Bash(xargs -I {} sh -c 'echo \"\"=== {} ===\"\" && head -30 \"\"{}\"\"')",
+      "Bash(yarn workspaces info:*)",
+      "Bash(yarn workspace:*)",
+      "Bash(find:*)",
+      "Bash(xargs:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(chmod:*)",
+      "Bash(yarn install:*)",
+      "Bash(done)",
+      "Bash(yarn build)"
+    ]
+  },
   "extraKnownMarketplaces": {
     "clive-marketplace": {
       "source": {

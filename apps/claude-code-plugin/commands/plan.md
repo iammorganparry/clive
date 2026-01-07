@@ -1,5 +1,6 @@
 ---
 description: Analyze changed files and create a comprehensive test plan
+model: claude-sonnet-4-20250514
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -442,6 +443,32 @@ Tell the user:
 
 ---
 
+## What Makes a Great Test
+
+**A great test covers behavior users depend on.**
+
+- It tests a feature that, if broken, would frustrate or block users
+- It validates real workflows, not implementation details
+- It catches regressions before users do
+
+**Prioritize tests for:**
+- Error handling users will actually encounter
+- CLI commands and user-facing APIs
+- Data operations (git, file parsing, database)
+- Integration points between modules
+
+**Deprioritize tests for:**
+- Internal utilities with no user-facing impact
+- Edge cases users won't realistically encounter
+- Boilerplate and plumbing code
+- Implementation details that may change
+
+**Do NOT write tests just to increase coverage.**
+
+Use coverage as a guide to find untested user-facing behavior. If uncovered code is not worth testing (boilerplate, unreachable error branches, internal plumbing), recommend adding ignore comments (`/* v8 ignore next */` or `/* istanbul ignore next */`) instead of writing low-value tests.
+
+---
+
 ## Quality Requirements
 
 - Every test case must test REAL behavior from the source code
@@ -450,3 +477,4 @@ Tell the user:
 - Use existing mock factories when available
 - Follow DRY principles - don't duplicate mock code
 - Recommend refactors for hard-to-test code
+- Recommend coverage ignore comments for untestable/low-value code
