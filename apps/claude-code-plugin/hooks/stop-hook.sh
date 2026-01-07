@@ -107,7 +107,12 @@ echo "$CURRENT_ITERATION" > "$STATE_FILE"
 # Log progress
 echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING suites remaining (plan: $PLAN_FILE)" >&2
 
-# Block exit and continue the loop by outputting the next prompt
-# Exit code 1 signals to Claude Code to continue with the output as the next prompt
-echo "Continue implementing tests from $PLAN_FILE. $REMAINING test suites remaining. Run the next pending suite."
-exit 1
+# Block exit and continue the loop using official JSON format
+# Exit code 0 with decision:block tells Claude Code to continue
+cat <<EOF
+{
+  "decision": "block",
+  "reason": "Continue implementing tests from $PLAN_FILE. $REMAINING test suites remaining ($CURRENT_ITERATION/$MAX_ITERATIONS iterations). Run the next pending suite."
+}
+EOF
+exit 0
