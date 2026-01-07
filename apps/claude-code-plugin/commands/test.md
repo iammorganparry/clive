@@ -13,8 +13,8 @@ This command follows the "iteration over perfection" philosophy:
 
 - Work on ONE suite per invocation
 - Track progress via the plan file
-- User runs `/clive test` again to continue
-- Loop continues until all suites are complete or a stop condition is met
+- Loop automatically continues to the next suite
+- Stop conditions (completion, max iterations, cancellation) end the loop
 
 ---
 
@@ -168,8 +168,6 @@ Plan file: [PLAN_FILE]
 Run your test suite to verify: [test command]
 ```
 
-Then STOP - do not continue.
-
 ---
 
 ## Step 3: Mark Suite In Progress
@@ -298,9 +296,9 @@ Update the plan file (`$PLAN_FILE`):
 
 ---
 
-## Step 7: Report and Signal Continuation
+## Step 7: Report Progress
 
-Output a progress report:
+Output a brief progress report:
 
 ```
 Suite "[name]" complete. [X] tests passing.
@@ -310,10 +308,9 @@ Progress: [completed]/[total] suites
 - Remaining: [list]
 
 Plan: [PLAN_FILE]
-Run `/clive test` to continue with the next suite.
 ```
 
-**IMPORTANT:** After reporting, the user must run `/clive test` again to continue. This prevents runaway execution and allows user oversight.
+The loop will automatically continue to the next suite. Use `/clive cancel` to stop early if needed.
 
 ---
 
