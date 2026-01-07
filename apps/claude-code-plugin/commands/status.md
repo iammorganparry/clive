@@ -83,18 +83,38 @@ echo "=== Recent Claude Code Plans (last 24h) ==="
 echo ""
 
 # Find recently modified Claude Code plans
-recent_plans=$(find ~/.claude/plans -name "*.md" -mtime -1 2>/dev/null | head -5)
-if [ -n "$recent_plans" ]; then
-    for plan in $recent_plans; do
-        # Extract first line (usually the title)
+# Check BOTH repo-local and system-level plans
+recent_plans=""
+
+# Repo-local plans (higher priority)
+if [ -d ".claude/plans" ]; then
+    repo_plans=$(find .claude/plans -name "*.md" -mtime -1 2>/dev/null | head -5)
+    if [ -n "$repo_plans" ]; then
+        echo "  --- Repo-local plans (.claude/plans/) ---"
+        for plan in $repo_plans; do
+            title=$(head -1 "$plan" | sed 's/^# //')
+            echo "  $(basename "$plan"): $title"
+        done
+        echo ""
+    fi
+fi
+
+# System-level plans
+system_plans=$(find ~/.claude/plans -name "*.md" -mtime -1 2>/dev/null | head -5)
+if [ -n "$system_plans" ]; then
+    echo "  --- System plans (~/.claude/plans/) ---"
+    for plan in $system_plans; do
         title=$(head -1 "$plan" | sed 's/^# //')
         echo "  $(basename "$plan"): $title"
     done
     echo ""
-    echo "  These may contain context for your current work."
-else
+fi
+
+if [ -z "$repo_plans" ] && [ -z "$system_plans" ]; then
     echo "  No recent plans found."
 fi
+
+echo "  These may contain context for your current work."
 echo ""
 ```
 

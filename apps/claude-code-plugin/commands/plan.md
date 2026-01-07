@@ -1,6 +1,6 @@
 ---
 description: Analyze changed files and create a comprehensive test plan
-model: claude-sonnet-4-20250514
+model: opus
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -60,10 +60,26 @@ fi
 
 ```bash
 # Find recently modified Claude Code plans (last 24 hours)
+# Check BOTH repo-local and system-level plans
+echo "=== Checking for Claude Code context ==="
+
+# Repo-local plans (higher priority - more relevant to current work)
+if [ -d ".claude/plans" ]; then
+    find .claude/plans -name "*.md" -mtime -1 2>/dev/null | head -5
+fi
+
+# System-level plans
 find ~/.claude/plans -name "*.md" -mtime -1 2>/dev/null | head -5
 
-# Get the most recent plan
-LATEST_PLAN=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
+# Get the most recent plan (prefer repo-local, then system)
+LATEST_PLAN=""
+if [ -d ".claude/plans" ]; then
+    LATEST_PLAN=$(ls -t .claude/plans/*.md 2>/dev/null | head -1)
+fi
+if [ -z "$LATEST_PLAN" ]; then
+    LATEST_PLAN=$(ls -t ~/.claude/plans/*.md 2>/dev/null | head -1)
+fi
+
 if [ -n "$LATEST_PLAN" ]; then
     echo "=== Found recent Claude Code plan: $LATEST_PLAN ==="
     # Read first 100 lines to understand context
@@ -164,12 +180,44 @@ find . -type f \( -name "*.ts" -o -name "*.tsx" \) | xargs grep -l -E "(catch|th
 
 **CRITICAL: Thorough discovery is essential. Take the time you need.**
 
+**You MUST understand how features work before creating a test plan.** Surface-level file reading is NOT enough.
+
 For each changed source file:
 
-### 3.1 Read and Understand the File
+### 3.1 Read and Deeply Understand the Feature
+
+**Don't just skim files - understand the complete feature flow:**
+
 ```bash
 cat path/to/changed/file
 ```
+
+**After reading, you MUST be able to answer:**
+- What is this feature's purpose from the user's perspective?
+- What is the complete flow (entry point → processing → output)?
+- What are the key business rules or logic decisions?
+- What are the expected inputs and outputs?
+- What edge cases exist?
+- How does this feature interact with other parts of the system?
+
+**Trace the feature flow:**
+```bash
+# Find where this function/class is called from
+grep -r "functionName\|ClassName" --include="*.ts" --include="*.tsx" . | grep -v node_modules | head -20
+
+# Find what this file imports and trace those dependencies
+grep "^import" path/to/file
+
+# Read related files to understand the full context
+cat path/to/related/file
+```
+
+**For custom requests (Mode C):** Ask the user to explain how the feature works if it's not clear from the code:
+> "I've read the code for [feature], but I want to make sure I understand it correctly:
+> - Is the flow [describe your understanding]?
+> - What happens when [edge case]?
+> - Are there any non-obvious behaviors I should test?"
+
 - Identify the file's purpose and responsibilities
 - Note all imports and dependencies
 - List exported functions, classes, or components
@@ -237,11 +285,52 @@ Look for:
 
 ---
 
-## Step 4: Clarify Intent (MANDATORY)
+## Step 4: Clarify Intent
 
-**Before creating the test plan, you MUST ask clarifying questions when:**
+**Mode-specific behavior:**
+- **Mode C (Custom Request)**: Complete Section 4.0 FIRST - interview is REQUIRED
+- **Mode A & B (Git-based)**: Interview is OPTIONAL - only ask when ambiguity exists (see 4.1-4.4)
 
-### 4.1 Ambiguous Changes
+---
+
+### 4.0 Custom Request Interview (REQUIRED for Mode C ONLY)
+
+**This section is MANDATORY for custom-request mode. Skip to 4.1 for git-based modes.**
+
+When the user provides a custom request (e.g., `/clive plan add tests for authentication`), you lack the context that git diffs provide. You MUST interview the user to understand their intent AND the feature itself.
+
+**First, demonstrate your understanding of the feature:**
+
+After reading the code in Step 3, summarize what you learned:
+> "Based on my analysis of the code, here's my understanding of [feature]:
+>
+> **Purpose:** [what it does for users]
+> **Flow:** [entry point] → [processing steps] → [output]
+> **Key behaviors:** [list main functionality]
+> **Edge cases I noticed:** [list any]
+>
+> Is this understanding correct? Is there anything I'm missing?"
+
+**Then ask these questions:**
+
+> "To create the best test plan, I need to understand your goals:
+>
+> 1. **Feature Clarification**: Did I understand the feature correctly above? Any corrections?
+> 2. **Scope**: Which files/modules should be the primary focus?
+> 3. **Test Types**: Are you looking for unit tests, integration tests, e2e tests, or a mix?
+> 4. **Priority**: What's the most critical functionality to test first?
+> 5. **Coverage Goals**: Any specific scenarios or edge cases you want covered?
+> 6. **Constraints**: Any existing test patterns I should follow or dependencies I should be aware of?"
+
+**DO NOT proceed to Step 5 until:**
+1. The user has confirmed your feature understanding is correct
+2. The user has answered the planning questions
+
+---
+
+### 4.1 Ambiguous Changes (Git-based modes)
+
+**For git-based modes, ask clarifying questions when:**
 - Function signature changed but purpose unclear
 - New parameters added without obvious use
 - Code removed without clear replacement
@@ -423,7 +512,7 @@ ln -sf "test-plan-${BRANCH}.md" .claude/test-plan-latest.md
 
 ---
 
-## Step 7: Present for Review
+## Step 7: Present for Review (STOP HERE - DO NOT PROCEED TO TESTING)
 
 After creating the plan, provide a summary:
 
@@ -434,12 +523,19 @@ After creating the plan, provide a summary:
 5. **Refactor recommendations** (if any)
 6. **Any concerns** or questions about the approach
 
-Tell the user:
+**Present the plan and STOP:**
+
 > Test plan created at: `.claude/test-plan-[branch].md`
 >
-> To implement tests, run:
-> - `/clive test` (uses latest plan)
-> - `/clive test .claude/test-plan-[branch].md` (uses specific plan)
+> **Please review the plan above.**
+>
+> When you're ready to proceed, run `/clive test` to begin implementing the test suites.
+
+**CRITICAL: Your job ends here.**
+- Do NOT suggest running tests immediately
+- Do NOT offer to start implementation
+- Do NOT invoke `/clive test` yourself
+- The user must explicitly run `/clive test` when ready
 
 ---
 
