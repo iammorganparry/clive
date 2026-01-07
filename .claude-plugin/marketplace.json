@@ -1,0 +1,23 @@
+{
+  "name": "clive-marketplace",
+  "owner": {
+    "name": "Clive Team"
+  },
+  "metadata": {
+    "description": "Official marketplace for Clive - AI-powered test planning and execution tools",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "clive",
+      "source": "./apps/claude-code-plugin",
+      "description": "AI-powered test planning and execution using the Ralph Wiggum loop pattern",
+      "version": "1.0.0",
+      "author": {
+        "name": "Clive Team"
+      },
+      "keywords": ["testing", "ai", "automation", "ralph-wiggum"],
+      "category": "testing"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "clive-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "iammorganparry/clive"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "clive@clive-marketplace": true
+  }
+}
