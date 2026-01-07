@@ -107,12 +107,17 @@ echo "$CURRENT_ITERATION" > "$STATE_FILE"
 # Log progress
 echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING suites remaining (plan: $PLAN_FILE)" >&2
 
-# Block exit and continue the loop using official JSON format
-# Exit code 0 with decision:block tells Claude Code to continue
+# Block exit and continue the loop using official Ralph pattern
+# "reason" contains the actual prompt to execute (becomes next user message)
+# "systemMessage" provides iteration context
+PROMPT="Continue implementing tests from the plan at $PLAN_FILE. Find the next pending or in_progress suite and implement it."
+SYSTEM_MSG="Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING test suites remaining"
+
 cat <<EOF
 {
   "decision": "block",
-  "reason": "Continue implementing tests from $PLAN_FILE. $REMAINING test suites remaining ($CURRENT_ITERATION/$MAX_ITERATIONS iterations). Run the next pending suite."
+  "reason": "$PROMPT",
+  "systemMessage": "$SYSTEM_MSG"
 }
 EOF
 exit 0
