@@ -112,8 +112,7 @@ echo "   Progress: $PROGRESS_FILE"
 echo "   Completion marker: $COMPLETION_MARKER"
 echo ""
 
-# Read test prompt content (strip frontmatter)
-TEST_PROMPT_CONTENT=$(sed '1{/^---$/!q;};1,/^---$/d' "$TEST_PROMPT")
+# Note: Test prompt is no longer embedded - Claude reads it via allowed-tools
 
 # Create temp file for iteration instructions
 TEMP_PROMPT=$(mktemp)
@@ -135,72 +134,30 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     fi
     echo ""
 
-    # Read current plan and progress
-    PLAN_CONTENT=$(cat "$PLAN_FILE")
-    PROGRESS_CONTENT=$(cat "$PROGRESS_FILE")
-
-    # Build context block
-    CONTEXT_BLOCK=""
-    if [ -n "$EXTRA_CONTEXT" ]; then
-        CONTEXT_BLOCK="## Additional Context
-$EXTRA_CONTEXT
-
----
-
-"
-    fi
-
-    # Write combined prompt to temp file
-    # Key: Tell Claude to APPEND to progress.txt (not overwrite)
+    # Build minimal context - don't embed file contents, let Claude read them
     {
-        echo "## Test Plan"
-        echo "$PLAN_CONTENT"
+        echo "# Test Implementation - Iteration $i/$MAX_ITERATIONS"
         echo ""
-        echo "## Progress So Far"
-        echo "$PROGRESS_CONTENT"
+        echo "## Files to Read"
+        echo "- Plan: $PLAN_FILE"
+        echo "- Progress: $PROGRESS_FILE"
         echo ""
-        echo "$CONTEXT_BLOCK"
-        echo "$TEST_PROMPT_CONTENT"
+        if [ -n "$EXTRA_CONTEXT" ]; then
+            echo "## Additional Context"
+            echo "$EXTRA_CONTEXT"
+            echo ""
+        fi
+        echo "## Instructions"
         echo ""
-        echo "=============================================="
-        echo "IMPORTANT INSTRUCTIONS (MUST FOLLOW):"
-        echo "=============================================="
+        echo "1. Read the plan file to find the FIRST suite with Status: pending or in_progress"
+        echo "2. Read the progress file to see what was already completed - do NOT repeat work"
+        echo "3. Follow the test.md prompt to implement one test suite"
+        echo "4. Update the plan file status when done"
+        echo "5. Append a brief summary to the progress file"
         echo ""
-        echo "Plan file: $PLAN_FILE"
-        echo "Progress file: $PROGRESS_FILE"
-        echo "Iteration: $i/$MAX_ITERATIONS"
-        echo ""
-        echo "STEP 0: REVIEW PROGRESS (above) - Check what was completed in previous iterations"
-        echo "   - The '## Progress So Far' section shows work from previous iterations"
-        echo "   - Do NOT repeat work that was already completed"
-        echo "   - If a suite is marked 'complete' in progress, it's DONE"
-        echo ""
-        echo "STEP 1: Find the FIRST suite with Status: pending or in_progress from the embedded plan above"
-        echo "   - Skip any suites already marked complete/blocked/skipped in the plan"
-        echo ""
-        echo "STEP 2: IMMEDIATELY update plan file status to in_progress:"
-        echo "   Edit $PLAN_FILE to change: '- [ ] **Status:** pending' to '- [ ] **Status:** in_progress'"
-        echo ""
-        echo "STEP 3: Implement the test suite and verify tests pass"
-        echo ""
-        echo "STEP 4: Update plan file status when done:"
-        echo "   - If tests PASS: change to '- [x] **Status:** complete'"
-        echo "   - If tests FAIL after 5+ attempts: change to '- [ ] **Status:** blocked'"
-        echo ""
-        echo "STEP 5: APPEND progress summary to $PROGRESS_FILE (REQUIRED):"
-        echo "   Use this format:"
-        echo "   ---"
-        echo "   ## Iteration $i - [Suite Name]"
-        echo "   - Status: [complete/blocked/in_progress]"
-        echo "   - Tests: [X passing / Y total]"
-        echo "   - Summary: [brief description of work done]"
-        echo "   ---"
-        echo ""
-        echo "STEP 6: Output completion marker:"
-        echo "   - If this suite is done: $ITERATION_COMPLETE_MARKER"
-        echo "   - If ALL suites are done: $COMPLETION_MARKER"
-        echo ""
-        echo "=============================================="
+        echo "## Completion Markers"
+        echo "- Suite done: $ITERATION_COMPLETE_MARKER"
+        echo "- All suites done: $COMPLETION_MARKER"
     } > "$TEMP_PROMPT"
 
     # Build claude command args
