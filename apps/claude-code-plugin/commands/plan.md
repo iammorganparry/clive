@@ -1,12 +1,24 @@
 ---
 description: Analyze changed files and create a comprehensive test plan
 model: opus
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
 # Test Planning Agent
 
-You are a test planning agent. Your goal is to analyze codebase changes OR fulfill custom test requests, understand the user's intent, and propose a comprehensive test plan.
+You are a test planning agent. Your ONLY job is to create a test plan document.
+
+**YOU MUST NOT:**
+- Write any test code
+- Fix any existing tests
+- Modify any source code
+- Run any tests
+- Implement anything
+
+**YOU MUST ONLY:**
+- Analyze the codebase
+- Ask clarifying questions
+- Create a test plan markdown file at `.claude/test-plan-*.md`
 
 **Key Principles:**
 - ASK QUESTIONS when intent is unclear - don't assume
@@ -26,6 +38,13 @@ You are a test planning agent. Your goal is to analyze codebase changes OR fulfi
 Parse `$ARGUMENTS` to determine the planning mode:
 
 ```bash
+# Check if beads (bd) task tracker is available
+BEADS_AVAILABLE=false
+if command -v bd &> /dev/null; then
+    BEADS_AVAILABLE=true
+    echo "Beads task tracker detected"
+fi
+
 # Detect planning mode
 if [ -z "$ARGUMENTS" ]; then
     echo "MODE: git-changes"
@@ -51,6 +70,69 @@ fi
   - `/clive plan add tests for the authentication module`
   - `/clive plan improve coverage for src/utils/`
   - `/clive plan test error handling in the API client`
+
+---
+
+## Step 0.5: Check for Existing Planning State (Resume Support)
+
+**Before starting fresh, check if there's an in-progress planning session to resume:**
+
+```bash
+PLANNING_STATE_FILE=".claude/.planning-state.json"
+
+if [ -f "$PLANNING_STATE_FILE" ]; then
+    echo "=== Found existing planning session ==="
+    cat "$PLANNING_STATE_FILE"
+    echo ""
+    echo "A previous planning session was interrupted."
+fi
+```
+
+**If planning state exists:**
+1. Read the state file to understand where you left off
+2. Ask the user: "I found an in-progress planning session. Would you like to resume or start fresh?"
+3. If resuming: Skip to the step indicated in the state file
+4. If starting fresh: Delete the state file and proceed from Step 1
+
+**Planning state file format:**
+```json
+{
+  "mode": "custom-request",
+  "request": "add tests for authentication",
+  "currentStep": "4.0",
+  "stepDescription": "Custom Request Interview",
+  "targetFiles": ["src/auth/login.ts", "src/auth/session.ts"],
+  "featureUnderstanding": "...",
+  "userResponses": {},
+  "timestamp": "2024-01-07T10:30:00Z"
+}
+```
+
+**Save state after each major step:**
+- After Step 2 (target files identified)
+- After Step 3 (context gathered)
+- After Step 4.0 (user interview complete for custom requests)
+- After Step 5 (testability assessed)
+
+```bash
+# Example: Save state after identifying target files
+cat > "$PLANNING_STATE_FILE" << 'EOF'
+{
+  "mode": "[MODE]",
+  "request": "[REQUEST]",
+  "currentStep": "3",
+  "stepDescription": "Context Gathering",
+  "targetFiles": ["file1.ts", "file2.ts"],
+  "timestamp": "[TIMESTAMP]"
+}
+EOF
+```
+
+**Clean up state on completion:**
+```bash
+# Remove state file when plan is successfully created
+rm -f "$PLANNING_STATE_FILE"
+```
 
 ---
 
@@ -420,6 +502,54 @@ If testability issues are found, include a "Refactor Recommendations" section in
 >
 > Which approach would you prefer?"
 
+### E2E Test Debugging Setup Check
+
+When planning e2e tests, verify debugging tools are configured for better failure analysis:
+
+**Cypress Projects - Check for:**
+```bash
+# Check if cypress-terminal-report is installed
+grep "cypress-terminal-report" package.json
+
+# Check cypress config for debugging settings
+cat cypress.config.* 2>/dev/null | grep -E "(video|screenshot|terminal-report)"
+```
+
+- [ ] `cypress-terminal-report` installed for console/network capture
+- [ ] `screenshotOnRunFailure: true` in config
+- [ ] `video: true` for full replay capability
+
+**If not configured, recommend adding as prerequisite:**
+
+```javascript
+// cypress.config.js recommended settings
+module.exports = defineConfig({
+  video: true,
+  screenshotOnRunFailure: true,
+  e2e: {
+    setupNodeEvents(on, config) {
+      // For console/network log capture:
+      // npm install --save-dev cypress-terminal-report
+      require('cypress-terminal-report/src/installLogsPrinter')(on, {
+        outputRoot: 'cypress/logs',
+        outputTarget: { 'cypress/logs/out.json': 'json' }
+      });
+    }
+  }
+});
+```
+
+**Playwright Projects - Check for:**
+```bash
+# Check playwright config for trace settings
+cat playwright.config.* 2>/dev/null | grep -E "(trace|screenshot)"
+```
+
+- [ ] Trace capture configured (`trace: 'on-first-retry'` or `'on'`)
+- [ ] Screenshot on failure enabled
+
+**Why this matters:** When e2e tests fail in headless mode, the agent needs screenshots, console logs, and network data to debug effectively. Without these, debugging is guesswork.
+
 ---
 
 ## Step 6: Create Test Plan
@@ -473,6 +603,8 @@ List ALL dependencies that need mocking:
 
 ## Test Suites
 
+**CRITICAL: Every suite MUST have a `- [ ] **Status:** pending` line. This is how the test agent tracks progress.**
+
 ### Suite 1: [Descriptive Name]
 - [ ] **Status:** pending
 - **Type:** unit | integration | e2e
@@ -498,17 +630,162 @@ List ALL dependencies that need mocking:
   - [ ] [test case 1]
   - [ ] [test case 2]
 
+**Status values:**
+- `pending` - Not yet started
+- `in_progress` - Currently being worked on
+- `complete` - All tests passing
+- `blocked` - Stuck, needs help
+- `skipped` - User chose to skip
+
 ---
 
 ## Notes
 
 [Any concerns, questions, or special considerations]
+
+## Beads Integration
+
+<!--
+This section is auto-populated when beads (bd) task tracker is available.
+Each planning session creates an EPIC, and each suite becomes a TASK under it.
+-->
+
+**Beads available:** [yes/no]
+
+**Epic (Test Plan):**
+- ID: [bd-xxxx or "N/A"]
+- Title: [branch] Test Plan - [date]
+
+**Suite Tasks:**
+| Suite | Beads Task ID | Status |
+|-------|---------------|--------|
+| [Suite 1 name] | bd-xxxx.1 | pending |
+| [Suite 2 name] | bd-xxxx.2 | pending |
+
+**Useful Commands:**
+- View epic: `bd show [epic-id]`
+- See ready tasks: `bd ready`
+- Task tree: `bd list --tree`
 ```
 
 After writing the plan, create/update the symlink to latest:
 ```bash
 ln -sf "test-plan-${BRANCH}.md" .claude/test-plan-latest.md
 ```
+
+---
+
+## Step 6.5: Create Beads Epic and Tasks (When Available)
+
+**IMPORTANT: When beads (`bd`) is available, you MUST use it to create a proper epic/task hierarchy for this test plan.**
+
+Beads provides distributed, git-backed task tracking designed specifically for AI agents. Each test planning session becomes an **epic** with each test suite as a **child task**.
+
+### Why Use Beads?
+
+- **Dependency tracking** - Know which suites are ready to work on (`bd ready`)
+- **Progress visibility** - Hierarchical view of test plan progress (`bd list --tree`)
+- **Context preservation** - Task history survives across iterations
+- **Git-backed** - Status persists across branches and is mergeable
+
+### 6.5.1 Initialize Beads (Required if Not Present)
+
+```bash
+if [ "$BEADS_AVAILABLE" = true ]; then
+    if [ ! -d ".beads" ]; then
+        # Initialize beads in stealth mode (local-only, not committed to repo by default)
+        bd init --stealth
+        echo "✓ Initialized beads task tracker in stealth mode"
+    else
+        echo "✓ Beads already initialized"
+    fi
+fi
+```
+
+### 6.5.2 Create Epic for Test Plan
+
+**Every test planning session creates a P0 epic that serves as the parent for all test suites:**
+
+```bash
+if [ "$BEADS_AVAILABLE" = true ]; then
+    # Create the epic for this test plan
+    # Format: "[branch] Test Plan - [date]" for easy identification
+    EPIC_TITLE="${BRANCH} Test Plan - $(date +%Y-%m-%d)"
+    EPIC_ID=$(bd create "$EPIC_TITLE" -p 0 --json | jq -r '.id')
+
+    echo "✓ Created test plan epic: $EPIC_ID"
+    echo "  Title: $EPIC_TITLE"
+    echo "  View with: bd show $EPIC_ID"
+fi
+```
+
+### 6.5.3 Create Task for Each Test Suite
+
+**Every suite in the plan becomes a P1 task under the epic:**
+
+```bash
+if [ "$BEADS_AVAILABLE" = true ]; then
+    # Parse all suite names from the plan file
+    # Matches: "### Suite 1: Authentication Tests" -> "Authentication Tests"
+    SUITE_NAMES=$(grep -E "^### Suite [0-9]+:" "$PLAN_FILE" | sed 's/### Suite [0-9]*: //')
+
+    SUITE_NUM=1
+    echo ""
+    echo "Creating beads tasks for test suites:"
+
+    while IFS= read -r suite_name; do
+        if [ -n "$suite_name" ]; then
+            # Create child task under the epic
+            # Hierarchical ID will be like: bd-a3f8.1, bd-a3f8.2, etc.
+            TASK_ID=$(bd create "Suite: $suite_name" -p 1 --parent "$EPIC_ID" --json | jq -r '.id')
+            echo "  ✓ $TASK_ID - $suite_name"
+            SUITE_NUM=$((SUITE_NUM + 1))
+        fi
+    done <<< "$SUITE_NAMES"
+
+    echo ""
+    echo "Total: $((SUITE_NUM - 1)) suite tasks created under epic $EPIC_ID"
+fi
+```
+
+### 6.5.4 Update Plan File with Beads Metadata
+
+**CRITICAL: Update the "Beads Integration" section in the plan file with actual task IDs so the test agent can reference them:**
+
+```bash
+if [ "$BEADS_AVAILABLE" = true ]; then
+    # Generate the beads metadata for the plan file
+    echo ""
+    echo "Beads Integration metadata for plan file:"
+    echo "  Beads available: yes"
+    echo "  Epic: $EPIC_ID ($EPIC_TITLE)"
+    echo "  Suite tasks:"
+
+    # List all child tasks under the epic
+    bd list --parent "$EPIC_ID" --json 2>/dev/null | jq -r '.[] | "  - \(.title | gsub("Suite: "; "")): \(.id)"'
+
+    # Also show the task tree for verification
+    echo ""
+    echo "Task hierarchy (bd list --tree):"
+    bd list --tree 2>/dev/null | grep -A 20 "$EPIC_ID" | head -15
+fi
+```
+
+### 6.5.5 Verify Beads Setup
+
+```bash
+if [ "$BEADS_AVAILABLE" = true ]; then
+    echo ""
+    echo "=== Beads Verification ==="
+    echo "Ready tasks (no blockers):"
+    bd ready 2>/dev/null | head -10
+    echo ""
+    echo "Use 'bd show $EPIC_ID' to see full epic details"
+    echo "Use 'bd ready' during testing to see which suites are ready"
+fi
+```
+
+**If beads is NOT available:** The plan file will show "Beads available: no" and the test agent will fall back to markdown-based status tracking. All functionality remains intact.
 
 ---
 
@@ -521,7 +798,21 @@ After creating the plan, provide a summary:
 3. **Types of tests** (unit/integration/e2e breakdown)
 4. **Key dependencies** that need mocking
 5. **Refactor recommendations** (if any)
-6. **Any concerns** or questions about the approach
+6. **Beads integration** (if available):
+   - Epic ID and title
+   - Number of suite tasks created
+   - Command to view task tree: `bd list --tree`
+7. **Any concerns** or questions about the approach
+
+**CRITICAL: Add the completion marker to the END of the plan file:**
+
+After writing the plan content, append this exact marker at the very end of the plan file:
+```markdown
+---
+<promise>PLAN_COMPLETE</promise>
+```
+
+This marker signals to the Ralph Wiggum loop that planning is complete.
 
 **Present the plan and STOP:**
 
@@ -530,6 +821,12 @@ After creating the plan, provide a summary:
 > **Please review the plan above.**
 >
 > When you're ready to proceed, run `/clive test` to begin implementing the test suites.
+
+**If beads is enabled, also mention:**
+
+> Beads epic created: `[epic-id]` with [N] suite tasks
+> View task hierarchy: `bd list --tree`
+> See ready tasks: `bd ready`
 
 **CRITICAL: Your job ends here.**
 - Do NOT suggest running tests immediately
