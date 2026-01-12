@@ -16,10 +16,8 @@ claude --plugin-dir ./apps/claude-code-plugin
 # 4. Implement tests one suite at a time
 /clive test
 
-# 5. Continue until all suites are complete
-/clive test
-/clive test
-# ... repeat until done
+# 5. Loop runs automatically until all suites are complete
+# Use /clive cancel to stop early if needed
 
 # 6. Check progress at any time
 /clive status
@@ -80,8 +78,8 @@ Implements tests from the approved plan, one suite at a time.
 **The Ralph Wiggum Pattern:**
 - Works on ONE test suite per invocation
 - Tracks progress in the plan file
-- User runs `/clive test` again to continue
-- Continues until all suites are complete or max iterations reached
+- Automatically continues to the next suite via stop hook
+- Stops when all suites are complete, max iterations reached, or user cancels
 
 **Why one suite at a time?**
 - Prevents runaway execution
@@ -132,6 +130,28 @@ The agent identifies and recommends refactors for:
 - **Global state** → Explicit state passing
 - **Mixed side effects** → Separate pure logic
 
+### Playwright MCP Integration (E2E Debugging)
+
+This plugin includes **Playwright MCP** as a dependency, giving the agent live browser access for debugging e2e test failures:
+
+**Available tools:**
+| Tool | Purpose |
+|------|---------|
+| `browser_navigate` | Go to URLs |
+| `browser_snapshot` | Get DOM/accessibility tree |
+| `browser_take_screenshot` | Capture visual state |
+| `browser_console_messages` | See JS console output |
+| `browser_network_requests` | Inspect API calls |
+| `browser_click/type/hover` | Interact with page |
+
+**When it's used:**
+- Screenshots don't show the problem clearly
+- Need to inspect dynamic state (hover menus, animations)
+- Want to see network requests in real-time
+- Need to manually reproduce an issue
+
+**Requirements:** Node.js 18+ (for Playwright MCP)
+
 ### Predictable Plan File Names
 
 Plans are named based on your branch:
@@ -161,7 +181,7 @@ This plugin implements the "Ralph Wiggum" approach to AI coding:
    - Implements ONE test suite
    - Verifies tests pass
    - Updates plan with progress
-   - User runs again for next suite
+   - Automatically continues to next suite (via stop hook)
 
 3. **Completion**
    - All suites marked complete/failed
@@ -185,7 +205,8 @@ The test loop automatically stops when ANY of these conditions are met:
 | 2 | **User Cancellation** | `.claude/.cancel-test-loop` file exists (via `/clive cancel`) |
 | 3 | **Max Iterations** | Iteration count reaches `CLIVE_MAX_ITERATIONS` (default: 50) |
 | 4 | **Plan Not Found** | Plan file is missing or deleted |
-| 5 | **No Remaining Work** | Zero pending + zero in_progress suites |
+| 5 | **Suite Blocked** | A suite is marked `blocked` (needs user intervention) |
+| 6 | **No Remaining Work** | Zero pending + zero in_progress suites |
 
 ### Max Iterations
 
@@ -251,7 +272,8 @@ Status values:
 - `pending` - Not started
 - `in_progress` - Currently being implemented
 - `complete` - Tests written and passing
-- `failed` - Could not complete after 3 attempts
+- `blocked` - Needs user intervention (stops the loop)
+- `skipped` - User chose to skip this suite
 
 ## Configuration
 

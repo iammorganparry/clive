@@ -76,6 +76,50 @@ if [ -f ".claude/.cancel-test-loop" ]; then
 fi
 ```
 
+## Beads Task Status
+
+```bash
+echo "=== Beads Task Status ==="
+echo ""
+
+# Check if beads is available
+if command -v bd &> /dev/null && [ -d ".beads" ]; then
+    echo "Beads tracking: enabled"
+    echo ""
+
+    # Show summary
+    total=$(bd list --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+    pending=$(bd list --status pending --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+    in_progress=$(bd list --status in_progress --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+    complete=$(bd list --status complete --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+
+    echo "  Total tasks: $total"
+    echo "  Pending: $pending"
+    echo "  In progress: $in_progress"
+    echo "  Complete: $complete"
+    echo ""
+
+    # Show ready tasks (no blockers)
+    echo "  Ready to work on:"
+    bd ready 2>/dev/null | head -5 || echo "  (none)"
+    echo ""
+
+    # Show task tree for current test plan
+    echo "  Task hierarchy:"
+    bd list --tree 2>/dev/null | head -15 || echo "  (no hierarchy)"
+    echo ""
+elif command -v bd &> /dev/null; then
+    echo "Beads available but not initialized in this repo."
+    echo "Run 'bd init' or use '/clive plan' to auto-initialize."
+    echo ""
+else
+    echo "Beads not installed."
+    echo "Install with: npm install -g @beads/bd"
+    echo "(Optional - clive works without beads)"
+    echo ""
+fi
+```
+
 ## Recent Claude Code Plans
 
 ```bash
