@@ -16,13 +16,27 @@ export const commands: Record<string, CommandHandler> = {
 
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
 
-    // Try tmux split first (if in tmux)
+    // Try tmux background window (if in tmux)
     if (isInTmux()) {
-      ctx.appendOutput('Opening Claude in tmux split pane...', 'system');
+      ctx.appendOutput('Starting Claude in background...', 'system');
 
       const result = runPlanInTmux(
         args,
+        // Stream Claude's output to our terminal
+        (content) => {
+          // Clear previous Claude output and show new content
+          // Split content into lines and append each
+          const lines = content.split('\n');
+          // Only show non-empty lines
+          ctx.appendOutput('─── Claude Output ───', 'marker');
+          lines.forEach(line => {
+            if (line.trim()) {
+              ctx.appendOutput(line, 'stdout');
+            }
+          });
+        },
         (code) => {
+          ctx.appendOutput('─── End Claude Output ───', 'marker');
           if (code === 0) {
             ctx.appendOutput('Plan created successfully', 'system');
             ctx.refreshSessions();
@@ -36,11 +50,11 @@ export const commands: Record<string, CommandHandler> = {
       );
 
       if (result) {
-        ctx.appendOutput(`Claude running in pane ${result.paneId}`, 'system');
-        ctx.appendOutput('TUI remains active - Claude is in the pane below', 'system');
+        ctx.appendOutput(`Claude running (pane: ${result.paneId})`, 'system');
+        ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
         return;
       } else {
-        ctx.appendOutput('Tmux split failed, falling back...', 'stderr');
+        ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
       }
     } else {
       ctx.appendOutput('Not in tmux session', 'system');
