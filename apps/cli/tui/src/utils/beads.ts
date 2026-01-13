@@ -2,6 +2,37 @@ import { execSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import type { Task } from '../types.js';
 
+// Cache for beads data to prevent repeated expensive bd calls
+let issuesCache: BeadsIssue[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 2000; // Cache valid for 2 seconds
+
+function getCachedIssues(): BeadsIssue[] {
+  const now = Date.now();
+  if (issuesCache !== null && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    return issuesCache;
+  }
+
+  try {
+    const result = spawnSync('bd', ['list', '--json'], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    if (result.status !== 0) {
+      issuesCache = [];
+    } else {
+      issuesCache = JSON.parse(result.stdout || '[]') as BeadsIssue[];
+    }
+    cacheTimestamp = now;
+    return issuesCache;
+  } catch {
+    issuesCache = [];
+    cacheTimestamp = now;
+    return issuesCache;
+  }
+}
+
 // Beads epic structure (P0 priority issues that represent work plans)
 export interface BeadsEpic {
   id: string;
@@ -35,67 +66,45 @@ export function isBeadsAvailable(): boolean {
   }
 }
 
-// Get all epics (top-level issues with no parent)
+// Get all epics (P0 priority issues that represent work plans)
 export function getEpics(): BeadsEpic[] {
   if (!isBeadsAvailable()) return [];
 
-  try {
-    const result = spawnSync('bd', ['list', '--json'], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+  const issues = getCachedIssues();
 
-    if (result.status !== 0) return [];
-
-    const issues: BeadsIssue[] = JSON.parse(result.stdout || '[]');
-
-    // Filter to epics - top-level issues with no parent
-    // These are work plans, migrations, features, etc.
-    return issues
-      .filter(issue => !issue.parent)
-      .map(issue => ({
-        id: issue.id,
-        title: issue.title,
-        status: issue.status,
-        priority: issue.priority,
-        labels: issue.labels || [],
-        parent: issue.parent,
-        createdAt: issue.created_at,
-        updatedAt: issue.updated_at,
-      }));
-  } catch {
-    return [];
-  }
+  // Filter to epics - P0 priority issues that represent work plans
+  // Only P0 issues are shown as sessions in the tab bar
+  return issues
+    .filter(issue => issue.priority === 0)
+    .map(issue => ({
+      id: issue.id,
+      title: issue.title,
+      status: issue.status,
+      priority: issue.priority,
+      labels: issue.labels || [],
+      parent: issue.parent,
+      createdAt: issue.created_at,
+      updatedAt: issue.updated_at,
+    }));
 }
 
 // Get all tasks under a specific epic
 export function getEpicTasks(epicId: string): Task[] {
   if (!isBeadsAvailable()) return [];
 
-  try {
-    const result = spawnSync('bd', ['list', '--json'], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+  const issues = getCachedIssues();
 
-    if (result.status !== 0) return [];
-
-    const issues: BeadsIssue[] = JSON.parse(result.stdout || '[]');
-
-    // Filter to tasks that have this epic as parent
-    return issues
-      .filter(issue => issue.parent === epicId)
-      .map(issue => ({
-        id: issue.id,
-        title: issue.title.replace(/^Task:\s*/i, ''), // Clean up "Task: " prefix
-        status: mapBeadsStatus(issue.status),
-        tier: extractTier(issue.priority, issue.labels),
-        skill: extractSkillFromLabels(issue.labels),
-        category: extractCategoryFromLabels(issue.labels),
-      }));
-  } catch {
-    return [];
-  }
+  // Filter to tasks that have this epic as parent
+  return issues
+    .filter(issue => issue.parent === epicId)
+    .map(issue => ({
+      id: issue.id,
+      title: issue.title.replace(/^Task:\s*/i, ''), // Clean up "Task: " prefix
+      status: mapBeadsStatus(issue.status),
+      tier: extractTier(issue.priority, issue.labels),
+      skill: extractSkillFromLabels(issue.labels),
+      category: extractCategoryFromLabels(issue.labels),
+    }));
 }
 
 // Extract branch name from epic title
@@ -169,25 +178,15 @@ export function getReadyTasks(): Task[] {
 export function getAllTasks(): Task[] {
   if (!isBeadsAvailable()) return [];
 
-  try {
-    const result = spawnSync('bd', ['list', '--json'], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+  const issues = getCachedIssues();
 
-    if (result.status !== 0) return [];
-
-    const tasks = JSON.parse(result.stdout || '[]');
-    return tasks.map((t: Record<string, unknown>) => ({
-      id: t.id as string,
-      title: t.title as string,
-      status: mapBeadsStatus(t.status as string),
-      tier: extractTier(t.priority as number | undefined, t.labels as string[] | undefined),
-      skill: extractSkillFromLabels(t.labels as string[] | undefined),
-    }));
-  } catch {
-    return [];
-  }
+  return issues.map(issue => ({
+    id: issue.id,
+    title: issue.title,
+    status: mapBeadsStatus(issue.status),
+    tier: extractTier(issue.priority, issue.labels),
+    skill: extractSkillFromLabels(issue.labels),
+  }));
 }
 
 function extractTier(priority: number | undefined, labels: string[] | undefined): number | undefined {
