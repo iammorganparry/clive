@@ -1,9 +1,10 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, runBuildInTmux, isInTmux, type ProcessHandle } from '../utils/process.js';
+import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, runBuildInTmux, isInTmux, runBuildPty, runPlanPty, type ProcessHandle, type PtyProcessHandle } from '../utils/process.js';
 import { suspendTUI, resumeTUI } from '../index.js';
 
 // Track running processes
 let currentProcess: ProcessHandle | null = null;
+let currentPtyProcess: PtyProcessHandle | null = null;
 
 export const commands: Record<string, CommandHandler> = {
   plan: async (args, ctx) => {
@@ -75,74 +76,48 @@ export const commands: Record<string, CommandHandler> = {
   },
 
   build: async (args, ctx) => {
-    if (currentProcess) {
+    if (currentProcess || currentPtyProcess) {
       ctx.appendOutput('A process is already running. Use /cancel to stop it.', 'system');
       return;
     }
 
-    ctx.appendOutput('Starting build...', 'system');
-    ctx.appendOutput(`[DEBUG] isInTmux: ${isInTmux()}`, 'system');
+    ctx.appendOutput('Starting interactive build...', 'system');
+    ctx.appendOutput('Focus on TERMINAL OUTPUT and type to interact with Claude.', 'system');
 
-    // Try tmux background window (if in tmux)
-    if (isInTmux()) {
-      ctx.appendOutput('Starting Claude build in background...', 'system');
+    // Use PTY for interactive mode
+    const { cols, rows } = ctx.terminalSize;
+    currentPtyProcess = runBuildPty(args, cols, rows);
 
-      const result = runBuildInTmux(
-        args,
-        // Stream Claude's output to our terminal (only new lines)
-        (content) => {
-          ctx.appendOutput(`[DEBUG] onOutput received ${content.length} chars`, 'system');
-          const lines = content.split('\n');
-          lines.forEach(line => {
-            if (line.trim()) {
-              ctx.appendOutput(line, 'stdout');
-            }
-          });
-        },
-        (code) => {
-          ctx.appendOutput('─── End Claude Build Output ───', 'marker');
-          if (code === 0) {
-            ctx.appendOutput('Build complete!', 'system');
-          } else {
-            ctx.appendOutput(`Build exited with code ${code}`, 'system');
-          }
-          ctx.refreshTasks();
-        },
-        (error) => {
-          ctx.appendOutput(`Tmux error: ${error}`, 'stderr');
-        }
-      );
+    // Set up PTY handle for keyboard forwarding
+    ctx.setPtyHandle(currentPtyProcess);
 
-      ctx.appendOutput(`[DEBUG] runBuildInTmux returned: ${result ? 'success' : 'null'}`, 'system');
-      if (result) {
-        ctx.appendOutput(`Claude build running (pane: ${result.paneId})`, 'system');
-        ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
-        return;
-      } else {
-        ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
-      }
-    } else {
-      ctx.appendOutput('[DEBUG] Not in tmux, using fallback', 'system');
-    }
-
-    // Fall back to regular process spawning
-    currentProcess = runBuild(args, (data, type) => {
-      ctx.appendOutput(data, type);
+    // Stream PTY output to terminal
+    currentPtyProcess.onData((data: string) => {
+      ctx.appendOutput(data, 'stdout');
     });
 
-    currentProcess.onExit((code: number) => {
-      currentProcess = null;
+    currentPtyProcess.onExit((code: number) => {
+      ctx.appendOutput('─── End Claude Build Output ───', 'marker');
       if (code === 0) {
         ctx.appendOutput('Build complete!', 'system');
       } else {
         ctx.appendOutput(`Build exited with code ${code}`, 'system');
       }
+      currentPtyProcess = null;
+      ctx.setPtyHandle(null);
       ctx.refreshTasks();
     });
   },
 
   cancel: async (_args, ctx) => {
-    if (currentProcess) {
+    if (currentPtyProcess) {
+      ctx.appendOutput('Cancelling PTY process...', 'system');
+      cancelBuild();
+      currentPtyProcess.kill();
+      currentPtyProcess = null;
+      ctx.setPtyHandle(null);
+      ctx.appendOutput('Cancelled', 'system');
+    } else if (currentProcess) {
       ctx.appendOutput('Cancelling...', 'system');
       cancelBuild();
       currentProcess.kill();

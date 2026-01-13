@@ -30,6 +30,8 @@ export interface CommandContext {
   setActiveSession: (id: string) => void;
   refreshSessions: () => void;
   refreshTasks: () => void;
+  setPtyHandle: (handle: import('./utils/process.js').PtyProcessHandle | null) => void;
+  terminalSize: { cols: number; rows: number };
 }
 
 export type CommandHandler = (args: string[], ctx: CommandContext) => Promise<void>;
