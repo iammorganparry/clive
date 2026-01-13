@@ -111,22 +111,33 @@ export function isInTmux(): boolean {
   return !!process.env.TMUX;
 }
 
+// Debug log file for tracing output flow
+const DEBUG_LOG = process.env.CLIVE_DEBUG === '1';
+function debugLog(msg: string): void {
+  if (DEBUG_LOG) {
+    const logFile = path.join(process.cwd(), '.claude', 'debug.log');
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
+  }
+}
+
 // Capture content from a tmux pane
 export function captureTmuxPane(paneId: string): string | null {
   const result = spawnSync('tmux', [
     'capture-pane',
     '-p',           // Print to stdout
     '-t', paneId,   // Target pane
-    '-e',           // Include escape sequences (colors)
+    '-S', '-',      // Start from beginning of scrollback
   ], {
     encoding: 'utf8',
     env: { ...process.env },
   });
 
   if (result.status !== 0) {
+    debugLog(`capture-pane failed for ${paneId}: ${result.stderr}`);
     return null;
   }
 
+  debugLog(`capture-pane got ${result.stdout?.length || 0} chars`);
   return result.stdout || '';
 }
 
@@ -198,7 +209,9 @@ export function runPlanInTmux(
     return null;
   }
 
-  let lastLineCount = 0;
+  debugLog(`runPlanInTmux: created pane ${paneId}`);
+
+  let lastContent = '';
   let stopped = false;
 
   // Poll for pane content and completion
@@ -207,22 +220,26 @@ export function runPlanInTmux(
 
     // Capture pane content
     const content = captureTmuxPane(paneId);
-    if (content) {
-      const lines = content.split('\n');
-      // Only send NEW lines (lines after what we've already sent)
-      if (lines.length > lastLineCount) {
-        const newLines = lines.slice(lastLineCount).join('\n');
-        if (newLines.trim()) {
-          onOutput(newLines);
-        }
-        lastLineCount = lines.length;
+    debugLog(`runPlanInTmux poll: content=${content?.length || 0} chars, lastContent=${lastContent.length} chars`);
+
+    if (content && content !== lastContent) {
+      // Send new content (character-based diff)
+      const newContent = content.length > lastContent.length
+        ? content.slice(lastContent.length)
+        : content; // If content is shorter/different, send all of it
+
+      debugLog(`runPlanInTmux: sending ${newContent.length} new chars`);
+      if (newContent.trim()) {
+        onOutput(newContent);
       }
+      lastContent = content;
     }
 
     // Check for completion
     if (fs.existsSync(completionFile)) {
       stopped = true;
       clearInterval(pollInterval);
+      debugLog(`runPlanInTmux: completion file found`);
       try {
         const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
         fs.unlinkSync(completionFile);
@@ -320,7 +337,9 @@ export function runBuildInTmux(
     return null;
   }
 
-  let lastLineCount = 0;
+  debugLog(`runBuildInTmux: created pane ${paneId}`);
+
+  let lastContent = '';
   let stopped = false;
 
   // Poll for pane content and completion
@@ -329,22 +348,26 @@ export function runBuildInTmux(
 
     // Capture pane content
     const content = captureTmuxPane(paneId);
-    if (content) {
-      const lines = content.split('\n');
-      // Only send NEW lines (lines after what we've already sent)
-      if (lines.length > lastLineCount) {
-        const newLines = lines.slice(lastLineCount).join('\n');
-        if (newLines.trim()) {
-          onOutput(newLines);
-        }
-        lastLineCount = lines.length;
+    debugLog(`runBuildInTmux poll: content=${content?.length || 0} chars, lastContent=${lastContent.length} chars`);
+
+    if (content && content !== lastContent) {
+      // Send new content (character-based diff)
+      const newContent = content.length > lastContent.length
+        ? content.slice(lastContent.length)
+        : content; // If content is shorter/different, send all of it
+
+      debugLog(`runBuildInTmux: sending ${newContent.length} new chars`);
+      if (newContent.trim()) {
+        onOutput(newContent);
       }
+      lastContent = content;
     }
 
     // Check for completion
     if (fs.existsSync(completionFile)) {
       stopped = true;
       clearInterval(pollInterval);
+      debugLog(`runBuildInTmux: completion file found`);
       try {
         const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
         fs.unlinkSync(completionFile);

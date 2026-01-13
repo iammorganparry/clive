@@ -15,6 +15,7 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
+    ctx.appendOutput(`[DEBUG] isInTmux: ${isInTmux()}`, 'system');
 
     // Try tmux background window (if in tmux)
     if (isInTmux()) {
@@ -24,6 +25,7 @@ export const commands: Record<string, CommandHandler> = {
         args,
         // Stream Claude's output to our terminal (only new lines)
         (content) => {
+          ctx.appendOutput(`[DEBUG] onOutput received ${content.length} chars`, 'system');
           const lines = content.split('\n');
           lines.forEach(line => {
             if (line.trim()) {
@@ -45,6 +47,7 @@ export const commands: Record<string, CommandHandler> = {
         }
       );
 
+      ctx.appendOutput(`[DEBUG] runPlanInTmux returned: ${result ? 'success' : 'null'}`, 'system');
       if (result) {
         ctx.appendOutput(`Claude running (pane: ${result.paneId})`, 'system');
         ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
@@ -53,7 +56,7 @@ export const commands: Record<string, CommandHandler> = {
         ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
       }
     } else {
-      ctx.appendOutput('Not in tmux session', 'system');
+      ctx.appendOutput('[DEBUG] Not in tmux, using fallback', 'system');
     }
 
     // Fall back to suspend/resume approach
@@ -78,6 +81,7 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.appendOutput('Starting build...', 'system');
+    ctx.appendOutput(`[DEBUG] isInTmux: ${isInTmux()}`, 'system');
 
     // Try tmux background window (if in tmux)
     if (isInTmux()) {
@@ -87,6 +91,7 @@ export const commands: Record<string, CommandHandler> = {
         args,
         // Stream Claude's output to our terminal (only new lines)
         (content) => {
+          ctx.appendOutput(`[DEBUG] onOutput received ${content.length} chars`, 'system');
           const lines = content.split('\n');
           lines.forEach(line => {
             if (line.trim()) {
@@ -108,6 +113,7 @@ export const commands: Record<string, CommandHandler> = {
         }
       );
 
+      ctx.appendOutput(`[DEBUG] runBuildInTmux returned: ${result ? 'success' : 'null'}`, 'system');
       if (result) {
         ctx.appendOutput(`Claude build running (pane: ${result.paneId})`, 'system');
         ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
@@ -115,6 +121,8 @@ export const commands: Record<string, CommandHandler> = {
       } else {
         ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
       }
+    } else {
+      ctx.appendOutput('[DEBUG] Not in tmux, using fallback', 'system');
     }
 
     // Fall back to regular process spawning
