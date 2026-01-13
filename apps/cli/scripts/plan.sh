@@ -35,6 +35,14 @@ echo ""
 # Ensure .claude directory exists
 mkdir -p .claude
 
+# Remove completion markers from existing plan files to prevent watcher triggering early
+for existing_plan in .claude/test-plan-*.md; do
+    if [ -f "$existing_plan" ]; then
+        # Remove the completion marker line if present
+        sed -i '' '/<promise>PLAN_COMPLETE<\/promise>/d' "$existing_plan" 2>/dev/null || true
+    fi
+done
+
 # Create temp file for the processed prompt (with frontmatter stripped)
 TEMP_PROMPT=$(mktemp)
 mv "$TEMP_PROMPT" "${TEMP_PROMPT}.md"
