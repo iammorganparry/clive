@@ -1,27 +1,29 @@
 ---
-description: Check the status of the test plan and loop progress
+description: Check the status of work plans and build loop progress
 allowed-tools: Bash, Read
 ---
 
-# Test Status
+# Work Status
 
-Check the current state of test planning and implementation.
+Check the current state of work planning and execution.
 
-## Available Test Plans
+## Available Work Plans
 
 ```bash
-echo "=== Available Test Plans ==="
+echo "=== Available Work Plans ==="
 echo ""
 
-# List all test plan files
-if ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
-    for plan in .claude/test-plan-*.md; do
+# List all work plan files (new naming)
+found_plans=false
+if ls .claude/work-plan-*.md 1>/dev/null 2>&1; then
+    for plan in .claude/work-plan-*.md; do
         if [ -f "$plan" ]; then
+            found_plans=true
             # Get branch name from filename
-            branch=$(basename "$plan" .md | sed 's/test-plan-//')
+            branch=$(basename "$plan" .md | sed 's/work-plan-//')
 
-            # Count suites
-            total=$(grep -c '### Suite' "$plan" 2>/dev/null || echo "0")
+            # Count tasks
+            total=$(grep -c '### Task' "$plan" 2>/dev/null || echo "0")
             complete=$(grep -c '\- \[x\] \*\*Status:\*\* complete' "$plan" 2>/dev/null || echo "0")
             failed=$(grep -c '\- \[x\] \*\*Status:\*\* failed' "$plan" 2>/dev/null || echo "0")
             pending=$(grep -c '\- \[ \] \*\*Status:\*\* pending' "$plan" 2>/dev/null || echo "0")
@@ -29,31 +31,57 @@ if ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
 
             echo "  $plan"
             echo "    Branch: $branch"
-            echo "    Suites: $total total ($complete complete, $failed failed, $in_progress in progress, $pending pending)"
+            echo "    Tasks: $total total ($complete complete, $failed failed, $in_progress in progress, $pending pending)"
             echo ""
         fi
     done
-else
-    echo "  No test plans found."
+fi
+
+# Also check legacy test-plan files (backwards compatibility)
+if ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
+    for plan in .claude/test-plan-*.md; do
+        if [ -f "$plan" ]; then
+            found_plans=true
+            branch=$(basename "$plan" .md | sed 's/test-plan-//')
+
+            total=$(grep -c '### Suite\|### Task' "$plan" 2>/dev/null || echo "0")
+            complete=$(grep -c '\- \[x\] \*\*Status:\*\* complete' "$plan" 2>/dev/null || echo "0")
+            pending=$(grep -c '\- \[ \] \*\*Status:\*\* pending' "$plan" 2>/dev/null || echo "0")
+            in_progress=$(grep -c '\- \[ \] \*\*Status:\*\* in_progress' "$plan" 2>/dev/null || echo "0")
+
+            echo "  $plan (legacy)"
+            echo "    Branch: $branch"
+            echo "    Tasks: $total total ($complete complete, $in_progress in progress, $pending pending)"
+            echo ""
+        fi
+    done
+fi
+
+if [ "$found_plans" = false ]; then
+    echo "  No work plans found."
     echo ""
-    echo "  Run '/clive plan' to create a test plan."
+    echo "  Run '/clive plan' to create a work plan."
 fi
 
 # Show latest symlink
-if [ -L ".claude/test-plan-latest.md" ]; then
-    latest=$(readlink .claude/test-plan-latest.md)
+if [ -L ".claude/work-plan-latest.md" ]; then
+    latest=$(readlink .claude/work-plan-latest.md)
     echo "Latest plan: .claude/$latest"
+    echo ""
+elif [ -L ".claude/test-plan-latest.md" ]; then
+    latest=$(readlink .claude/test-plan-latest.md)
+    echo "Latest plan (legacy): .claude/$latest"
     echo ""
 fi
 ```
 
-## Active Test Loop
+## Active Build Loop
 
 ```bash
 echo "=== Loop Status ==="
 echo ""
 
-# Check if a test loop is active
+# Check if a build loop is active
 if [ -f ".claude/.test-plan-path" ]; then
     active_plan=$(cat .claude/.test-plan-path)
     echo "Active plan: $active_plan"
@@ -65,7 +93,7 @@ if [ -f ".claude/.test-plan-path" ]; then
     fi
     echo ""
 else
-    echo "No active test loop."
+    echo "No active build loop."
     echo ""
 fi
 
@@ -104,7 +132,7 @@ if command -v bd &> /dev/null && [ -d ".beads" ]; then
     bd ready 2>/dev/null | head -5 || echo "  (none)"
     echo ""
 
-    # Show task tree for current test plan
+    # Show task tree
     echo "  Task hierarchy:"
     bd list --tree 2>/dev/null | head -15 || echo "  (no hierarchy)"
     echo ""
@@ -166,25 +194,30 @@ echo ""
 
 | Command | Description |
 |---------|-------------|
-| `/clive plan [branch]` | Create a test plan for changed files |
-| `/clive test [plan-path]` | Implement tests from a plan (one suite at a time) |
-| `/clive cancel` | Cancel the active test loop |
+| `/clive plan [request]` | Create a work plan with category detection |
+| `/clive build [options]` | Execute work plan with skill-based dispatch |
+| `/clive cancel` | Cancel the active build loop |
 | `/clive status` | Show this status (current command) |
 
 ## Usage Examples
 
 ```bash
-# Create a new test plan
+# Create a new work plan
 /clive plan
 
-# Create a plan comparing against develop branch
-/clive plan develop
+# Create a plan for a specific request
+/clive plan "add tests for auth module"
+/clive plan "fix the login bug"
+/clive plan "refactor the API client"
 
-# Run tests using the latest plan
-/clive test
+# Run build using the latest plan
+/clive build
 
-# Run tests using a specific plan
-/clive test .claude/test-plan-feature-auth.md
+# Run a single iteration
+/clive build --once
+
+# Force a specific skill
+/clive build --skill unit-tests
 
 # Check status
 /clive status

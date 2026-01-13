@@ -120,6 +120,80 @@ echo "Default skill: $SKILL"
 
 ---
 
+## Step 0.2: Create Worktree for Isolated Work (RECOMMENDED)
+
+**For Mode C (custom requests), create a git worktree so work can be done in isolation:**
+
+```bash
+# Check if we're in a custom-request mode that warrants a worktree
+if [ "$MODE" = "custom-request" ] && [ -n "$ARGUMENTS" ]; then
+    # Generate branch name from request (sanitize for git)
+    WORK_BRANCH=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-50)
+    WORK_BRANCH="clive/${WORK_BRANCH}"
+
+    # Check if we're already on a work branch
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [[ ! "$CURRENT_BRANCH" =~ ^clive/ ]]; then
+        echo "=== Worktree Setup ==="
+        echo ""
+        echo "Request: $ARGUMENTS"
+        echo "Suggested branch: $WORK_BRANCH"
+        echo ""
+    fi
+fi
+```
+
+**Ask the user whether to create a worktree:**
+
+> "For isolated work, I recommend creating a git worktree. This lets you work on this task without affecting your main branch.
+>
+> Options:
+> - Create worktree (recommended) - Work in isolation on branch `clive/[task-name]`
+> - Stay on current branch - Work directly on `[current-branch]`
+> - Specify custom branch - Provide your own branch name"
+
+**If user chooses worktree:**
+
+```bash
+# Create the worktree
+WORKTREE_PATH="../$(basename $(pwd))-${WORK_BRANCH//\//-}"
+
+# Check if branch already exists
+if git rev-parse --verify "$WORK_BRANCH" >/dev/null 2>&1; then
+    echo "Branch $WORK_BRANCH already exists"
+    # Check if worktree already exists
+    if [ -d "$WORKTREE_PATH" ]; then
+        echo "Worktree already exists at $WORKTREE_PATH"
+        echo "Switch to it with: cd $WORKTREE_PATH"
+    else
+        # Create worktree from existing branch
+        git worktree add "$WORKTREE_PATH" "$WORK_BRANCH"
+        echo "Created worktree at $WORKTREE_PATH"
+    fi
+else
+    # Create new branch and worktree
+    git worktree add -b "$WORK_BRANCH" "$WORKTREE_PATH"
+    echo "Created new branch $WORK_BRANCH in worktree at $WORKTREE_PATH"
+fi
+
+echo ""
+echo "To continue in the worktree:"
+echo "  cd $WORKTREE_PATH"
+echo "  clive plan \"$ARGUMENTS\""
+```
+
+**When to use worktrees:**
+- Custom requests that involve significant changes
+- Work that might take multiple sessions
+- When you want to preserve your current work state
+
+**When to skip worktrees:**
+- Quick fixes on current branch
+- Already on a feature branch
+- Planning based on existing git changes (Mode A/B)
+
+---
+
 ## Step 0.5: Check for Existing Planning State (Resume Support)
 
 **Before starting fresh, check if there's an in-progress planning session to resume:**
@@ -234,7 +308,7 @@ fi
 ```bash
 # Sanitize branch name for filename (replace / with -)
 BRANCH=$(git rev-parse --abbrev-ref HEAD | sed 's/\//-/g')
-PLAN_FILE=".claude/test-plan-${BRANCH}.md"
+PLAN_FILE=".claude/work-plan-${BRANCH}.md"
 
 # Ensure .claude directory exists
 mkdir -p .claude
@@ -609,7 +683,7 @@ Create the work plan file at the branch-based path:
 
 ```bash
 # Use the PLAN_FILE variable from Step 1
-# Example: .claude/test-plan-feature-auth.md
+# Example: .claude/work-plan-feature-auth.md
 ```
 
 ```markdown
@@ -722,7 +796,7 @@ Each planning session creates an EPIC, and each task becomes a TASK with skill l
 
 After writing the plan, create/update the symlink to latest:
 ```bash
-ln -sf "test-plan-${BRANCH}.md" .claude/test-plan-latest.md
+ln -sf "work-plan-${BRANCH}.md" .claude/work-plan-latest.md
 ```
 
 ---
@@ -855,7 +929,7 @@ fi
 
 After creating the plan, provide a summary:
 
-1. **Plan file location:** `.claude/test-plan-[branch].md`
+1. **Plan file location:** `.claude/work-plan-[branch].md`
 2. **Category detected:** test/feature/refactor/bugfix/docs
 3. **Number of tasks** proposed
 4. **Skills assigned** (breakdown by skill type)
@@ -871,7 +945,7 @@ After creating the plan, provide a summary:
 
 **Present the plan and ask for feedback:**
 
-> Work plan created at: `.claude/test-plan-[branch].md`
+> Work plan created at: `.claude/work-plan-[branch].md`
 > Category: [detected category]
 > Skills: [skill breakdown]
 >
@@ -923,7 +997,7 @@ echo "<promise>PLAN_COMPLETE</promise>" >> "$PLAN_FILE"
 
 Then confirm:
 
-> "Plan finalized at `.claude/test-plan-[branch].md`. Run `clive build` to begin execution."
+> "Plan finalized at `.claude/work-plan-[branch].md`. Run `clive build` to begin execution."
 
 **CRITICAL:**
 - Do NOT write the completion marker until user explicitly approves

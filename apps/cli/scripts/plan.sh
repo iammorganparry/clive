@@ -1,5 +1,5 @@
 #!/bin/bash
-# Plan command - single invocation to create test plan
+# Plan command - single invocation to create work plan
 # Usage: ./plan.sh [custom request]
 
 set -e
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/../../claude-code-plugin/commands"
 PLAN_PROMPT="$PLUGIN_DIR/plan.md"
-PLAN_OUTPUT=".claude/test-plan-latest.md"
+PLAN_OUTPUT=".claude/work-plan-latest.md"
 
 # Completion marker (exact string match per Ralph Wiggum best practices)
 COMPLETION_MARKER="<promise>PLAN_COMPLETE</promise>"
@@ -29,14 +29,14 @@ fi
 # Get user input
 USER_INPUT="${*:-}"
 
-echo "🔍 Creating test plan..."
+echo "🔍 Creating work plan..."
 echo ""
 
 # Ensure .claude directory exists
 mkdir -p .claude
 
 # Remove completion markers from existing plan files to prevent watcher triggering early
-for existing_plan in .claude/test-plan-*.md; do
+for existing_plan in .claude/work-plan-*.md; do
     if [ -f "$existing_plan" ]; then
         # Remove the completion marker line if present
         sed -i '' '/<promise>PLAN_COMPLETE<\/promise>/d' "$existing_plan" 2>/dev/null || true
@@ -85,8 +85,8 @@ trap cleanup EXIT
                 break
             fi
         fi
-        # Also check any test-plan files for the marker
-        for plan in .claude/test-plan-*.md; do
+        # Also check any work-plan files for the marker
+        for plan in .claude/work-plan-*.md; do
             if [ -f "$plan" ] && grep -q "$COMPLETION_MARKER" "$plan" 2>/dev/null; then
                 sleep 2
                 pkill -INT -P $$ claude 2>/dev/null || true
@@ -107,7 +107,7 @@ kill $WATCHER_PID 2>/dev/null || true
 echo ""
 if [ -f "$PLAN_OUTPUT" ]; then
     echo "✅ Plan written to $PLAN_OUTPUT"
-    echo "   Run 'clive test' to implement tests."
+    echo "   Run 'clive build' to execute the plan."
 else
     echo "⚠️  Plan session ended. Check if plan was created at $PLAN_OUTPUT"
 fi
