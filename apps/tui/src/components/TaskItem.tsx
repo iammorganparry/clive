@@ -28,7 +28,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, isSelected }) => {
         color={isSelected ? theme.syntax.cyan : task.status === 'complete' ? theme.fg.comment : theme.fg.primary}
         dimColor={task.status === 'complete'}
       >
-        {task.title.length > 25 ? task.title.slice(0, 22) + '...' : task.title}
+        {task.title.length > 32 ? task.title.slice(0, 29) + '...' : task.title}
       </Text>
     </Box>
   );

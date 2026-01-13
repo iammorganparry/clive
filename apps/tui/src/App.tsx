@@ -71,6 +71,7 @@ export const App: React.FC = () => {
     refreshSessions,
     refreshTasks,
     activeSession,
+    setIsRunning,
   };
 
   const handleCommand = useCallback((command: string) => {
@@ -131,12 +132,7 @@ export const App: React.FC = () => {
     hasShownSessionInfoRef.current = true;
     queueMicrotask(() => {
       appendSystemMessage(`Active plan: ${activeSession.name}`);
-      if (activeSession.isActive && activeSession.iteration !== undefined) {
-        appendSystemMessage(`Build in progress: Iteration ${activeSession.iteration}/${activeSession.maxIterations}`);
-        setIsRunning(true);
-      } else {
-        appendSystemMessage('Press b to start build or /build to run');
-      }
+      appendSystemMessage('Press b to start build or /build to run');
       appendSystemMessage('');
     });
   }

@@ -51,6 +51,7 @@ export const commands: Record<string, CommandHandler> = {
       ctx.appendOutput('Starting build...', 'system');
     }
 
+    ctx.setIsRunning(true);
     currentProcess = runBuild(args, epicId);
 
     currentProcess.onData((data: string) => {
@@ -58,6 +59,7 @@ export const commands: Record<string, CommandHandler> = {
     });
 
     currentProcess.onExit((code: number) => {
+      ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput('Build complete!', 'system');
       } else {
@@ -74,6 +76,7 @@ export const commands: Record<string, CommandHandler> = {
       cancelBuild();
       currentProcess.kill();
       currentProcess = null;
+      ctx.setIsRunning(false);
       ctx.appendOutput('Cancelled', 'system');
     } else {
       ctx.appendOutput('Nothing running to cancel', 'system');
