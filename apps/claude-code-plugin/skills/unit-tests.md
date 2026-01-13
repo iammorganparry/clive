@@ -217,6 +217,31 @@ bd update [TASK_ID] --status blocked
 
 ---
 
+## Step 4.5: Commit Changes (REQUIRED)
+
+**Create a local commit for this task before marking complete:**
+
+```bash
+# Stage the changes from this task
+git add -A
+
+# Commit with descriptive message
+git commit -m "test: [brief description of tests added]
+
+Task: [TASK_ID or task name]
+Skill: unit-tests"
+```
+
+**Why commit per task:**
+- Granular rollback if something goes wrong
+- Clear history of what each task accomplished
+- Easier code review
+- Safe checkpoint before next task
+
+**Note:** Do NOT push yet - local commits only. Push happens at session end or user request.
+
+---
+
 ## Step 5: Output Completion Marker and STOP
 
 **If this task is done (but more remain):**

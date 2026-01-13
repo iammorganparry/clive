@@ -270,6 +270,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "## CRITICAL"
         echo "- Follow the skill file instructions exactly"
         echo "- Update status in BOTH beads and plan file"
+        echo "- Create a LOCAL git commit before outputting completion marker"
         echo "- STOP immediately after outputting completion marker"
         echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
     } > "$TEMP_PROMPT"

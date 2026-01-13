@@ -215,9 +215,10 @@ $TASK_CONTEXT
 2. Load the skill file for this task type
 3. Execute the task following skill instructions
 4. Mark it as 'complete' (if verified) or 'blocked' (if stuck)
-5. If you discover out-of-scope work, create a beads task (see Discovered Work Protocol in skill file)
-6. Output a brief progress summary
-7. STOP - do not continue to the next task
+5. Create a LOCAL git commit for this task's changes
+6. If you discover out-of-scope work, create a beads task (see Discovered Work Protocol in skill file)
+7. Output a brief progress summary
+8. STOP - do not continue to the next task
 
 The loop will automatically restart for the next task."
 SYSTEM_MSG="🔄 Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining. Process ONE task then STOP."
