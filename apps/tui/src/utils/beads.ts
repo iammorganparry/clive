@@ -14,7 +14,7 @@ function getCachedIssues(): BeadsIssue[] {
   }
 
   try {
-    const result = spawnSync('bd', ['list', '--json'], {
+    const result = spawnSync('bd', ['list', '--json', '--all'], {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
