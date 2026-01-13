@@ -3,11 +3,9 @@ import { Box, Text, useFocus } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
 import { TaskItem } from './TaskItem.js';
+import { useTasksList } from '../machines/TasksMachineProvider.js';
 
 interface TaskSidebarProps {
-  tasks: Task[];
-  epicName?: string;
-  skill?: string;
   maxPerCategory?: number;
 }
 
@@ -25,13 +23,13 @@ const STATUS_CONFIG: Array<{
 ];
 
 export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
-  tasks,
-  epicName,
-  skill,
   maxPerCategory = 10,
 }) => {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: 'task-sidebar' });
+
+  // Subscribe to tasks from machine - only TaskSidebar re-renders on task changes
+  const { tasks, epicName, skill } = useTasksList();
 
   // Memoize grouped tasks to prevent recalculation on every render
   const tasksByStatus = useMemo(() => {

@@ -8,10 +8,10 @@ import { CommandInput } from './components/CommandInput.js';
 import { StatusBar } from './components/StatusBar.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { useSessions } from './hooks/useSessions.js';
-import { useTasks } from './hooks/useTasks.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { executeCommand } from './commands/index.js';
 import { OutputMachineProvider, useOutputActions, useRunningState } from './machines/OutputMachineProvider.js';
+import { TasksMachineProvider, useTasksWithSession, useTasksActions } from './machines/TasksMachineProvider.js';
 import type { CommandContext } from './types.js';
 
 // Inner component that uses the machine hooks
@@ -54,12 +54,9 @@ const AppContent: React.FC = () => {
   // Get running state separately
   const { isRunning } = useRunningState();
 
-  const {
-    tasks,
-    epicName,
-    skill,
-    refresh: refreshTasks,
-  } = useTasks(activeSession, isRunning);
+  // Tasks from machine - auto-updates session and polling
+  const { tasks, epicName, skill } = useTasksWithSession(activeSession, isRunning);
+  const { refresh: refreshTasks } = useTasksActions();
 
   // Memoize command context
   const commandContext = useMemo<CommandContext>(() => ({
@@ -168,11 +165,8 @@ const AppContent: React.FC = () => {
       />
 
       <Box flexGrow={1} minHeight={10} height={height - 8}>
-        <TaskSidebar
-          tasks={tasks}
-          epicName={epicName}
-          skill={skill}
-        />
+        {/* TaskSidebar subscribes to tasks directly from machine */}
+        <TaskSidebar />
         {/* TerminalOutput subscribes to lines directly from machine */}
         <TerminalOutput maxLines={height - 12} />
       </Box>
@@ -192,11 +186,13 @@ const AppContent: React.FC = () => {
   );
 };
 
-// Main App wraps content in the machine provider
+// Main App wraps content in providers
 export const App: React.FC = () => {
   return (
     <OutputMachineProvider>
-      <AppContent />
+      <TasksMachineProvider>
+        <AppContent />
+      </TasksMachineProvider>
     </OutputMachineProvider>
   );
 };
