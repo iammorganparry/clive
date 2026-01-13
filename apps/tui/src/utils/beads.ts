@@ -7,6 +7,12 @@ let issuesCache: BeadsIssue[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 2000; // Cache valid for 2 seconds
 
+// Clear cache to force fresh data on next fetch
+export function clearBeadsCache(): void {
+  issuesCache = null;
+  cacheTimestamp = 0;
+}
+
 function getCachedIssues(): BeadsIssue[] {
   const now = Date.now();
   if (issuesCache !== null && (now - cacheTimestamp) < CACHE_TTL_MS) {

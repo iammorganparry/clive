@@ -31,6 +31,11 @@ const patterns = {
   prompt: /^(>|\$|❯|λ)\s/,
   codeBlock: /^```/,
   bullet: /^(\s*[-*•]\s)/,
+  // Markdown patterns
+  numberedList: /^(\d+)\.\s+(.+)$/,
+  inlineCode: /`([^`]+)`/g,
+  bold: /\*\*([^*]+)\*\*/g,
+  arrow: /→/g,
 };
 
 // Render a single line with syntax highlighting
@@ -285,9 +290,73 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Default styling - plain text with small indent
-  return <Text color={theme.fg.primary}>  {text}</Text>;
+  // Numbered lists (1. item, 2. item)
+  const numberedMatch = text.match(patterns.numberedList);
+  if (numberedMatch) {
+    const [, num, content] = numberedMatch;
+    return (
+      <Text>
+        <Text color={theme.syntax.blue}>  {num}. </Text>
+        {renderInlineMarkdown(content, theme)}
+      </Text>
+    );
+  }
+
+  // Default styling - render with inline markdown support
+  return <Text color={theme.fg.primary}>  {renderInlineMarkdown(text, theme)}</Text>;
 });
+
+// Helper to render inline markdown (backticks, bold, arrows)
+function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
+  // Split by inline code and bold patterns
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  // Process inline code `code`
+  const codeRegex = /`([^`]+)`/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = codeRegex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(
+        <Text key={key++} color={theme.fg.primary}>
+          {text.slice(lastIndex, match.index)}
+        </Text>
+      );
+    }
+    // Add the code
+    parts.push(
+      <Text key={key++} color={theme.syntax.orange} bold>
+        {match[1]}
+      </Text>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    const rest = text.slice(lastIndex);
+    // Check for bold **text**
+    if (rest.includes('**')) {
+      const boldParts = rest.split(/\*\*([^*]+)\*\*/g);
+      boldParts.forEach((part, i) => {
+        if (i % 2 === 1) {
+          // Bold text
+          parts.push(<Text key={key++} color={theme.fg.primary} bold>{part}</Text>);
+        } else if (part) {
+          parts.push(<Text key={key++} color={theme.fg.primary}>{part}</Text>);
+        }
+      });
+    } else {
+      parts.push(<Text key={key++} color={theme.fg.primary}>{rest}</Text>);
+    }
+  }
+
+  return parts.length > 0 ? <>{parts}</> : <Text color={theme.fg.primary}>{text}</Text>;
+}
 
 StyledLine.displayName = 'StyledLine';
 

@@ -49,13 +49,6 @@ export const App: React.FC = () => {
   } = useSessions();
 
   const {
-    tasks,
-    epicName,
-    skill,
-    refresh: refreshTasks,
-  } = useTasks(activeSession);
-
-  const {
     lines,
     isRunning,
     setIsRunning,
@@ -63,6 +56,13 @@ export const App: React.FC = () => {
     appendOutput,
     appendSystemMessage,
   } = useOutput();
+
+  const {
+    tasks,
+    epicName,
+    skill,
+    refresh: refreshTasks,
+  } = useTasks(activeSession, isRunning);
 
   // Create command context
   const commandContext: CommandContext = {
