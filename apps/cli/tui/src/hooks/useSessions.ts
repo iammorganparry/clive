@@ -47,8 +47,8 @@ export function useSessions() {
   useEffect(() => {
     refresh();
 
-    // Poll for changes every 2 seconds
-    const interval = setInterval(refresh, 2000);
+    // Poll for changes every 5 seconds (reduced from 2s to prevent flicker)
+    const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
   }, [refresh]);
 

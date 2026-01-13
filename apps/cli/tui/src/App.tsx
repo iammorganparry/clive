@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef, useMemo } from 'react';
 import { Box, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { TabBar } from './components/TabBar.js';
@@ -22,9 +22,25 @@ export const App: React.FC = () => {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const inputRef = useRef<{ focus: () => void }>(null);
 
-  // Get terminal dimensions for full screen
-  const width = stdout?.columns ?? 80;
-  const height = stdout?.rows ?? 24;
+  // Cache initial dimensions to prevent flicker on resize
+  const initialDimensions = useRef({
+    width: stdout?.columns ?? 80,
+    height: stdout?.rows ?? 24,
+  });
+
+  // Only update dimensions if significantly changed (debounce small fluctuations)
+  const { width, height } = useMemo(() => {
+    const newWidth = stdout?.columns ?? 80;
+    const newHeight = stdout?.rows ?? 24;
+
+    // Only update if changed by more than 2 to reduce flicker
+    if (Math.abs(newWidth - initialDimensions.current.width) > 2 ||
+        Math.abs(newHeight - initialDimensions.current.height) > 2) {
+      initialDimensions.current = { width: newWidth, height: newHeight };
+    }
+
+    return initialDimensions.current;
+  }, [stdout?.columns, stdout?.rows]);
 
   const {
     sessions,
