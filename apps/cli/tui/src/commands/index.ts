@@ -1,9 +1,7 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, runBuildInTmux, isInTmux, runBuildPty, runPlanPty, type ProcessHandle, type PtyProcessHandle } from '../utils/process.js';
-import { suspendTUI, resumeTUI } from '../index.js';
+import { cancelBuild, runBuildPty, runPlanPty, type PtyProcessHandle } from '../utils/process.js';
 
-// Track running processes
-let currentProcess: ProcessHandle | null = null;
+// Track running PTY process
 let currentPtyProcess: PtyProcessHandle | null = null;
 
 export const commands: Record<string, CommandHandler> = {
@@ -15,68 +13,41 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
+    if (currentPtyProcess) {
+      ctx.appendOutput('A process is already running. Use /cancel to stop it.', 'system');
+      return;
+    }
+
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
-    ctx.appendOutput(`[DEBUG] isInTmux: ${isInTmux()}`, 'system');
+    ctx.appendOutput('Focus on TERMINAL OUTPUT and type to interact with Claude.', 'system');
 
-    // Try tmux background window (if in tmux)
-    if (isInTmux()) {
-      ctx.appendOutput('Starting Claude in background...', 'system');
+    // Use PTY for interactive mode
+    const { cols, rows } = ctx.terminalSize;
+    currentPtyProcess = runPlanPty(args, cols, rows);
 
-      const result = runPlanInTmux(
-        args,
-        // Stream Claude's output to our terminal (only new lines)
-        (content) => {
-          ctx.appendOutput(`[DEBUG] onOutput received ${content.length} chars`, 'system');
-          const lines = content.split('\n');
-          lines.forEach(line => {
-            if (line.trim()) {
-              ctx.appendOutput(line, 'stdout');
-            }
-          });
-        },
-        (code) => {
-          ctx.appendOutput('─── End Claude Output ───', 'marker');
-          if (code === 0) {
-            ctx.appendOutput('Plan created successfully', 'system');
-            ctx.refreshSessions();
-          } else {
-            ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
-          }
-        },
-        (error) => {
-          ctx.appendOutput(`Tmux error: ${error}`, 'stderr');
-        }
-      );
+    // Set up PTY handle for keyboard forwarding
+    ctx.setPtyHandle(currentPtyProcess);
 
-      ctx.appendOutput(`[DEBUG] runPlanInTmux returned: ${result ? 'success' : 'null'}`, 'system');
-      if (result) {
-        ctx.appendOutput(`Claude running (pane: ${result.paneId})`, 'system');
-        ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
-        return;
+    // Stream PTY output to terminal
+    currentPtyProcess.onData((data: string) => {
+      ctx.appendOutput(data, 'stdout');
+    });
+
+    currentPtyProcess.onExit((code: number) => {
+      ctx.appendOutput('─── End Claude Output ───', 'marker');
+      if (code === 0) {
+        ctx.appendOutput('Plan created successfully', 'system');
+        ctx.refreshSessions();
       } else {
-        ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
+        ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
       }
-    } else {
-      ctx.appendOutput('[DEBUG] Not in tmux, using fallback', 'system');
-    }
-
-    // Fall back to suspend/resume approach
-    ctx.appendOutput('Launching Claude (TUI will suspend)...', 'system');
-
-    suspendTUI();
-    const code = runPlanInteractive(args);
-    resumeTUI();
-
-    if (code === 0) {
-      ctx.appendOutput('Plan created successfully', 'system');
-      ctx.refreshSessions();
-    } else {
-      ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
-    }
+      currentPtyProcess = null;
+      ctx.setPtyHandle(null);
+    });
   },
 
   build: async (args, ctx) => {
-    if (currentProcess || currentPtyProcess) {
+    if (currentPtyProcess) {
       ctx.appendOutput('A process is already running. Use /cancel to stop it.', 'system');
       return;
     }
@@ -111,17 +82,11 @@ export const commands: Record<string, CommandHandler> = {
 
   cancel: async (_args, ctx) => {
     if (currentPtyProcess) {
-      ctx.appendOutput('Cancelling PTY process...', 'system');
+      ctx.appendOutput('Cancelling...', 'system');
       cancelBuild();
       currentPtyProcess.kill();
       currentPtyProcess = null;
       ctx.setPtyHandle(null);
-      ctx.appendOutput('Cancelled', 'system');
-    } else if (currentProcess) {
-      ctx.appendOutput('Cancelling...', 'system');
-      cancelBuild();
-      currentProcess.kill();
-      currentProcess = null;
       ctx.appendOutput('Cancelled', 'system');
     } else {
       ctx.appendOutput('Nothing running to cancel', 'system');
@@ -136,7 +101,6 @@ export const commands: Record<string, CommandHandler> = {
   },
 
   clear: async (_args, ctx) => {
-    // Note: This would need to be connected to the clear function
     ctx.appendOutput('Output cleared', 'system');
   },
 
@@ -153,6 +117,7 @@ export const commands: Record<string, CommandHandler> = {
     ctx.appendOutput('Keyboard shortcuts:', 'system');
     ctx.appendOutput('  ←/→              - Switch session tabs', 'system');
     ctx.appendOutput('  ↑/↓              - Command history', 'system');
+    ctx.appendOutput('  Tab              - Focus terminal output for interaction', 'system');
     ctx.appendOutput('  Ctrl+C           - Quit', 'system');
     ctx.appendOutput('', 'system');
   },
