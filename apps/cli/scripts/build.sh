@@ -125,6 +125,10 @@ if [ ! -f "$PROGRESS_FILE" ]; then
     echo "" >> "$PROGRESS_FILE"
 fi
 
+# Write state files for TUI integration
+echo "$PLAN_FILE" > .claude/.build-plan-path
+echo "$MAX_ITERATIONS" > .claude/.build-max-iterations
+
 echo "🚀 Starting build loop"
 echo "   Plan: $PLAN_FILE"
 echo "   Skills: $SKILLS_DIR"
@@ -200,6 +204,9 @@ get_skill_file() {
 
 # The Build Loop (Ralph Wiggum pattern)
 for ((i=1; i<=MAX_ITERATIONS; i++)); do
+    # Write current iteration for TUI
+    echo "$i" > .claude/.build-iteration
+
     if [ "$ONCE" = true ]; then
         echo "🔄 Running single iteration"
     else

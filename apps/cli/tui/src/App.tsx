@@ -109,12 +109,24 @@ export const App: React.FC = () => {
     nextTab,
   }, isInputFocused);
 
-  // Show welcome message on first render
+  // Show welcome message and current status on first render
   React.useEffect(() => {
     appendSystemMessage('Welcome to CLIVE - AI-Powered Work Execution');
     appendSystemMessage('Press ? for keyboard shortcuts, n for new plan');
     appendSystemMessage('');
-  }, []);
+
+    // Show active session info if one exists
+    if (activeSession) {
+      appendSystemMessage(`Active plan: ${activeSession.name}`);
+      if (activeSession.isActive && activeSession.iteration !== undefined) {
+        appendSystemMessage(`Build in progress: Iteration ${activeSession.iteration}/${activeSession.maxIterations}`);
+        setIsRunning(true);
+      } else {
+        appendSystemMessage('Press b to start build or /build to run');
+      }
+      appendSystemMessage('');
+    }
+  }, [activeSession?.id]); // Only re-run when session changes
 
   // If help is showing, render overlay
   if (showHelp) {
