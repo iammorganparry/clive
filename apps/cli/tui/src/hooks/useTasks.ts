@@ -3,6 +3,30 @@ import type { Session, Task } from '../types.js';
 import { getAllTasks, isBeadsAvailable } from '../utils/beads.js';
 import { parseTasksFromPlan, getPlanMetadata } from '../utils/planParser.js';
 
+// Status priority for sorting (lower = first)
+const STATUS_ORDER: Record<Task['status'], number> = {
+  complete: 0,
+  in_progress: 1,
+  pending: 2,
+  blocked: 3,
+  skipped: 4,
+};
+
+// Sort tasks by tier (ascending), then by status (completed first)
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    // Sort by tier first (undefined tiers go last)
+    const tierA = a.tier ?? 999;
+    const tierB = b.tier ?? 999;
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
+    // Then sort by status (completed first)
+    return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+  });
+}
+
 export function useTasks(session: Session | null) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [metadata, setMetadata] = useState<{
@@ -18,18 +42,23 @@ export function useTasks(session: Session | null) {
       return;
     }
 
+    let rawTasks: Task[] = [];
+
     // Try beads first, fall back to plan file
     if (isBeadsAvailable()) {
       const beadsTasks = getAllTasks();
       if (beadsTasks.length > 0) {
-        setTasks(beadsTasks);
+        rawTasks = beadsTasks;
       } else {
         // Beads available but no tasks, try plan file
-        setTasks(parseTasksFromPlan(session.planFile));
+        rawTasks = parseTasksFromPlan(session.planFile);
       }
     } else {
-      setTasks(parseTasksFromPlan(session.planFile));
+      rawTasks = parseTasksFromPlan(session.planFile);
     }
+
+    // Sort tasks by tier, then by status
+    setTasks(sortTasks(rawTasks));
 
     // Get metadata from plan file
     const planMeta = getPlanMetadata(session.planFile);

@@ -11,6 +11,7 @@ export interface Task {
   id: string;
   title: string;
   status: 'pending' | 'in_progress' | 'complete' | 'blocked' | 'skipped';
+  tier?: number;
   skill?: string;
   category?: string;
   target?: string;

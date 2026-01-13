@@ -50,11 +50,28 @@ export function getAllTasks(): Task[] {
       id: t.id as string,
       title: t.title as string,
       status: mapBeadsStatus(t.status as string),
+      tier: extractTier(t.priority as number | undefined, t.labels as string[] | undefined),
       skill: extractSkillFromLabels(t.labels as string[] | undefined),
     }));
   } catch {
     return [];
   }
+}
+
+function extractTier(priority: number | undefined, labels: string[] | undefined): number | undefined {
+  // Try to get tier from labels first (tier:1, tier:2, etc.)
+  if (labels) {
+    const tierLabel = labels.find(l => l.startsWith('tier:'));
+    if (tierLabel) {
+      const tier = parseInt(tierLabel.replace('tier:', ''), 10);
+      if (!isNaN(tier)) return tier;
+    }
+  }
+  // Fall back to priority (0-4 maps to tier 1-5)
+  if (priority !== undefined) {
+    return priority + 1;
+  }
+  return undefined;
 }
 
 function extractSkillFromLabels(labels: string[] | undefined): string | undefined {
