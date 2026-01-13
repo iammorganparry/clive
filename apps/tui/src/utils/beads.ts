@@ -22,7 +22,11 @@ function getCachedIssues(): BeadsIssue[] {
     if (result.status !== 0) {
       issuesCache = [];
     } else {
-      issuesCache = JSON.parse(result.stdout || '[]') as BeadsIssue[];
+      const rawIssues = JSON.parse(result.stdout || '[]') as BeadsIssue[];
+      issuesCache = rawIssues.map(issue => ({
+        ...issue,
+        parent: issue.parent ?? deriveParentId(issue.id),
+      }));
     }
     cacheTimestamp = now;
     return issuesCache;
@@ -64,6 +68,16 @@ export function isBeadsAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+// Derive parent ID from beads ID convention
+// "clive-mar.1" → "clive-mar"
+// "clive-mar.1.2" → "clive-mar.1"
+// "clive-mar" → undefined (no parent)
+function deriveParentId(id: string): string | undefined {
+  const lastDot = id.lastIndexOf('.');
+  if (lastDot === -1) return undefined;
+  return id.substring(0, lastDot);
 }
 
 // Get all epics (P0 priority issues that represent work plans)
