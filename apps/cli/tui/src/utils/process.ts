@@ -252,3 +252,103 @@ export function runPlanInteractive(args: string[]): number {
 
   return result.status ?? 1;
 }
+
+// Run build in a hidden tmux pane and stream output
+export function runBuildInTmux(
+  args: string[],
+  onOutput: (content: string) => void,
+  onComplete: (code: number) => void,
+  onError?: (error: string) => void
+): { paneId: string; stop: () => void } | null {
+  if (!isInTmux()) {
+    onError?.('Not running inside tmux');
+    return null;
+  }
+
+  const scriptsDir = findScriptsDir();
+  const buildScript = path.join(scriptsDir, 'build.sh');
+  const cwd = process.cwd();
+
+  // Ensure .claude directory exists
+  const claudeDir = path.join(cwd, '.claude');
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
+  // Create a completion marker file
+  const completionFile = path.join(claudeDir, '.build-complete');
+
+  // Remove old completion file
+  if (fs.existsSync(completionFile)) {
+    fs.unlinkSync(completionFile);
+  }
+
+  // Build command that will signal completion
+  const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+  const shellCommand = `cd '${cwd}' && bash '${buildScript}' ${escapedArgs}; echo $? > '${completionFile}'`;
+
+  // Create a new HIDDEN tmux window for the build
+  const result = spawnSync('tmux', [
+    'new-window',
+    '-d',
+    '-P',
+    '-F', '#{pane_id}',
+    '-n', 'claude-build',
+    '-c', cwd,
+    'bash', '-c', shellCommand,
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env },
+  });
+
+  if (result.status !== 0) {
+    onError?.(`tmux new-window failed: ${result.stderr || 'unknown error'}`);
+    return null;
+  }
+
+  const paneId = result.stdout?.trim();
+
+  if (!paneId) {
+    onError?.('No pane ID returned from tmux');
+    return null;
+  }
+
+  let lastContent = '';
+  let stopped = false;
+
+  // Poll for pane content and completion
+  const pollInterval = setInterval(() => {
+    if (stopped) return;
+
+    // Capture pane content
+    const content = captureTmuxPane(paneId);
+    if (content && content !== lastContent) {
+      lastContent = content;
+      onOutput(content);
+    }
+
+    // Check for completion
+    if (fs.existsSync(completionFile)) {
+      stopped = true;
+      clearInterval(pollInterval);
+      try {
+        const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
+        fs.unlinkSync(completionFile);
+        killTmuxPane(paneId);
+        onComplete(code);
+      } catch {
+        killTmuxPane(paneId);
+        onComplete(1);
+      }
+    }
+  }, 500);
+
+  return {
+    paneId,
+    stop: () => {
+      stopped = true;
+      clearInterval(pollInterval);
+      killTmuxPane(paneId);
+    },
+  };
+}
