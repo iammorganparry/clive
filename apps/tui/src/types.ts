@@ -30,6 +30,7 @@ export interface CommandContext {
   setActiveSession: (id: string) => void;
   refreshSessions: () => void;
   refreshTasks: () => void;
+  activeSession: Session | null;
 }
 
 export type CommandHandler = (args: string[], ctx: CommandContext) => Promise<void>;

@@ -32,6 +32,7 @@ FRESH=false
 INTERACTIVE=false
 STREAMING=false
 SKILL_OVERRIDE=""
+EPIC_FILTER=""
 EXTRA_CONTEXT=""
 
 # Check for tailspin (tspin) for prettier log output
@@ -80,6 +81,10 @@ while [[ $# -gt 0 ]]; do
         --streaming)
             STREAMING=true
             shift
+            ;;
+        --epic)
+            EPIC_FILTER="$2"
+            shift 2
             ;;
         *)
             EXTRA_CONTEXT="$EXTRA_CONTEXT $1"
@@ -143,6 +148,9 @@ echo "$MAX_ITERATIONS" > .claude/.build-max-iterations
 echo "🚀 Starting build loop"
 echo "   Plan: $PLAN_FILE"
 echo "   Skills: $SKILLS_DIR"
+if [ -n "$EPIC_FILTER" ]; then
+    echo "   Epic: $EPIC_FILTER"
+fi
 if [ -n "$SKILL_OVERRIDE" ]; then
     echo "   Skill override: $SKILL_OVERRIDE"
 fi
@@ -234,14 +242,21 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     TASK_TITLE=""
 
     if [ "$BEADS_AVAILABLE" = true ] && [ -z "$SKILL_OVERRIDE" ]; then
-        # Get next task from beads
-        NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
+        # Get next task from beads, optionally filtered by epic
+        if [ -n "$EPIC_FILTER" ]; then
+            # Filter ready tasks to those under the specified epic
+            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '[.[] | select(.parent == $epic)] | .[0] // empty')
+        else
+            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
+        fi
         if [ -n "$NEXT_TASK" ] && [ "$NEXT_TASK" != "null" ]; then
             TASK_ID=$(echo "$NEXT_TASK" | jq -r '.id // empty')
             TASK_TITLE=$(echo "$NEXT_TASK" | jq -r '.title // empty')
             SKILL=$(get_task_skill "$NEXT_TASK")
             echo "   Task: $TASK_TITLE ($TASK_ID)"
             echo "   Skill: $SKILL"
+        elif [ -n "$EPIC_FILTER" ]; then
+            echo "   No ready tasks under epic $EPIC_FILTER"
         fi
     fi
 

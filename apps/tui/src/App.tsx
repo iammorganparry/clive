@@ -69,6 +69,7 @@ export const App: React.FC = () => {
     setActiveSession: setActiveSessionId,
     refreshSessions,
     refreshTasks,
+    activeSession,
   };
 
   const handleCommand = useCallback((command: string) => {
