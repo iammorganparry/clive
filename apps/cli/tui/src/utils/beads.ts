@@ -35,7 +35,7 @@ export function isBeadsAvailable(): boolean {
   }
 }
 
-// Get all work plan epics (P0 priority issues with "[branch] Work Plan" title pattern)
+// Get all epics (top-level issues with no parent)
 export function getEpics(): BeadsEpic[] {
   if (!isBeadsAvailable()) return [];
 
@@ -49,14 +49,10 @@ export function getEpics(): BeadsEpic[] {
 
     const issues: BeadsIssue[] = JSON.parse(result.stdout || '[]');
 
-    // Filter to P0 epics (work plans) - they have no parent and priority 0
-    // Title pattern: "[branch] Work Plan - YYYY-MM-DD" or similar
+    // Filter to epics - top-level issues with no parent
+    // These are work plans, migrations, features, etc.
     return issues
-      .filter(issue =>
-        issue.priority === 0 &&
-        !issue.parent &&
-        (issue.title.includes('Work Plan') || issue.title.includes('work plan'))
-      )
+      .filter(issue => !issue.parent)
       .map(issue => ({
         id: issue.id,
         title: issue.title,
@@ -110,18 +106,29 @@ export function extractBranchFromTitle(title: string): string | undefined {
 }
 
 // Format epic title to a human-readable session name
-// "[feature-auth] Work Plan - 2024-01-15" -> "Feature Auth"
 export function formatEpicName(title: string): string {
+  // Check for "[branch] Title" pattern first
   const branch = extractBranchFromTitle(title);
-  if (!branch) {
-    // Fallback: use title without date
-    return title.replace(/\s*-\s*\d{4}-\d{2}-\d{2}$/, '').replace('Work Plan', '').trim();
+  if (branch) {
+    // Convert kebab-case to Title Case
+    return branch
+      .split(/[-_]/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   }
-  // Convert kebab-case to Title Case
-  return branch
-    .split(/[-_]/)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+
+  // Clean up common patterns
+  let name = title
+    .replace(/\s*-\s*\d{4}-\d{2}-\d{2}$/, '') // Remove date suffix
+    .replace(/^(Task|Epic|Feature|Bug):\s*/i, '') // Remove type prefix
+    .trim();
+
+  // Truncate if too long
+  if (name.length > 30) {
+    name = name.slice(0, 27) + '...';
+  }
+
+  return name || title;
 }
 
 // Check if an epic has any in-progress tasks
