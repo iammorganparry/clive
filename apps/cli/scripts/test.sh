@@ -1,6 +1,11 @@
 #!/bin/bash
-# Test command - Ralph Wiggum loop for test implementation
+# Test command - DEPRECATED: Use build.sh instead
 # Usage: ./test.sh [--once] [--max-iterations N] [--fresh] [-i|--interactive] [extra context]
+
+# Deprecation warning
+echo "⚠️  'clive test' is deprecated. Use 'clive build' instead."
+echo "   The test command will be removed in a future version."
+echo ""
 
 set -e
 
@@ -27,6 +32,13 @@ ONCE=false
 FRESH=false
 INTERACTIVE=false
 EXTRA_CONTEXT=""
+
+# Check for tailspin (tspin) for prettier log output
+if command -v tspin &>/dev/null; then
+    HAS_TSPIN=true
+else
+    HAS_TSPIN=false
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -108,6 +120,9 @@ if [ "$INTERACTIVE" = true ]; then
 else
     echo "   Interactive: no (auto-exit after each iteration)"
 fi
+if [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
+    echo "   Log highlighting: tailspin"
+fi
 echo "   Progress: $PROGRESS_FILE"
 echo "   Completion marker: $COMPLETION_MARKER"
 echo ""
@@ -149,11 +164,16 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         fi
         echo "## Instructions"
         echo ""
-        echo "1. Read the plan file to find the FIRST suite with Status: pending or in_progress"
-        echo "2. Read the progress file to see what was already completed - do NOT repeat work"
-        echo "3. Follow the test.md prompt to implement one test suite"
-        echo "4. Update the plan file status when done"
-        echo "5. Append a brief summary to the progress file"
+        echo "1. Check beads first: run 'bd ready' to find next task (if .beads/ exists)"
+        echo "2. Read the plan file to get test details for that suite"
+        echo "3. Implement ONE test suite only (follow test.md prompt)"
+        echo "4. REQUIRED: Update status - run 'bd close [TASK_ID]' AND update plan file"
+        echo "5. Output completion marker and STOP - do not continue to next suite"
+        echo ""
+        echo "## CRITICAL"
+        echo "- Beads is the SOURCE OF TRUTH when available - use 'bd ready' not progress.txt"
+        echo "- You MUST update beads AND plan file status after completing"
+        echo "- Without status updates, the loop repeats forever"
         echo ""
         echo "## Completion Markers"
         echo "- Suite done: $ITERATION_COMPLETE_MARKER"
@@ -166,8 +186,13 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         CLAUDE_ARGS=(-p "${CLAUDE_ARGS[@]}")
     fi
 
-    # Invoke claude
-    claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"
+    # Invoke claude (pipe through tspin if available for prettier output)
+    # Only use tspin in non-interactive mode (piping breaks stdin)
+    if [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | tspin
+    else
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"
+    fi
 
     # Check for full completion in progress file
     if grep -q "$COMPLETION_MARKER" "$PROGRESS_FILE" 2>/dev/null; then

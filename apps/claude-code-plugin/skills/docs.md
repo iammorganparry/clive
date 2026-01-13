@@ -1,0 +1,182 @@
+---
+name: docs
+description: Write or update documentation
+category: docs
+model: sonnet
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+completion-marker: <promise>TASK_COMPLETE</promise>
+all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
+---
+
+# Documentation Skill
+
+You write or update documentation **ONE TASK AT A TIME**. Each invocation handles exactly one documentation task.
+
+**Pattern:** Read context -> Understand subject -> Write docs -> Verify accuracy -> Update status -> STOP
+
+## CRITICAL RULES (NON-NEGOTIABLE)
+
+1. **BEADS FIRST** - Use `bd ready` to find work, `bd close` to complete.
+2. **ONE TASK ONLY** - Document ONE topic, then STOP.
+3. **MUST UPDATE STATUS** - Update beads AND plan file after completion.
+4. **ACCURACY FIRST** - Verify code matches what you document.
+
+---
+
+## Step 0: Read Your Context
+
+### 0.1 Check Beads First
+```bash
+if [ -d ".beads" ]; then
+    bd ready
+fi
+```
+
+### 0.2 Read the Plan File
+Get documentation scope and requirements from the plan.
+
+### 0.3 Understand the Subject
+Read the code/feature being documented:
+```bash
+cat path/to/source.ts
+```
+
+---
+
+## Step 1: Mark Task In Progress
+
+```bash
+bd update [TASK_ID] --status in_progress
+```
+
+---
+
+## Step 2: Write Documentation
+
+### 2.1 Documentation Types
+
+**API Documentation:**
+```markdown
+## `functionName(param1, param2)`
+
+Description of what the function does.
+
+### Parameters
+
+| Name | Type | Description |
+|------|------|-------------|
+| param1 | string | Description |
+| param2 | number | Description |
+
+### Returns
+
+`ReturnType` - Description
+
+### Example
+
+\`\`\`typescript
+const result = functionName("value", 42);
+\`\`\`
+```
+
+**README / Getting Started:**
+```markdown
+# Project Name
+
+Brief description.
+
+## Installation
+
+\`\`\`bash
+npm install project-name
+\`\`\`
+
+## Quick Start
+
+\`\`\`typescript
+import { something } from 'project-name';
+// Example usage
+\`\`\`
+
+## Features
+
+- Feature 1
+- Feature 2
+```
+
+**Architecture Documentation:**
+```markdown
+# Architecture
+
+## Overview
+
+High-level description of the system.
+
+## Components
+
+### Component A
+Description and responsibilities.
+
+### Component B
+Description and responsibilities.
+
+## Data Flow
+
+Describe how data moves through the system.
+```
+
+### 2.2 Quality Rules
+
+- **Accurate** - Verify all code examples work
+- **Complete** - Cover all important aspects
+- **Clear** - Use simple language, avoid jargon
+- **Examples** - Include working code examples
+- **Up to date** - Match current code, not old versions
+
+---
+
+## Step 3: Verify Documentation Accuracy
+
+### Test Code Examples
+```bash
+# If examples can be run, verify they work
+npm run build
+```
+
+### Cross-Reference with Code
+Ensure:
+- Function signatures match actual code
+- Parameter types are correct
+- Return types are accurate
+- Examples use correct API
+
+---
+
+## Step 4: Update Status
+
+```bash
+bd close [TASK_ID]
+```
+
+Update plan: `- [x] **Status:** complete`
+
+---
+
+## Step 5: Output Completion Marker
+
+```
+Task "[name]" complete. Documentation written and verified.
+<promise>TASK_COMPLETE</promise>
+```
+
+**STOP IMMEDIATELY after outputting the marker.**
+
+---
+
+## Common Pitfalls
+
+- **Outdated examples** - Always verify code examples work
+- **Missing context** - Explain why, not just what
+- **Too technical** - Write for your audience
+- **Incomplete** - Cover edge cases and errors
+- **No examples** - Working examples are essential

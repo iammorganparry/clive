@@ -1,5 +1,5 @@
 #!/bin/bash
-# Clive CLI - Ralph Wiggum loop for test planning and execution
+# Clive CLI - AI-powered work planning and execution
 # Usage: ./clive.sh <command> [args...]
 
 set -e
@@ -14,24 +14,36 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 show_help() {
-    echo "Clive - AI-powered test planning and execution"
+    echo "Clive - AI-powered work planning and execution"
     echo ""
     echo "Usage: clive <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  plan [input]     Create a test plan (single invocation)"
-    echo "  test [options]   Run test implementation loop"
+    echo "  plan [input]     Create a work plan with category detection"
+    echo "  build [options]  Execute work plan with skill-based dispatch"
+    echo "  test [options]   (deprecated) Alias for 'build'"
     echo ""
-    echo "Test options:"
-    echo "  --once           Run single iteration (for testing)"
+    echo "Build options:"
+    echo "  --once              Run single iteration"
     echo "  --max-iterations N  Set max iterations (default: 50)"
-    echo "  --fresh          Clear progress file before starting"
+    echo "  --fresh             Clear progress file before starting"
+    echo "  --skill SKILL       Override skill detection (unit-tests, feature, etc.)"
+    echo "  -i, --interactive   Keep stdin open for manual interaction"
+    echo ""
+    echo "Categories detected by plan:"
+    echo "  test      - Test implementation (unit-tests, integration-tests, e2e-tests)"
+    echo "  feature   - New feature implementation"
+    echo "  refactor  - Code restructuring"
+    echo "  bugfix    - Bug fixing"
+    echo "  docs      - Documentation"
     echo ""
     echo "Examples:"
     echo "  clive plan"
     echo "  clive plan \"add tests for auth module\""
-    echo "  clive test --once"
-    echo "  clive test --max-iterations 25"
+    echo "  clive plan \"fix the login bug\""
+    echo "  clive plan \"refactor the API client\""
+    echo "  clive build --once"
+    echo "  clive build --skill unit-tests"
 }
 
 case "${1:-}" in
@@ -39,7 +51,12 @@ case "${1:-}" in
         shift
         "$SCRIPT_DIR/scripts/plan.sh" "$@"
         ;;
+    build)
+        shift
+        "$SCRIPT_DIR/scripts/build.sh" "$@"
+        ;;
     test)
+        # Deprecated - delegate to test.sh which shows warning then runs
         shift
         "$SCRIPT_DIR/scripts/test.sh" "$@"
         ;;
