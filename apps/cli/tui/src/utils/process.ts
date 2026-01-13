@@ -146,9 +146,11 @@ export function runPlanInTmux(
 
   // Create a new tmux pane (horizontal split, 70% height for Claude)
   // Use bash -c to run the compound command
+  // -d flag keeps focus on current pane (CLIVE TUI)
   const result = spawnSync('tmux', [
     'split-window',
     '-v',           // Vertical split (Claude below)
+    '-d',           // Don't switch focus to new pane
     '-l', '70%',    // 70% of height for Claude pane
     '-P',           // Print pane info
     '-F', '#{pane_id}',
