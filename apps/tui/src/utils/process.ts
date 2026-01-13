@@ -40,15 +40,23 @@ export interface ProcessHandle {
 }
 
 // Run build script and stream output
-export function runBuild(args: string[]): ProcessHandle {
+export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
   const buildScript = path.join(scriptsDir, 'build.sh');
 
   // Filter out -i/--interactive flags (TUI uses streaming mode)
   const filteredArgs = args.filter(a => a !== '-i' && a !== '--interactive');
 
+  // Build command args
+  const buildArgs = ['--streaming', ...filteredArgs];
+
+  // Add epic filter if provided
+  if (epicId) {
+    buildArgs.push('--epic', epicId);
+  }
+
   // Always use --streaming flag for TUI output capture
-  const child = spawn('bash', [buildScript, '--streaming', ...filteredArgs], {
+  const child = spawn('bash', [buildScript, ...buildArgs], {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,

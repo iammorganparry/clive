@@ -43,9 +43,15 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
-    ctx.appendOutput('Starting build...', 'system');
+    // Pass the active epic ID to filter tasks
+    const epicId = ctx.activeSession?.epicId;
+    if (epicId) {
+      ctx.appendOutput(`Building for: ${ctx.activeSession?.name}`, 'system');
+    } else {
+      ctx.appendOutput('Starting build...', 'system');
+    }
 
-    currentProcess = runBuild(args);
+    currentProcess = runBuild(args, epicId);
 
     currentProcess.onData((data: string) => {
       ctx.appendOutput(data, 'stdout');
