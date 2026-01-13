@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
 import { TaskItem } from './TaskItem.js';
 
@@ -16,6 +17,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = ({
   selectedIndex,
   skill,
 }) => {
+  const theme = useTheme();
   const complete = tasks.filter(t => t.status === 'complete').length;
   const total = tasks.length;
 
@@ -23,27 +25,29 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = ({
     <Box
       flexDirection="column"
       width={28}
-      borderStyle="single"
+      borderStyle="round"
+      borderColor={theme.ui.border}
       borderRight={false}
       paddingX={1}
     >
       <Box marginBottom={1}>
-        <Text bold color="cyan">TASKS</Text>
+        <Text bold color={theme.syntax.magenta}>TASKS</Text>
       </Box>
 
       {epicName && (
         <Box marginBottom={1}>
-          <Text color="white">Epic: {epicName}</Text>
+          <Text color={theme.fg.primary}>Epic: </Text>
+          <Text color={theme.syntax.cyan}>{epicName}</Text>
         </Box>
       )}
 
       <Box marginBottom={1}>
-        <Text color="gray">───────────────────────</Text>
+        <Text color={theme.ui.border}>───────────────────────</Text>
       </Box>
 
       <Box flexDirection="column" flexGrow={1}>
         {tasks.length === 0 ? (
-          <Text color="gray">No tasks</Text>
+          <Text color={theme.fg.muted}>No tasks</Text>
         ) : (
           tasks.map((task, index) => (
             <TaskItem
@@ -56,18 +60,19 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = ({
       </Box>
 
       <Box marginTop={1}>
-        <Text color="gray">───────────────────────</Text>
+        <Text color={theme.ui.border}>───────────────────────</Text>
       </Box>
 
       <Box>
-        <Text color={complete === total && total > 0 ? 'green' : 'white'}>
+        <Text color={complete === total && total > 0 ? theme.syntax.green : theme.fg.primary}>
           {complete}/{total} complete
         </Text>
       </Box>
 
       {skill && (
         <Box>
-          <Text color="gray">Skill: {skill}</Text>
+          <Text color={theme.fg.muted}>Skill: </Text>
+          <Text color={theme.syntax.orange}>{skill}</Text>
         </Box>
       )}
     </Box>

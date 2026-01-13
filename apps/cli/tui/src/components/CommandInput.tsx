@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState, useImperativeHandle, forwardRef, useEffect } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
 import TextInput from 'ink-text-input';
+import { useTheme } from '../theme.js';
 
 interface CommandInputProps {
   onSubmit: (command: string) => void;
-  isFocused?: boolean;
+  onFocusChange?: (isFocused: boolean) => void;
 }
 
-export const CommandInput: React.FC<CommandInputProps> = ({
+export interface CommandInputHandle {
+  focus: () => void;
+}
+
+const COMMAND_INPUT_ID = 'command-input';
+
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
   onSubmit,
-  isFocused = true,
-}) => {
+  onFocusChange,
+}, ref) => {
+  const theme = useTheme();
   const [value, setValue] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const { isFocused, focus } = useFocus({ autoFocus: true, id: COMMAND_INPUT_ID });
+
+  // Expose focus method to parent
+  useImperativeHandle(ref, () => ({
+    focus: () => focus(COMMAND_INPUT_ID),
+  }));
+
+  // Notify parent of focus changes
+  useEffect(() => {
+    onFocusChange?.(isFocused);
+  }, [isFocused, onFocusChange]);
 
   useInput((input, key) => {
     if (!isFocused) return;
@@ -39,7 +58,7 @@ export const CommandInput: React.FC<CommandInputProps> = ({
       setValue('');
       setHistoryIndex(-1);
     }
-  });
+  }, { isActive: isFocused });
 
   const handleSubmit = (submittedValue: string) => {
     const trimmed = submittedValue.trim();
@@ -56,8 +75,14 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   };
 
   return (
-    <Box borderStyle="single" borderTop={false} borderBottom={false} paddingX={1}>
-      <Text color="cyan" bold>&gt; </Text>
+    <Box
+      borderStyle="round"
+      borderColor={isFocused ? theme.syntax.blue : theme.ui.border}
+      borderTop={false}
+      borderBottom={false}
+      paddingX={1}
+    >
+      <Text color={theme.syntax.blue} bold>&gt; </Text>
       <TextInput
         value={value}
         onChange={setValue}
@@ -66,4 +91,6 @@ export const CommandInput: React.FC<CommandInputProps> = ({
       />
     </Box>
   );
-};
+});
+
+CommandInput.displayName = 'CommandInput';
