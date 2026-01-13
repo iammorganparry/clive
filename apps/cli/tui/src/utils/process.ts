@@ -198,7 +198,7 @@ export function runPlanInTmux(
     return null;
   }
 
-  let lastContent = '';
+  let lastLineCount = 0;
   let stopped = false;
 
   // Poll for pane content and completion
@@ -207,9 +207,16 @@ export function runPlanInTmux(
 
     // Capture pane content
     const content = captureTmuxPane(paneId);
-    if (content && content !== lastContent) {
-      lastContent = content;
-      onOutput(content);
+    if (content) {
+      const lines = content.split('\n');
+      // Only send NEW lines (lines after what we've already sent)
+      if (lines.length > lastLineCount) {
+        const newLines = lines.slice(lastLineCount).join('\n');
+        if (newLines.trim()) {
+          onOutput(newLines);
+        }
+        lastLineCount = lines.length;
+      }
     }
 
     // Check for completion
@@ -313,7 +320,7 @@ export function runBuildInTmux(
     return null;
   }
 
-  let lastContent = '';
+  let lastLineCount = 0;
   let stopped = false;
 
   // Poll for pane content and completion
@@ -322,9 +329,16 @@ export function runBuildInTmux(
 
     // Capture pane content
     const content = captureTmuxPane(paneId);
-    if (content && content !== lastContent) {
-      lastContent = content;
-      onOutput(content);
+    if (content) {
+      const lines = content.split('\n');
+      // Only send NEW lines (lines after what we've already sent)
+      if (lines.length > lastLineCount) {
+        const newLines = lines.slice(lastLineCount).join('\n');
+        if (newLines.trim()) {
+          onOutput(newLines);
+        }
+        lastLineCount = lines.length;
+      }
     }
 
     // Check for completion
