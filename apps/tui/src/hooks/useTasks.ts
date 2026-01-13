@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { Session, Task } from '../types.js';
-import { isBeadsAvailable, getEpicTasks } from '../utils/beads.js';
+import { isBeadsAvailable, getEpicTasks, clearBeadsCache } from '../utils/beads.js';
 
 // Status priority for sorting (lower = first)
 // Order: in_progress -> pending/blocked -> complete
@@ -28,7 +28,10 @@ function sortTasks(tasks: Task[]): Task[] {
   });
 }
 
-export function useTasks(session: Session | null) {
+// Poll interval when build is running (5 seconds)
+const POLL_INTERVAL_MS = 5000;
+
+export function useTasks(session: Session | null, isRunning: boolean = false) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [metadata, setMetadata] = useState<{
     epicName?: string;
@@ -50,6 +53,9 @@ export function useTasks(session: Session | null) {
       return;
     }
 
+    // Clear cache to get fresh data
+    clearBeadsCache();
+
     // Get tasks from beads for this epic
     const epicTasks = getEpicTasks(session.epicId);
     setTasks(sortTasks(epicTasks));
@@ -65,7 +71,7 @@ export function useTasks(session: Session | null) {
     });
   }, [session]);
 
-  // Track session changes for synchronous refresh (no polling, no useEffect)
+  // Track session changes for synchronous refresh
   const lastSessionIdRef = useRef<string | null>(null);
 
   // Synchronous initial fetch + session change detection
@@ -74,6 +80,17 @@ export function useTasks(session: Session | null) {
     // Schedule refresh for next microtask to avoid state update during render
     queueMicrotask(() => refresh());
   }
+
+  // Poll for task updates while build is running
+  useEffect(() => {
+    if (!isRunning || !session) return;
+
+    const interval = setInterval(() => {
+      refresh();
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [isRunning, session, refresh]);
 
   return {
     tasks,
