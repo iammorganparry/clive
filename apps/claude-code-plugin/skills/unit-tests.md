@@ -146,6 +146,49 @@ If truly stuck:
 
 ---
 
+## Discovered Work Protocol
+
+**During implementation, you may discover work outside the current task's scope:**
+
+- A bug that needs fixing but isn't part of this test task
+- Missing tests for related functionality
+- Code that needs refactoring to be testable
+- Documentation gaps
+- Technical debt
+
+**DO NOT do this work inline.** Instead:
+
+### 1. Create a Beads Task for Discovered Work
+
+```bash
+# Create a task with appropriate skill label
+bd create --title="[Brief description]" \
+  --type=task \
+  --priority=2 \
+  --labels "skill:[appropriate-skill],category:[category],discovered:true"
+
+# Examples:
+bd create --title="Fix null check in auth middleware" --type=bug --priority=1 --labels "skill:bugfix,category:bugfix,discovered:true"
+bd create --title="Add tests for error handling in UserService" --type=task --priority=2 --labels "skill:unit-tests,category:test,discovered:true"
+bd create --title="Refactor tangled dependencies in auth module" --type=task --priority=3 --labels "skill:refactor,category:refactor,discovered:true"
+```
+
+### 2. Note It and Continue
+
+After creating the task:
+- Briefly note what you discovered in your progress output
+- **Continue with your current task** - do not switch focus
+- The new task will be picked up in a future iteration
+
+### Why This Matters
+
+- **Focus**: Keeps you on task, prevents scope creep
+- **Tracking**: Discovered work is captured, not lost
+- **Prioritization**: User can reorder tasks as needed
+- **Context**: Fresh context for each task = better quality
+
+---
+
 ## Step 4: Update Status (REQUIRED - DO NOT SKIP)
 
 **THIS IS MANDATORY. If you skip this step, the loop will repeat forever.**

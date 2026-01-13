@@ -271,6 +271,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "- Follow the skill file instructions exactly"
         echo "- Update status in BOTH beads and plan file"
         echo "- STOP immediately after outputting completion marker"
+        echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
     } > "$TEMP_PROMPT"
 
     # Build claude command args

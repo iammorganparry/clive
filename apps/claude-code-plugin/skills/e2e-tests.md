@@ -147,6 +147,36 @@ npx cypress run --spec [test-file]
 
 ---
 
+## Discovered Work Protocol
+
+**During implementation, you may discover work outside the current task's scope:**
+
+- UI bugs visible during testing
+- Missing API endpoints
+- Accessibility issues
+- Performance problems
+- Documentation gaps
+
+**DO NOT do this work inline.** Instead:
+
+### 1. Create a Beads Task for Discovered Work
+
+```bash
+bd create --title="[Brief description]" \
+  --type=task \
+  --priority=2 \
+  --labels "skill:[appropriate-skill],category:[category],discovered:true"
+```
+
+### 2. Note It and Continue
+
+After creating the task:
+- Briefly note what you discovered in your progress output
+- **Continue with your current task** - do not switch focus
+- The new task will be picked up in a future iteration
+
+---
+
 ## Step 4: Update Status
 
 ```bash
