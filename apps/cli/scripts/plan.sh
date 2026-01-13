@@ -28,10 +28,10 @@ if ! command -v bd &> /dev/null; then
     exit 1
 fi
 
-# Initialize beads if not present
+# Initialize beads if not present (ignore error if already initialized)
 if [ ! -d ".beads" ]; then
     echo "Initializing beads..."
-    bd init
+    bd init || true
 fi
 
 # Get user input
