@@ -1,11 +1,13 @@
 #!/bin/bash
 #
-# Clive Test Loop - Stop Hook
+# Clive Build Loop - Stop Hook
 #
 # This hook implements the Ralph Wiggum loop pattern:
 # - Intercepts Claude's attempt to exit
-# - Checks if all test suites are complete
-# - If not complete, re-injects the test command to continue
+# - Checks if all tasks are complete
+# - If not complete, re-injects the build command to continue
+#
+# Supports both generic markers (ALL_TASKS_COMPLETE) and legacy test markers
 #
 # Usage: Automatically triggered when Claude tries to stop
 # The hook reads transcript from stdin and outputs the next prompt
@@ -78,9 +80,16 @@ if ! echo "$TRANSCRIPT" | grep -q '"role":"assistant"'; then
     exit 0
 fi
 
-# === STOP CONDITION 1: All suites complete ===
+# === STOP CONDITION 1: All tasks complete (generic and legacy markers) ===
+if echo "$TRANSCRIPT" | grep -q "<promise>ALL_TASKS_COMPLETE</promise>"; then
+    echo "[STOP] All tasks complete - build loop finished successfully" >&2
+    cleanup_state
+    exit 0  # Allow normal exit
+fi
+
+# Legacy marker for backwards compatibility
 if echo "$TRANSCRIPT" | grep -q "<promise>ALL_SUITES_COMPLETE</promise>"; then
-    echo "[STOP] All suites complete - test loop finished successfully" >&2
+    echo "[STOP] All suites complete (legacy marker) - build loop finished successfully" >&2
     cleanup_state
     exit 0  # Allow normal exit
 fi
@@ -125,7 +134,7 @@ if [ "$CURRENT_ITERATION" -ge "$MAX_ITERATIONS" ]; then
     exit 0  # Allow normal exit
 fi
 
-# Count pending suites from plan file
+# Count pending tasks from plan file
 PENDING_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* pending' "$PLAN_FILE" 2>/dev/null || echo "0")
 IN_PROGRESS_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* in_progress' "$PLAN_FILE" 2>/dev/null || echo "0")
 BLOCKED_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* blocked' "$PLAN_FILE" 2>/dev/null || echo "0")
@@ -133,11 +142,19 @@ REMAINING=$((PENDING_COUNT + IN_PROGRESS_COUNT))
 
 # If beads is available, also check beads status for more accurate tracking
 BEADS_AVAILABLE=false
+NEXT_TASK_SKILL=""
 if command -v bd &> /dev/null && [ -d ".beads" ]; then
     BEADS_AVAILABLE=true
     BEADS_PENDING=$(bd list --status pending --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
     BEADS_IN_PROGRESS=$(bd list --status in_progress --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
     BEADS_REMAINING=$((BEADS_PENDING + BEADS_IN_PROGRESS))
+
+    # Get next task and its skill for the prompt
+    NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty' 2>/dev/null)
+    if [ -n "$NEXT_TASK" ] && [ "$NEXT_TASK" != "null" ]; then
+        NEXT_TASK_SKILL=$(echo "$NEXT_TASK" | jq -r '.labels[]? // empty' 2>/dev/null | grep '^skill:' | cut -d: -f2 | head -1)
+        NEXT_TASK_TITLE=$(echo "$NEXT_TASK" | jq -r '.title // empty' 2>/dev/null)
+    fi
 
     # Use beads count if it's available (more accurate than grep parsing)
     if [ "$BEADS_REMAINING" -ge 0 ] 2>/dev/null; then
@@ -145,16 +162,16 @@ if command -v bd &> /dev/null && [ -d ".beads" ]; then
     fi
 fi
 
-# === STOP CONDITION 5: Suite is blocked (needs user intervention) ===
+# === STOP CONDITION 5: Task is blocked (needs user intervention) ===
 if [ "$BLOCKED_COUNT" -gt 0 ]; then
-    echo "[STOP] Suite blocked - waiting for user intervention" >&2
+    echo "[STOP] Task blocked - waiting for user intervention" >&2
     # Don't cleanup state - user may want to continue after fixing
     exit 0  # Allow normal exit
 fi
 
 # === STOP CONDITION 6: No remaining work ===
 if [ "$REMAINING" -eq 0 ]; then
-    echo "[STOP] All suites processed (0 pending, 0 in_progress)" >&2
+    echo "[STOP] All tasks processed (0 pending, 0 in_progress)" >&2
     cleanup_state
     exit 0  # Allow normal exit
 fi
@@ -165,24 +182,39 @@ echo "$CURRENT_ITERATION" > "$STATE_FILE"
 
 # Log progress
 if [ "$BEADS_AVAILABLE" = true ]; then
-    echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING suites remaining (plan: $PLAN_FILE, beads: $BEADS_REMAINING)" >&2
+    echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining (plan: $PLAN_FILE, beads: $BEADS_REMAINING)" >&2
 else
-    echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING suites remaining (plan: $PLAN_FILE)" >&2
+    echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining (plan: $PLAN_FILE)" >&2
+fi
+
+# Build skill-aware prompt for re-injection
+SKILL_CONTEXT=""
+if [ -n "$NEXT_TASK_SKILL" ]; then
+    SKILL_CONTEXT="
+Skill: $NEXT_TASK_SKILL (load skill file from skills/${NEXT_TASK_SKILL}.md)"
+fi
+
+if [ -n "$NEXT_TASK_TITLE" ]; then
+    TASK_CONTEXT="
+Next task: $NEXT_TASK_TITLE$SKILL_CONTEXT"
+else
+    TASK_CONTEXT=""
 fi
 
 # Block exit and continue the loop using official Ralph pattern
 # "reason" contains the actual prompt to execute (becomes next user message)
 # "systemMessage" provides iteration context
-PROMPT="Process exactly ONE test suite from the plan at $PLAN_FILE:
+PROMPT="Process exactly ONE task from the plan at $PLAN_FILE:
+$TASK_CONTEXT
+1. Find the first task with status 'pending' or 'in_progress'
+2. Load the skill file for this task type
+3. Execute the task following skill instructions
+4. Mark it as 'complete' (if verified) or 'blocked' (if stuck)
+5. Output a brief progress summary
+6. STOP - do not continue to the next task
 
-1. Find the first suite with status 'pending' or 'in_progress'
-2. Implement the tests for ONLY that suite
-3. Mark it as 'complete' (if tests pass) or 'blocked' (if stuck)
-4. Output a brief progress summary
-5. STOP - do not continue to the next suite
-
-The loop will automatically restart for the next suite."
-SYSTEM_MSG="🔄 Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING test suites remaining. Process ONE suite then STOP."
+The loop will automatically restart for the next task."
+SYSTEM_MSG="🔄 Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining. Process ONE task then STOP."
 
 # Output JSON using jq for safe escaping (matches official ralph-loop pattern)
 jq -n \

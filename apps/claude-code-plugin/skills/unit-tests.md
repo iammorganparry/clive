@@ -1,22 +1,26 @@
 ---
-description: Implement tests from the approved plan using the Ralph Wiggum loop (one suite at a time)
+name: unit-tests
+description: Implement unit tests using the project's test framework
+category: test
 model: sonnet
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+completion-marker: <promise>TASK_COMPLETE</promise>
+all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
 
-# Test Implementation Agent (Ralph Wiggum Loop)
+# Unit Tests Skill
 
-You implement tests **ONE SUITE AT A TIME** from the approved plan. Each invocation handles exactly one suite.
+You implement unit tests **ONE TASK AT A TIME** from the approved plan. Each invocation handles exactly one task.
 
-**Pattern:** Read context → Find next suite → Implement → Verify → Update status → STOP
+**Pattern:** Read context -> Find task details -> Implement -> Verify -> Update status -> STOP
 
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
-1. **BEADS FIRST** - When beads (`.beads/` directory) exists, it is the SOURCE OF TRUTH. Use `bd ready` to find work, `bd close` to complete. Always check beads before reading markdown files.
-2. **ONE SUITE ONLY** - Implement ONE test suite, then STOP. Do NOT continue to the next suite.
-3. **MUST UPDATE STATUS** - After completing a suite, update beads (`bd close`) AND the plan file. Both must be updated.
+1. **BEADS FIRST** - When beads (`.beads/` directory) exists, it is the SOURCE OF TRUTH. Use `bd ready` to find work, `bd close` to complete.
+2. **ONE TASK ONLY** - Implement ONE test suite, then STOP. Do NOT continue to the next task.
+3. **MUST UPDATE STATUS** - After completing a task, update beads (`bd close`) AND the plan file.
 
-**If you do not update the plan status, the loop will not know you finished and will repeat the same work.**
+**If you do not update status, the loop will repeat the same work forever.**
 
 ---
 
@@ -24,60 +28,31 @@ You implement tests **ONE SUITE AT A TIME** from the approved plan. Each invocat
 
 ### 0.1 Check Beads First (PRIMARY SOURCE OF TRUTH)
 
-**Beads is the primary source of truth when available.** Check beads BEFORE reading progress.txt:
+**Beads is the primary source of truth when available:**
 
 ```bash
-# Check if beads is available
 if command -v bd &> /dev/null && [ -d ".beads" ]; then
     echo "Beads available - using as primary source"
     bd ready  # Shows tasks with no blockers, ready to work on
 fi
 ```
 
-**If beads is available:**
-- Use `bd ready` output to find the next suite to work on
-- The task title will be "Suite: [Name]" - match this to the plan
-- Do NOT read progress.txt - beads already tracks what's done
-
 **If beads shows no ready tasks:**
 - Check if all tasks are complete: `bd list --status=open`
-- If no open tasks remain, output `<promise>ALL_SUITES_COMPLETE</promise>`
+- If no open tasks remain, output `<promise>ALL_TASKS_COMPLETE</promise>`
 
 ### 0.2 Read the Plan File
 
-The plan file path is provided in your instructions. Read it to:
-- Find the test cases and implementation details for the suite from `bd ready`
-- If beads is NOT available, find the FIRST suite with `- [ ] **Status:** pending` or `in_progress`
-
-```bash
-cat [PLAN_FILE_PATH]
-```
-
-### 0.3 Read Progress File (ONLY if beads is NOT available)
-
-**Skip this step if beads is available.**
-
-Only read progress.txt as a fallback when beads is not present:
-
-```bash
-# Only if no .beads directory exists
-cat [PROGRESS_FILE_PATH]
-```
-
-**If no pending/in_progress suites remain**, output:
-```
-<promise>ALL_SUITES_COMPLETE</promise>
-```
+The plan file path is provided in your instructions. Read it to find the test cases and implementation details for the current task.
 
 ---
 
-## Step 1: Mark Suite In Progress
+## Step 1: Mark Task In Progress
 
 ### If beads is available (preferred):
 ```bash
 bd update [TASK_ID] --status in_progress
 ```
-The task ID comes from `bd ready` output (e.g., `beads-abc123`).
 
 ### Also update the plan file:
 - Change `- [ ] **Status:** pending` to `- [ ] **Status:** in_progress`
@@ -166,14 +141,14 @@ it.only('should handle error', () => { ... });
 ### After 5+ Failed Attempts
 
 If truly stuck:
-- Mark suite as `blocked`
+- Mark task as `blocked`
 - Ask user for help with specific error details
 
 ---
 
 ## Step 4: Update Status (REQUIRED - DO NOT SKIP)
 
-**THIS IS MANDATORY. If you skip this step, the loop will repeat the same suite forever.**
+**THIS IS MANDATORY. If you skip this step, the loop will repeat forever.**
 
 ### If ALL Tests Pass:
 
@@ -186,89 +161,51 @@ bd close [TASK_ID]
 - Find the line: `- [ ] **Status:** in_progress`
 - Change it to: `- [x] **Status:** complete`
 
-Example edit:
-```
-old_string: "- [ ] **Status:** in_progress"
-new_string: "- [x] **Status:** complete"
-```
-
 ### If Blocked:
 
-**1. Update beads first (if available):**
+**1. Update beads (if available):**
 ```bash
 bd update [TASK_ID] --status blocked
 ```
 
 **2. Also update the plan file:**
-- Change `- [ ] **Status:** in_progress` to `- [ ] **Status:** blocked`
-- Add note on next line: `**Blocked:** [error summary]`
-
-**VERIFY: Run `bd ready` or read the plan file to confirm status was updated.**
+- Change status to `blocked`
+- Add note: `**Blocked:** [error summary]`
 
 ---
 
-## Step 5: Write Progress (ONLY if beads is NOT available)
+## Step 5: Output Completion Marker and STOP
 
-**If beads is available, skip this step - beads tracks progress automatically.**
-
-If beads is NOT available, **append** to the progress file (do NOT overwrite):
-
-```bash
-cat >> [PROGRESS_FILE] << 'EOF'
----
-## Iteration [N] - [Suite Name]
-- Status: complete
-- Tests: [X] passing
-- Summary: [brief description]
----
-EOF
+**If this task is done (but more remain):**
+```
+Task "[name]" complete. [X] tests passing.
+<promise>TASK_COMPLETE</promise>
 ```
 
----
-
-## Step 6: Output Completion Marker and STOP
-
-**If this suite is done (but more remain):**
+**If ALL tasks are done:**
 ```
-Suite "[name]" complete. [X] tests passing.
-<promise>ITERATION_COMPLETE</promise>
-```
-
-**If ALL suites are done:**
-```
-All test suites complete!
-<promise>ALL_SUITES_COMPLETE</promise>
+All tasks complete!
+<promise>ALL_TASKS_COMPLETE</promise>
 ```
 
 ## STOP HERE - DO NOT CONTINUE
 
 **After outputting the marker, you MUST STOP IMMEDIATELY.**
 
-- Do NOT start working on the next suite
+- Do NOT start working on the next task
 - Do NOT ask "should I continue?"
 - Do NOT offer to do more work
-- Just output the marker and END your response
 
-The outer loop will automatically restart you with fresh context for the next suite.
-
----
-
-## Stop Conditions
-
-The loop stops when:
-- All suites complete → `<promise>ALL_SUITES_COMPLETE</promise>`
-- User cancels → `/clive cancel`
-- Max iterations reached
-- Suite blocked → waits for user input
+The outer loop will automatically restart you with fresh context for the next task.
 
 ---
 
 ## Key Principles
 
-### One Suite Per Iteration
+### One Task Per Iteration
 - Fresh context each iteration prevents accumulated confusion
 - Clear progress tracking
-- Ability to cancel between suites
+- Ability to cancel between tasks
 
 ### Iteration Over Perfection
 - Don't try to write perfect tests first attempt
