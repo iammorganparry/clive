@@ -68,12 +68,18 @@ done
 
 # Resolve plan file
 resolve_plan_file() {
-    if [ -f ".claude/test-plan-latest.md" ]; then
+    # New naming: work-plan-*
+    if [ -f ".claude/work-plan-latest.md" ]; then
+        readlink -f ".claude/work-plan-latest.md" 2>/dev/null || echo ".claude/work-plan-latest.md"
+    elif ls .claude/work-plan-*.md 1>/dev/null 2>&1; then
+        ls -t .claude/work-plan-*.md 2>/dev/null | head -1
+    # Legacy naming: test-plan-* (backwards compatibility)
+    elif [ -f ".claude/test-plan-latest.md" ]; then
         readlink -f ".claude/test-plan-latest.md" 2>/dev/null || echo ".claude/test-plan-latest.md"
     elif ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
         ls -t .claude/test-plan-*.md 2>/dev/null | head -1
     else
-        echo ".claude/test-plan.md"
+        echo ".claude/work-plan.md"
     fi
 }
 

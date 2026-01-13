@@ -32,20 +32,25 @@ else
     MAX_ITERATIONS=50
 fi
 
-# Resolve plan file dynamically
+# Resolve plan file dynamically (supports work-plan and legacy test-plan naming)
 # Priority: stored path > latest symlink > any plan file > default
 resolve_plan_file() {
     if [ -f "$PLAN_PATH_FILE" ]; then
         cat "$PLAN_PATH_FILE"
+    # New naming: work-plan-*
+    elif [ -f ".claude/work-plan-latest.md" ]; then
+        local target=$(readlink .claude/work-plan-latest.md 2>/dev/null || echo "work-plan-latest.md")
+        echo ".claude/$target"
+    elif ls .claude/work-plan-*.md 1>/dev/null 2>&1; then
+        ls -t .claude/work-plan-*.md 2>/dev/null | head -1
+    # Legacy naming: test-plan-* (backwards compatibility)
     elif [ -f ".claude/test-plan-latest.md" ]; then
-        # Resolve symlink
         local target=$(readlink .claude/test-plan-latest.md 2>/dev/null || echo "test-plan-latest.md")
         echo ".claude/$target"
     elif ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
-        # Use most recent plan file
         ls -t .claude/test-plan-*.md 2>/dev/null | head -1
     else
-        echo ".claude/test-plan.md"
+        echo ".claude/work-plan.md"
     fi
 }
 
