@@ -227,12 +227,14 @@ function extractSkillFromLabels(labels: string[] | undefined): string | undefine
 
 function mapBeadsStatus(status: string): Task['status'] {
   switch (status) {
+    case 'open':
     case 'pending':
       return 'pending';
     case 'in_progress':
       return 'in_progress';
     case 'complete':
     case 'closed':
+    case 'done':
       return 'complete';
     case 'blocked':
       return 'blocked';
