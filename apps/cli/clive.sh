@@ -16,9 +16,12 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 show_help() {
     echo "Clive - AI-powered work planning and execution"
     echo ""
-    echo "Usage: clive <command> [options]"
+    echo "Usage: clive [command] [options]"
+    echo ""
+    echo "When run without arguments, opens the TUI dashboard."
     echo ""
     echo "Commands:"
+    echo "  (none)           Open TUI dashboard with slash commands"
     echo "  plan [input]     Create a work plan with category detection"
     echo "  build [options]  Execute work plan with skill-based dispatch"
     echo "  test [options]   (deprecated) Alias for 'build'"
@@ -46,6 +49,11 @@ show_help() {
     echo "  clive build --skill unit-tests"
 }
 
+# If no args, launch TUI dashboard
+if [ $# -eq 0 ]; then
+    exec node "$SCRIPT_DIR/tui/bin/clive-tui.js"
+fi
+
 case "${1:-}" in
     plan)
         shift
@@ -60,7 +68,7 @@ case "${1:-}" in
         shift
         "$SCRIPT_DIR/scripts/test.sh" "$@"
         ;;
-    -h|--help|"")
+    -h|--help)
         show_help
         ;;
     *)
