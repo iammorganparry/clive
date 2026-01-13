@@ -30,6 +30,7 @@ MAX_ITERATIONS=50
 ONCE=false
 FRESH=false
 INTERACTIVE=false
+STREAMING=false
 SKILL_OVERRIDE=""
 EXTRA_CONTEXT=""
 
@@ -74,6 +75,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -i|--interactive)
             INTERACTIVE=true
+            shift
+            ;;
+        --streaming)
+            STREAMING=true
             shift
             ;;
         *)
@@ -146,7 +151,9 @@ if [ "$ONCE" = true ]; then
 else
     echo "   Max iterations: $MAX_ITERATIONS"
 fi
-if [ "$INTERACTIVE" = true ]; then
+if [ "$STREAMING" = true ]; then
+    echo "   Mode: streaming (TUI output)"
+elif [ "$INTERACTIVE" = true ]; then
     echo "   Interactive: yes (manual exit required)"
 else
     echo "   Interactive: no (auto-exit after each iteration)"
@@ -185,7 +192,8 @@ get_task_skill() {
 
     # If no skill found, try to get from description
     if [ -z "$skill" ] && [ -n "$task_json" ]; then
-        skill=$(echo "$task_json" | jq -r '.description // empty' 2>/dev/null | grep -oP '\*\*Skill:\*\* \K\w+' | head -1)
+        # Use sed instead of grep -P for macOS compatibility
+        skill=$(echo "$task_json" | jq -r '.description // empty' 2>/dev/null | sed -n 's/.*\*\*Skill:\*\* \([a-zA-Z0-9_-]*\).*/\1/p' | head -1)
     fi
 
     # Default to feature skill
@@ -290,12 +298,16 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     # Build claude command args
     CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --permission-mode acceptEdits)
-    if [ "$INTERACTIVE" = false ]; then
+    # Use -p (print mode) for non-interactive or streaming modes
+    if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         CLAUDE_ARGS=(-p "${CLAUDE_ARGS[@]}")
     fi
 
     # Invoke claude
-    if [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
+    if [ "$STREAMING" = true ]; then
+        # Streaming mode - output directly for TUI capture
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
+    elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | tspin
     else
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"

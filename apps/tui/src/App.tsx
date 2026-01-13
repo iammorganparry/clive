@@ -172,13 +172,13 @@ export const App: React.FC = () => {
         }}
       />
 
-      <Box flexGrow={1} minHeight={10}>
+      <Box flexGrow={1} minHeight={10} height={height - 8}>
         <TaskSidebar
           tasks={tasks}
           epicName={epicName}
           skill={skill}
         />
-        <TerminalOutput lines={lines} />
+        <TerminalOutput lines={lines} maxLines={height - 12} />
       </Box>
 
       <CommandInput

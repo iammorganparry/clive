@@ -44,7 +44,11 @@ export function runBuild(args: string[]): ProcessHandle {
   const scriptsDir = findScriptsDir();
   const buildScript = path.join(scriptsDir, 'build.sh');
 
-  const child = spawn('bash', [buildScript, ...args], {
+  // Filter out -i/--interactive flags (TUI uses streaming mode)
+  const filteredArgs = args.filter(a => a !== '-i' && a !== '--interactive');
+
+  // Always use --streaming flag for TUI output capture
+  const child = spawn('bash', [buildScript, '--streaming', ...filteredArgs], {
     cwd: process.cwd(),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
