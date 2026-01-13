@@ -132,6 +132,36 @@ npm run typecheck
 
 ---
 
+## Discovered Work Protocol
+
+**During refactoring, you may discover work outside the current task's scope:**
+
+- Bugs revealed by cleaner code
+- Missing tests
+- Additional refactoring opportunities
+- Documentation that needs updating
+- Technical debt
+
+**DO NOT do this work inline.** Instead:
+
+### 1. Create a Beads Task for Discovered Work
+
+```bash
+bd create --title="[Brief description]" \
+  --type=task \
+  --priority=2 \
+  --labels "skill:[appropriate-skill],category:[category],discovered:true"
+```
+
+### 2. Note It and Continue
+
+After creating the task:
+- Briefly note what you discovered in your progress output
+- **Continue with your current refactoring task** - do not switch focus
+- The new task will be picked up in a future iteration
+
+---
+
 ## Step 4: Update Status
 
 ```bash
