@@ -60,7 +60,7 @@ trap "rm -f $TEMP_PROMPT" EXIT
 echo "Starting Claude planning session..."
 echo ""
 
-# Run claude interactively - PTY handling is done by the TUI
+# Run claude interactively (TUI is suspended, Claude has full terminal access)
 claude --add-dir "$(dirname "$TEMP_PROMPT")" \
     --permission-mode acceptEdits \
     "Read and execute all instructions in the file: $TEMP_PROMPT"
