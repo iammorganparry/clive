@@ -1,8 +1,8 @@
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
-import * as pty from 'node-pty';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -47,7 +47,7 @@ export function cancelBuild(): void {
   fs.writeFileSync(cancelFile, new Date().toISOString());
 }
 
-// PTY-based interactive process handle
+// Interactive process handle using child_process with pipes
 export interface PtyProcessHandle {
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
@@ -56,7 +56,7 @@ export interface PtyProcessHandle {
   onExit: (callback: (code: number) => void) => void;
 }
 
-// Run build script interactively with PTY support
+// Run build script interactively with piped stdio
 export function runBuildPty(
   args: string[],
   cols: number = 80,
@@ -69,43 +69,64 @@ export function runBuildPty(
   debugLog(`runBuildPty: cwd: ${process.cwd()}`);
   debugLog(`runBuildPty: args: ${args.join(' ')}`);
 
-  const ptyProcess = pty.spawn('bash', [buildScript, ...args], {
-    name: 'xterm-256color',
-    cols,
-    rows,
+  const child = spawn('bash', [buildScript, ...args], {
     cwd: process.cwd(),
-    env: process.env as { [key: string]: string },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLUMNS: String(cols),
+      LINES: String(rows),
+      // Force interactive mode for Claude
+      CLIVE_INTERACTIVE: '1',
+    },
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
 
-  ptyProcess.onData((data: string) => {
-    debugLog(`runBuildPty: received ${data.length} chars`);
+  child.stdout?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    debugLog(`runBuildPty stdout: ${str.length} chars`);
     if (dataCallback) {
-      dataCallback(data);
+      dataCallback(str);
     }
   });
 
-  ptyProcess.onExit(({ exitCode }) => {
-    debugLog(`runBuildPty: exited with code ${exitCode}`);
+  child.stderr?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    debugLog(`runBuildPty stderr: ${str.length} chars`);
+    if (dataCallback) {
+      dataCallback(str);
+    }
+  });
+
+  child.on('close', (code) => {
+    debugLog(`runBuildPty: exited with code ${code}`);
     if (exitCallback) {
-      exitCallback(exitCode);
+      exitCallback(code ?? 1);
+    }
+  });
+
+  child.on('error', (err) => {
+    debugLog(`runBuildPty error: ${err.message}`);
+    if (dataCallback) {
+      dataCallback(`Error: ${err.message}\n`);
     }
   });
 
   return {
     write: (data: string) => {
-      debugLog(`runBuildPty: writing ${data.length} chars`);
-      ptyProcess.write(data);
+      debugLog(`runBuildPty: writing ${data.length} chars: ${JSON.stringify(data)}`);
+      child.stdin?.write(data);
     },
-    resize: (newCols: number, newRows: number) => {
-      debugLog(`runBuildPty: resize to ${newCols}x${newRows}`);
-      ptyProcess.resize(newCols, newRows);
+    resize: (_newCols: number, _newRows: number) => {
+      // Can't resize with pipes, but we can try to signal
+      debugLog(`runBuildPty: resize requested (not supported with pipes)`);
     },
     kill: () => {
       debugLog(`runBuildPty: killing process`);
-      ptyProcess.kill();
+      child.kill('SIGTERM');
     },
     onData: (callback: (data: string) => void) => {
       dataCallback = callback;
@@ -116,7 +137,7 @@ export function runBuildPty(
   };
 }
 
-// Run plan script interactively with PTY support
+// Run plan script interactively with piped stdio
 export function runPlanPty(
   args: string[],
   cols: number = 80,
@@ -129,43 +150,62 @@ export function runPlanPty(
   debugLog(`runPlanPty: cwd: ${process.cwd()}`);
   debugLog(`runPlanPty: args: ${args.join(' ')}`);
 
-  const ptyProcess = pty.spawn('bash', [planScript, ...args], {
-    name: 'xterm-256color',
-    cols,
-    rows,
+  const child = spawn('bash', [planScript, ...args], {
     cwd: process.cwd(),
-    env: process.env as { [key: string]: string },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLUMNS: String(cols),
+      LINES: String(rows),
+      CLIVE_INTERACTIVE: '1',
+    },
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
 
-  ptyProcess.onData((data: string) => {
-    debugLog(`runPlanPty: received ${data.length} chars`);
+  child.stdout?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    debugLog(`runPlanPty stdout: ${str.length} chars`);
     if (dataCallback) {
-      dataCallback(data);
+      dataCallback(str);
     }
   });
 
-  ptyProcess.onExit(({ exitCode }) => {
-    debugLog(`runPlanPty: exited with code ${exitCode}`);
+  child.stderr?.on('data', (data: Buffer) => {
+    const str = data.toString();
+    debugLog(`runPlanPty stderr: ${str.length} chars`);
+    if (dataCallback) {
+      dataCallback(str);
+    }
+  });
+
+  child.on('close', (code) => {
+    debugLog(`runPlanPty: exited with code ${code}`);
     if (exitCallback) {
-      exitCallback(exitCode);
+      exitCallback(code ?? 1);
+    }
+  });
+
+  child.on('error', (err) => {
+    debugLog(`runPlanPty error: ${err.message}`);
+    if (dataCallback) {
+      dataCallback(`Error: ${err.message}\n`);
     }
   });
 
   return {
     write: (data: string) => {
-      debugLog(`runPlanPty: writing ${data.length} chars`);
-      ptyProcess.write(data);
+      debugLog(`runPlanPty: writing ${data.length} chars: ${JSON.stringify(data)}`);
+      child.stdin?.write(data);
     },
-    resize: (newCols: number, newRows: number) => {
-      debugLog(`runPlanPty: resize to ${newCols}x${newRows}`);
-      ptyProcess.resize(newCols, newRows);
+    resize: (_newCols: number, _newRows: number) => {
+      debugLog(`runPlanPty: resize requested (not supported with pipes)`);
     },
     kill: () => {
       debugLog(`runPlanPty: killing process`);
-      ptyProcess.kill();
+      child.kill('SIGTERM');
     },
     onData: (callback: (data: string) => void) => {
       dataCallback = callback;
