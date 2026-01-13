@@ -1,5 +1,5 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { runPlan, runBuild, cancelBuild, runPlanInteractive, type ProcessHandle } from '../utils/process.js';
+import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, isInTmux, type ProcessHandle } from '../utils/process.js';
 import { suspendTUI, resumeTUI } from '../index.js';
 
 // Track running processes
@@ -15,14 +15,31 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
+
+    // Try tmux split first (if in tmux)
+    if (isInTmux()) {
+      ctx.appendOutput('Opening Claude in tmux split pane...', 'system');
+
+      const result = runPlanInTmux(args, (code) => {
+        if (code === 0) {
+          ctx.appendOutput('Plan created successfully', 'system');
+          ctx.refreshSessions();
+        } else {
+          ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
+        }
+      });
+
+      if (result) {
+        ctx.appendOutput(`Claude running in pane ${result.paneId}`, 'system');
+        return;
+      }
+    }
+
+    // Fall back to suspend/resume approach
     ctx.appendOutput('Launching Claude interactive session...', 'system');
 
-    // Suspend TUI and run Claude interactively
     suspendTUI();
-
     const code = runPlanInteractive(args);
-
-    // Resume TUI after Claude exits
     resumeTUI();
 
     if (code === 0) {

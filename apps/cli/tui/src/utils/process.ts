@@ -106,6 +106,68 @@ export function cancelBuild(): void {
   fs.writeFileSync(cancelFile, new Date().toISOString());
 }
 
+// Check if running inside tmux
+export function isInTmux(): boolean {
+  return !!process.env.TMUX;
+}
+
+// Run plan in a tmux split pane
+export function runPlanInTmux(
+  args: string[],
+  onComplete: (code: number) => void
+): { paneId: string } | null {
+  if (!isInTmux()) {
+    return null;
+  }
+
+  const scriptsDir = findScriptsDir();
+  const planScript = path.join(scriptsDir, 'plan.sh');
+  const cwd = process.cwd();
+
+  // Create a completion marker file
+  const completionFile = path.join(cwd, '.claude', '.plan-complete');
+
+  // Remove old completion file
+  if (fs.existsSync(completionFile)) {
+    fs.unlinkSync(completionFile);
+  }
+
+  // Build command that will signal completion
+  const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+  const command = `cd '${cwd}' && bash '${planScript}' ${escapedArgs}; echo $? > '${completionFile}'`;
+
+  // Create a new tmux pane (horizontal split, 70% height for Claude)
+  const result = spawnSync('tmux', [
+    'split-window',
+    '-v',           // Vertical split (Claude below)
+    '-p', '70',     // 70% of space for Claude
+    '-P',           // Print pane info
+    '-F', '#{pane_id}',
+    command,
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env },
+  });
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  const paneId = result.stdout?.trim();
+
+  // Watch for completion
+  const checkInterval = setInterval(() => {
+    if (fs.existsSync(completionFile)) {
+      clearInterval(checkInterval);
+      const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
+      fs.unlinkSync(completionFile);
+      onComplete(code);
+    }
+  }, 1000);
+
+  return { paneId };
+}
+
 // Run plan interactively - this blocks and takes over the terminal
 export function runPlanInteractive(args: string[]): number {
   const scriptsDir = findScriptsDir();
