@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useRef } from 'react';
 import { Box, useStdout } from 'ink';
+import { Header } from './components/Header.js';
 import { TabBar } from './components/TabBar.js';
 import { TaskSidebar } from './components/TaskSidebar.js';
 import { TerminalOutput } from './components/TerminalOutput.js';
@@ -110,8 +111,8 @@ export const App: React.FC = () => {
 
   // Show welcome message on first render
   React.useEffect(() => {
-    appendSystemMessage('Welcome to Clive TUI');
-    appendSystemMessage('Press ? for keyboard shortcuts');
+    appendSystemMessage('Welcome to CLIVE - AI-Powered Work Execution');
+    appendSystemMessage('Press ? for keyboard shortcuts, n for new plan');
     appendSystemMessage('');
   }, []);
 
@@ -123,6 +124,7 @@ export const App: React.FC = () => {
         width={width}
         height={height}
       >
+        <Header />
         <Box flexGrow={1} alignItems="center" justifyContent="center">
           <HelpOverlay isVisible={showHelp} onClose={() => setShowHelp(false)} />
         </Box>
@@ -136,6 +138,7 @@ export const App: React.FC = () => {
       width={width}
       height={height}
     >
+      <Header />
       <TabBar
         sessions={sessions}
         activeSessionId={activeSessionId}
