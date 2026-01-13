@@ -43,16 +43,20 @@ function hasTmux(): boolean {
 function startInTmux(): void {
   const clivePath = process.argv[1]; // Path to this script
   const args = process.argv.slice(2).join(' ');
+  const cwd = process.cwd(); // Preserve current working directory
 
   // Create a new tmux session named 'clive' running this script
+  // -c flag sets the working directory for the new session
   const result = spawnSync('tmux', [
     'new-session',
     '-s', 'clive',
     '-n', 'CLIVE',
+    '-c', cwd,  // Start in current directory
     `node ${clivePath} ${args}`,
   ], {
     stdio: 'inherit',
     env: { ...process.env },
+    cwd: cwd,
   });
 
   process.exit(result.status ?? 0);
