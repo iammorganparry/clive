@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { useTheme } from '../theme.js';
 import type { Session, Task } from '../types.js';
 
 interface StatusBarProps {
@@ -13,35 +14,49 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   tasks,
   isRunning = false,
 }) => {
+  const theme = useTheme();
   const complete = tasks.filter(t => t.status === 'complete').length;
   const total = tasks.length;
 
   const statusText = isRunning ? 'Running' : session ? 'Ready' : 'Idle';
-  const statusColor = isRunning ? 'green' : session ? 'yellow' : 'gray';
+  const statusBgColor = isRunning ? theme.syntax.green : session ? theme.syntax.yellow : theme.fg.muted;
 
   return (
-    <Box borderStyle="single" borderTop={false} paddingX={1} justifyContent="space-between">
+    <Box
+      borderStyle="round"
+      borderColor={theme.ui.border}
+      borderTop={false}
+      paddingX={1}
+      justifyContent="space-between"
+    >
       <Box gap={2}>
-        <Text backgroundColor={statusColor as Parameters<typeof Text>[0]['backgroundColor']} color="black">
+        <Text backgroundColor={statusBgColor} color={theme.bg.primary} bold>
           {' '}{statusText}{' '}
         </Text>
 
         {session?.iteration !== undefined && (
-          <Text color="white">
-            Iteration: {session.iteration}/{session.maxIterations}
+          <Text color={theme.fg.primary}>
+            Iteration: <Text color={theme.syntax.cyan}>{session.iteration}/{session.maxIterations}</Text>
           </Text>
         )}
 
         {total > 0 && (
-          <Text color="white">
-            Tasks: {complete}/{total}
+          <Text color={theme.fg.primary}>
+            Tasks: <Text color={theme.syntax.cyan}>{complete}/{total}</Text>
           </Text>
         )}
       </Box>
 
       <Box gap={2}>
-        <Text color="gray">/ commands</Text>
-        <Text color="gray">Ctrl+C quit</Text>
+        <Text color={theme.fg.muted}>
+          <Text color={theme.syntax.yellow}>?</Text> help
+        </Text>
+        <Text color={theme.fg.muted}>
+          <Text color={theme.syntax.yellow}>/</Text> commands
+        </Text>
+        <Text color={theme.fg.muted}>
+          <Text color={theme.syntax.yellow}>Ctrl+C</Text> quit
+        </Text>
       </Box>
     </Box>
   );
