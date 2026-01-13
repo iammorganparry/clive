@@ -22,13 +22,9 @@ export const commands: Record<string, CommandHandler> = {
 
       const result = runPlanInTmux(
         args,
-        // Stream Claude's output to our terminal
+        // Stream Claude's output to our terminal (only new lines)
         (content) => {
-          // Clear previous Claude output and show new content
-          // Split content into lines and append each
           const lines = content.split('\n');
-          // Only show non-empty lines
-          ctx.appendOutput('─── Claude Output ───', 'marker');
           lines.forEach(line => {
             if (line.trim()) {
               ctx.appendOutput(line, 'stdout');
@@ -89,10 +85,9 @@ export const commands: Record<string, CommandHandler> = {
 
       const result = runBuildInTmux(
         args,
-        // Stream Claude's output to our terminal
+        // Stream Claude's output to our terminal (only new lines)
         (content) => {
           const lines = content.split('\n');
-          ctx.appendOutput('─── Claude Build Output ───', 'marker');
           lines.forEach(line => {
             if (line.trim()) {
               ctx.appendOutput(line, 'stdout');
