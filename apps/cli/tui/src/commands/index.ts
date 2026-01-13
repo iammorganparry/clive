@@ -1,5 +1,6 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { runPlan, runBuild, cancelBuild, type ProcessHandle } from '../utils/process.js';
+import { runPlan, runBuild, cancelBuild, runPlanInteractive, type ProcessHandle } from '../utils/process.js';
+import { suspendTUI, resumeTUI } from '../index.js';
 
 // Track running processes
 let currentProcess: ProcessHandle | null = null;
@@ -14,20 +15,22 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
+    ctx.appendOutput('Launching Claude interactive session...', 'system');
 
-    currentProcess = runPlan(args, (data, type) => {
-      ctx.appendOutput(data, type);
-    });
+    // Suspend TUI and run Claude interactively
+    suspendTUI();
 
-    currentProcess.onExit((code: number) => {
-      currentProcess = null;
-      if (code === 0) {
-        ctx.appendOutput('Plan created successfully', 'system');
-        ctx.refreshSessions();
-      } else {
-        ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
-      }
-    });
+    const code = runPlanInteractive(args);
+
+    // Resume TUI after Claude exits
+    resumeTUI();
+
+    if (code === 0) {
+      ctx.appendOutput('Plan created successfully', 'system');
+      ctx.refreshSessions();
+    } else {
+      ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
+    }
   },
 
   build: async (args, ctx) => {
