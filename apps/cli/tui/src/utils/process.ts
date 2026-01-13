@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import * as pty from 'node-pty';
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -26,8 +27,21 @@ function findScriptsDir(): string {
 }
 
 export interface ProcessHandle {
-  process: ChildProcess;
   kill: () => void;
+  write?: (data: string) => void;
+  onExit: (callback: (code: number) => void) => void;
+}
+
+// Strip ANSI escape sequences that would interfere with our TUI
+function stripAnsiCursor(str: string): string {
+  // Remove cursor movement, screen clearing, and other problematic sequences
+  // Keep colors and basic formatting
+  return str
+    .replace(/\x1b\[\?25[hl]/g, '') // Hide/show cursor
+    .replace(/\x1b\[\d*[ABCDEFGJKST]/g, '') // Cursor movement
+    .replace(/\x1b\[\d*;\d*[Hf]/g, '') // Cursor positioning
+    .replace(/\x1b\[2J/g, '') // Clear screen
+    .replace(/\x1b\[H/g, ''); // Home cursor
 }
 
 export function runPlan(
@@ -37,23 +51,26 @@ export function runPlan(
   const scriptsDir = findScriptsDir();
   const planScript = path.join(scriptsDir, 'plan.sh');
 
-  const child = spawn('bash', [planScript, ...args], {
+  // Use PTY for proper terminal emulation (Claude Code needs a TTY)
+  const ptyProcess = pty.spawn('bash', [planScript, ...args], {
+    name: 'xterm-256color',
+    cols: process.stdout.columns || 80,
+    rows: process.stdout.rows || 24,
     cwd: process.cwd(),
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, TERM: 'xterm-256color' },
   });
 
-  child.stdout?.on('data', (data: Buffer) => {
-    onOutput(data.toString(), 'stdout');
-  });
-
-  child.stderr?.on('data', (data: Buffer) => {
-    onOutput(data.toString(), 'stderr');
+  ptyProcess.onData((data: string) => {
+    // Strip cursor control sequences but keep colors
+    onOutput(stripAnsiCursor(data), 'stdout');
   });
 
   return {
-    process: child,
-    kill: () => child.kill('SIGTERM'),
+    kill: () => ptyProcess.kill(),
+    write: (data: string) => ptyProcess.write(data),
+    onExit: (callback: (code: number) => void) => {
+      ptyProcess.onExit(({ exitCode }) => callback(exitCode));
+    },
   };
 }
 
@@ -64,23 +81,25 @@ export function runBuild(
   const scriptsDir = findScriptsDir();
   const buildScript = path.join(scriptsDir, 'build.sh');
 
-  const child = spawn('bash', [buildScript, ...args], {
+  // Use PTY for proper terminal emulation
+  const ptyProcess = pty.spawn('bash', [buildScript, ...args], {
+    name: 'xterm-256color',
+    cols: process.stdout.columns || 80,
+    rows: process.stdout.rows || 24,
     cwd: process.cwd(),
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, TERM: 'xterm-256color' },
   });
 
-  child.stdout?.on('data', (data: Buffer) => {
-    onOutput(data.toString(), 'stdout');
-  });
-
-  child.stderr?.on('data', (data: Buffer) => {
-    onOutput(data.toString(), 'stderr');
+  ptyProcess.onData((data: string) => {
+    onOutput(stripAnsiCursor(data), 'stdout');
   });
 
   return {
-    process: child,
-    kill: () => child.kill('SIGTERM'),
+    kill: () => ptyProcess.kill(),
+    write: (data: string) => ptyProcess.write(data),
+    onExit: (callback: (code: number) => void) => {
+      ptyProcess.onExit(({ exitCode }) => callback(exitCode));
+    },
   };
 }
 

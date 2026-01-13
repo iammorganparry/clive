@@ -58,17 +58,14 @@ trap "rm -f $TEMP_PROMPT" EXIT
 } > "$TEMP_PROMPT"
 
 echo "Starting Claude planning session..."
-echo "Note: Claude output appears below. The plan will create beads tasks."
 echo ""
-echo "---"
 
-# Run claude interactively
-# The --permission-mode acceptEdits allows Claude to make changes
-# Output will stream to terminal (captured by TUI if running in TUI)
-claude --add-dir "$(dirname "$TEMP_PROMPT")" --permission-mode acceptEdits \
-    "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
+# Run claude interactively - PTY handling is done by the TUI
+claude --add-dir "$(dirname "$TEMP_PROMPT")" \
+    --permission-mode acceptEdits \
+    "Read and execute all instructions in the file: $TEMP_PROMPT"
 
-echo "---"
+echo ""
 echo ""
 echo "Plan session complete."
 
