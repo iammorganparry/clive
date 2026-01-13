@@ -12,16 +12,12 @@ import { useTasks } from './hooks/useTasks.js';
 import { useOutput } from './hooks/useOutput.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { executeCommand } from './commands/index.js';
-import { useTheme } from './theme.js';
 import type { CommandContext } from './types.js';
-import type { PtyProcessHandle } from './utils/process.js';
 
 export const App: React.FC = () => {
-  const theme = useTheme();
   const { stdout } = useStdout();
   const [showHelp, setShowHelp] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const [ptyHandle, setPtyHandle] = useState<PtyProcessHandle | null>(null);
   const inputRef = useRef<{ focus: () => void }>(null);
 
   // Cache initial dimensions to prevent flicker on resize
@@ -73,8 +69,6 @@ export const App: React.FC = () => {
     setActiveSession: setActiveSessionId,
     refreshSessions,
     refreshTasks,
-    setPtyHandle,
-    terminalSize: { cols: width - 30, rows: height - 10 }, // Account for sidebar and header/footer
   };
 
   const handleCommand = useCallback((command: string) => {
@@ -184,7 +178,7 @@ export const App: React.FC = () => {
           epicName={epicName}
           skill={skill}
         />
-        <TerminalOutput lines={lines} ptyHandle={ptyHandle} />
+        <TerminalOutput lines={lines} />
       </Box>
 
       <CommandInput

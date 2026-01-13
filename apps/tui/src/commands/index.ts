@@ -1,8 +1,8 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { cancelBuild, runBuildPty, runPlanPty, type PtyProcessHandle } from '../utils/process.js';
+import { cancelBuild, runBuild, runPlan, type ProcessHandle } from '../utils/process.js';
 
-// Track running PTY process
-let currentPtyProcess: PtyProcessHandle | null = null;
+// Track running process
+let currentProcess: ProcessHandle | null = null;
 
 export const commands: Record<string, CommandHandler> = {
   plan: async (args, ctx) => {
@@ -13,80 +13,61 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
-    if (currentPtyProcess) {
+    if (currentProcess) {
       ctx.appendOutput('A process is already running. Use /cancel to stop it.', 'system');
       return;
     }
 
     ctx.appendOutput(`Creating plan: ${request}`, 'system');
-    ctx.appendOutput('Focus on TERMINAL OUTPUT and type to interact with Claude.', 'system');
 
-    // Use PTY for interactive mode
-    const { cols, rows } = ctx.terminalSize;
-    currentPtyProcess = runPlanPty(args, cols, rows);
+    currentProcess = runPlan(args);
 
-    // Set up PTY handle for keyboard forwarding
-    ctx.setPtyHandle(currentPtyProcess);
-
-    // Stream PTY output to terminal
-    currentPtyProcess.onData((data: string) => {
+    currentProcess.onData((data: string) => {
       ctx.appendOutput(data, 'stdout');
     });
 
-    currentPtyProcess.onExit((code: number) => {
-      ctx.appendOutput('─── End Claude Output ───', 'marker');
+    currentProcess.onExit((code: number) => {
       if (code === 0) {
         ctx.appendOutput('Plan created successfully', 'system');
         ctx.refreshSessions();
       } else {
         ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
       }
-      currentPtyProcess = null;
-      ctx.setPtyHandle(null);
+      currentProcess = null;
     });
   },
 
   build: async (args, ctx) => {
-    if (currentPtyProcess) {
+    if (currentProcess) {
       ctx.appendOutput('A process is already running. Use /cancel to stop it.', 'system');
       return;
     }
 
-    ctx.appendOutput('Starting interactive build...', 'system');
-    ctx.appendOutput('Focus on TERMINAL OUTPUT and type to interact with Claude.', 'system');
+    ctx.appendOutput('Starting build...', 'system');
 
-    // Use PTY for interactive mode
-    const { cols, rows } = ctx.terminalSize;
-    currentPtyProcess = runBuildPty(args, cols, rows);
+    currentProcess = runBuild(args);
 
-    // Set up PTY handle for keyboard forwarding
-    ctx.setPtyHandle(currentPtyProcess);
-
-    // Stream PTY output to terminal
-    currentPtyProcess.onData((data: string) => {
+    currentProcess.onData((data: string) => {
       ctx.appendOutput(data, 'stdout');
     });
 
-    currentPtyProcess.onExit((code: number) => {
-      ctx.appendOutput('─── End Claude Build Output ───', 'marker');
+    currentProcess.onExit((code: number) => {
       if (code === 0) {
         ctx.appendOutput('Build complete!', 'system');
       } else {
         ctx.appendOutput(`Build exited with code ${code}`, 'system');
       }
-      currentPtyProcess = null;
-      ctx.setPtyHandle(null);
+      currentProcess = null;
       ctx.refreshTasks();
     });
   },
 
   cancel: async (_args, ctx) => {
-    if (currentPtyProcess) {
+    if (currentProcess) {
       ctx.appendOutput('Cancelling...', 'system');
       cancelBuild();
-      currentPtyProcess.kill();
-      currentPtyProcess = null;
-      ctx.setPtyHandle(null);
+      currentProcess.kill();
+      currentProcess = null;
       ctx.appendOutput('Cancelled', 'system');
     } else {
       ctx.appendOutput('Nothing running to cancel', 'system');
@@ -117,7 +98,6 @@ export const commands: Record<string, CommandHandler> = {
     ctx.appendOutput('Keyboard shortcuts:', 'system');
     ctx.appendOutput('  ←/→              - Switch session tabs', 'system');
     ctx.appendOutput('  ↑/↓              - Command history', 'system');
-    ctx.appendOutput('  Tab              - Focus terminal output for interaction', 'system');
     ctx.appendOutput('  Ctrl+C           - Quit', 'system');
     ctx.appendOutput('', 'system');
   },
