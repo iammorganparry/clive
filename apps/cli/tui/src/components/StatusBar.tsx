@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Session, Task } from '../types.js';
@@ -9,7 +9,7 @@ interface StatusBarProps {
   isRunning?: boolean;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({
+export const StatusBar: React.FC<StatusBarProps> = memo(({
   session,
   tasks,
   isRunning = false,
@@ -60,4 +60,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+StatusBar.displayName = 'StatusBar';

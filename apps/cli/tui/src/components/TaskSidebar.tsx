@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Box, Text, useInput, useFocus } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
@@ -11,7 +11,7 @@ interface TaskSidebarProps {
   maxVisible?: number;
 }
 
-export const TaskSidebar: React.FC<TaskSidebarProps> = ({
+export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
   tasks,
   epicName,
   skill,
@@ -160,4 +160,6 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = ({
       )}
     </Box>
   );
-};
+});
+
+TaskSidebar.displayName = 'TaskSidebar';
