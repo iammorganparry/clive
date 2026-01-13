@@ -3,12 +3,10 @@ import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../theme.js';
 import type { OutputLine } from '../types.js';
 import { Spinner } from './Spinner.js';
+import { useOutputLines, useRunningState } from '../machines/OutputMachineProvider.js';
 
 interface TerminalOutputProps {
-  lines: OutputLine[];
   maxLines?: number;
-  isRunning?: boolean;
-  startTime?: number | null;
 }
 
 // Tool names to highlight
@@ -25,13 +23,12 @@ const patterns = {
   error: /^(✗|✘|❌|Error:|ERROR:|Failed:|FAIL|error\[)/i,
   success: /^(✓|✔|✅|Success:|PASS|Done|Complete)/i,
   warning: /^(⚠|Warning:|WARN)/i,
-  filePath: /([\/\\][\w\-\.\/\\]+\.(ts|tsx|js|jsx|json|md|py|go|rs|sh|yml|yaml|toml))/g,
+  filePath: /([\\/][\w\-\\.\\/]+\.(ts|tsx|js|jsx|json|md|py|go|rs|sh|yml|yaml|toml))/g,
   lineNumber: /^(\s*\d+[→│|:])/,
   header: /^(#{1,3}\s|─{3,}|═{3,}|▸|▹)/,
   prompt: /^(>|\$|❯|λ)\s/,
   codeBlock: /^```/,
   bullet: /^(\s*[-*•]\s)/,
-  // Markdown patterns
   numberedList: /^(\d+)\.\s+(.+)$/,
   inlineCode: /`([^`]+)`/g,
   bold: /\*\*([^*]+)\*\*/g,
@@ -79,7 +76,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
 
   // System messages - cyan bullet
   if (line.type === 'system') {
-    if (text.trim() === '') return <Text> </Text>; // Blank line for spacing
+    if (text.trim() === '') return <Text> </Text>;
     return (
       <Text>
         <Text color={theme.syntax.cyan}>● </Text>
@@ -176,7 +173,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Line numbers (code output) - no bullet, preserve formatting
+  // Line numbers (code output)
   if (patterns.lineNumber.test(text)) {
     const match = text.match(patterns.lineNumber);
     if (match) {
@@ -215,7 +212,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Bullets - preserve original bullets
+  // Bullets
   if (patterns.bullet.test(text)) {
     const match = text.match(patterns.bullet);
     if (match) {
@@ -273,7 +270,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     }
   }
 
-  // File paths - highlight them
+  // File paths
   if (patterns.filePath.test(text)) {
     const parts = text.split(patterns.filePath);
     return (
@@ -290,7 +287,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Numbered lists (1. item, 2. item)
+  // Numbered lists
   const numberedMatch = text.match(patterns.numberedList);
   if (numberedMatch) {
     const [, num, content] = numberedMatch;
@@ -302,24 +299,19 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Default styling - render with inline markdown support
+  // Default styling
   return <Text color={theme.fg.primary}>  {renderInlineMarkdown(text, theme)}</Text>;
 });
 
-// Helper to render inline markdown (backticks, bold, arrows)
+// Helper to render inline markdown
 function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
-  // Split by inline code and bold patterns
   const parts: React.ReactNode[] = [];
-  let remaining = text;
   let key = 0;
-
-  // Process inline code `code`
   const codeRegex = /`([^`]+)`/g;
   let lastIndex = 0;
   let match;
 
   while ((match = codeRegex.exec(text)) !== null) {
-    // Add text before the match
     if (match.index > lastIndex) {
       parts.push(
         <Text key={key++} color={theme.fg.primary}>
@@ -327,7 +319,6 @@ function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
         </Text>
       );
     }
-    // Add the code
     parts.push(
       <Text key={key++} color={theme.syntax.orange} bold>
         {match[1]}
@@ -336,15 +327,12 @@ function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text
   if (lastIndex < text.length) {
     const rest = text.slice(lastIndex);
-    // Check for bold **text**
     if (rest.includes('**')) {
       const boldParts = rest.split(/\*\*([^*]+)\*\*/g);
       boldParts.forEach((part, i) => {
         if (i % 2 === 1) {
-          // Bold text
           parts.push(<Text key={key++} color={theme.fg.primary} bold>{part}</Text>);
         } else if (part) {
           parts.push(<Text key={key++} color={theme.fg.primary}>{part}</Text>);
@@ -360,15 +348,17 @@ function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
 
 StyledLine.displayName = 'StyledLine';
 
+// Main component - subscribes to lines from machine
 export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
-  lines,
   maxLines = 50,
-  isRunning = false,
-  startTime,
 }) => {
   const theme = useTheme();
 
-  // Memoize visible lines to prevent recalculation on every render
+  // Subscribe to lines from machine - only this component re-renders on line changes
+  const lines = useOutputLines();
+  const { isRunning, startTime } = useRunningState();
+
+  // Memoize visible lines
   const visibleLines = useMemo(() => lines.slice(-maxLines), [lines, maxLines]);
 
   return (
