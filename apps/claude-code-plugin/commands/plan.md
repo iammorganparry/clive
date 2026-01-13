@@ -20,16 +20,15 @@ You are a work planning agent. Your ONLY job is to create a work plan document w
 - Detect the work category (test, feature, refactor, bugfix, docs)
 - Assign appropriate skills to tasks
 - Ask clarifying questions
-- Create a work plan (using beads when available, markdown file as fallback)
+- Create a work plan using beads epics and tasks (beads is REQUIRED)
 
 **Key Principles:**
-- **BEADS FIRST**: When beads (`bd`) is available, ALWAYS use it to create epics and tasks with skill labels.
+- **BEADS IS REQUIRED**: You MUST use beads (`bd`) to create epics and tasks. No markdown files.
 - **CATEGORY DETECTION**: Automatically detect work type from request keywords
 - **SKILL ASSIGNMENT**: Each task must have an assigned skill for build.sh dispatch
 - ASK QUESTIONS when intent is unclear - don't assume
 - LEVERAGE existing Claude Code plans for context
 - RECOMMEND refactors when code is hard to work with
-- CREATE predictable, branch-based plan file names
 
 **Supported Modes:**
 - `/clive plan` - Analyze git changes on current branch
@@ -43,14 +42,19 @@ You are a work planning agent. Your ONLY job is to create a work plan document w
 Parse `$ARGUMENTS` to determine the planning mode and detect work category:
 
 ```bash
-# Check if beads (bd) task tracker is available - THIS IS THE PREFERRED METHOD
-BEADS_AVAILABLE=false
-if command -v bd &> /dev/null; then
-    BEADS_AVAILABLE=true
-    echo "✓ Beads task tracker detected - will create epic and tasks with skill labels"
-else
-    echo "⚠ Beads not available - falling back to markdown-only tracking"
+# Check if beads (bd) task tracker is available - REQUIRED
+if ! command -v bd &> /dev/null; then
+    echo "ERROR: Beads (bd) is required but not installed."
+    echo "Install beads and run 'bd init' to initialize."
+    exit 1
 fi
+
+if [ ! -d ".beads" ]; then
+    echo "Initializing beads..."
+    bd init
+fi
+
+echo "✓ Beads task tracker ready"
 
 # Detect planning mode
 if [ -z "$ARGUMENTS" ]; then
@@ -303,22 +307,7 @@ fi
 
 ---
 
-## Step 1: Generate Predictable Plan File Name
-
-```bash
-# Sanitize branch name for filename (replace / with -)
-BRANCH=$(git rev-parse --abbrev-ref HEAD | sed 's/\//-/g')
-PLAN_FILE=".claude/work-plan-${BRANCH}.md"
-
-# Ensure .claude directory exists
-mkdir -p .claude
-
-echo "Plan will be saved to: $PLAN_FILE"
-```
-
----
-
-## Step 2: Identify Target Files
+## Step 1: Identify Target Files
 
 Based on the planning mode determined in Step 0, identify the files to analyze.
 
@@ -677,137 +666,13 @@ cat playwright.config.* 2>/dev/null | grep -E "(trace|screenshot)"
 
 ---
 
-## Step 6: Create Work Plan
+## Step 6: Create Beads Epic and Tasks
 
-Create the work plan file at the branch-based path:
+**Beads is the source of truth for task tracking. NO markdown files are created.**
 
-```bash
-# Use the PLAN_FILE variable from Step 1
-# Example: .claude/work-plan-feature-auth.md
-```
+Beads provides distributed, git-backed task tracking designed specifically for AI agents. Each planning session becomes an **epic** (P0 priority) with each task as a **child task** (P1 priority) with skill metadata.
 
-```markdown
-# Work Plan
-
-Generated: [DATE]
-Branch: [CURRENT_BRANCH]
-Mode: [git-changes | branch-diff | custom-request]
-Request: [Custom request text if Mode is custom-request, otherwise "N/A"]
-Base: [Base branch if Mode is branch-diff, otherwise "main"]
-Target Files: [COUNT]
-Claude Code Context: [PLAN_NAME if found, or "None"]
-
-## Discovery Summary
-
-**Category:** [test | feature | refactor | bugfix | docs]
-**Default Skill:** [unit-tests | integration-tests | e2e-tests | feature | refactor | bugfix | docs]
-**Test Framework:** [detected framework, if applicable]
-**Build System:** [npm | yarn | pnpm | etc.]
-**Existing Patterns:** [reference files read for patterns]
-
-## External Dependencies
-
-| Dependency | Type | Strategy |
-|------------|------|----------|
-| [name] | database/api/fs | mock/sandbox/skip |
-
-## Prerequisites
-
-List any dependencies or setup needed:
-- [ ] [prerequisite 1] - [description]
-- [ ] [prerequisite 2] - [description]
-
-## Refactor Recommendations
-
-[If any issues were identified that make the work harder]
-
-### 1. `path/to/file.ts` - [Issue Type]
-**Current Issue:** [Description]
-**Recommendation:** [Suggested fix]
-**Impact:** [How this improves the work]
-
----
-
-## Tasks
-
-**CRITICAL: Every task MUST have:**
-1. `- [ ] **Status:** pending` line for progress tracking
-2. `**Category:**` and `**Skill:**` fields for build.sh dispatch
-
-### Task 1: [Descriptive Name]
-- [ ] **Status:** pending
-- **Category:** [test | feature | refactor | bugfix | docs]
-- **Skill:** [unit-tests | integration-tests | e2e-tests | feature | refactor | bugfix | docs]
-- **Target:** `path/to/file.ts`
-- **Related Files:**
-  - `path/to/related.ts`
-- **Details:**
-  - [specific item 1 - describe what needs to be done]
-  - [specific item 2 - describe what needs to be done]
-
-### Task 2: [Descriptive Name]
-- [ ] **Status:** pending
-- **Category:** [test | feature | refactor | bugfix | docs]
-- **Skill:** [unit-tests | integration-tests | e2e-tests | feature | refactor | bugfix | docs]
-- **Target:** `path/to/another-file.ts`
-- **Related Files:**
-  - `path/to/dependency.ts`
-- **Details:**
-  - [specific item 1]
-  - [specific item 2]
-
-**Status values:**
-- `pending` - Not yet started
-- `in_progress` - Currently being worked on
-- `complete` - Work finished and verified
-- `blocked` - Stuck, needs help
-- `skipped` - User chose to skip
-
----
-
-## Notes
-
-[Any concerns, questions, or special considerations]
-
-## Beads Integration
-
-<!--
-This section is auto-populated when beads (bd) task tracker is available.
-Each planning session creates an EPIC, and each task becomes a TASK with skill labels under it.
--->
-
-**Beads available:** [yes/no]
-
-**Epic (Work Plan):**
-- ID: [bd-xxxx or "N/A"]
-- Title: [branch] Work Plan - [date]
-
-**Tasks:**
-| Task | Skill | Beads Task ID | Status |
-|------|-------|---------------|--------|
-| [Task 1 name] | unit-tests | bd-xxxx.1 | pending |
-| [Task 2 name] | feature | bd-xxxx.2 | pending |
-
-**Useful Commands:**
-- View epic: `bd show [epic-id]`
-- See ready tasks: `bd ready`
-- Task tree: `bd list --tree`
-```
-
-After writing the plan, create/update the symlink to latest:
-```bash
-ln -sf "work-plan-${BRANCH}.md" .claude/work-plan-latest.md
-```
-
----
-
-## Step 6.5: Create Beads Epic and Tasks (MANDATORY when beads available)
-
-**CRITICAL: When beads (`bd`) is available, you MUST create the epic and tasks in beads with skill labels. This is NOT optional. Beads is the source of truth for task tracking - the markdown file is just documentation.**
-
-Beads provides distributed, git-backed task tracking designed specifically for AI agents. Each planning session becomes an **epic** with each task as a **child task with skill metadata**.
-
-### Why Use Beads?
+### Why Beads?
 
 - **Skill dispatch** - Tasks carry skill labels for automatic build.sh routing
 - **Dependency tracking** - Know which tasks are ready to work on (`bd ready`)
@@ -815,146 +680,94 @@ Beads provides distributed, git-backed task tracking designed specifically for A
 - **Context preservation** - Task history survives across iterations
 - **Git-backed** - Status persists across branches and is mergeable
 
-### 6.5.1 Initialize Beads (Required if Not Present)
-
-```bash
-if [ "$BEADS_AVAILABLE" = true ]; then
-    if [ ! -d ".beads" ]; then
-        # Initialize beads in stealth mode (local-only, not committed to repo by default)
-        bd init --stealth
-        echo "✓ Initialized beads task tracker in stealth mode"
-    else
-        echo "✓ Beads already initialized"
-    fi
-fi
-```
-
-### 6.5.2 Create Epic for Work Plan
+### 6.1 Create Epic for Work Plan
 
 **Every planning session creates a P0 epic that serves as the parent for all tasks:**
 
 ```bash
-if [ "$BEADS_AVAILABLE" = true ]; then
-    # Create the epic for this work plan
-    # Format: "[branch] Work Plan - [date]" for easy identification
-    EPIC_TITLE="${BRANCH} Work Plan - $(date +%Y-%m-%d)"
-    EPIC_ID=$(bd create "$EPIC_TITLE" -p 0 --json | jq -r '.id')
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+EPIC_TITLE="[${BRANCH}] Work Plan - $(date +%Y-%m-%d)"
+EPIC_ID=$(bd create "$EPIC_TITLE" -p 0 --json | jq -r '.id')
 
-    echo "✓ Created work plan epic: $EPIC_ID"
-    echo "  Title: $EPIC_TITLE"
-    echo "  View with: bd show $EPIC_ID"
-fi
+echo "✓ Created work plan epic: $EPIC_ID"
+echo "  Title: $EPIC_TITLE"
+echo "  View with: bd show $EPIC_ID"
 ```
 
-### 6.5.3 Create Task for Each Plan Task (WITH SKILL LABELS)
+### 6.2 Create Tasks Under Epic
 
-**Every task in the plan becomes a P1 task under the epic WITH skill labels for build.sh dispatch:**
+**For each task you identify, create a P1 task under the epic with skill labels:**
 
 ```bash
-if [ "$BEADS_AVAILABLE" = true ]; then
-    # Parse task names and skills from the plan file
-    # Matches: "### Task 1: Authentication Tests" -> task name and skill
+# Create task with skill and category labels
+# Tier labels (tier:1, tier:2) control execution order
+bd create "Task: [Task Name]" -p 1 --parent "$EPIC_ID" \
+    --labels "skill:$SKILL,category:$CATEGORY,tier:1" \
+    --json
 
-    TASK_NUM=1
-    echo ""
-    echo "Creating beads tasks with skill labels:"
+# Example tasks:
+bd create "Task: Implement user authentication" -p 1 --parent "$EPIC_ID" \
+    --labels "skill:feature,category:feature,tier:1"
 
-    # For each task in the plan, extract name, category, and skill
-    # Then create beads task with labels
-    while read -r task_line; do
-        TASK_NAME=$(echo "$task_line" | sed 's/### Task [0-9]*: //')
-
-        # Find the skill for this task (look for **Skill:** in next few lines)
-        # This requires reading the plan file structure
-        TASK_SKILL="$SKILL"  # Use default skill from category detection
-        TASK_CATEGORY="$CATEGORY"
-
-        if [ -n "$TASK_NAME" ]; then
-            # Create child task under the epic WITH skill and category labels
-            TASK_ID=$(bd create "Task: $TASK_NAME" -p 1 --parent "$EPIC_ID" \
-                --labels "skill:$TASK_SKILL,category:$TASK_CATEGORY" \
-                --json | jq -r '.id')
-            echo "  ✓ $TASK_ID - $TASK_NAME (skill: $TASK_SKILL)"
-            TASK_NUM=$((TASK_NUM + 1))
-        fi
-    done < <(grep -E "^### Task [0-9]+:" "$PLAN_FILE")
-
-    echo ""
-    echo "Total: $((TASK_NUM - 1)) tasks created under epic $EPIC_ID"
-fi
+bd create "Task: Add unit tests for auth module" -p 1 --parent "$EPIC_ID" \
+    --labels "skill:unit-tests,category:test,tier:2"
 ```
 
-### 6.5.4 Update Plan File with Beads Metadata
+**Task naming convention:** Prefix with "Task: " for clarity.
 
-**CRITICAL: Update the "Beads Integration" section in the plan file with actual task IDs and skills:**
+**Skill labels for build.sh dispatch:**
+- `skill:feature` - Feature implementation
+- `skill:unit-tests` - Unit testing
+- `skill:integration-tests` - Integration testing
+- `skill:e2e-tests` - End-to-end testing
+- `skill:refactor` - Code refactoring
+- `skill:bugfix` - Bug fixes
+- `skill:docs` - Documentation
+
+**Tier labels for execution order:**
+- `tier:1` - Execute first (prerequisites, core changes)
+- `tier:2` - Execute second (dependent changes)
+- `tier:3` - Execute last (cleanup, polish)
+
+### 6.3 Verify Setup
 
 ```bash
-if [ "$BEADS_AVAILABLE" = true ]; then
-    # Generate the beads metadata for the plan file
-    echo ""
-    echo "Beads Integration metadata for plan file:"
-    echo "  Beads available: yes"
-    echo "  Epic: $EPIC_ID ($EPIC_TITLE)"
-    echo "  Tasks with skills:"
-
-    # List all child tasks under the epic with their labels
-    bd list --parent "$EPIC_ID" --json 2>/dev/null | jq -r '.[] | "  - \(.title | gsub("Task: "; "")): \(.id) [\(.labels | join(", "))]"'
-
-    # Also show the task tree for verification
-    echo ""
-    echo "Task hierarchy (bd list --tree):"
-    bd list --tree 2>/dev/null | grep -A 20 "$EPIC_ID" | head -15
-fi
+echo ""
+echo "=== Work Plan Created ==="
+echo "Epic: $EPIC_ID"
+bd list --tree 2>/dev/null | head -20
+echo ""
+echo "Ready tasks: $(bd ready --json 2>/dev/null | jq length)"
 ```
-
-### 6.5.5 Verify Beads Setup
-
-```bash
-if [ "$BEADS_AVAILABLE" = true ]; then
-    echo ""
-    echo "=== Beads Verification ==="
-    echo "Ready tasks (no blockers):"
-    bd ready 2>/dev/null | head -10
-    echo ""
-    echo "Use 'bd show $EPIC_ID' to see full epic details"
-    echo "Use 'bd ready' to see which tasks are ready to work on"
-fi
-```
-
-**If beads is NOT available:** The plan file will show "Beads available: no" and the build agent will fall back to markdown-based status tracking. However, this is a degraded mode - recommend installing beads (`bd`) for proper task tracking with skill dispatch.
 
 ---
 
-## Step 7: Present for Review (STOP HERE - DO NOT PROCEED TO IMPLEMENTATION)
+## Step 7: Present for Review
 
-After creating the plan, provide a summary:
+After creating the beads epic and tasks, provide a summary:
 
-1. **Plan file location:** `.claude/work-plan-[branch].md`
+1. **Epic created:** `[epic-id]` - `[branch] Work Plan - [date]`
 2. **Category detected:** test/feature/refactor/bugfix/docs
-3. **Number of tasks** proposed
+3. **Number of tasks** created
 4. **Skills assigned** (breakdown by skill type)
-5. **Key dependencies** or prerequisites
-6. **Refactor recommendations** (if any)
-7. **Beads integration** (if available):
-   - Epic ID and title
-   - Number of tasks with skill labels
-   - Command to view task tree: `bd list --tree`
+5. **Tier breakdown** (execution order)
+6. **Key dependencies** or prerequisites
+7. **Refactor recommendations** (if any)
 8. **Any concerns** or questions about the approach
 
-**DO NOT add the completion marker yet.** The completion marker will be added in Step 8 after user approval.
+**Present the plan:**
 
-**Present the plan and ask for feedback:**
-
-> Work plan created at: `.claude/work-plan-[branch].md`
+> Work plan created as beads epic: `[epic-id]`
+> Branch: [branch]
 > Category: [detected category]
-> Skills: [skill breakdown]
+> Tasks: [count] (view with `bd list --tree`)
 >
 > **Please review the plan.**
 
-**If beads is enabled, also mention:**
-
-> Beads epic created: `[epic-id]` with [N] tasks (skill labels attached)
-> View task hierarchy: `bd list --tree`
+Show the task hierarchy:
+```bash
+bd list --tree | head -30
+```
 
 **Then proceed immediately to Step 8.**
 
@@ -964,7 +777,7 @@ After creating the plan, provide a summary:
 
 **This step is MANDATORY. Do NOT skip it.**
 
-After presenting the plan summary, you MUST ask the user for explicit approval before finalizing.
+After presenting the plan summary, you MUST ask the user for explicit approval.
 
 **Use AskUserQuestion to ask:**
 
@@ -977,30 +790,24 @@ After presenting the plan summary, you MUST ask the user for explicit approval b
 
 **Handle each response:**
 
-1. **"Ready to implement"** → Proceed to write the completion marker (see below)
+1. **"Ready to implement"** → Confirm the plan is ready
 
 2. **"I have questions"** → Answer their questions, then ask again
 
-3. **"Make changes"** → Update the plan based on their feedback, then ask again
+3. **"Make changes"** → Update tasks using `bd update` or `bd create`, then ask again
 
-**Only after receiving explicit "Ready to implement" approval:**
-
-**EXECUTE this bash command** (do not include it in the plan file - actually run it):
+**After receiving "Ready to implement" approval:**
 
 ```bash
-echo "" >> "$PLAN_FILE"
-echo "---" >> "$PLAN_FILE"
-echo "<promise>PLAN_COMPLETE</promise>" >> "$PLAN_FILE"
+echo ""
+echo "=== Plan Ready ==="
+echo "Epic: $EPIC_ID"
+echo "Tasks: $(bd list --parent $EPIC_ID --json | jq length)"
+echo ""
+echo "Run 'clive build' to begin execution."
 ```
 
-**IMPORTANT:** The command above should be EXECUTED using the Bash tool. Do NOT copy this text into the plan file - that will trigger early completion.
-
-Then confirm:
-
-> "Plan finalized at `.claude/work-plan-[branch].md`. Run `clive build` to begin execution."
-
 **CRITICAL:**
-- Do NOT write the completion marker until user explicitly approves
 - Do NOT invoke `/clive build` yourself
 - The user must explicitly run `/clive build` when ready
 

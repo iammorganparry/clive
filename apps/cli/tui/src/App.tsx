@@ -109,13 +109,18 @@ export const App: React.FC = () => {
     nextTab,
   }, isInputFocused);
 
-  // Show welcome message and current status on first render
+  // Show welcome message only once on mount
+  const hasShownWelcome = useRef(false);
+
   React.useEffect(() => {
+    if (hasShownWelcome.current) return;
+    hasShownWelcome.current = true;
+
     appendSystemMessage('Welcome to CLIVE - AI-Powered Work Execution');
     appendSystemMessage('Press ? for keyboard shortcuts, n for new plan');
     appendSystemMessage('');
 
-    // Show active session info if one exists
+    // Show active session info if one exists at startup
     if (activeSession) {
       appendSystemMessage(`Active plan: ${activeSession.name}`);
       if (activeSession.isActive && activeSession.iteration !== undefined) {
@@ -126,7 +131,7 @@ export const App: React.FC = () => {
       }
       appendSystemMessage('');
     }
-  }, [activeSession?.id]); // Only re-run when session changes
+  }, [activeSession]); // Runs on mount when activeSession is available
 
   // If help is showing, render overlay
   if (showHelp) {

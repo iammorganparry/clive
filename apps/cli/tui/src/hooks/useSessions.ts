@@ -1,13 +1,39 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Session } from '../types.js';
-import { getSessions } from '../utils/state.js';
+import {
+  isBeadsAvailable,
+  getEpics,
+  extractBranchFromTitle,
+  formatEpicName,
+  hasInProgressTasks,
+} from '../utils/beads.js';
+import { getCurrentIteration, isLockFilePresent } from '../utils/state.js';
 
 export function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    const newSessions = getSessions();
+    // Beads is required - no fallback to plan files
+    if (!isBeadsAvailable()) {
+      setSessions([]);
+      return;
+    }
+
+    const epics = getEpics();
+    const iteration = getCurrentIteration();
+    const buildRunning = isLockFilePresent();
+
+    const newSessions: Session[] = epics.map(epic => ({
+      id: epic.id,
+      name: formatEpicName(epic.title),
+      epicId: epic.id,
+      branch: extractBranchFromTitle(epic.title),
+      isActive: buildRunning && hasInProgressTasks(epic.id),
+      iteration: buildRunning ? iteration?.current : undefined,
+      maxIterations: buildRunning ? iteration?.max : undefined,
+    }));
+
     setSessions(newSessions);
 
     // Auto-select first session if none selected

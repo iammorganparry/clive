@@ -1,9 +1,10 @@
 export interface Session {
-  id: string;
-  name: string;
-  planFile: string;
-  isActive: boolean;
-  iteration?: number;
+  id: string;           // beads epic ID
+  name: string;         // formatted display name
+  epicId: string;       // beads epic ID (same as id)
+  branch?: string;      // git branch extracted from title
+  isActive: boolean;    // has in-progress tasks
+  iteration?: number;   // build iteration (from state files)
   maxIterations?: number;
 }
 
