@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { Session, Task } from '../types.js';
 import { isBeadsAvailable, getEpicTasks } from '../utils/beads.js';
 
@@ -63,13 +63,15 @@ export function useTasks(session: Session | null) {
     });
   }, [session]);
 
-  useEffect(() => {
-    refresh();
+  // Track session changes for synchronous refresh (no polling, no useEffect)
+  const lastSessionIdRef = useRef<string | null>(null);
 
-    // Poll for changes every 5 seconds (reduced from 2s to prevent flicker)
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
-  }, [refresh]);
+  // Synchronous initial fetch + session change detection
+  if (session?.id !== lastSessionIdRef.current) {
+    lastSessionIdRef.current = session?.id ?? null;
+    // Schedule refresh for next microtask to avoid state update during render
+    queueMicrotask(() => refresh());
+  }
 
   return {
     tasks,
