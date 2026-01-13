@@ -51,7 +51,7 @@ show_help() {
 
 # If no args, launch TUI dashboard
 if [ $# -eq 0 ]; then
-    exec node "$SCRIPT_DIR/tui/bin/clive-tui.js"
+    exec node "$SCRIPT_DIR/../tui/bin/clive-tui.js"
 fi
 
 case "${1:-}" in
