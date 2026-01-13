@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import { Box, Text, useInput, useFocus } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
@@ -22,13 +22,31 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { isFocused } = useFocus({ id: 'task-sidebar' });
 
+  // Track previous task count for synchronous reset (no useEffect)
+  const prevTaskCountRef = useRef(tasks.length);
+
   const complete = tasks.filter(t => t.status === 'complete').length;
   const total = tasks.length;
 
-  // Calculate visible range
-  const visibleTasks = tasks.slice(scrollOffset, scrollOffset + maxVisible);
-  const canScrollUp = scrollOffset > 0;
-  const canScrollDown = scrollOffset + maxVisible < tasks.length;
+  // Reset scroll when tasks change (synchronous, no useEffect)
+  let effectiveScrollOffset = scrollOffset;
+  let effectiveSelectedIndex = selectedIndex;
+  if (prevTaskCountRef.current !== tasks.length) {
+    prevTaskCountRef.current = tasks.length;
+    effectiveScrollOffset = 0;
+    effectiveSelectedIndex = 0;
+    if (scrollOffset !== 0 || selectedIndex !== 0) {
+      queueMicrotask(() => {
+        setScrollOffset(0);
+        setSelectedIndex(0);
+      });
+    }
+  }
+
+  // Calculate visible range (using effective values for immediate render)
+  const visibleTasks = tasks.slice(effectiveScrollOffset, effectiveScrollOffset + maxVisible);
+  const canScrollUp = effectiveScrollOffset > 0;
+  const canScrollDown = effectiveScrollOffset + maxVisible < tasks.length;
 
   // Handle keyboard navigation
   useInput((input, key) => {
@@ -66,12 +84,6 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
     }
   }, { isActive: isFocused });
 
-  // Reset scroll when tasks change
-  useEffect(() => {
-    setScrollOffset(0);
-    setSelectedIndex(0);
-  }, [tasks.length]);
-
   // Group tasks by tier for display
   let currentTier: number | undefined;
 
@@ -103,7 +115,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
       {/* Scroll indicator - up */}
       {canScrollUp && (
         <Box>
-          <Text color={theme.fg.muted}>  ▲ {scrollOffset} more</Text>
+          <Text color={theme.fg.muted}>  ▲ {effectiveScrollOffset} more</Text>
         </Box>
       )}
 
@@ -112,7 +124,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
           <Text color={theme.fg.muted}>No tasks</Text>
         ) : (
           visibleTasks.map((task, index) => {
-            const actualIndex = scrollOffset + index;
+            const actualIndex = effectiveScrollOffset + index;
             const showTierHeader = task.tier !== undefined && task.tier !== currentTier;
             if (task.tier !== undefined) {
               currentTier = task.tier;
@@ -127,7 +139,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
                 )}
                 <TaskItem
                   task={task}
-                  isSelected={actualIndex === selectedIndex && isFocused}
+                  isSelected={actualIndex === effectiveSelectedIndex && isFocused}
                 />
               </React.Fragment>
             );
@@ -138,7 +150,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
       {/* Scroll indicator - down */}
       {canScrollDown && (
         <Box>
-          <Text color={theme.fg.muted}>  ▼ {tasks.length - scrollOffset - maxVisible} more</Text>
+          <Text color={theme.fg.muted}>  ▼ {tasks.length - effectiveScrollOffset - maxVisible} more</Text>
         </Box>
       )}
 

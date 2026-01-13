@@ -1,4 +1,4 @@
-import React, { useState, useImperativeHandle, forwardRef, useEffect } from 'react';
+import React, { useState, useImperativeHandle, forwardRef, useRef } from 'react';
 import { Box, Text, useInput, useFocus } from 'ink';
 import TextInput from 'ink-text-input';
 import { useTheme } from '../theme.js';
@@ -29,10 +29,16 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
     focus: () => focus(COMMAND_INPUT_ID),
   }));
 
-  // Notify parent of focus changes
-  useEffect(() => {
-    onFocusChange?.(isFocused);
-  }, [isFocused, onFocusChange]);
+  // Track previous focus state to detect changes synchronously
+  const prevFocusedRef = useRef<boolean | null>(null);
+
+  // Notify parent of focus changes synchronously (no useEffect)
+  if (prevFocusedRef.current !== isFocused) {
+    prevFocusedRef.current = isFocused;
+    if (onFocusChange) {
+      queueMicrotask(() => onFocusChange(isFocused));
+    }
+  }
 
   useInput((input, key) => {
     if (!isFocused) return;

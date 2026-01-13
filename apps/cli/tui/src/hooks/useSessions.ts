@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { Session } from '../types.js';
 import {
   isBeadsAvailable,
@@ -44,13 +44,15 @@ export function useSessions() {
     }
   }, [activeSessionId]);
 
-  useEffect(() => {
-    refresh();
+  // Track initialization for synchronous initial fetch (no polling, no useEffect)
+  const hasInitializedRef = useRef(false);
 
-    // Poll for changes every 5 seconds (reduced from 2s to prevent flicker)
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
-  }, [refresh]);
+  // Synchronous initial fetch
+  if (!hasInitializedRef.current) {
+    hasInitializedRef.current = true;
+    // Schedule refresh for next microtask to avoid state update during render
+    queueMicrotask(() => refresh());
+  }
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || null;
 
