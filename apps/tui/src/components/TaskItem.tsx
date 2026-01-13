@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
@@ -8,7 +8,7 @@ interface TaskItemProps {
   isSelected?: boolean;
 }
 
-export const TaskItem: React.FC<TaskItemProps> = ({ task, isSelected }) => {
+export const TaskItem: React.FC<TaskItemProps> = memo(({ task, isSelected }) => {
   const theme = useTheme();
 
   const statusStyles: Record<Task['status'], { icon: string; color: string }> = {
@@ -32,4 +32,14 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, isSelected }) => {
       </Text>
     </Box>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparator for better performance
+  return (
+    prevProps.task.id === nextProps.task.id &&
+    prevProps.task.status === nextProps.task.status &&
+    prevProps.task.title === nextProps.task.title &&
+    prevProps.isSelected === nextProps.isSelected
+  );
+});
+
+TaskItem.displayName = 'TaskItem';

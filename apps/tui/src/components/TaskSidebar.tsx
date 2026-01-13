@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Text, useFocus } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
@@ -33,17 +33,22 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
   const theme = useTheme();
   const { isFocused } = useFocus({ id: 'task-sidebar' });
 
-  // Group tasks by status
-  const tasksByStatus = tasks.reduce((acc, task) => {
-    if (!acc[task.status]) {
-      acc[task.status] = [];
-    }
-    acc[task.status].push(task);
-    return acc;
-  }, {} as Record<Task['status'], Task[]>);
+  // Memoize grouped tasks to prevent recalculation on every render
+  const tasksByStatus = useMemo(() => {
+    return tasks.reduce((acc, task) => {
+      if (!acc[task.status]) {
+        acc[task.status] = [];
+      }
+      acc[task.status].push(task);
+      return acc;
+    }, {} as Record<Task['status'], Task[]>);
+  }, [tasks]);
 
-  const complete = tasks.filter(t => t.status === 'complete').length;
-  const total = tasks.length;
+  // Memoize counts
+  const { complete, total } = useMemo(() => ({
+    complete: tasks.filter(t => t.status === 'complete').length,
+    total: tasks.length,
+  }), [tasks]);
 
   // Color mapping
   const getColor = (colorKey: string) => {

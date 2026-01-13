@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../theme.js';
 import type { OutputLine } from '../types.js';
@@ -8,7 +8,7 @@ interface TerminalOutputProps {
   lines: OutputLine[];
   maxLines?: number;
   isRunning?: boolean;
-  elapsedSeconds?: number;
+  startTime?: number | null;
 }
 
 // Tool names to highlight
@@ -364,12 +364,12 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
   lines,
   maxLines = 50,
   isRunning = false,
-  elapsedSeconds = 0,
+  startTime,
 }) => {
   const theme = useTheme();
 
-  // Show only the last N lines
-  const visibleLines = lines.slice(-maxLines);
+  // Memoize visible lines to prevent recalculation on every render
+  const visibleLines = useMemo(() => lines.slice(-maxLines), [lines, maxLines]);
 
   return (
     <Box
@@ -404,7 +404,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
       {/* Activity spinner when running */}
       {isRunning && (
         <Box marginTop={1} paddingLeft={0}>
-          <Spinner label="Working" elapsed={elapsedSeconds} />
+          <Spinner label="Working" startTime={startTime} />
         </Box>
       )}
     </Box>

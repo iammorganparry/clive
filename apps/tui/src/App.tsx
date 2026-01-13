@@ -52,7 +52,7 @@ export const App: React.FC = () => {
     lines,
     isRunning,
     setIsRunning,
-    elapsedSeconds,
+    startTime,
     appendOutput,
     appendSystemMessage,
   } = useOutput();
@@ -64,15 +64,15 @@ export const App: React.FC = () => {
     refresh: refreshTasks,
   } = useTasks(activeSession, isRunning);
 
-  // Create command context
-  const commandContext: CommandContext = {
+  // Memoize command context to prevent unnecessary re-renders
+  const commandContext = useMemo<CommandContext>(() => ({
     appendOutput,
     setActiveSession: setActiveSessionId,
     refreshSessions,
     refreshTasks,
     activeSession,
     setIsRunning,
-  };
+  }), [appendOutput, setActiveSessionId, refreshSessions, refreshTasks, activeSession, setIsRunning]);
 
   const handleCommand = useCallback((command: string) => {
     appendSystemMessage(`> ${command}`);
@@ -180,7 +180,7 @@ export const App: React.FC = () => {
           lines={lines}
           maxLines={height - 12}
           isRunning={isRunning}
-          elapsedSeconds={elapsedSeconds}
+          startTime={startTime}
         />
       </Box>
 

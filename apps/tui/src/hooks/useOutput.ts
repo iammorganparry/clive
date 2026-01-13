@@ -47,29 +47,21 @@ export function useOutput() {
   // Initialize with welcome messages (lazy initial state - runs once)
   const [lines, setLines] = useState<OutputLine[]>(() => [...WELCOME_LINES]);
   const [isRunning, setIsRunning] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Batching refs for output updates
   const pendingLinesRef = useRef<OutputLine[]>([]);
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Track start time - exposed to Spinner which manages its own elapsed time display
   const startTimeRef = useRef<number | null>(null);
 
-  // Timer for elapsed time while streaming
+  // Track start time when isRunning changes (no state update = no re-render)
   useEffect(() => {
-    if (!isRunning) {
+    if (isRunning && !startTimeRef.current) {
+      startTimeRef.current = Date.now();
+    } else if (!isRunning) {
       startTimeRef.current = null;
-      setElapsedSeconds(0);
-      return;
     }
-
-    startTimeRef.current = Date.now();
-    const timer = setInterval(() => {
-      if (startTimeRef.current) {
-        setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
   }, [isRunning]);
 
   const flushPending = useCallback(() => {
@@ -131,7 +123,7 @@ export function useOutput() {
     lines,
     isRunning,
     setIsRunning,
-    elapsedSeconds,
+    startTime: isRunning ? startTimeRef.current : null,
     appendOutput,
     appendSystemMessage,
     clear,
