@@ -9,12 +9,13 @@ import { StatusBar } from './components/StatusBar.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { useSessions } from './hooks/useSessions.js';
 import { useTasks } from './hooks/useTasks.js';
-import { useOutput } from './hooks/useOutput.js';
 import { useKeyboard } from './hooks/useKeyboard.js';
 import { executeCommand } from './commands/index.js';
+import { OutputMachineProvider, useOutputActions, useRunningState } from './machines/OutputMachineProvider.js';
 import type { CommandContext } from './types.js';
 
-export const App: React.FC = () => {
+// Inner component that uses the machine hooks
+const AppContent: React.FC = () => {
   const { stdout } = useStdout();
   const [showHelp, setShowHelp] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -31,7 +32,6 @@ export const App: React.FC = () => {
     const newWidth = stdout?.columns ?? 80;
     const newHeight = stdout?.rows ?? 24;
 
-    // Only update if changed by more than 2 to reduce flicker
     if (Math.abs(newWidth - initialDimensions.current.width) > 2 ||
         Math.abs(newHeight - initialDimensions.current.height) > 2) {
       initialDimensions.current = { width: newWidth, height: newHeight };
@@ -48,14 +48,11 @@ export const App: React.FC = () => {
     refresh: refreshSessions,
   } = useSessions();
 
-  const {
-    lines,
-    isRunning,
-    setIsRunning,
-    startTime,
-    appendOutput,
-    appendSystemMessage,
-  } = useOutput();
+  // Get output actions from machine - does NOT subscribe to lines
+  const { appendOutput, appendSystemMessage, setIsRunning } = useOutputActions();
+
+  // Get running state separately
+  const { isRunning } = useRunningState();
 
   const {
     tasks,
@@ -64,7 +61,7 @@ export const App: React.FC = () => {
     refresh: refreshTasks,
   } = useTasks(activeSession, isRunning);
 
-  // Memoize command context to prevent unnecessary re-renders
+  // Memoize command context
   const commandContext = useMemo<CommandContext>(() => ({
     appendOutput,
     setActiveSession: setActiveSessionId,
@@ -126,7 +123,7 @@ export const App: React.FC = () => {
     nextTab,
   }, isInputFocused);
 
-  // Show session info once when session becomes available (no useEffect)
+  // Show session info once when session becomes available
   const hasShownSessionInfoRef = useRef(false);
   if (activeSession && !hasShownSessionInfoRef.current) {
     hasShownSessionInfoRef.current = true;
@@ -176,12 +173,8 @@ export const App: React.FC = () => {
           epicName={epicName}
           skill={skill}
         />
-        <TerminalOutput
-          lines={lines}
-          maxLines={height - 12}
-          isRunning={isRunning}
-          startTime={startTime}
-        />
+        {/* TerminalOutput subscribes to lines directly from machine */}
+        <TerminalOutput maxLines={height - 12} />
       </Box>
 
       <CommandInput
@@ -196,5 +189,14 @@ export const App: React.FC = () => {
         isRunning={isRunning}
       />
     </Box>
+  );
+};
+
+// Main App wraps content in the machine provider
+export const App: React.FC = () => {
+  return (
+    <OutputMachineProvider>
+      <AppContent />
+    </OutputMachineProvider>
   );
 };
