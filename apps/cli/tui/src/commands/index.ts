@@ -19,7 +19,7 @@ export const commands: Record<string, CommandHandler> = {
       ctx.appendOutput(data, type);
     });
 
-    currentProcess.process.on('close', (code) => {
+    currentProcess.onExit((code: number) => {
       currentProcess = null;
       if (code === 0) {
         ctx.appendOutput('Plan created successfully', 'system');
@@ -42,7 +42,7 @@ export const commands: Record<string, CommandHandler> = {
       ctx.appendOutput(data, type);
     });
 
-    currentProcess.process.on('close', (code) => {
+    currentProcess.onExit((code: number) => {
       currentProcess = null;
       if (code === 0) {
         ctx.appendOutput('Build complete!', 'system');
