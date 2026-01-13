@@ -114,9 +114,11 @@ export function isInTmux(): boolean {
 // Run plan in a tmux split pane
 export function runPlanInTmux(
   args: string[],
-  onComplete: (code: number) => void
+  onComplete: (code: number) => void,
+  onError?: (error: string) => void
 ): { paneId: string } | null {
   if (!isInTmux()) {
+    onError?.('Not running inside tmux');
     return null;
   }
 
@@ -124,8 +126,14 @@ export function runPlanInTmux(
   const planScript = path.join(scriptsDir, 'plan.sh');
   const cwd = process.cwd();
 
+  // Ensure .claude directory exists
+  const claudeDir = path.join(cwd, '.claude');
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
   // Create a completion marker file
-  const completionFile = path.join(cwd, '.claude', '.plan-complete');
+  const completionFile = path.join(claudeDir, '.plan-complete');
 
   // Remove old completion file
   if (fs.existsSync(completionFile)) {
@@ -134,34 +142,46 @@ export function runPlanInTmux(
 
   // Build command that will signal completion
   const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-  const command = `cd '${cwd}' && bash '${planScript}' ${escapedArgs}; echo $? > '${completionFile}'`;
+  const shellCommand = `cd '${cwd}' && bash '${planScript}' ${escapedArgs}; echo $? > '${completionFile}'`;
 
   // Create a new tmux pane (horizontal split, 70% height for Claude)
+  // Use bash -c to run the compound command
   const result = spawnSync('tmux', [
     'split-window',
     '-v',           // Vertical split (Claude below)
-    '-p', '70',     // 70% of space for Claude
+    '-l', '70%',    // 70% of height for Claude pane
     '-P',           // Print pane info
     '-F', '#{pane_id}',
-    command,
+    '-c', cwd,      // Set working directory
+    'bash', '-c', shellCommand,
   ], {
     encoding: 'utf8',
     env: { ...process.env },
   });
 
   if (result.status !== 0) {
+    onError?.(`tmux split-window failed: ${result.stderr || 'unknown error'}`);
     return null;
   }
 
   const paneId = result.stdout?.trim();
 
+  if (!paneId) {
+    onError?.('No pane ID returned from tmux');
+    return null;
+  }
+
   // Watch for completion
   const checkInterval = setInterval(() => {
     if (fs.existsSync(completionFile)) {
       clearInterval(checkInterval);
-      const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
-      fs.unlinkSync(completionFile);
-      onComplete(code);
+      try {
+        const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
+        fs.unlinkSync(completionFile);
+        onComplete(code);
+      } catch {
+        onComplete(1);
+      }
     }
   }, 1000);
 

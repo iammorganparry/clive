@@ -20,23 +20,34 @@ export const commands: Record<string, CommandHandler> = {
     if (isInTmux()) {
       ctx.appendOutput('Opening Claude in tmux split pane...', 'system');
 
-      const result = runPlanInTmux(args, (code) => {
-        if (code === 0) {
-          ctx.appendOutput('Plan created successfully', 'system');
-          ctx.refreshSessions();
-        } else {
-          ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
+      const result = runPlanInTmux(
+        args,
+        (code) => {
+          if (code === 0) {
+            ctx.appendOutput('Plan created successfully', 'system');
+            ctx.refreshSessions();
+          } else {
+            ctx.appendOutput(`Plan failed with code ${code}`, 'stderr');
+          }
+        },
+        (error) => {
+          ctx.appendOutput(`Tmux error: ${error}`, 'stderr');
         }
-      });
+      );
 
       if (result) {
         ctx.appendOutput(`Claude running in pane ${result.paneId}`, 'system');
+        ctx.appendOutput('TUI remains active - Claude is in the pane below', 'system');
         return;
+      } else {
+        ctx.appendOutput('Tmux split failed, falling back...', 'stderr');
       }
+    } else {
+      ctx.appendOutput('Not in tmux session', 'system');
     }
 
     // Fall back to suspend/resume approach
-    ctx.appendOutput('Launching Claude interactive session...', 'system');
+    ctx.appendOutput('Launching Claude (TUI will suspend)...', 'system');
 
     suspendTUI();
     const code = runPlanInteractive(args);
