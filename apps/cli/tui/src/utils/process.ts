@@ -111,12 +111,39 @@ export function isInTmux(): boolean {
   return !!process.env.TMUX;
 }
 
-// Run plan in a tmux split pane
+// Capture content from a tmux pane
+export function captureTmuxPane(paneId: string): string | null {
+  const result = spawnSync('tmux', [
+    'capture-pane',
+    '-p',           // Print to stdout
+    '-t', paneId,   // Target pane
+    '-e',           // Include escape sequences (colors)
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env },
+  });
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  return result.stdout || '';
+}
+
+// Kill a tmux pane
+export function killTmuxPane(paneId: string): void {
+  spawnSync('tmux', ['kill-pane', '-t', paneId], {
+    encoding: 'utf8',
+  });
+}
+
+// Run plan in a hidden tmux pane and stream output
 export function runPlanInTmux(
   args: string[],
+  onOutput: (content: string) => void,
   onComplete: (code: number) => void,
   onError?: (error: string) => void
-): { paneId: string } | null {
+): { paneId: string; stop: () => void } | null {
   if (!isInTmux()) {
     onError?.('Not running inside tmux');
     return null;
@@ -144,17 +171,15 @@ export function runPlanInTmux(
   const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
   const shellCommand = `cd '${cwd}' && bash '${planScript}' ${escapedArgs}; echo $? > '${completionFile}'`;
 
-  // Create a new tmux pane (horizontal split, 70% height for Claude)
-  // Use bash -c to run the compound command
-  // -d flag keeps focus on current pane (CLIVE TUI)
+  // Create a new HIDDEN tmux window (not a split) for Claude
+  // This runs Claude in the background without splitting our view
   const result = spawnSync('tmux', [
-    'split-window',
-    '-v',           // Vertical split (Claude below)
-    '-d',           // Don't switch focus to new pane
-    '-l', '70%',    // 70% of height for Claude pane
-    '-P',           // Print pane info
+    'new-window',
+    '-d',           // Don't switch to new window
+    '-P',           // Print window/pane info
     '-F', '#{pane_id}',
-    '-c', cwd,      // Set working directory
+    '-n', 'claude-plan',  // Window name
+    '-c', cwd,
     'bash', '-c', shellCommand,
   ], {
     encoding: 'utf8',
@@ -162,7 +187,7 @@ export function runPlanInTmux(
   });
 
   if (result.status !== 0) {
-    onError?.(`tmux split-window failed: ${result.stderr || 'unknown error'}`);
+    onError?.(`tmux new-window failed: ${result.stderr || 'unknown error'}`);
     return null;
   }
 
@@ -173,21 +198,45 @@ export function runPlanInTmux(
     return null;
   }
 
-  // Watch for completion
-  const checkInterval = setInterval(() => {
+  let lastContent = '';
+  let stopped = false;
+
+  // Poll for pane content and completion
+  const pollInterval = setInterval(() => {
+    if (stopped) return;
+
+    // Capture pane content
+    const content = captureTmuxPane(paneId);
+    if (content && content !== lastContent) {
+      lastContent = content;
+      onOutput(content);
+    }
+
+    // Check for completion
     if (fs.existsSync(completionFile)) {
-      clearInterval(checkInterval);
+      stopped = true;
+      clearInterval(pollInterval);
       try {
         const code = parseInt(fs.readFileSync(completionFile, 'utf8').trim(), 10) || 0;
         fs.unlinkSync(completionFile);
+        // Kill the background window
+        killTmuxPane(paneId);
         onComplete(code);
       } catch {
+        killTmuxPane(paneId);
         onComplete(1);
       }
     }
-  }, 1000);
+  }, 500);
 
-  return { paneId };
+  return {
+    paneId,
+    stop: () => {
+      stopped = true;
+      clearInterval(pollInterval);
+      killTmuxPane(paneId);
+    },
+  };
 }
 
 // Run plan interactively - this blocks and takes over the terminal
