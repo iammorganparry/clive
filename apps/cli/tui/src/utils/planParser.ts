@@ -16,6 +16,7 @@ export function parseTasksFromPlan(planFile: string): Task[] {
     const body = match[2];
 
     const status = parseStatus(body);
+    const tier = parseTier(body);
     const skill = parseField(body, 'Skill');
     const category = parseField(body, 'Category');
     const target = parseField(body, 'Target');
@@ -24,6 +25,7 @@ export function parseTasksFromPlan(planFile: string): Task[] {
       id: `task-${tasks.length + 1}`,
       title,
       status,
+      tier,
       skill,
       category,
       target,
@@ -39,6 +41,15 @@ function parseStatus(body: string): Task['status'] {
   if (body.includes('[ ] **Status:** blocked')) return 'blocked';
   if (body.includes('[x] **Status:** skipped')) return 'skipped';
   return 'pending';
+}
+
+function parseTier(body: string): number | undefined {
+  // Match **Tier:** 1 or **Tier:** `1`
+  const tierMatch = body.match(/\*\*Tier:\*\*\s*`?(\d+)`?/);
+  if (tierMatch) {
+    return parseInt(tierMatch[1], 10);
+  }
+  return undefined;
 }
 
 function parseField(body: string, field: string): string | undefined {

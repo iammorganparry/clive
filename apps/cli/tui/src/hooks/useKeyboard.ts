@@ -15,7 +15,18 @@ export function useKeyboard(handlers: KeyboardHandlers, isInputFocused: boolean 
   const { focusNext, focusPrevious } = useFocusManager();
 
   useInput((input, key) => {
-    // Skip global shortcuts when input is focused (let input handle its own keys)
+    // Tab navigation works globally (even when input focused)
+    if (key.leftArrow) {
+      handlers.prevTab?.();
+      return;
+    }
+
+    if (key.rightArrow) {
+      handlers.nextTab?.();
+      return;
+    }
+
+    // Skip other global shortcuts when input is focused (let input handle its own keys)
     if (isInputFocused) {
       return;
     }
@@ -50,17 +61,6 @@ export function useKeyboard(handlers: KeyboardHandlers, isInputFocused: boolean 
     // Focus command input
     if (input === '/') {
       handlers.focusInput?.();
-      return;
-    }
-
-    // Tab navigation
-    if (key.leftArrow) {
-      handlers.prevTab?.();
-      return;
-    }
-
-    if (key.rightArrow) {
-      handlers.nextTab?.();
       return;
     }
 
