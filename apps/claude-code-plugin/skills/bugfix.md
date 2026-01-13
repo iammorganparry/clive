@@ -201,6 +201,22 @@ Update plan: `- [x] **Status:** complete`
 
 ---
 
+## Step 7.5: Commit Changes (REQUIRED)
+
+**Create a local commit for this task before marking complete:**
+
+```bash
+git add -A
+git commit -m "fix: [brief description of bug fixed]
+
+Task: [TASK_ID or task name]
+Skill: bugfix"
+```
+
+**Note:** Local commits only - do NOT push. Push at session end or user request.
+
+---
+
 ## Step 8: Output Completion Marker
 
 ```

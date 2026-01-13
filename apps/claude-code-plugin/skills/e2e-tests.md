@@ -187,6 +187,22 @@ Update plan: `- [x] **Status:** complete`
 
 ---
 
+## Step 4.5: Commit Changes (REQUIRED)
+
+**Create a local commit for this task before marking complete:**
+
+```bash
+git add -A
+git commit -m "test: [brief description of e2e tests added]
+
+Task: [TASK_ID or task name]
+Skill: e2e-tests"
+```
+
+**Note:** Local commits only - do NOT push. Push at session end or user request.
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```
