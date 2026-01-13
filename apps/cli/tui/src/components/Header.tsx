@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 
-export const Header: React.FC = () => {
+export const Header: React.FC = memo(() => {
   const theme = useTheme();
 
   return (
@@ -11,4 +11,6 @@ export const Header: React.FC = () => {
       <Text color={theme.fg.muted}>AI-Powered Work Execution</Text>
     </Box>
   );
-};
+});
+
+Header.displayName = 'Header';

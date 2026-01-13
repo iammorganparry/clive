@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import type { OutputLine } from '../types.js';
@@ -8,7 +8,7 @@ interface TerminalOutputProps {
   maxLines?: number;
 }
 
-export const TerminalOutput: React.FC<TerminalOutputProps> = ({
+export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
   lines,
   maxLines = 50,
 }) => {
@@ -64,4 +64,6 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+TerminalOutput.displayName = 'TerminalOutput';

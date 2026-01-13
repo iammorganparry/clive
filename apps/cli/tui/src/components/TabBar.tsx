@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Session } from '../types.js';
@@ -10,7 +10,7 @@ interface TabBarProps {
   onNewSession?: () => void;
 }
 
-export const TabBar: React.FC<TabBarProps> = ({
+export const TabBar: React.FC<TabBarProps> = memo(({
   sessions,
   activeSessionId,
   onSelect,
@@ -67,4 +67,6 @@ export const TabBar: React.FC<TabBarProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+TabBar.displayName = 'TabBar';
