@@ -40,8 +40,14 @@ else
     HAS_TSPIN=false
 fi
 
+# Check for jq (required for beads JSON parsing)
+if ! command -v jq &>/dev/null; then
+    echo "⚠️  Warning: jq not found. Install with: brew install jq"
+    echo "   Beads task tracking will be disabled."
+    echo ""
+    BEADS_AVAILABLE=false
 # Check if beads is available
-if command -v bd &>/dev/null && [ -d ".beads" ]; then
+elif command -v bd &>/dev/null && [ -d ".beads" ]; then
     BEADS_AVAILABLE=true
 else
     BEADS_AVAILABLE=false
