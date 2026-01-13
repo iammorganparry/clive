@@ -1,5 +1,5 @@
-import React, { useState, useRef, memo } from 'react';
-import { Box, Text, useInput, useFocus } from 'ink';
+import React, { memo } from 'react';
+import { Box, Text, useFocus } from 'ink';
 import { useTheme } from '../theme.js';
 import type { Task } from '../types.js';
 import { TaskItem } from './TaskItem.js';
@@ -8,84 +8,53 @@ interface TaskSidebarProps {
   tasks: Task[];
   epicName?: string;
   skill?: string;
-  maxVisible?: number;
+  maxPerCategory?: number;
 }
+
+// Status display order and styling
+const STATUS_CONFIG: Array<{
+  status: Task['status'];
+  label: string;
+  colorKey: 'yellow' | 'muted' | 'red' | 'comment' | 'green';
+}> = [
+  { status: 'in_progress', label: 'In Progress', colorKey: 'yellow' },
+  { status: 'pending', label: 'Queued', colorKey: 'muted' },
+  { status: 'blocked', label: 'Blocked', colorKey: 'red' },
+  { status: 'complete', label: 'Completed', colorKey: 'green' },
+  { status: 'skipped', label: 'Skipped', colorKey: 'comment' },
+];
 
 export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
   tasks,
   epicName,
   skill,
-  maxVisible = 12,
+  maxPerCategory = 10,
 }) => {
   const theme = useTheme();
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const { isFocused } = useFocus({ id: 'task-sidebar' });
 
-  // Track previous task count for synchronous reset (no useEffect)
-  const prevTaskCountRef = useRef(tasks.length);
+  // Group tasks by status
+  const tasksByStatus = tasks.reduce((acc, task) => {
+    if (!acc[task.status]) {
+      acc[task.status] = [];
+    }
+    acc[task.status].push(task);
+    return acc;
+  }, {} as Record<Task['status'], Task[]>);
 
   const complete = tasks.filter(t => t.status === 'complete').length;
   const total = tasks.length;
 
-  // Reset scroll when tasks change (synchronous, no useEffect)
-  let effectiveScrollOffset = scrollOffset;
-  let effectiveSelectedIndex = selectedIndex;
-  if (prevTaskCountRef.current !== tasks.length) {
-    prevTaskCountRef.current = tasks.length;
-    effectiveScrollOffset = 0;
-    effectiveSelectedIndex = 0;
-    if (scrollOffset !== 0 || selectedIndex !== 0) {
-      queueMicrotask(() => {
-        setScrollOffset(0);
-        setSelectedIndex(0);
-      });
+  // Color mapping
+  const getColor = (colorKey: string) => {
+    switch (colorKey) {
+      case 'yellow': return theme.syntax.yellow;
+      case 'green': return theme.syntax.green;
+      case 'red': return theme.syntax.red;
+      case 'comment': return theme.fg.comment;
+      default: return theme.fg.muted;
     }
-  }
-
-  // Calculate visible range (using effective values for immediate render)
-  const visibleTasks = tasks.slice(effectiveScrollOffset, effectiveScrollOffset + maxVisible);
-  const canScrollUp = effectiveScrollOffset > 0;
-  const canScrollDown = effectiveScrollOffset + maxVisible < tasks.length;
-
-  // Handle keyboard navigation
-  useInput((input, key) => {
-    if (!isFocused) return;
-
-    if (key.upArrow || input === 'k') {
-      if (selectedIndex > 0) {
-        setSelectedIndex(prev => prev - 1);
-        // Scroll up if needed
-        if (selectedIndex - 1 < scrollOffset) {
-          setScrollOffset(prev => Math.max(0, prev - 1));
-        }
-      }
-    }
-
-    if (key.downArrow || input === 'j') {
-      if (selectedIndex < tasks.length - 1) {
-        setSelectedIndex(prev => prev + 1);
-        // Scroll down if needed
-        if (selectedIndex + 1 >= scrollOffset + maxVisible) {
-          setScrollOffset(prev => Math.min(tasks.length - maxVisible, prev + 1));
-        }
-      }
-    }
-
-    // Page up/down
-    if (key.pageUp) {
-      setScrollOffset(prev => Math.max(0, prev - maxVisible));
-      setSelectedIndex(prev => Math.max(0, prev - maxVisible));
-    }
-
-    if (key.pageDown) {
-      setScrollOffset(prev => Math.min(tasks.length - maxVisible, prev + maxVisible));
-      setSelectedIndex(prev => Math.min(tasks.length - 1, prev + maxVisible));
-    }
-  }, { isActive: isFocused });
-
-  // Group tasks by tier for display
-  let currentTier: number | undefined;
+  };
 
   return (
     <Box
@@ -98,7 +67,6 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
     >
       <Box marginBottom={1}>
         <Text bold color={theme.syntax.magenta}>TASKS</Text>
-        {isFocused && <Text color={theme.fg.muted}> (focused)</Text>}
       </Box>
 
       {epicName && (
@@ -112,47 +80,42 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
         <Text color={theme.ui.border}>────────────────────────────────</Text>
       </Box>
 
-      {/* Scroll indicator - up */}
-      {canScrollUp && (
-        <Box>
-          <Text color={theme.fg.muted}>  ▲ {effectiveScrollOffset} more</Text>
-        </Box>
-      )}
-
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         {tasks.length === 0 ? (
           <Text color={theme.fg.muted}>No tasks</Text>
         ) : (
-          visibleTasks.map((task, index) => {
-            const actualIndex = effectiveScrollOffset + index;
-            const showTierHeader = task.tier !== undefined && task.tier !== currentTier;
-            if (task.tier !== undefined) {
-              currentTier = task.tier;
-            }
+          STATUS_CONFIG.map(({ status, label, colorKey }, groupIndex) => {
+            const groupTasks = tasksByStatus[status] || [];
+            if (groupTasks.length === 0) return null;
+
+            const visibleTasks = groupTasks.slice(0, maxPerCategory);
+            const hiddenCount = groupTasks.length - visibleTasks.length;
+            const color = getColor(colorKey);
 
             return (
-              <React.Fragment key={task.id}>
-                {showTierHeader && (
-                  <Box marginTop={index > 0 ? 1 : 0}>
-                    <Text color={theme.syntax.orange} bold>Tier {task.tier}</Text>
+              <Box key={status} flexDirection="column" marginTop={groupIndex > 0 ? 1 : 0}>
+                {/* Status header with count */}
+                <Box>
+                  <Text color={color} bold>{label}</Text>
+                  <Text color={theme.fg.muted}> ({groupTasks.length})</Text>
+                </Box>
+
+                {/* Tasks in this group */}
+                {visibleTasks.map(task => (
+                  <TaskItem key={task.id} task={task} />
+                ))}
+
+                {/* Show "+ X more" if truncated */}
+                {hiddenCount > 0 && (
+                  <Box>
+                    <Text color={theme.fg.muted}>  + {hiddenCount} more</Text>
                   </Box>
                 )}
-                <TaskItem
-                  task={task}
-                  isSelected={actualIndex === effectiveSelectedIndex && isFocused}
-                />
-              </React.Fragment>
+              </Box>
             );
           })
         )}
       </Box>
-
-      {/* Scroll indicator - down */}
-      {canScrollDown && (
-        <Box>
-          <Text color={theme.fg.muted}>  ▼ {tasks.length - effectiveScrollOffset - maxVisible} more</Text>
-        </Box>
-      )}
 
       <Box marginTop={1}>
         <Text color={theme.ui.border}>────────────────────────────────</Text>

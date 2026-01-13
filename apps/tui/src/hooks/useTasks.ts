@@ -3,26 +3,28 @@ import type { Session, Task } from '../types.js';
 import { isBeadsAvailable, getEpicTasks } from '../utils/beads.js';
 
 // Status priority for sorting (lower = first)
+// Order: in_progress -> pending/blocked -> complete
 const STATUS_ORDER: Record<Task['status'], number> = {
-  complete: 0,
-  in_progress: 1,
-  pending: 2,
-  blocked: 3,
-  skipped: 4,
+  in_progress: 0,
+  pending: 1,
+  blocked: 2,
+  skipped: 3,
+  complete: 4,
 };
 
-// Sort tasks by tier (ascending), then by status (completed first)
+// Sort tasks by status (in_progress first, complete last), then by tier
 function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
-    // Sort by tier first (undefined tiers go last)
-    const tierA = a.tier ?? 999;
-    const tierB = b.tier ?? 999;
-    if (tierA !== tierB) {
-      return tierA - tierB;
+    // Sort by status first (in_progress first, complete last)
+    const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    if (statusDiff !== 0) {
+      return statusDiff;
     }
 
-    // Then sort by status (completed first)
-    return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    // Then sort by tier (undefined tiers go last)
+    const tierA = a.tier ?? 999;
+    const tierB = b.tier ?? 999;
+    return tierA - tierB;
   });
 }
 
