@@ -90,7 +90,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
   return (
     <Box
       flexDirection="column"
-      width={28}
+      width={36}
       borderStyle="round"
       borderColor={isFocused ? theme.syntax.blue : theme.ui.border}
       borderRight={false}
@@ -103,13 +103,13 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
 
       {epicName && (
         <Box marginBottom={1}>
-          <Text color={theme.fg.primary}>Epic: </Text>
+          <Text color={theme.fg.muted}>Epic: </Text>
           <Text color={theme.syntax.cyan}>{epicName}</Text>
         </Box>
       )}
 
       <Box marginBottom={1}>
-        <Text color={theme.ui.border}>───────────────────────</Text>
+        <Text color={theme.ui.border}>────────────────────────────────</Text>
       </Box>
 
       {/* Scroll indicator - up */}
@@ -155,7 +155,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(({
       )}
 
       <Box marginTop={1}>
-        <Text color={theme.ui.border}>───────────────────────</Text>
+        <Text color={theme.ui.border}>────────────────────────────────</Text>
       </Box>
 
       <Box>
