@@ -59,6 +59,7 @@ export const App: React.FC = () => {
     lines,
     isRunning,
     setIsRunning,
+    elapsedSeconds,
     appendOutput,
     appendSystemMessage,
   } = useOutput();
@@ -179,7 +180,12 @@ export const App: React.FC = () => {
           epicName={epicName}
           skill={skill}
         />
-        <TerminalOutput lines={lines} maxLines={height - 12} />
+        <TerminalOutput
+          lines={lines}
+          maxLines={height - 12}
+          isRunning={isRunning}
+          elapsedSeconds={elapsedSeconds}
+        />
       </Box>
 
       <CommandInput

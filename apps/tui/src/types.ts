@@ -21,8 +21,10 @@ export interface Task {
 export interface OutputLine {
   id: string;
   text: string;
-  type: 'stdout' | 'stderr' | 'system' | 'marker';
+  type: 'stdout' | 'stderr' | 'system' | 'marker' | 'tool_call' | 'tool_result' | 'user_input';
   timestamp: Date;
+  toolName?: string;   // For tool_call type
+  indent?: number;     // Indentation level (0, 1, 2)
 }
 
 export interface CommandContext {

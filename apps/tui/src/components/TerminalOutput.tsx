@@ -2,10 +2,13 @@ import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../theme.js';
 import type { OutputLine } from '../types.js';
+import { Spinner } from './Spinner.js';
 
 interface TerminalOutputProps {
   lines: OutputLine[];
   maxLines?: number;
+  isRunning?: boolean;
+  elapsedSeconds?: number;
 }
 
 // Tool names to highlight
@@ -33,36 +36,85 @@ const patterns = {
 // Render a single line with syntax highlighting
 const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, theme }) => {
   const text = line.text;
+  const indent = line.indent ? '  '.repeat(line.indent) : '';
 
-  // System messages
-  if (line.type === 'system') {
-    return <Text color={theme.syntax.cyan}>{text}</Text>;
+  // Tool calls - yellow bullet with bold tool name
+  if (line.type === 'tool_call' && line.toolName) {
+    const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, '');
+    return (
+      <Text>
+        <Text color={theme.syntax.yellow}>● </Text>
+        <Text bold color={theme.syntax.yellow}>{line.toolName}</Text>
+        <Text color={theme.fg.primary}>{rest}</Text>
+      </Text>
+    );
   }
 
-  // Stderr - errors
+  // Tool results - indented with tree character
+  if (line.type === 'tool_result') {
+    const content = text.replace(/^[└→┃│]\s*/, '');
+    return (
+      <Text>
+        <Text color={theme.fg.muted}>{indent}  └ </Text>
+        <Text color={theme.fg.secondary}>{content}</Text>
+      </Text>
+    );
+  }
+
+  // User input - highlighted with green prompt
+  if (line.type === 'user_input') {
+    const content = text.replace(/^[❯>]\s*/, '');
+    return (
+      <Text>
+        <Text bold color={theme.syntax.green}>❯ </Text>
+        <Text bold color={theme.fg.primary}>{content}</Text>
+      </Text>
+    );
+  }
+
+  // System messages - cyan bullet
+  if (line.type === 'system') {
+    if (text.trim() === '') return <Text> </Text>; // Blank line for spacing
+    return (
+      <Text>
+        <Text color={theme.syntax.cyan}>● </Text>
+        <Text color={theme.syntax.cyan}>{text}</Text>
+      </Text>
+    );
+  }
+
+  // Stderr - red bullet
   if (line.type === 'stderr') {
-    return <Text color={theme.syntax.red}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.red}>● </Text>
+        <Text color={theme.syntax.red}>{text}</Text>
+      </Text>
+    );
   }
 
   // Markers - section dividers
   if (line.type === 'marker') {
     return (
-      <Text backgroundColor={theme.bg.highlight} color={theme.syntax.magenta} bold>
-        {text}
+      <Text>
+        <Text color={theme.syntax.magenta}>◆ </Text>
+        <Text backgroundColor={theme.bg.highlight} color={theme.syntax.magenta} bold>
+          {text}
+        </Text>
       </Text>
     );
   }
 
-  // Tool use indicators
+  // Tool use indicators (legacy pattern matching)
   if (patterns.toolUse.test(text)) {
     const match = text.match(patterns.toolUse);
     if (match) {
-      const [, indicator, toolName] = match;
+      const [, , toolName] = match;
       const rest = text.slice(match[0].length);
       return (
         <Text>
-          <Text color={theme.syntax.blue}>{indicator} </Text>
-          <Text color={theme.syntax.magenta} bold>{toolName}</Text>
+          <Text color={theme.syntax.yellow}>● </Text>
+          <Text color={theme.syntax.yellow} bold>{toolName}</Text>
           <Text color={theme.fg.primary}>{rest}</Text>
         </Text>
       );
@@ -71,30 +123,55 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
 
   // Tool results / success
   if (patterns.toolResult.test(text) || patterns.success.test(text)) {
-    return <Text color={theme.syntax.green}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.green}>✓ </Text>
+        <Text color={theme.syntax.green}>{text}</Text>
+      </Text>
+    );
   }
 
   // Thinking blocks
   if (patterns.thinking.test(text)) {
-    return <Text color={theme.fg.comment} italic>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.fg.comment}>○ </Text>
+        <Text color={theme.fg.comment} italic>{text}</Text>
+      </Text>
+    );
   }
 
   // Errors
   if (patterns.error.test(text)) {
-    return <Text color={theme.syntax.red}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.red}>✗ </Text>
+        <Text color={theme.syntax.red}>{text}</Text>
+      </Text>
+    );
   }
 
   // Warnings
   if (patterns.warning.test(text)) {
-    return <Text color={theme.syntax.yellow}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.yellow}>⚠ </Text>
+        <Text color={theme.syntax.yellow}>{text}</Text>
+      </Text>
+    );
   }
 
   // Headers / section titles
   if (patterns.header.test(text)) {
-    return <Text color={theme.syntax.blue} bold>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.blue}>▸ </Text>
+        <Text color={theme.syntax.blue} bold>{text}</Text>
+      </Text>
+    );
   }
 
-  // Line numbers (code output)
+  // Line numbers (code output) - no bullet, preserve formatting
   if (patterns.lineNumber.test(text)) {
     const match = text.match(patterns.lineNumber);
     if (match) {
@@ -102,7 +179,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
       const rest = text.slice(lineNum.length);
       return (
         <Text>
-          <Text color={theme.fg.muted}>{lineNum}</Text>
+          <Text color={theme.fg.muted}>  {lineNum}</Text>
           <Text color={theme.fg.primary}>{rest}</Text>
         </Text>
       );
@@ -126,10 +203,14 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
 
   // Code blocks
   if (patterns.codeBlock.test(text)) {
-    return <Text color={theme.syntax.orange}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.orange}>  {text}</Text>
+      </Text>
+    );
   }
 
-  // Bullets
+  // Bullets - preserve original bullets
   if (patterns.bullet.test(text)) {
     const match = text.match(patterns.bullet);
     if (match) {
@@ -146,27 +227,37 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
 
   // Test results
   if (text.includes('PASS')) {
-    return <Text color={theme.syntax.green}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.green}>✓ </Text>
+        <Text color={theme.syntax.green}>{text}</Text>
+      </Text>
+    );
   }
   if (text.includes('FAIL')) {
-    return <Text color={theme.syntax.red}>{text}</Text>;
+    return (
+      <Text>
+        <Text color={theme.syntax.red}>✗ </Text>
+        <Text color={theme.syntax.red}>{text}</Text>
+      </Text>
+    );
   }
 
   // Check marks and X marks
   if (text.includes('✓') || text.includes('✔')) {
-    return <Text color={theme.syntax.green}>{text}</Text>;
+    return <Text color={theme.syntax.green}>  {text}</Text>;
   }
   if (text.includes('✗') || text.includes('✘')) {
-    return <Text color={theme.syntax.red}>{text}</Text>;
+    return <Text color={theme.syntax.red}>  {text}</Text>;
   }
 
   // Tool names in text
   for (const tool of TOOL_NAMES) {
     if (text.includes(tool)) {
-      // Highlight the tool name
       const parts = text.split(new RegExp(`(${tool})`, 'g'));
       return (
         <Text>
+          <Text color={theme.fg.primary}>  </Text>
           {parts.map((part, i) => (
             part === tool
               ? <Text key={i} color={theme.syntax.magenta}>{part}</Text>
@@ -182,9 +273,10 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     const parts = text.split(patterns.filePath);
     return (
       <Text>
+        <Text color={theme.fg.primary}>  </Text>
         {parts.map((part, i) => {
           if (patterns.filePath.test(part)) {
-            patterns.filePath.lastIndex = 0; // Reset regex
+            patterns.filePath.lastIndex = 0;
             return <Text key={i} color={theme.syntax.cyan} underline>{part}</Text>;
           }
           return <Text key={i} color={theme.fg.primary}>{part}</Text>;
@@ -193,8 +285,8 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, t
     );
   }
 
-  // Default styling
-  return <Text color={theme.fg.primary}>{text}</Text>;
+  // Default styling - plain text with small indent
+  return <Text color={theme.fg.primary}>  {text}</Text>;
 });
 
 StyledLine.displayName = 'StyledLine';
@@ -202,6 +294,8 @@ StyledLine.displayName = 'StyledLine';
 export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
   lines,
   maxLines = 50,
+  isRunning = false,
+  elapsedSeconds = 0,
 }) => {
   const theme = useTheme();
 
@@ -219,6 +313,9 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
     >
       <Box marginBottom={1}>
         <Text bold color={theme.syntax.magenta}>TERMINAL OUTPUT</Text>
+        {isRunning && (
+          <Text color={theme.fg.muted}> · streaming</Text>
+        )}
       </Box>
 
       <Box flexDirection="column" flexGrow={1}>
@@ -234,6 +331,13 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
           ))
         )}
       </Box>
+
+      {/* Activity spinner when running */}
+      {isRunning && (
+        <Box marginTop={1} paddingLeft={0}>
+          <Spinner label="Working" elapsed={elapsedSeconds} />
+        </Box>
+      )}
     </Box>
   );
 });
