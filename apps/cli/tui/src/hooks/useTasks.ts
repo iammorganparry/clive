@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Session, Task } from '../types.js';
-import { getAllTasks, isBeadsAvailable } from '../utils/beads.js';
-import { parseTasksFromPlan, getPlanMetadata } from '../utils/planParser.js';
+import { isBeadsAvailable, getEpicTasks } from '../utils/beads.js';
 
 // Status priority for sorting (lower = first)
 const STATUS_ORDER: Record<Task['status'], number> = {
@@ -42,30 +41,25 @@ export function useTasks(session: Session | null) {
       return;
     }
 
-    let rawTasks: Task[] = [];
-
-    // Try beads first, fall back to plan file
-    if (isBeadsAvailable()) {
-      const beadsTasks = getAllTasks();
-      if (beadsTasks.length > 0) {
-        rawTasks = beadsTasks;
-      } else {
-        // Beads available but no tasks, try plan file
-        rawTasks = parseTasksFromPlan(session.planFile);
-      }
-    } else {
-      rawTasks = parseTasksFromPlan(session.planFile);
+    // Beads-only - no fallback to plan files
+    if (!isBeadsAvailable()) {
+      setTasks([]);
+      setMetadata({ epicName: session.name });
+      return;
     }
 
-    // Sort tasks by tier, then by status
-    setTasks(sortTasks(rawTasks));
+    // Get tasks from beads for this epic
+    const epicTasks = getEpicTasks(session.epicId);
+    setTasks(sortTasks(epicTasks));
 
-    // Get metadata from plan file
-    const planMeta = getPlanMetadata(session.planFile);
+    // Extract metadata from tasks
+    const skills = [...new Set(epicTasks.map(t => t.skill).filter(Boolean))];
+    const categories = [...new Set(epicTasks.map(t => t.category).filter(Boolean))];
+
     setMetadata({
-      epicName: planMeta.branch || session.name,
-      skill: planMeta.skill,
-      category: planMeta.category,
+      epicName: session.name,
+      skill: skills[0], // Primary skill
+      category: categories[0],
     });
   }, [session]);
 
