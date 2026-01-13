@@ -109,6 +109,24 @@ tooling
 - **Yarn**: `^1.22.0`
 - **Docker**: For local database (optional)
 
+### CLI Tools (for CLIVE TUI)
+
+The CLIVE terminal UI requires additional CLI tools:
+
+```bash
+# macOS
+brew install tmux jq
+
+# Ubuntu/Debian
+sudo apt install tmux jq
+
+# Fedora
+sudo dnf install tmux jq
+```
+
+- **tmux**: Terminal multiplexer for running Claude sessions in background
+- **jq**: JSON processor for parsing beads task data
+
 ## Quick Start
 
 ### 1. Install Dependencies
