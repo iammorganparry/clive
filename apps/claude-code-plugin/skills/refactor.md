@@ -41,6 +41,27 @@ Before refactoring, document what the code currently does:
 - Identify inputs, outputs, and side effects
 - Note all callers of the code being refactored
 
+### 0.4 Discover Project Standards
+
+**Before making changes, understand the project's conventions:**
+
+```bash
+# Check for linting configuration
+ls -la .eslintrc* eslint.config.* .prettierrc* biome.json 2>/dev/null
+
+# Check for TypeScript strictness
+grep -E "(strict|noImplicitAny|strictNullChecks)" tsconfig.json 2>/dev/null
+
+# Look for existing style guides or conventions
+ls -la CONTRIBUTING.md STYLE_GUIDE.md .editorconfig 2>/dev/null
+```
+
+**Document what you find:**
+- Linter: [eslint/biome/none]
+- TypeScript strict mode: [yes/no]
+- Formatting: [prettier/biome/editorconfig/none]
+- Any documented conventions in CONTRIBUTING.md
+
 ---
 
 ## Step 1: Mark Task In Progress
@@ -105,29 +126,151 @@ class OrderService {
 - **Preserve API** - External callers should not need changes
 - **Update imports** - Ensure all imports still resolve
 - **No new features** - Refactoring is NOT adding functionality
+- **DRY** - Eliminate duplication (see DRY Principles below)
+- **Type safety** - No `any` or unnarrowed `unknown` (see Type Safety below)
 
 ---
 
-## Step 3: Verify Behavior Unchanged
+## DRY Principles (Don't Repeat Yourself)
 
-### Run All Tests
+### Identify Duplication First
+
+Before refactoring, scan for duplicated patterns:
+
 ```bash
-npm test
+# Look for similar code blocks in the target area
+grep -rn "pattern-to-find" --include="*.ts" src/
 ```
 
-**ALL tests must pass. If tests fail:**
+### Common DRY Violations to Fix
+
+| Pattern | Solution |
+|---------|----------|
+| Repeated validation logic | Extract to shared validator |
+| Duplicated API calls | Create service abstraction |
+| Copy-pasted error handling | Create error handler utility |
+| Repeated type definitions | Export shared types |
+| Similar component logic | Extract custom hook or HOC |
+
+### When NOT to DRY
+
+- **Incidental duplication** - Code that looks similar but serves different purposes
+- **Test code** - Tests should be explicit, some repetition is acceptable
+- **Configuration** - Premature abstraction can hurt readability
+
+---
+
+## Type Safety Requirements
+
+### Strict Rules (NON-NEGOTIABLE)
+
+1. **NO `any` type** - Find proper types or create them
+2. **NO `unknown` without narrowing** - Always narrow before use
+3. **NO type assertions (`as`)** - Unless absolutely necessary with comment
+4. **Prefer `satisfies`** - Over type assertions when validating shape
+
+### Fixing Common Type Issues
+
+**Instead of `any`:**
+```typescript
+// BAD
+function process(data: any) { ... }
+
+// GOOD - Define the shape
+interface ProcessData {
+  id: string;
+  value: number;
+}
+function process(data: ProcessData) { ... }
+
+// GOOD - Use generics for flexibility
+function process<T extends { id: string }>(data: T) { ... }
+```
+
+**Instead of `unknown`:**
+```typescript
+// BAD - Unnarrowed unknown
+function handle(err: unknown) {
+  console.log(err.message); // Error!
+}
+
+// GOOD - Narrow first
+function handle(err: unknown) {
+  if (err instanceof Error) {
+    console.log(err.message);
+  }
+}
+```
+
+---
+
+## Lint & Style Compliance
+
+### REQUIRED: Zero Warnings Policy
+
+After refactoring, there must be **NO** lint errors or warnings.
+
+```bash
+# Run linter
+npm run lint
+
+# Auto-fix what's possible
+npm run lint -- --fix
+
+# Run formatter (if available)
+npm run format
+```
+
+### Style Consistency Rules
+
+- Match existing patterns in the codebase
+- Use same naming conventions (camelCase, PascalCase, etc.)
+- Follow existing file organization patterns
+- Match existing import ordering
+- Use same comment style as surrounding code
+
+### If No Linter Configured
+
+Check code manually for:
+- Consistent indentation
+- Consistent quotes (single/double)
+- Consistent semicolons
+- No unused variables
+- No console.log statements (unless intentional)
+
+---
+
+## Step 3: Verify Refactoring
+
+**ALL four checks must pass before marking complete.**
+
+### 3.1 Type Safety Check
+```bash
+npx tsc --noEmit
+# Must pass with ZERO errors
+# Verify no `any` types were introduced
+```
+
+### 3.2 Lint Check
+```bash
+npm run lint
+# Must pass with ZERO errors and ZERO warnings
+```
+
+### 3.3 Test Check
+```bash
+npm test
+# All tests must pass
+```
+
+**If tests fail:**
 1. The refactoring broke something - fix it
 2. The tests were testing implementation details - note this, may need test updates
 
-### Build Check
+### 3.4 Build Check
 ```bash
 npm run build
-```
-
-### Check for Unused Exports
-```bash
-# Look for import errors after refactoring
-npm run typecheck
+# Must build successfully
 ```
 
 ---
