@@ -1,5 +1,5 @@
 import type { CommandHandler, CommandContext } from '../types.js';
-import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, isInTmux, type ProcessHandle } from '../utils/process.js';
+import { runPlan, runBuild, cancelBuild, runPlanInteractive, runPlanInTmux, runBuildInTmux, isInTmux, type ProcessHandle } from '../utils/process.js';
 import { suspendTUI, resumeTUI } from '../index.js';
 
 // Track running processes
@@ -83,6 +83,46 @@ export const commands: Record<string, CommandHandler> = {
 
     ctx.appendOutput('Starting build...', 'system');
 
+    // Try tmux background window (if in tmux)
+    if (isInTmux()) {
+      ctx.appendOutput('Starting Claude build in background...', 'system');
+
+      const result = runBuildInTmux(
+        args,
+        // Stream Claude's output to our terminal
+        (content) => {
+          const lines = content.split('\n');
+          ctx.appendOutput('─── Claude Build Output ───', 'marker');
+          lines.forEach(line => {
+            if (line.trim()) {
+              ctx.appendOutput(line, 'stdout');
+            }
+          });
+        },
+        (code) => {
+          ctx.appendOutput('─── End Claude Build Output ───', 'marker');
+          if (code === 0) {
+            ctx.appendOutput('Build complete!', 'system');
+          } else {
+            ctx.appendOutput(`Build exited with code ${code}`, 'system');
+          }
+          ctx.refreshTasks();
+        },
+        (error) => {
+          ctx.appendOutput(`Tmux error: ${error}`, 'stderr');
+        }
+      );
+
+      if (result) {
+        ctx.appendOutput(`Claude build running (pane: ${result.paneId})`, 'system');
+        ctx.appendOutput('Output will stream below. Press Ctrl+B, n to view Claude directly.', 'system');
+        return;
+      } else {
+        ctx.appendOutput('Tmux background failed, falling back...', 'stderr');
+      }
+    }
+
+    // Fall back to regular process spawning
     currentProcess = runBuild(args, (data, type) => {
       ctx.appendOutput(data, type);
     });
