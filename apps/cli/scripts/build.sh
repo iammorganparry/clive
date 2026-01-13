@@ -298,18 +298,48 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     # Build claude command args
     CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --permission-mode acceptEdits)
-    # Use -p (print mode) for non-interactive or streaming modes
+
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
-        CLAUDE_ARGS=(-p "${CLAUDE_ARGS[@]}")
+        # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
     fi
 
-    # Invoke claude
+    # Invoke claude and parse NDJSON output
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - output directly for TUI capture
-        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
+        # Streaming mode - parse NDJSON and extract text content for TUI
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                # Extract text from NDJSON events using jq
+                text=$(echo "$line" | jq -r '
+                    if .type == "content_block_delta" and .delta.type == "text_delta" then .delta.text
+                    elif .type == "content_block_start" and .content_block.type == "text" then .content_block.text
+                    elif .type == "assistant" then (.message.content[]? | select(.type == "text") | .text)
+                    else empty
+                    end
+                ' 2>/dev/null)
+                if [[ -n "$text" ]]; then
+                    printf '%s' "$text"
+                fi
+            fi
+        done
     elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
-        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | tspin
+        # Non-streaming with tspin - parse NDJSON then pipe to tspin
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                text=$(echo "$line" | jq -r '
+                    if .type == "content_block_delta" and .delta.type == "text_delta" then .delta.text
+                    elif .type == "content_block_start" and .content_block.type == "text" then .content_block.text
+                    elif .type == "assistant" then (.message.content[]? | select(.type == "text") | .text)
+                    else empty
+                    end
+                ' 2>/dev/null)
+                if [[ -n "$text" ]]; then
+                    printf '%s' "$text"
+                fi
+            fi
+        done | tspin
     else
+        # Interactive mode - no -p flag, let Claude handle TTY directly
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"
     fi
 
