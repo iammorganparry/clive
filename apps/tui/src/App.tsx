@@ -33,26 +33,9 @@ const AppContent: React.FC = () => {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const inputRef = useRef<{ focus: () => void }>(null);
 
-  // Cache initial dimensions to prevent flicker on resize
-  const initialDimensions = useRef({
-    width: stdout?.columns ?? 80,
-    height: stdout?.rows ?? 24,
-  });
-
-  // Only update dimensions if significantly changed (debounce small fluctuations)
-  const { width, height } = useMemo(() => {
-    const newWidth = stdout?.columns ?? 80;
-    const newHeight = stdout?.rows ?? 24;
-
-    if (
-      Math.abs(newWidth - initialDimensions.current.width) > 2 ||
-      Math.abs(newHeight - initialDimensions.current.height) > 2
-    ) {
-      initialDimensions.current = { width: newWidth, height: newHeight };
-    }
-
-    return initialDimensions.current;
-  }, [stdout?.columns, stdout?.rows]);
+  // Get terminal dimensions directly - update on resize
+  const width = stdout?.columns ?? 80;
+  const height = stdout?.rows ?? 24;
 
   const {
     sessions,
@@ -193,7 +176,7 @@ const AppContent: React.FC = () => {
   // If help is showing, render overlay
   if (showHelp) {
     return (
-      <Box flexDirection="column" width={width} height={height}>
+      <Box flexDirection="column" width="100%" height={height}>
         <Header />
         <Box flexGrow={1} alignItems="center" justifyContent="center">
           <HelpOverlay
@@ -206,7 +189,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height} paddingX={1}>
+    <Box flexDirection="column" width="100%" height={height}>
       <Header />
       <TabBar
         sessions={sessions}
@@ -219,12 +202,11 @@ const AppContent: React.FC = () => {
       />
 
       <Box flexGrow={1} minHeight={10} height={height - 8} marginY={1}>
-        {/* Fixed width sidebar - 30 chars */}
+        {/* Fixed width sidebar */}
         <TaskSidebar session={activeSession} isRunning={isRunning} width={30} />
-        {/* Fixed width output - remaining space minus sidebar and padding */}
+        {/* Output takes remaining space */}
         <TerminalOutput
           maxLines={height - 12}
-          width={width - 30 - 4}
           onQuestionAnswer={handleQuestionAnswer}
           onApprovalResponse={handleApprovalResponse}
         />
