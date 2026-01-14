@@ -83,10 +83,11 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     buildArgs.push("--epic", epicId);
   }
 
-  // Use pipe for stdin to enable user guidance messages
+  // Ignore stdin - we're not using bidirectional communication in this mode
+  // (prompt is passed as CLI arg, not via stdin)
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
 
@@ -116,16 +117,6 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     },
     onExit: (callback) => {
       exitCallback = callback;
-    },
-    sendMessage: (message: string) => {
-      if (child.stdin?.writable) {
-        // Send as JSON message for Claude to process
-        const userMessage = JSON.stringify({
-          type: "user",
-          message: { role: "user", content: message },
-        });
-        child.stdin.write(`${userMessage}\n`);
-      }
     },
   };
 }
@@ -172,7 +163,8 @@ export function runPlan(args: string[]): ProcessHandle {
 }
 
 // Run plan script with interactive bidirectional communication
-// This enables handling AskUserQuestion and tool approvals
+// Note: plan.sh uses Docker sandbox and doesn't support streaming NDJSON
+// This function is kept for interface compatibility but bidirectional features are no-ops
 export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   const scriptsDir = findScriptsDir();
   const planScript = path.join(scriptsDir, "plan.sh");
@@ -182,34 +174,17 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
 
   const child = spawn("bash", [planScript, ...planArgs], {
     cwd: process.cwd(),
-    stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
+    stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
-  let buffer = "";
 
-  // Process stdout as NDJSON
+  // Just pass through stdout/stderr as plain text (not NDJSON)
   child.stdout?.on("data", (data: Buffer) => {
-    const chunk = data.toString();
-    buffer += chunk;
-
-    // Also emit raw data for display
-    if (dataCallback) dataCallback(chunk);
-
-    // Parse NDJSON lines
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const event = parseClaudeEvent(line);
-      if (event && eventCallback) {
-        eventCallback(event);
-      }
-    }
+    if (dataCallback) dataCallback(data.toString());
   });
 
   child.stderr?.on("data", (data: Buffer) => {
@@ -217,13 +192,6 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   });
 
   child.on("close", (code) => {
-    // Process any remaining buffer
-    if (buffer.trim()) {
-      const event = parseClaudeEvent(buffer);
-      if (event && eventCallback) {
-        eventCallback(event);
-      }
-    }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
@@ -245,28 +213,15 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
     onExit: (callback) => {
       exitCallback = callback;
     },
-    sendToolResult: (toolCallId: string, result: string) => {
-      if (child.stdin?.writable) {
-        const message = formatToolResult(toolCallId, result);
-        child.stdin.write(`${message}\n`);
-      }
+    // Note: These methods are no-ops since plan.sh doesn't support bidirectional communication
+    sendToolResult: (_toolCallId: string, _result: string) => {
+      // Not supported
     },
-    sendUserMessage: (message: string) => {
-      if (child.stdin?.writable) {
-        const userMessage = JSON.stringify({
-          type: "user",
-          message: {
-            role: "user",
-            content: message,
-          },
-        });
-        child.stdin.write(`${userMessage}\n`);
-      }
+    sendUserMessage: (_message: string) => {
+      // Not supported
     },
     close: () => {
-      if (child.stdin?.writable) {
-        child.stdin.end();
-      }
+      // No-op
     },
   };
 }
@@ -290,9 +245,11 @@ export function runBuildInteractive(
     buildArgs.push("--epic", epicId);
   }
 
+  // Note: build.sh no longer uses --input-format stream-json, so bidirectional
+  // communication is not supported. Keeping stdin as ignore for simplicity.
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
+    stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
 
@@ -355,28 +312,15 @@ export function runBuildInteractive(
     onExit: (callback) => {
       exitCallback = callback;
     },
-    sendToolResult: (toolCallId: string, result: string) => {
-      if (child.stdin?.writable) {
-        const message = formatToolResult(toolCallId, result);
-        child.stdin.write(`${message}\n`);
-      }
+    // Note: These methods are no-ops since bidirectional communication is not supported
+    sendToolResult: (_toolCallId: string, _result: string) => {
+      // Not supported in current build.sh mode
     },
-    sendUserMessage: (message: string) => {
-      if (child.stdin?.writable) {
-        const userMessage = JSON.stringify({
-          type: "user",
-          message: {
-            role: "user",
-            content: message,
-          },
-        });
-        child.stdin.write(`${userMessage}\n`);
-      }
+    sendUserMessage: (_message: string) => {
+      // Not supported in current build.sh mode
     },
     close: () => {
-      if (child.stdin?.writable) {
-        child.stdin.end();
-      }
+      // No-op - stdin is ignored
     },
   };
 }

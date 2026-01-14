@@ -336,8 +336,9 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
-        # --input-format stream-json allows receiving user messages via stdin
-        CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
+        # Note: We don't use --input-format stream-json here because the prompt is passed as CLI arg
+        # User guidance messages are not supported in this mode (would require stdin prompt approach)
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
     fi
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
