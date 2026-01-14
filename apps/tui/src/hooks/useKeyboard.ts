@@ -21,14 +21,14 @@ export function useKeyboard(
       return;
     }
 
-    // Tab switching with Shift+Tab (previous) and Tab (next)
-    // Only when not focused on input
-    if (key.tab && key.shift) {
+    // Tab switching with [ (previous) and ] (next)
+    // Using brackets to avoid conflict with ink's focus management
+    if (input === "[") {
       handlers.prevTab?.();
       return;
     }
 
-    if (key.tab) {
+    if (input === "]") {
       handlers.nextTab?.();
       return;
     }

@@ -116,7 +116,7 @@ export const commands: Record<string, CommandHandler> = {
     ctx.appendOutput("  /help            - Show this help", "system");
     ctx.appendOutput("", "system");
     ctx.appendOutput("Keyboard shortcuts:", "system");
-    ctx.appendOutput("  Tab/Shift+Tab    - Switch session tabs", "system");
+    ctx.appendOutput("  [/]              - Switch session tabs", "system");
     ctx.appendOutput("  ↑/↓              - Command history", "system");
     ctx.appendOutput("  b                - Start build", "system");
     ctx.appendOutput("  c                - Cancel build", "system");
