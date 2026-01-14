@@ -63,139 +63,15 @@ const TOOL_CALL_PATTERN = new RegExp(
 const TOOL_RESULT_PATTERN = /^[└→┃│]\s/;
 const USER_INPUT_PATTERN = /^[❯>]\s/;
 
-// Parsed event for display
-interface ParsedEvent {
-  type: "assistant" | "tool_use" | "tool_result";
-  text?: string;
-  name?: string;
-  id?: string;
-  content?: string;
-  input?: Record<string, unknown>;
-}
-
-// Format tool input for display
-function formatToolInput(name: string, input?: Record<string, unknown>): string {
-  if (!input) return name;
-
-  // Extract key metadata based on tool type
-  switch (name) {
-    case "Read":
-    case "Write":
-    case "Edit":
-      if (input.file_path) return `${name} ${input.file_path}`;
-      break;
-    case "Glob":
-      if (input.pattern) return `${name} ${input.pattern}`;
-      break;
-    case "Grep":
-      if (input.pattern) return `${name} "${input.pattern}"`;
-      break;
-    case "Bash":
-      if (input.command) {
-        const cmd = String(input.command).slice(0, 60);
-        return `${name} ${cmd}${String(input.command).length > 60 ? "..." : ""}`;
-      }
-      break;
-    case "Task":
-      if (input.description) return `${name} ${input.description}`;
-      break;
-    case "WebFetch":
-    case "WebSearch":
-      if (input.url) return `${name} ${input.url}`;
-      if (input.query) return `${name} "${input.query}"`;
-      break;
-  }
-
-  return name;
-}
-
-// Try to parse a line as raw Claude NDJSON event
-// Returns ParsedEvent if it should be displayed, null if it should be filtered
-function parseStreamEvent(line: string): ParsedEvent | null {
-  try {
-    const raw = JSON.parse(line);
-
-    // Handle pre-processed events (backwards compatibility)
-    if (raw.type === "assistant" && typeof raw.text === "string") {
-      return raw as ParsedEvent;
-    }
-    if (raw.type === "tool_use" && raw.name) {
-      return raw as ParsedEvent;
-    }
-    if (raw.type === "tool_result" && raw.id) {
-      return raw as ParsedEvent;
-    }
-
-    // Handle raw Claude NDJSON events
-    if (raw.type === "content_block_delta" && raw.delta?.type === "text_delta") {
-      return { type: "assistant", text: raw.delta.text };
-    }
-
-    if (raw.type === "content_block_start" && raw.content_block?.type === "text") {
-      return { type: "assistant", text: raw.content_block.text || "" };
-    }
-
-    if (raw.type === "content_block_start" && raw.content_block?.type === "tool_use") {
-      return {
-        type: "tool_use",
-        name: raw.content_block.name,
-        id: raw.content_block.id,
-        input: raw.content_block.input,
-      };
-    }
-
-    // Handle message-level events
-    if (raw.type === "assistant" && raw.message?.content) {
-      for (const block of raw.message.content) {
-        if (block.type === "text") {
-          return { type: "assistant", text: block.text };
-        }
-        if (block.type === "tool_use") {
-          return {
-            type: "tool_use",
-            name: block.name,
-            id: block.id,
-            input: block.input,
-          };
-        }
-      }
-      // Handled but no displayable content
-      return null;
-    }
-
-    // User messages with tool results - filter these out (internal event)
-    // These are echoed back from Claude and shouldn't be displayed
-    if (raw.type === "user") {
-      return null;
-    }
-
-    // System events - filter out
-    if (raw.type === "system") {
-      return null;
-    }
-
-    // Message lifecycle events - filter out
-    if (raw.type === "message_start" || raw.type === "message_delta" ||
-        raw.type === "message_stop" || raw.type === "content_block_stop" ||
-        raw.type === "result" || raw.type === "error") {
-      return null;
-    }
-
-    // Any other JSON event - filter out (don't display raw JSON)
-    return null;
-  } catch {
-    // Not JSON, return null to let pattern matching handle it
-    return null;
-  }
-}
-
 // Check if a line looks like JSON (starts with { and ends with })
+// Used to filter any raw JSON that slips through from process.ts
 function isJsonLine(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.startsWith("{") && trimmed.endsWith("}");
 }
 
 // Parse text into typed OutputLines
+// Note: JSON parsing is handled by process.ts - this receives pre-formatted text
 function parseLines(
   text: string,
   type: OutputLine["type"] = "stdout",
@@ -204,31 +80,12 @@ function parseLines(
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => {
-      // First, try to parse as structured JSON event from Claude CLI
-      const streamEvent = parseStreamEvent(line);
-      if (streamEvent) {
-        if (streamEvent.type === "assistant" && streamEvent.text) {
-          return createLine(streamEvent.text, "assistant");
-        }
-        if (streamEvent.type === "tool_use" && streamEvent.name) {
-          const displayText = formatToolInput(streamEvent.name, streamEvent.input);
-          return createLine(`● ${displayText}`, "tool_call", { toolName: streamEvent.name });
-        }
-        if (streamEvent.type === "tool_result") {
-          // Show truncated content if available
-          const content = streamEvent.content
-            ? streamEvent.content.slice(0, 100).replace(/\n/g, " ") + (streamEvent.content.length > 100 ? "..." : "")
-            : "Done";
-          return createLine(`└ ${content}`, "tool_result", { indent: 1 });
-        }
-      }
-
-      // If it looks like JSON but wasn't handled, skip it (internal Claude events)
+      // Filter any raw JSON that slips through (internal Claude events)
       if (isJsonLine(line)) {
         return null;
       }
 
-      // Fall back to pattern matching for non-JSON output
+      // Pattern matching for formatted output from process.ts
       if (line.includes("<promise>")) {
         return createLine(line, "marker");
       }
@@ -246,6 +103,8 @@ function parseLines(
         return createLine(line, "user_input");
       }
 
+      // Default to the provided type (stdout/stderr/system)
+      // Agent text should be captured by JSON parsing above
       return createLine(line, type);
     })
     .filter((line): line is OutputLine => line !== null);

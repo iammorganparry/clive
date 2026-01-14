@@ -124,9 +124,13 @@ export function createRpcContext(): RpcContext {
     const scriptsDir = findScriptsDir();
     const planScript = path.join(scriptsDir, "plan.sh");
 
-    const child = spawn("bash", [planScript, ...args], {
+    // Add --streaming flag for TUI mode (avoids TTY requirement)
+    const planArgs = ["--streaming", ...args];
+
+    // Use pipe for stdin to send prompt in streaming mode
+    const child = spawn("bash", [planScript, ...planArgs], {
       cwd: process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
     });
 
@@ -134,6 +138,36 @@ export function createRpcContext(): RpcContext {
 
     let dataCallback: ((data: string) => void) | null = null;
     let exitCallback: ((code: number) => void) | null = null;
+    let promptSent = false;
+
+    // Send prompt via stdin after spawn
+    child.on("spawn", () => {
+      setTimeout(() => {
+        if (promptSent) return;
+        try {
+          const promptPath = fs
+            .readFileSync(path.join(process.cwd(), ".claude", ".plan-prompt-path"), "utf-8")
+            .trim();
+
+          if (promptPath && fs.existsSync(promptPath)) {
+            const promptContent = fs.readFileSync(promptPath, "utf-8");
+            const userMessage = JSON.stringify({
+              type: "user",
+              message: {
+                role: "user",
+                content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+              },
+            });
+            if (child.stdin?.writable) {
+              child.stdin.write(`${userMessage}\n`);
+              promptSent = true;
+            }
+          }
+        } catch {
+          // Prompt file not ready yet
+        }
+      }, 200);
+    });
 
     child.stdout?.on("data", (data: Buffer) => {
       if (dataCallback) dataCallback(data.toString());

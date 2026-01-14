@@ -68,6 +68,63 @@ export interface ProcessHandle {
 }
 
 /**
+ * Extract a meaningful detail string from tool input
+ */
+function extractToolDetail(name: string, input: Record<string, unknown> | undefined): string {
+  if (!input || Object.keys(input).length === 0) return "";
+
+  switch (name) {
+    case "Read":
+      if (input.file_path) return ` ${input.file_path}`;
+      break;
+    case "Write":
+    case "Edit":
+      if (input.file_path) return ` ${input.file_path}`;
+      break;
+    case "Bash":
+      if (input.command) {
+        const cmd = String(input.command).split("\n")[0].slice(0, 60);
+        return ` ${cmd}${String(input.command).length > 60 ? "..." : ""}`;
+      }
+      if (input.description) return ` ${input.description}`;
+      break;
+    case "Grep":
+      if (input.pattern) {
+        const pattern = String(input.pattern).slice(0, 30);
+        const path = input.path ? ` in ${input.path}` : "";
+        return ` "${pattern}"${path}`;
+      }
+      break;
+    case "Glob":
+      if (input.pattern) return ` ${input.pattern}`;
+      break;
+    case "Task":
+      if (input.description) return ` ${input.description}`;
+      break;
+    case "TodoWrite":
+      return " updating tasks";
+    case "WebFetch":
+      if (input.url) return ` ${input.url}`;
+      break;
+    case "WebSearch":
+      if (input.query) return ` "${input.query}"`;
+      break;
+    default:
+      // Generic fallback: try common field names
+      if (input.file_path) return ` ${input.file_path}`;
+      if (input.pattern) return ` "${input.pattern}"`;
+      if (input.command) return ` ${String(input.command).slice(0, 50)}`;
+      if (input.description) return ` ${input.description}`;
+      if (input.query) return ` "${input.query}"`;
+      if (input.url) return ` ${input.url}`;
+  }
+  return "";
+}
+
+// Track partial tool inputs during streaming (indexed by content block index)
+const toolInputBuffers: Map<number, { name: string; partialJson: string }> = new Map();
+
+/**
  * Parse NDJSON line and return displayable text (like extension's parseCliOutput)
  * Returns null for events that should be filtered out
  */
@@ -87,38 +144,76 @@ function parseNdjsonLine(line: string): string | null {
       return data.content_block.text || null;
     }
 
-    // Tool use - format nicely
+    // Tool use start - initialize buffer for streaming input
     if (data.type === "content_block_start" && data.content_block?.type === "tool_use") {
       const name = data.content_block.name;
-      const input = data.content_block.input;
-      let detail = "";
-      if (input?.file_path) detail = ` ${input.file_path}`;
-      else if (input?.pattern) detail = ` "${input.pattern}"`;
-      else if (input?.command) detail = ` ${String(input.command).slice(0, 50)}`;
-      else if (input?.description) detail = ` ${input.description}`;
-      return `● ${name}${detail}\n`;
+      const input = data.content_block.input as Record<string, unknown> | undefined;
+      const index = data.index ?? 0;
+
+      // Initialize buffer for this tool's streaming input
+      toolInputBuffers.set(index, { name, partialJson: "" });
+
+      // If input is already populated (non-streaming), show it
+      const detail = extractToolDetail(name, input);
+      if (detail) {
+        return `● ${name}${detail}\n`;
+      }
+      // Otherwise just show the name - we'll update when we get input_json_delta
+      return `● ${name}\n`;
     }
 
-    // Assistant message with content
-    if (data.type === "assistant" && data.message?.content) {
-      for (const block of data.message.content) {
-        if (block.type === "text") {
-          return block.text;
-        }
-        if (block.type === "tool_use") {
-          return `● ${block.name}\n`;
+    // Streaming tool input - accumulate JSON and try to extract details
+    if (data.type === "content_block_delta" && data.delta?.type === "input_json_delta") {
+      const index = data.index ?? 0;
+      const partial = data.delta.partial_json ?? "";
+      const buffer = toolInputBuffers.get(index);
+
+      if (buffer) {
+        buffer.partialJson += partial;
+
+        // Try to parse accumulated JSON to extract details
+        try {
+          const input = JSON.parse(buffer.partialJson) as Record<string, unknown>;
+          const detail = extractToolDetail(buffer.name, input);
+          if (detail) {
+            // Clear buffer and emit the detail
+            toolInputBuffers.delete(index);
+            return `  → ${detail.trim()}\n`;
+          }
+        } catch {
+          // JSON not complete yet, keep accumulating
         }
       }
       return null;
+    }
+
+    // Tool use complete - clear buffer
+    if (data.type === "content_block_stop") {
+      const index = data.index ?? 0;
+      toolInputBuffers.delete(index);
+      return null;
+    }
+
+    // Assistant message with content (non-streaming format)
+    if (data.type === "assistant" && data.message?.content) {
+      const results: string[] = [];
+      for (const block of data.message.content) {
+        if (block.type === "text") {
+          results.push(block.text);
+        }
+        if (block.type === "tool_use") {
+          const detail = extractToolDetail(block.name, block.input as Record<string, unknown>);
+          results.push(`● ${block.name}${detail}\n`);
+        }
+      }
+      return results.length > 0 ? results.join("") : null;
     }
 
     // Filter out all other JSON events:
     // - user (tool results echoed back)
     // - system
     // - message_start, message_delta, message_stop
-    // - content_block_stop
     // - result, error
-    // - input_json_delta (streaming tool input)
     return null;
   } catch {
     // Not JSON - return as plain text (bash script output, etc.)
@@ -268,22 +363,73 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   };
 }
 
-// Run plan script and stream output
+// Run plan script and stream output with bidirectional communication
 export function runPlan(args: string[]): ProcessHandle {
   const scriptsDir = findScriptsDir();
   const planScript = path.join(scriptsDir, "plan.sh");
 
-  const child = spawn("bash", [planScript, ...args], {
+  // Add --streaming flag for TUI mode
+  const planArgs = ["--streaming", ...args];
+
+  // Use pipe for stdin to enable bidirectional communication
+  const child = spawn("bash", [planScript, ...planArgs], {
     cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
+  let promptSent = false;
+  let buffer = ""; // Buffer for incomplete NDJSON lines
 
+  // Send prompt via stdin after spawn
+  child.on("spawn", () => {
+    // Wait a moment for plan.sh to write the prompt path, then read and send it
+    setTimeout(() => {
+      if (promptSent) return;
+      try {
+        const promptPath = fs.readFileSync(
+          path.join(process.cwd(), ".claude", ".plan-prompt-path"),
+          "utf-8",
+        ).trim();
+
+        if (promptPath && fs.existsSync(promptPath)) {
+          const promptContent = fs.readFileSync(promptPath, "utf-8");
+          const userMessage = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+            },
+          });
+          if (child.stdin?.writable) {
+            child.stdin.write(`${userMessage}\n`);
+            promptSent = true;
+          }
+        }
+      } catch {
+        // Prompt file not ready yet or error reading - will retry or fail gracefully
+      }
+    }, 200); // Wait for plan.sh to write the prompt path
+  });
+
+  // Buffer and parse NDJSON, only emit displayable content
   child.stdout?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    const chunk = data.toString();
+    buffer += chunk;
+
+    // Split into complete lines
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    // Parse each line and emit only displayable content
+    for (const line of lines) {
+      const displayText = parseNdjsonLine(line);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+    }
   });
 
   child.stderr?.on("data", (data: Buffer) => {
@@ -291,6 +437,13 @@ export function runPlan(args: string[]): ProcessHandle {
   });
 
   child.on("close", (code) => {
+    // Flush any remaining buffer
+    if (buffer.trim()) {
+      const displayText = parseNdjsonLine(buffer);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+    }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
@@ -306,32 +459,94 @@ export function runPlan(args: string[]): ProcessHandle {
     onExit: (callback) => {
       exitCallback = callback;
     },
+    sendMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: { role: "user", content: message },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
+    },
   };
 }
 
 // Run plan script with interactive bidirectional communication
-// Note: plan.sh uses Docker sandbox and doesn't support streaming NDJSON
-// This function is kept for interface compatibility but bidirectional features are no-ops
 export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   const scriptsDir = findScriptsDir();
   const planScript = path.join(scriptsDir, "plan.sh");
 
-  // Plan uses the provided args directly
-  const planArgs = [...args];
+  // Add --streaming flag for TUI mode
+  const planArgs = ["--streaming", ...args];
 
+  // Use pipe for stdin to enable bidirectional communication
   const child = spawn("bash", [planScript, ...planArgs], {
     cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
+  let buffer = "";
+  let promptSent = false;
 
-  // Just pass through stdout/stderr as plain text (not NDJSON)
+  // Send prompt via stdin after spawn
+  child.on("spawn", () => {
+    // Wait a moment for plan.sh to write the prompt path, then read and send it
+    setTimeout(() => {
+      if (promptSent) return;
+      try {
+        const promptPath = fs.readFileSync(
+          path.join(process.cwd(), ".claude", ".plan-prompt-path"),
+          "utf-8",
+        ).trim();
+
+        if (promptPath && fs.existsSync(promptPath)) {
+          const promptContent = fs.readFileSync(promptPath, "utf-8");
+          const userMessage = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+            },
+          });
+          if (child.stdin?.writable) {
+            child.stdin.write(`${userMessage}\n`);
+            promptSent = true;
+          }
+        }
+      } catch {
+        // Prompt file not ready yet or error reading - will retry or fail gracefully
+      }
+    }, 200); // Wait for plan.sh to write the prompt path
+  });
+
+  // Buffer and parse NDJSON, only emit displayable content
   child.stdout?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    const chunk = data.toString();
+    buffer += chunk;
+
+    // Parse NDJSON lines
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      // Emit displayable content to dataCallback
+      const displayText = parseNdjsonLine(line);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+
+      // Also emit parsed events for eventCallback
+      const event = parseClaudeEvent(line);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
   });
 
   child.stderr?.on("data", (data: Buffer) => {
@@ -339,6 +554,17 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   });
 
   child.on("close", (code) => {
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const displayText = parseNdjsonLine(buffer);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+      const event = parseClaudeEvent(buffer);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
@@ -360,15 +586,28 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
     onExit: (callback) => {
       exitCallback = callback;
     },
-    // Note: These methods are no-ops since plan.sh doesn't support bidirectional communication
-    sendToolResult: (_toolCallId: string, _result: string) => {
-      // Not supported
+    sendToolResult: (toolCallId: string, result: string) => {
+      if (child.stdin?.writable) {
+        const message = formatToolResult(toolCallId, result);
+        child.stdin.write(`${message}\n`);
+      }
     },
-    sendUserMessage: (_message: string) => {
-      // Not supported
+    sendUserMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: message,
+          },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
     },
     close: () => {
-      // No-op
+      if (child.stdin?.writable) {
+        child.stdin.end();
+      }
     },
   };
 }

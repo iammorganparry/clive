@@ -1,12 +1,14 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Box, useStdout } from "ink";
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   executeCommand,
   sendApprovalResponse,
   sendQuestionAnswer,
   sendUserMessage,
+  setEventHandler,
+  setRefreshCallback,
 } from "./commands/index.js";
 import { CommandInput } from "./components/CommandInput.js";
 import { Header } from "./components/Header.js";
@@ -20,6 +22,7 @@ import { useSessions } from "./hooks/useSessions.js";
 import { useTasks } from "./hooks/useTasks.js";
 import {
   OutputMachineProvider,
+  useInteractionActions,
   useOutputActions,
   useRunningState,
 } from "./machines/OutputMachineProvider.js";
@@ -52,8 +55,40 @@ const AppContent: React.FC = () => {
   // Get running state separately
   const { isRunning } = useRunningState();
 
+  // Get interaction actions for dispatching question/approval events
+  const { sendQuestion, sendApprovalRequest, resolveInteraction } =
+    useInteractionActions();
+
   // Tasks from React Query - auto-polls when running
   const { tasks, refresh: refreshTasks } = useTasks(activeSession, isRunning);
+
+  // Set up event handler to dispatch Claude events to output machine
+  useEffect(() => {
+    setEventHandler((event) => {
+      if (event.type === "question") {
+        sendQuestion(event.id, event.questions);
+      } else if (event.type === "approval_requested") {
+        sendApprovalRequest(event.id, event.toolName, event.args);
+      }
+    });
+
+    // Clean up on unmount
+    return () => {
+      setEventHandler(() => {});
+    };
+  }, [sendQuestion, sendApprovalRequest]);
+
+  // Set up refresh callback for beads command detection
+  useEffect(() => {
+    setRefreshCallback(() => {
+      refreshTasks();
+      refreshSessions();
+    });
+
+    return () => {
+      setRefreshCallback(() => {});
+    };
+  }, [refreshTasks, refreshSessions]);
 
   // Memoize command context
   const commandContext = useMemo<CommandContext>(
@@ -99,15 +134,17 @@ const AppContent: React.FC = () => {
   const handleQuestionAnswer = useCallback(
     (toolCallId: string, answers: Record<string, string>) => {
       sendQuestionAnswer(toolCallId, answers);
+      resolveInteraction(); // Clear the pending interaction from UI
     },
-    [],
+    [resolveInteraction],
   );
 
   const handleApprovalResponse = useCallback(
     (toolCallId: string, approved: boolean) => {
       sendApprovalResponse(toolCallId, approved);
+      resolveInteraction(); // Clear the pending interaction from UI
     },
-    [],
+    [resolveInteraction],
   );
 
   // Tab navigation helpers

@@ -1,48 +1,150 @@
 import type { CommandContext, CommandHandler } from "../types.js";
+import type { ClaudeEvent } from "../utils/claude-events.js";
+import {
+  formatApprovalResponse,
+  formatQuestionResponse,
+} from "../utils/claude-events.js";
 import {
   cancelBuild,
-  type ProcessHandle,
-  runBuild,
-  runPlan,
+  type InteractiveProcessHandle,
+  runBuildInteractive,
+  runPlanInteractive,
 } from "../utils/process.js";
 
-// Track running process
-let currentProcess: ProcessHandle | null = null;
+// Track running process (interactive for both build and plan)
+let currentBuildProcess: InteractiveProcessHandle | null = null;
+let currentPlanProcess: InteractiveProcessHandle | null = null;
+
+// Event handler for dispatching to output machine (only for events that need UI)
+let eventHandler: ((event: ClaudeEvent) => void) | null = null;
+
+// Refresh callback for beads command detection
+let refreshCallback: (() => void) | null = null;
+
+// Output callback for showing auto-approval messages
+let outputCallback: ((message: string) => void) | null = null;
+
+/**
+ * Set the event handler for Claude events (questions only)
+ */
+export function setEventHandler(handler: (event: ClaudeEvent) => void): void {
+  eventHandler = handler;
+}
+
+/**
+ * Set the output callback for showing messages
+ */
+export function setOutputCallback(callback: (message: string) => void): void {
+  outputCallback = callback;
+}
+
+/**
+ * Handle Claude events
+ * Note: Tool approvals are handled by Claude CLI via --permission-mode acceptEdits
+ * We only need to handle AskUserQuestion which requires actual user input
+ */
+export function handleClaudeEvent(event: ClaudeEvent): void {
+  // Only dispatch question events to UI - these require actual user input
+  // Approval events are handled internally by Claude CLI with acceptEdits mode
+  if (event.type === "question") {
+    if (eventHandler) {
+      eventHandler(event);
+    }
+  }
+  // Ignore approval_requested events - CLI handles these automatically
+}
+
+/**
+ * Set the refresh callback for beads command detection
+ */
+export function setRefreshCallback(callback: () => void): void {
+  refreshCallback = callback;
+}
 
 /**
  * Send a user guidance message to the active agent
  */
 export function sendUserMessage(message: string): void {
-  if (currentProcess?.sendMessage) {
-    currentProcess.sendMessage(message);
+  if (currentBuildProcess) {
+    currentBuildProcess.sendUserMessage(message);
+  } else if (currentPlanProcess) {
+    currentPlanProcess.sendUserMessage(message);
   }
 }
 
 /**
- * Send a question answer to the active agent (placeholder for future)
+ * Send a question answer to the active agent
  */
 export function sendQuestionAnswer(
-  _toolCallId: string,
-  _answers: Record<string, string>,
+  toolCallId: string,
+  answers: Record<string, string>,
 ): void {
-  // TODO: Implement bidirectional communication
+  const process = currentBuildProcess || currentPlanProcess;
+  if (process) {
+    const response = formatQuestionResponse(toolCallId, answers);
+    // Parse the JSON and send via the proper method
+    const parsed = JSON.parse(response);
+    if (parsed.message?.content?.[0]?.content) {
+      process.sendToolResult(toolCallId, parsed.message.content[0].content);
+    }
+
+    // For plan process, close stdin after answering to signal completion
+    // This allows the build loop to proceed after plan approval
+    if (currentPlanProcess) {
+      // Give Claude a moment to process the answer before closing
+      setTimeout(() => {
+        currentPlanProcess?.close();
+      }, 100);
+    }
+  }
 }
 
 /**
- * Send an approval response to the active agent (placeholder for future)
+ * Send an approval response to the active agent
  */
 export function sendApprovalResponse(
-  _toolCallId: string,
-  _approved: boolean,
+  toolCallId: string,
+  approved: boolean,
 ): void {
-  // TODO: Implement bidirectional communication
+  if (currentBuildProcess) {
+    const response = formatApprovalResponse(toolCallId, approved);
+    // Parse the JSON and send via the proper method
+    const parsed = JSON.parse(response);
+    if (parsed.message?.content?.[0]?.content) {
+      currentBuildProcess.sendToolResult(
+        toolCallId,
+        parsed.message.content[0].content,
+      );
+    }
+  }
 }
 
 /**
  * Check if a process is currently running
  */
 export function isProcessRunning(): boolean {
-  return currentProcess !== null;
+  return currentBuildProcess !== null || currentPlanProcess !== null;
+}
+
+// Patterns to detect beads commands that modify state
+const BEADS_MODIFY_PATTERNS = [
+  /bd\s+(create|close|update|dep)/,
+  /beads\s+(create|close|update|dep)/,
+];
+
+/**
+ * Check if output contains beads modify commands and trigger refresh
+ */
+function checkForBeadsCommands(data: string): void {
+  for (const pattern of BEADS_MODIFY_PATTERNS) {
+    if (pattern.test(data)) {
+      // Debounce refresh - wait a bit for command to complete
+      setTimeout(() => {
+        refreshCallback?.();
+      }, 500);
+      return;
+    }
+  }
 }
 
 export const commands: Record<string, CommandHandler> = {
@@ -54,7 +156,7 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
-    if (currentProcess) {
+    if (currentBuildProcess || currentPlanProcess) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -67,26 +169,34 @@ export const commands: Record<string, CommandHandler> = {
     ctx.appendOutput(`Creating plan: ${request}`, "system");
     ctx.setIsRunning(true);
 
-    currentProcess = runPlan(args);
+    currentPlanProcess = runPlanInteractive(args);
 
-    currentProcess.onData((data: string) => {
-      ctx.appendOutput(data, "stdout");
+    // Handle parsed Claude events (questions, approvals)
+    currentPlanProcess.onEvent((event: ClaudeEvent) => {
+      handleClaudeEvent(event);
     });
 
-    currentProcess.onExit((code: number) => {
+    currentPlanProcess.onData((data: string) => {
+      ctx.appendOutput(data, "stdout");
+      // Check for beads commands to trigger refresh
+      checkForBeadsCommands(data);
+    });
+
+    currentPlanProcess.onExit((code: number) => {
       ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Plan created successfully", "system");
         ctx.refreshSessions();
+        ctx.refreshTasks();
       } else {
         ctx.appendOutput(`Plan failed with code ${code}`, "stderr");
       }
-      currentProcess = null;
+      currentPlanProcess = null;
     });
   },
 
   build: async (args, ctx) => {
-    if (currentProcess) {
+    if (currentBuildProcess || currentPlanProcess) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -106,30 +216,44 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.setIsRunning(true);
-    currentProcess = runBuild(args, epicId);
+    currentBuildProcess = runBuildInteractive(args, epicId);
 
-    currentProcess.onData((data: string) => {
-      ctx.appendOutput(data, "stdout");
+    // Handle parsed Claude events (questions, approvals)
+    // Auto-approves Write/Edit/Bash in build mode via handleClaudeEvent
+    currentBuildProcess.onEvent((event: ClaudeEvent) => {
+      handleClaudeEvent(event);
     });
 
-    currentProcess.onExit((code: number) => {
+    currentBuildProcess.onData((data: string) => {
+      ctx.appendOutput(data, "stdout");
+      // Check for beads commands to trigger refresh
+      checkForBeadsCommands(data);
+    });
+
+    currentBuildProcess.onExit((code: number) => {
       ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Build complete!", "system");
       } else {
         ctx.appendOutput(`Build exited with code ${code}`, "system");
       }
-      currentProcess = null;
+      currentBuildProcess = null;
       ctx.refreshTasks();
     });
   },
 
   cancel: async (_args, ctx) => {
-    if (currentProcess) {
-      ctx.appendOutput("Cancelling...", "system");
+    if (currentBuildProcess) {
+      ctx.appendOutput("Cancelling build...", "system");
       cancelBuild();
-      currentProcess.kill();
-      currentProcess = null;
+      currentBuildProcess.kill();
+      currentBuildProcess = null;
+      ctx.setIsRunning(false);
+      ctx.appendOutput("Cancelled", "system");
+    } else if (currentPlanProcess) {
+      ctx.appendOutput("Cancelling plan...", "system");
+      currentPlanProcess.kill();
+      currentPlanProcess = null;
       ctx.setIsRunning(false);
       ctx.appendOutput("Cancelled", "system");
     } else {
