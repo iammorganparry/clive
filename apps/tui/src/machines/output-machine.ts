@@ -165,6 +165,12 @@ function parseStreamEvent(line: string): ParsedEvent | null {
   }
 }
 
+// Check if a line looks like JSON (starts with { and ends with })
+function isJsonLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("{") && trimmed.endsWith("}");
+}
+
 // Parse text into typed OutputLines
 function parseLines(
   text: string,
@@ -193,6 +199,11 @@ function parseLines(
         }
       }
 
+      // If it looks like JSON but wasn't handled, skip it (internal Claude events)
+      if (isJsonLine(line)) {
+        return null;
+      }
+
       // Fall back to pattern matching for non-JSON output
       if (line.includes("<promise>")) {
         return createLine(line, "marker");
@@ -212,7 +223,8 @@ function parseLines(
       }
 
       return createLine(line, type);
-    });
+    })
+    .filter((line): line is OutputLine => line !== null);
 }
 
 // Initial welcome messages
