@@ -1,11 +1,13 @@
 {
   "name": "Clive",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "tooling/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*",
+      "tooling/*"
+    ]
+  },
   "engines": {
     "node": "^22.21.0",
     "yarn": "^1.22.0"
@@ -47,8 +49,5 @@
     "turbo": "^2.5.8",
     "typescript": "^5.9.3"
   },
-  "packageManager": "yarn@1.22.0",
-  "dependencies": {
-    "sherif": "^1.9.0"
-  }
+  "packageManager": "yarn@1.22.0"
 }

@@ -1,9 +1,14 @@
-import React, { createContext, useContext, useEffect, type ReactNode } from 'react';
-import { useMachine, useSelector } from '@xstate/react';
-import { useCallback } from 'react';
-import { tasksMachine, type TasksContext } from './tasks-machine.js';
-import type { Session, Task } from '../types.js';
-import type { ActorRefFrom } from 'xstate';
+import { useMachine, useSelector } from "@xstate/react";
+import React, {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+} from "react";
+import type { ActorRefFrom } from "xstate";
+import type { Session, Task } from "../types.js";
+import { type TasksContext, tasksMachine } from "./tasks-machine.js";
 
 type TasksActorRef = ActorRefFrom<typeof tasksMachine>;
 
@@ -11,7 +16,9 @@ type TasksActorRef = ActorRefFrom<typeof tasksMachine>;
 const TasksActorContext = createContext<TasksActorRef | null>(null);
 
 // Provider component
-export const TasksMachineProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const TasksMachineProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [, , actorRef] = useMachine(tasksMachine);
 
   return (
@@ -25,31 +32,39 @@ export const TasksMachineProvider: React.FC<{ children: ReactNode }> = ({ childr
 function useTasksActor(): TasksActorRef {
   const actorRef = useContext(TasksActorContext);
   if (!actorRef) {
-    throw new Error('useTasksActor must be used within TasksMachineProvider');
+    throw new Error("useTasksActor must be used within TasksMachineProvider");
   }
   return actorRef;
 }
 
 // Selectors
 const selectTasks = (state: { context: TasksContext }) => state.context.tasks;
-const selectEpicName = (state: { context: TasksContext }) => state.context.epicName;
+const selectEpicName = (state: { context: TasksContext }) =>
+  state.context.epicName;
 const selectSkill = (state: { context: TasksContext }) => state.context.skill;
-const selectCategory = (state: { context: TasksContext }) => state.context.category;
+const selectCategory = (state: { context: TasksContext }) =>
+  state.context.category;
 
 // Hook for components that need task actions (App)
 export function useTasksActions() {
   const actorRef = useTasksActor();
 
-  const setSession = useCallback((session: Session | null) => {
-    actorRef.send({ type: 'SET_SESSION', session });
-  }, [actorRef]);
+  const setSession = useCallback(
+    (session: Session | null) => {
+      actorRef.send({ type: "SET_SESSION", session });
+    },
+    [actorRef],
+  );
 
-  const setPolling = useCallback((polling: boolean) => {
-    actorRef.send({ type: 'SET_POLLING', polling });
-  }, [actorRef]);
+  const setPolling = useCallback(
+    (polling: boolean) => {
+      actorRef.send({ type: "SET_POLLING", polling });
+    },
+    [actorRef],
+  );
 
   const refresh = useCallback(() => {
-    actorRef.send({ type: 'REFRESH' });
+    actorRef.send({ type: "REFRESH" });
   }, [actorRef]);
 
   return { setSession, setPolling, refresh };
@@ -67,7 +82,10 @@ export function useTasksList() {
 }
 
 // Combined hook for session/polling control (convenience)
-export function useTasksWithSession(session: Session | null, isRunning: boolean) {
+export function useTasksWithSession(
+  session: Session | null,
+  isRunning: boolean,
+) {
   const actorRef = useTasksActor();
   const { setSession, setPolling } = useTasksActions();
 

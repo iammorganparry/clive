@@ -1,7 +1,12 @@
-import React, { useState, useImperativeHandle, forwardRef, useRef } from 'react';
-import { Box, Text, useInput, useFocus } from 'ink';
-import TextInput from 'ink-text-input';
-import { useTheme } from '../theme.js';
+import { Box, Text, useFocus, useInput } from "ink";
+import TextInput from "ink-text-input";
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { useTheme } from "../theme.js";
 
 interface CommandInputProps {
   onSubmit: (command: string) => void;
@@ -12,91 +17,98 @@ export interface CommandInputHandle {
   focus: () => void;
 }
 
-const COMMAND_INPUT_ID = 'command-input';
+const COMMAND_INPUT_ID = "command-input";
 
-export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(({
-  onSubmit,
-  onFocusChange,
-}, ref) => {
-  const theme = useTheme();
-  const [value, setValue] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const { isFocused, focus } = useFocus({ autoFocus: true, id: COMMAND_INPUT_ID });
+export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(
+  ({ onSubmit, onFocusChange }, ref) => {
+    const theme = useTheme();
+    const [value, setValue] = useState("");
+    const [history, setHistory] = useState<string[]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const { isFocused, focus } = useFocus({
+      autoFocus: true,
+      id: COMMAND_INPUT_ID,
+    });
 
-  // Expose focus method to parent
-  useImperativeHandle(ref, () => ({
-    focus: () => focus(COMMAND_INPUT_ID),
-  }));
+    // Expose focus method to parent
+    useImperativeHandle(ref, () => ({
+      focus: () => focus(COMMAND_INPUT_ID),
+    }));
 
-  // Track previous focus state to detect changes synchronously
-  const prevFocusedRef = useRef<boolean | null>(null);
+    // Track previous focus state to detect changes synchronously
+    const prevFocusedRef = useRef<boolean | null>(null);
 
-  // Notify parent of focus changes synchronously (no useEffect)
-  if (prevFocusedRef.current !== isFocused) {
-    prevFocusedRef.current = isFocused;
-    if (onFocusChange) {
-      queueMicrotask(() => onFocusChange(isFocused));
-    }
-  }
-
-  useInput((input, key) => {
-    if (!isFocused) return;
-
-    // Navigate history with up/down
-    if (key.upArrow && history.length > 0) {
-      const newIndex = Math.min(historyIndex + 1, history.length - 1);
-      setHistoryIndex(newIndex);
-      setValue(history[history.length - 1 - newIndex] || '');
-    }
-    if (key.downArrow && historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      setValue(history[history.length - 1 - newIndex] || '');
-    }
-    if (key.downArrow && historyIndex === 0) {
-      setHistoryIndex(-1);
-      setValue('');
+    // Notify parent of focus changes synchronously (no useEffect)
+    if (prevFocusedRef.current !== isFocused) {
+      prevFocusedRef.current = isFocused;
+      if (onFocusChange) {
+        queueMicrotask(() => onFocusChange(isFocused));
+      }
     }
 
-    // Clear on escape
-    if (key.escape) {
-      setValue('');
-      setHistoryIndex(-1);
-    }
-  }, { isActive: isFocused });
+    useInput(
+      (input, key) => {
+        if (!isFocused) return;
 
-  const handleSubmit = (submittedValue: string) => {
-    const trimmed = submittedValue.trim();
-    if (trimmed) {
-      // Add to history
-      setHistory(prev => [...prev, trimmed]);
-      setHistoryIndex(-1);
+        // Navigate history with up/down
+        if (key.upArrow && history.length > 0) {
+          const newIndex = Math.min(historyIndex + 1, history.length - 1);
+          setHistoryIndex(newIndex);
+          setValue(history[history.length - 1 - newIndex] || "");
+        }
+        if (key.downArrow && historyIndex > 0) {
+          const newIndex = historyIndex - 1;
+          setHistoryIndex(newIndex);
+          setValue(history[history.length - 1 - newIndex] || "");
+        }
+        if (key.downArrow && historyIndex === 0) {
+          setHistoryIndex(-1);
+          setValue("");
+        }
 
-      // Auto-add slash if missing
-      const command = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-      onSubmit(command);
-      setValue('');
-    }
-  };
+        // Clear on escape
+        if (key.escape) {
+          setValue("");
+          setHistoryIndex(-1);
+        }
+      },
+      { isActive: isFocused },
+    );
 
-  return (
-    <Box
-      borderStyle="round"
-      borderColor={isFocused ? theme.syntax.blue : theme.ui.border}
-      borderTop={false}
-      borderBottom={false}
-      paddingX={1}
-    >
-      <Text color={theme.syntax.blue} bold>&gt; </Text>
-      <TextInput
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        placeholder="Type /help for commands..."
-      />
-    </Box>
-  );
-});
+    const handleSubmit = (submittedValue: string) => {
+      const trimmed = submittedValue.trim();
+      if (trimmed) {
+        // Add to history
+        setHistory((prev) => [...prev, trimmed]);
+        setHistoryIndex(-1);
 
-CommandInput.displayName = 'CommandInput';
+        // Auto-add slash if missing
+        const command = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+        onSubmit(command);
+        setValue("");
+      }
+    };
+
+    return (
+      <Box
+        borderStyle="round"
+        borderColor={isFocused ? theme.syntax.blue : theme.ui.border}
+        borderTop={false}
+        borderBottom={false}
+        paddingX={1}
+      >
+        <Text color={theme.syntax.blue} bold>
+          &gt;{" "}
+        </Text>
+        <TextInput
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          placeholder="Type /help for commands..."
+        />
+      </Box>
+    );
+  },
+);
+
+CommandInput.displayName = "CommandInput";

@@ -1,8 +1,13 @@
-import { spawn } from 'node:child_process';
-import * as path from 'node:path';
-import * as fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { type ChildProcess, spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  type ClaudeEvent,
+  formatToolResult,
+  parseClaudeEvent,
+} from "./claude-events.js";
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -11,9 +16,9 @@ const __dirname = dirname(__filename);
 // Find the clive CLI scripts directory
 function findScriptsDir(): string {
   const possiblePaths = [
-    path.join(__dirname, '..', '..', '..', 'cli', 'scripts'), // apps/tui/dist -> apps/cli/scripts
-    path.join(process.cwd(), 'apps', 'cli', 'scripts'),
-    '/usr/local/share/clive/scripts',
+    path.join(__dirname, "..", "..", "..", "cli", "scripts"), // apps/tui/dist -> apps/cli/scripts
+    path.join(process.cwd(), "apps", "cli", "scripts"),
+    "/usr/local/share/clive/scripts",
   ];
 
   for (const p of possiblePaths) {
@@ -24,7 +29,7 @@ function findScriptsDir(): string {
 }
 
 export function cancelBuild(): void {
-  const cancelFile = path.join('.claude', '.cancel-test-loop');
+  const cancelFile = path.join(".claude", ".cancel-test-loop");
   const claudeDir = path.dirname(cancelFile);
   if (!fs.existsSync(claudeDir)) {
     fs.mkdirSync(claudeDir, { recursive: true });
@@ -39,88 +44,303 @@ export interface ProcessHandle {
   onExit: (callback: (code: number) => void) => void;
 }
 
+// Interactive process handle for bidirectional communication
+export interface InteractiveProcessHandle {
+  /** Kill the process */
+  kill: () => void;
+  /** Subscribe to parsed Claude events */
+  onEvent: (callback: (event: ClaudeEvent) => void) => void;
+  /** Subscribe to raw output data (for display) */
+  onData: (callback: (data: string) => void) => void;
+  /** Subscribe to exit */
+  onExit: (callback: (code: number) => void) => void;
+  /** Send a tool result back to the process */
+  sendToolResult: (toolCallId: string, result: string) => void;
+  /** Close stdin to signal completion */
+  close: () => void;
+}
+
 // Run build script and stream output
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
-  const buildScript = path.join(scriptsDir, 'build.sh');
+  const buildScript = path.join(scriptsDir, "build.sh");
 
   // Filter out -i/--interactive flags (TUI uses streaming mode)
-  const filteredArgs = args.filter(a => a !== '-i' && a !== '--interactive');
+  const filteredArgs = args.filter((a) => a !== "-i" && a !== "--interactive");
 
   // Build command args
-  const buildArgs = ['--streaming', ...filteredArgs];
+  const buildArgs = ["--streaming", ...filteredArgs];
 
   // Add epic filter if provided
   if (epicId) {
-    buildArgs.push('--epic', epicId);
+    buildArgs.push("--epic", epicId);
   }
 
   // Always use --streaming flag for TUI output capture
-  const child = spawn('bash', [buildScript, ...buildArgs], {
+  const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
 
-  child.stdout?.on('data', (data: Buffer) => {
+  child.stdout?.on("data", (data: Buffer) => {
     if (dataCallback) dataCallback(data.toString());
   });
 
-  child.stderr?.on('data', (data: Buffer) => {
+  child.stderr?.on("data", (data: Buffer) => {
     if (dataCallback) dataCallback(data.toString());
   });
 
-  child.on('close', (code) => {
+  child.on("close", (code) => {
     if (exitCallback) exitCallback(code ?? 1);
   });
 
-  child.on('error', (err) => {
+  child.on("error", (err) => {
     if (dataCallback) dataCallback(`Error: ${err.message}\n`);
   });
 
   return {
-    kill: () => child.kill('SIGTERM'),
-    onData: (callback) => { dataCallback = callback; },
-    onExit: (callback) => { exitCallback = callback; },
+    kill: () => child.kill("SIGTERM"),
+    onData: (callback) => {
+      dataCallback = callback;
+    },
+    onExit: (callback) => {
+      exitCallback = callback;
+    },
   };
 }
 
 // Run plan script and stream output
 export function runPlan(args: string[]): ProcessHandle {
   const scriptsDir = findScriptsDir();
-  const planScript = path.join(scriptsDir, 'plan.sh');
+  const planScript = path.join(scriptsDir, "plan.sh");
 
-  const child = spawn('bash', [planScript, ...args], {
+  const child = spawn("bash", [planScript, ...args], {
     cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
 
-  child.stdout?.on('data', (data: Buffer) => {
+  child.stdout?.on("data", (data: Buffer) => {
     if (dataCallback) dataCallback(data.toString());
   });
 
-  child.stderr?.on('data', (data: Buffer) => {
+  child.stderr?.on("data", (data: Buffer) => {
     if (dataCallback) dataCallback(data.toString());
   });
 
-  child.on('close', (code) => {
+  child.on("close", (code) => {
     if (exitCallback) exitCallback(code ?? 1);
   });
 
-  child.on('error', (err) => {
+  child.on("error", (err) => {
     if (dataCallback) dataCallback(`Error: ${err.message}\n`);
   });
 
   return {
-    kill: () => child.kill('SIGTERM'),
-    onData: (callback) => { dataCallback = callback; },
-    onExit: (callback) => { exitCallback = callback; },
+    kill: () => child.kill("SIGTERM"),
+    onData: (callback) => {
+      dataCallback = callback;
+    },
+    onExit: (callback) => {
+      exitCallback = callback;
+    },
+  };
+}
+
+// Run plan script with interactive bidirectional communication
+// This enables handling AskUserQuestion and tool approvals
+export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
+  const scriptsDir = findScriptsDir();
+  const planScript = path.join(scriptsDir, "plan.sh");
+
+  // Add flags for stream-json output format to get NDJSON events
+  const planArgs = ["--output-format", "stream-json", ...args];
+
+  const child = spawn("bash", [planScript, ...planArgs], {
+    cwd: process.cwd(),
+    stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
+    env: process.env,
+  });
+
+  let eventCallback: ((event: ClaudeEvent) => void) | null = null;
+  let dataCallback: ((data: string) => void) | null = null;
+  let exitCallback: ((code: number) => void) | null = null;
+  let buffer = "";
+
+  // Process stdout as NDJSON
+  child.stdout?.on("data", (data: Buffer) => {
+    const chunk = data.toString();
+    buffer += chunk;
+
+    // Also emit raw data for display
+    if (dataCallback) dataCallback(chunk);
+
+    // Parse NDJSON lines
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = parseClaudeEvent(line);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+  });
+
+  child.stderr?.on("data", (data: Buffer) => {
+    if (dataCallback) dataCallback(data.toString());
+  });
+
+  child.on("close", (code) => {
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const event = parseClaudeEvent(buffer);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+    if (exitCallback) exitCallback(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (eventCallback) {
+      eventCallback({ type: "error", message: err.message });
+    }
+  });
+
+  return {
+    kill: () => child.kill("SIGTERM"),
+    onEvent: (callback) => {
+      eventCallback = callback;
+    },
+    onData: (callback) => {
+      dataCallback = callback;
+    },
+    onExit: (callback) => {
+      exitCallback = callback;
+    },
+    sendToolResult: (toolCallId: string, result: string) => {
+      if (child.stdin?.writable) {
+        const message = formatToolResult(toolCallId, result);
+        child.stdin.write(`${message}\n`);
+      }
+    },
+    close: () => {
+      if (child.stdin?.writable) {
+        child.stdin.end();
+      }
+    },
+  };
+}
+
+// Run build script with interactive bidirectional communication
+export function runBuildInteractive(
+  args: string[],
+  epicId?: string,
+): InteractiveProcessHandle {
+  const scriptsDir = findScriptsDir();
+  const buildScript = path.join(scriptsDir, "build.sh");
+
+  // Filter out -i/--interactive flags (TUI uses streaming mode)
+  const filteredArgs = args.filter((a) => a !== "-i" && a !== "--interactive");
+
+  // Build command args with stream-json output
+  const buildArgs = [
+    "--streaming",
+    "--output-format",
+    "stream-json",
+    ...filteredArgs,
+  ];
+
+  // Add epic filter if provided
+  if (epicId) {
+    buildArgs.push("--epic", epicId);
+  }
+
+  const child = spawn("bash", [buildScript, ...buildArgs], {
+    cwd: process.cwd(),
+    stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
+    env: process.env,
+  });
+
+  let eventCallback: ((event: ClaudeEvent) => void) | null = null;
+  let dataCallback: ((data: string) => void) | null = null;
+  let exitCallback: ((code: number) => void) | null = null;
+  let buffer = "";
+
+  // Process stdout as NDJSON
+  child.stdout?.on("data", (data: Buffer) => {
+    const chunk = data.toString();
+    buffer += chunk;
+
+    // Also emit raw data for display
+    if (dataCallback) dataCallback(chunk);
+
+    // Parse NDJSON lines
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = parseClaudeEvent(line);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+  });
+
+  child.stderr?.on("data", (data: Buffer) => {
+    if (dataCallback) dataCallback(data.toString());
+  });
+
+  child.on("close", (code) => {
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const event = parseClaudeEvent(buffer);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+    if (exitCallback) exitCallback(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (eventCallback) {
+      eventCallback({ type: "error", message: err.message });
+    }
+  });
+
+  return {
+    kill: () => child.kill("SIGTERM"),
+    onEvent: (callback) => {
+      eventCallback = callback;
+    },
+    onData: (callback) => {
+      dataCallback = callback;
+    },
+    onExit: (callback) => {
+      exitCallback = callback;
+    },
+    sendToolResult: (toolCallId: string, result: string) => {
+      if (child.stdin?.writable) {
+        const message = formatToolResult(toolCallId, result);
+        child.stdin.write(`${message}\n`);
+      }
+    },
+    close: () => {
+      if (child.stdin?.writable) {
+        child.stdin.end();
+      }
+    },
   };
 }

@@ -1,10 +1,14 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Session, Task } from '../types.js';
-import { isBeadsAvailable, getEpicTasks, clearBeadsCache } from '../utils/beads.js';
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Session, Task } from "../types.js";
+import {
+  clearBeadsCache,
+  getEpicTasks,
+  isBeadsAvailable,
+} from "../utils/beads.js";
 
 // Status priority for sorting (lower = first)
 // Order: in_progress -> pending/blocked -> complete
-const STATUS_ORDER: Record<Task['status'], number> = {
+const STATUS_ORDER: Record<Task["status"], number> = {
   in_progress: 0,
   pending: 1,
   blocked: 2,
@@ -61,8 +65,10 @@ export function useTasks(session: Session | null, isRunning: boolean = false) {
     setTasks(sortTasks(epicTasks));
 
     // Extract metadata from tasks
-    const skills = [...new Set(epicTasks.map(t => t.skill).filter(Boolean))];
-    const categories = [...new Set(epicTasks.map(t => t.category).filter(Boolean))];
+    const skills = [...new Set(epicTasks.map((t) => t.skill).filter(Boolean))];
+    const categories = [
+      ...new Set(epicTasks.map((t) => t.category).filter(Boolean)),
+    ];
 
     setMetadata({
       epicName: session.name,

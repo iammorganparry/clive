@@ -1,13 +1,13 @@
-import { useState, useRef, useCallback } from 'react';
-import type { Session } from '../types.js';
+import { useCallback, useRef, useState } from "react";
+import type { Session } from "../types.js";
 import {
-  isBeadsAvailable,
-  getEpics,
   extractBranchFromTitle,
   formatEpicName,
+  getEpics,
   hasInProgressTasks,
-} from '../utils/beads.js';
-import { getCurrentIteration, isLockFilePresent } from '../utils/state.js';
+  isBeadsAvailable,
+} from "../utils/beads.js";
+import { getCurrentIteration, isLockFilePresent } from "../utils/state.js";
 
 export function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -24,7 +24,7 @@ export function useSessions() {
     const iteration = getCurrentIteration();
     const buildRunning = isLockFilePresent();
 
-    const newSessions: Session[] = epics.map(epic => ({
+    const newSessions: Session[] = epics.map((epic) => ({
       id: epic.id,
       name: formatEpicName(epic.title),
       epicId: epic.id,
@@ -39,7 +39,7 @@ export function useSessions() {
     // Auto-select first session if none selected
     if (!activeSessionId && newSessions.length > 0) {
       // Prefer the running session, otherwise the first one
-      const running = newSessions.find(s => s.isActive);
+      const running = newSessions.find((s) => s.isActive);
       setActiveSessionId(running?.id || newSessions[0].id);
     }
   }, [activeSessionId]);
@@ -54,7 +54,7 @@ export function useSessions() {
     queueMicrotask(() => refresh());
   }
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) || null;
+  const activeSession = sessions.find((s) => s.id === activeSessionId) || null;
 
   return {
     sessions,
