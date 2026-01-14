@@ -185,7 +185,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
       );
     }
 
-    // Assistant responses - block with background and cyan left border
+    // Assistant responses - block with blue left border
     if (line.type === "assistant") {
       return (
         <Box
@@ -194,7 +194,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
           borderRight={false}
           borderTop={false}
           borderBottom={false}
-          borderColor={theme.syntax.cyan}
+          borderColor={theme.syntax.blue}
           paddingLeft={1}
           paddingRight={1}
           marginY={1}
