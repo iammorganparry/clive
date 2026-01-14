@@ -341,10 +341,34 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - bidirectional NDJSON for TUI
-        # Add --input-format stream-json to enable stdin input from TUI
-        # Output raw NDJSON directly - TUI handles parsing
-        claude "${CLAUDE_ARGS[@]}" --input-format stream-json "Read and execute all instructions in the file: $TEMP_PROMPT"
+        # Streaming mode - output structured JSON events for TUI parsing
+        # Format: {"type":"assistant|tool_use|tool_result","text":"...","name":"..."}
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
+            if [[ -n "$line" ]]; then
+                # Parse NDJSON and output structured events for TUI
+                event=$(echo "$line" | jq -c '
+                    if .type == "content_block_delta" and .delta.type == "text_delta" then
+                        {type: "assistant", text: .delta.text}
+                    elif .type == "content_block_start" and .content_block.type == "text" then
+                        {type: "assistant", text: .content_block.text}
+                    elif .type == "content_block_start" and .content_block.type == "tool_use" then
+                        {type: "tool_use", name: .content_block.name, id: .content_block.id, input: .content_block.input}
+                    elif .type == "assistant" then
+                        (.message.content[]? | select(.type == "text") | {type: "assistant", text: .text})
+                    elif .type == "user" then
+                        (.message.content[]? | select(.type == "tool_result") | {
+                            type: "tool_result",
+                            id: .tool_use_id,
+                            content: (if .content | type == "string" then .content[0:200] else (.content | tostring)[0:200] end)
+                        })
+                    else empty
+                    end
+                ' 2>/dev/null)
+                if [[ -n "$event" ]]; then
+                    echo "$event"
+                fi
+            fi
+        done
     elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
         # Non-streaming with tspin - use Claude CLI directly, pipe to tspin
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
