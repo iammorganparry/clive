@@ -3,10 +3,13 @@ import type { OutputLine } from "../types.js";
 import type { AgentQuestion } from "../utils/claude-events.js";
 
 let lineIdCounter = 0;
+let blockIdCounter = 0;
+let currentBlockId: string | null = null;
 
 interface LineOptions {
   toolName?: string;
   indent?: number;
+  blockId?: string;
 }
 
 function createLine(
@@ -21,6 +24,20 @@ function createLine(
     timestamp: new Date(),
     ...options,
   };
+}
+
+// Start a new response block
+function startNewBlock(): string {
+  currentBlockId = `block-${++blockIdCounter}`;
+  return currentBlockId;
+}
+
+// Get current block ID, creating one if needed
+function getCurrentBlockId(): string {
+  if (!currentBlockId) {
+    return startNewBlock();
+  }
+  return currentBlockId;
 }
 
 // Pending interaction types
@@ -70,7 +87,7 @@ function isJsonLine(line: string): boolean {
   return trimmed.startsWith("{") && trimmed.endsWith("}");
 }
 
-// Parse text into typed OutputLines
+// Parse text into typed OutputLines with block grouping
 // Note: JSON parsing is handled by process.ts - this receives pre-formatted text
 function parseLines(
   text: string,
@@ -87,25 +104,51 @@ function parseLines(
 
       // Pattern matching for formatted output from process.ts
       if (line.includes("<promise>")) {
-        return createLine(line, "marker");
+        // Markers start new blocks
+        const blockId = startNewBlock();
+        return createLine(line, "marker", { blockId });
       }
 
       const toolMatch = line.match(TOOL_CALL_PATTERN);
       if (toolMatch) {
-        return createLine(line, "tool_call", { toolName: toolMatch[1] });
+        // Tool calls belong to current block (follows assistant text)
+        const blockId = getCurrentBlockId();
+        return createLine(line, "tool_call", { toolName: toolMatch[1], blockId });
       }
 
       if (TOOL_RESULT_PATTERN.test(line)) {
-        return createLine(line, "tool_result", { indent: 1 });
+        // Tool results belong to current block
+        const blockId = getCurrentBlockId();
+        return createLine(line, "tool_result", { indent: 1, blockId });
       }
 
       if (USER_INPUT_PATTERN.test(line)) {
-        return createLine(line, "user_input");
+        // User input starts new block
+        const blockId = startNewBlock();
+        return createLine(line, "user_input", { blockId });
       }
 
       // Type is now properly set by process.ts JSON parsing
-      // assistant, tool_call, stdout, etc. come through with correct types
-      return createLine(line, type);
+      // assistant starts new block, tool_call uses current block
+      if (type === "assistant") {
+        const blockId = startNewBlock();
+        return createLine(line, type, { blockId });
+      }
+
+      if (type === "tool_call") {
+        const blockId = getCurrentBlockId();
+        return createLine(line, type, { blockId });
+      }
+
+      if (type === "system") {
+        // System messages get their own block
+        const blockId = startNewBlock();
+        return createLine(line, type, { blockId });
+      }
+
+      // Default: use current block for stdout/other
+      const blockId = getCurrentBlockId();
+      return createLine(line, type, { blockId });
     })
     .filter((line): line is OutputLine => line !== null);
 }

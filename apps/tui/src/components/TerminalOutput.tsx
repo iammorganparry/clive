@@ -533,6 +533,131 @@ function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
 
 StyledLine.displayName = "StyledLine";
 
+// Group consecutive lines by blockId into response blocks
+interface LineGroup {
+  blockId: string;
+  lines: OutputLine[];
+  hasAssistant: boolean;
+  hasTools: boolean;
+}
+
+function groupLinesByBlock(lines: OutputLine[]): LineGroup[] {
+  const groups: LineGroup[] = [];
+  let currentGroup: LineGroup | null = null;
+
+  for (const line of lines) {
+    const blockId = line.blockId || "default";
+
+    if (!currentGroup || currentGroup.blockId !== blockId) {
+      // Start new group
+      currentGroup = {
+        blockId,
+        lines: [line],
+        hasAssistant: line.type === "assistant",
+        hasTools: line.type === "tool_call" || line.type === "tool_result",
+      };
+      groups.push(currentGroup);
+    } else {
+      // Add to current group
+      currentGroup.lines.push(line);
+      if (line.type === "assistant") currentGroup.hasAssistant = true;
+      if (line.type === "tool_call" || line.type === "tool_result") currentGroup.hasTools = true;
+    }
+  }
+
+  return groups;
+}
+
+// Render a response block (assistant text + nested tools)
+const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
+  ({ group, theme }) => {
+    const assistantLines = group.lines.filter(l => l.type === "assistant");
+    const toolLines = group.lines.filter(l => l.type === "tool_call" || l.type === "tool_result");
+    const otherLines = group.lines.filter(l =>
+      l.type !== "assistant" && l.type !== "tool_call" && l.type !== "tool_result"
+    );
+
+    // If only other types (system, user_input, etc.), render them individually
+    if (!group.hasAssistant && !group.hasTools) {
+      return (
+        <>
+          {otherLines.map(line => (
+            <StyledLine key={line.id} line={line} theme={theme} />
+          ))}
+        </>
+      );
+    }
+
+    // If has assistant text, render as a block with nested tools
+    if (group.hasAssistant) {
+      const assistantText = assistantLines.map(l => l.text).join("\n");
+      return (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          borderColor={theme.syntax.blue}
+          paddingLeft={1}
+          marginY={1}
+        >
+          {/* Assistant text */}
+          <Box flexDirection="column">
+            <MarkdownText>{assistantText}</MarkdownText>
+          </Box>
+
+          {/* Nested tool calls */}
+          {toolLines.length > 0 && (
+            <Box flexDirection="column" marginTop={1} marginLeft={1}>
+              {toolLines.map(line => {
+                if (line.type === "tool_call" && line.toolName) {
+                  const rest = line.text.replace(/^[●◆⏺▶→]\s*\w+/, "").trim();
+                  const truncatedRest = rest.length > 50 ? rest.slice(0, 50) + "…" : rest;
+                  return (
+                    <Box key={line.id}>
+                      <Text>
+                        <Text color={theme.syntax.yellow}>⚡ {line.toolName}</Text>
+                        {truncatedRest && <Text color={theme.fg.muted}> {truncatedRest}</Text>}
+                      </Text>
+                    </Box>
+                  );
+                }
+                if (line.type === "tool_result") {
+                  const content = line.text.replace(/^[└→┃│]\s*/, "").trim();
+                  const truncated = content.length > 50 ? content.slice(0, 50) + "…" : content;
+                  return (
+                    <Box key={line.id} marginLeft={2}>
+                      <Text dimColor color={theme.fg.comment}>↳ {truncated}</Text>
+                    </Box>
+                  );
+                }
+                return null;
+              })}
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    // Tools only (no assistant text) - render as standalone tool block
+    if (group.hasTools && !group.hasAssistant) {
+      return (
+        <Box flexDirection="column" marginLeft={1}>
+          {toolLines.map(line => (
+            <StyledLine key={line.id} line={line} theme={theme} />
+          ))}
+        </Box>
+      );
+    }
+
+    return null;
+  }
+);
+
+ResponseBlock.displayName = "ResponseBlock";
+
 // Main component - subscribes to lines from machine
 export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
   ({ maxLines = 50, width, onQuestionAnswer, onApprovalResponse }) => {
@@ -555,10 +680,16 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
     const { startIndex, endIndex, scrollBy, scrollToBottom, isAutoScroll } =
       useVirtualScroll(lines.length, viewportHeight);
 
-    // Get only the visible slice of lines
+    // Get only the visible slice of lines and group them
     const visibleLines = useMemo(
       () => lines.slice(startIndex, endIndex),
       [lines, startIndex, endIndex],
+    );
+
+    // Group visible lines into response blocks
+    const responseBlocks = useMemo(
+      () => groupLinesByBlock(visibleLines),
+      [visibleLines],
     );
 
     // Handle scroll input
@@ -581,32 +712,6 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
       },
       { isActive: !pendingInteraction },
     );
-
-    // Add spacing between different content types for visual clarity
-    const shouldAddMargin = (line: OutputLine, prevLine: OutputLine | null) => {
-      if (!prevLine) return false;
-
-      // Always add margin between different major content types
-      const majorTypes = ["assistant", "user_input", "system", "marker"];
-      const toolTypes = ["tool_call", "tool_result"];
-
-      // Margin when switching between major content types
-      if (majorTypes.includes(line.type) && majorTypes.includes(prevLine.type)) {
-        return line.type !== prevLine.type;
-      }
-
-      // Margin when going from tools to major content
-      if (majorTypes.includes(line.type) && toolTypes.includes(prevLine.type)) {
-        return true;
-      }
-
-      // Margin when going from major content to tools
-      if (toolTypes.includes(line.type) && majorTypes.includes(prevLine.type)) {
-        return true;
-      }
-
-      return false;
-    };
 
     return (
       <Box
@@ -647,19 +752,11 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
               or press <Text color={theme.syntax.yellow}>b</Text> to start.
             </Text>
           ) : (
-            visibleLines.map((line, index) => {
-              const globalIndex = startIndex + index;
-              const prevLine = globalIndex > 0 ? lines[globalIndex - 1] : null;
-              return (
-                <Box
-                  key={line.id}
-                  width="100%"
-                  marginTop={shouldAddMargin(line, prevLine) ? 1 : 0}
-                >
-                  <StyledLine line={line} theme={theme} />
-                </Box>
-              );
-            })
+            responseBlocks.map((group) => (
+              <Box key={group.blockId} width="100%">
+                <ResponseBlock group={group} theme={theme} />
+              </Box>
+            ))
           )}
         </Box>
 
