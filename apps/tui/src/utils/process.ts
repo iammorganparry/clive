@@ -90,13 +90,6 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     env: process.env,
   });
 
-  // Send initial empty message to kick off the stream
-  // (required when using --input-format stream-json)
-  if (child.stdin?.writable) {
-    // Just send a newline to signal we're ready - this unblocks Claude's stdin wait
-    child.stdin.write("\n");
-  }
-
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
 
@@ -192,12 +185,6 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
     stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
     env: process.env,
   });
-
-  // Send initial empty message to kick off the stream
-  // (required when using --input-format stream-json)
-  if (child.stdin?.writable) {
-    child.stdin.write("\n");
-  }
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
   let dataCallback: ((data: string) => void) | null = null;
@@ -308,12 +295,6 @@ export function runBuildInteractive(
     stdio: ["pipe", "pipe", "pipe"], // Enable stdin for bidirectional communication
     env: process.env,
   });
-
-  // Send initial empty message to kick off the stream
-  // (required when using --input-format stream-json)
-  if (child.stdin?.writable) {
-    child.stdin.write("\n");
-  }
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
   let dataCallback: ((data: string) => void) | null = null;
