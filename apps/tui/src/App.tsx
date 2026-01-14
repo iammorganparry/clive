@@ -17,16 +17,12 @@ import { TaskSidebar } from "./components/TaskSidebar.js";
 import { TerminalOutput } from "./components/TerminalOutput.js";
 import { useKeyboard } from "./hooks/useKeyboard.js";
 import { useSessions } from "./hooks/useSessions.js";
+import { useTasks } from "./hooks/useTasks.js";
 import {
   OutputMachineProvider,
   useOutputActions,
   useRunningState,
 } from "./machines/OutputMachineProvider.js";
-import {
-  TasksMachineProvider,
-  useTasksActions,
-  useTasksWithSession,
-} from "./machines/TasksMachineProvider.js";
 import { queryClient, RpcProvider } from "./rpc/hooks.js";
 import type { CommandContext } from "./types.js";
 
@@ -73,12 +69,8 @@ const AppContent: React.FC = () => {
   // Get running state separately
   const { isRunning } = useRunningState();
 
-  // Tasks from machine - auto-updates session and polling
-  const { tasks, epicName, skill } = useTasksWithSession(
-    activeSession,
-    isRunning,
-  );
-  const { refresh: refreshTasks } = useTasksActions();
+  // Tasks from React Query - auto-polls when running
+  const { tasks, refresh: refreshTasks } = useTasks(activeSession, isRunning);
 
   // Memoize command context
   const commandContext = useMemo<CommandContext>(
@@ -225,8 +217,8 @@ const AppContent: React.FC = () => {
       />
 
       <Box flexGrow={1} minHeight={10} height={height - 8} marginY={1}>
-        {/* TaskSidebar subscribes to tasks directly from machine */}
-        <TaskSidebar />
+        {/* TaskSidebar uses React Query for task polling */}
+        <TaskSidebar session={activeSession} isRunning={isRunning} />
         {/* TerminalOutput subscribes to lines directly from machine */}
         <TerminalOutput
           maxLines={height - 12}
@@ -257,9 +249,7 @@ export const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
       <RpcProvider transport={null}>
         <OutputMachineProvider>
-          <TasksMachineProvider>
-            <AppContent />
-          </TasksMachineProvider>
+          <AppContent />
         </OutputMachineProvider>
       </RpcProvider>
     </QueryClientProvider>

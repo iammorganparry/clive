@@ -1,12 +1,14 @@
 import { Box, Text, useFocus } from "ink";
 import type React from "react";
 import { memo, useMemo } from "react";
-import { useTasksList } from "../machines/TasksMachineProvider.js";
+import { useTasks } from "../hooks/useTasks.js";
 import { useTheme } from "../theme.js";
-import type { Task } from "../types.js";
+import type { Session, Task } from "../types.js";
 import { TaskItem } from "./TaskItem.js";
 
 interface TaskSidebarProps {
+  session: Session | null;
+  isRunning?: boolean;
   maxPerCategory?: number;
 }
 
@@ -24,12 +26,12 @@ const STATUS_CONFIG: Array<{
 ];
 
 export const TaskSidebar: React.FC<TaskSidebarProps> = memo(
-  ({ maxPerCategory = 10 }) => {
+  ({ session, isRunning = false, maxPerCategory = 10 }) => {
     const theme = useTheme();
     const { isFocused } = useFocus({ id: "task-sidebar" });
 
-    // Subscribe to tasks from machine - only TaskSidebar re-renders on task changes
-    const { tasks, epicName, skill } = useTasksList();
+    // Fetch tasks with React Query - polls every 5s when running
+    const { tasks, epicName, skill, isFetching } = useTasks(session, isRunning);
 
     // Memoize grouped tasks to prevent recalculation on every render
     const tasksByStatus = useMemo(() => {
@@ -83,6 +85,9 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(
           <Text bold color={theme.syntax.magenta}>
             TASKS
           </Text>
+          {isFetching && (
+            <Text color={theme.fg.muted}> ↻</Text>
+          )}
         </Box>
 
         {epicName && (
