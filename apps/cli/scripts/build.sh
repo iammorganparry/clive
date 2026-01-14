@@ -255,8 +255,16 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
             SKILL=$(get_task_skill "$NEXT_TASK")
             echo "   Task: $TASK_TITLE ($TASK_ID)"
             echo "   Skill: $SKILL"
-        elif [ -n "$EPIC_FILTER" ]; then
-            echo "   No ready tasks under epic $EPIC_FILTER"
+        else
+            # No ready tasks available
+            if [ -n "$EPIC_FILTER" ]; then
+                echo "   No ready tasks under epic $EPIC_FILTER"
+            else
+                echo "   No ready tasks available"
+            fi
+            echo ""
+            echo "✅ All ready tasks complete!"
+            exit 0
         fi
     fi
 
