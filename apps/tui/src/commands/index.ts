@@ -275,7 +275,8 @@ export const commands: Record<string, CommandHandler> = {
         return;
       }
 
-      ctx.appendOutput(`🔄 Iteration ${currentIteration}/${maxIterations}`, "system");
+      ctx.appendOutput(`🔄 Iteration ${currentIteration}/${maxIterations} · New Claude session`, "system");
+      ctx.appendOutput("", "system");
 
       // Spawn fresh process for this iteration (new stdin pipe)
       currentBuildProcess = runBuildIteration(
@@ -325,8 +326,15 @@ export const commands: Record<string, CommandHandler> = {
       }
 
       // Task complete - continue to next iteration
-      ctx.appendOutput("---", "system");
+      ctx.appendOutput("", "system");
+      ctx.appendOutput("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "system");
+      ctx.appendOutput("✓ Iteration complete · Starting fresh context", "system");
+      ctx.appendOutput("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "system");
+      ctx.appendOutput("", "system");
       currentBuildProcess = null;
+
+      // Refresh tasks between iterations to show updated status
+      ctx.refreshTasks();
 
       // Small delay between iterations
       await new Promise(resolve => setTimeout(resolve, 500));
