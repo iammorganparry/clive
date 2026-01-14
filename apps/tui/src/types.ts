@@ -33,6 +33,19 @@ export interface OutputLine {
   timestamp: Date;
   toolName?: string; // For tool_call type
   indent?: number; // Indentation level (0, 1, 2)
+  blockId?: string; // Groups related lines (assistant text + tool calls)
+}
+
+// A response block groups an assistant message with its tool calls
+export interface ResponseBlock {
+  id: string;
+  assistantText: string[];
+  tools: Array<{
+    name: string;
+    text: string;
+    result?: string;
+  }>;
+  type: "assistant" | "system" | "other";
 }
 
 export interface CommandContext {
