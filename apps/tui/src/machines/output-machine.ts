@@ -69,6 +69,7 @@ interface StreamEvent {
   text?: string;
   name?: string;
   id?: string;
+  content?: string;
 }
 
 // Try to parse a line as a structured JSON event from Claude CLI
@@ -103,7 +104,11 @@ function parseLines(
           return createLine(`● ${streamEvent.name}`, "tool_call", { toolName: streamEvent.name });
         }
         if (streamEvent.type === "tool_result") {
-          return createLine("└ Result", "tool_result", { indent: 1 });
+          // Show truncated content if available
+          const content = streamEvent.content
+            ? streamEvent.content.slice(0, 100).replace(/\n/g, " ") + (streamEvent.content.length > 100 ? "..." : "")
+            : "Done";
+          return createLine(`└ ${content}`, "tool_result", { indent: 1 });
         }
       }
 

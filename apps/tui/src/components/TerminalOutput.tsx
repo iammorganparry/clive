@@ -94,12 +94,21 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     if (line.type === "user_input") {
       const content = text.replace(/^[❯>]\s*/, "");
       return (
-        <Box>
-          <Text color={theme.syntax.red}>│ </Text>
-          <Text backgroundColor={theme.bg.tertiary} color={theme.fg.primary}>
-            {" "}
-            {content}{" "}
-          </Text>
+        <Box flexGrow={1}>
+          <Box
+            borderStyle="single"
+            borderLeft
+            borderRight={false}
+            borderTop={false}
+            borderBottom={false}
+            borderColor={theme.syntax.red}
+            paddingLeft={1}
+            flexGrow={1}
+          >
+            <Box backgroundColor={theme.bg.tertiary} flexGrow={1} paddingX={1}>
+              <Text color={theme.fg.primary}>{content}</Text>
+            </Box>
+          </Box>
         </Box>
       );
     }
@@ -107,12 +116,21 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     // Assistant responses - darker background with cyan left border
     if (line.type === "assistant") {
       return (
-        <Box>
-          <Text color={theme.syntax.cyan}>│ </Text>
-          <Text backgroundColor={theme.bg.tertiary} color={theme.fg.primary}>
-            {" "}
-            {text}{" "}
-          </Text>
+        <Box flexGrow={1}>
+          <Box
+            borderStyle="single"
+            borderLeft
+            borderRight={false}
+            borderTop={false}
+            borderBottom={false}
+            borderColor={theme.syntax.cyan}
+            paddingLeft={1}
+            flexGrow={1}
+          >
+            <Box backgroundColor={theme.bg.tertiary} flexGrow={1} paddingX={1}>
+              <Text color={theme.fg.primary}>{text}</Text>
+            </Box>
+          </Box>
         </Box>
       );
     }

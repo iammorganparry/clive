@@ -356,7 +356,11 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
                     elif .type == "assistant" then
                         (.message.content[]? | select(.type == "text") | {type: "assistant", text: .text})
                     elif .type == "user" then
-                        (.message.content[]? | select(.type == "tool_result") | {type: "tool_result", id: .tool_use_id})
+                        (.message.content[]? | select(.type == "tool_result") | {
+                            type: "tool_result",
+                            id: .tool_use_id,
+                            content: (if .content | type == "string" then .content[0:200] else (.content | tostring)[0:200] end)
+                        })
                     else empty
                     end
                 ' 2>/dev/null)
