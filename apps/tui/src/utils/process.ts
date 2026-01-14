@@ -230,24 +230,231 @@ function parseNdjsonLine(line: string): DisplayOutput | null {
   }
 }
 
-// Run build script and stream output
-// Note: Build loop passes prompts as file arguments (not stdin) to allow multi-iteration loops
+// Completion markers that signal iteration/loop completion
+const COMPLETION_MARKERS = {
+  TASK_COMPLETE: "<promise>TASK_COMPLETE</promise>",
+  ALL_TASKS_COMPLETE: "<promise>ALL_TASKS_COMPLETE</promise>",
+  // Legacy markers
+  ITERATION_COMPLETE: "<promise>ITERATION_COMPLETE</promise>",
+  ALL_SUITES_COMPLETE: "<promise>ALL_SUITES_COMPLETE</promise>",
+};
+
+// Exit codes from build-iteration.sh
+export const BUILD_EXIT_CODES = {
+  TASK_COMPLETE: 0,      // Task done, continue to next iteration
+  ALL_COMPLETE: 10,      // All tasks done, stop looping
+  ERROR: 1,              // Error occurred
+} as const;
+
+// Result from a single build iteration
+export interface BuildIterationResult {
+  exitCode: number;
+  allComplete: boolean;
+  taskComplete: boolean;
+}
+
+// Extended handle for build iterations (includes completion status)
+export interface BuildIterationHandle extends InteractiveProcessHandle {
+  /** Promise that resolves when iteration completes with result */
+  result: Promise<BuildIterationResult>;
+}
+
+// Run a SINGLE build iteration with bidirectional communication
+// TUI controls the loop and spawns this for each iteration
+export function runBuildIteration(
+  iteration: number,
+  maxIterations: number,
+  epicId?: string,
+  skillOverride?: string,
+): BuildIterationHandle {
+  const scriptsDir = findScriptsDir();
+  const iterationScript = path.join(scriptsDir, "build-iteration.sh");
+
+  // Build args for single iteration
+  const args = [
+    "--iteration", String(iteration),
+    "--max-iterations", String(maxIterations),
+    "--streaming",
+  ];
+
+  if (epicId) {
+    args.push("--epic", epicId);
+  }
+
+  if (skillOverride) {
+    args.push("--skill", skillOverride);
+  }
+
+  // Use pipe for stdin to enable bidirectional communication
+  const child = spawn("bash", [iterationScript, ...args], {
+    cwd: process.cwd(),
+    stdio: ["pipe", "pipe", "pipe"],
+    env: process.env,
+  });
+
+  let eventCallback: ((event: ClaudeEvent) => void) | null = null;
+  let dataCallback: ((data: DisplayOutput) => void) | null = null;
+  let exitCallback: ((code: number) => void) | null = null;
+  let buffer = "";
+  let promptSent = false;
+  let allComplete = false;
+  let taskComplete = false;
+
+  // Check if output contains completion markers
+  const checkForCompletion = (text: string): void => {
+    if (text.includes(COMPLETION_MARKERS.ALL_TASKS_COMPLETE) ||
+        text.includes(COMPLETION_MARKERS.ALL_SUITES_COMPLETE)) {
+      allComplete = true;
+      taskComplete = true;
+    } else if (text.includes(COMPLETION_MARKERS.TASK_COMPLETE) ||
+               text.includes(COMPLETION_MARKERS.ITERATION_COMPLETE)) {
+      taskComplete = true;
+    }
+  };
+
+  // Promise for iteration result
+  const resultPromise = new Promise<BuildIterationResult>((resolve) => {
+    child.on("close", (code) => {
+      const exitCode = code ?? 1;
+      resolve({
+        exitCode,
+        allComplete: allComplete || exitCode === BUILD_EXIT_CODES.ALL_COMPLETE,
+        taskComplete: taskComplete || exitCode === BUILD_EXIT_CODES.TASK_COMPLETE,
+      });
+    });
+  });
+
+  // Send prompt via stdin after spawn
+  child.on("spawn", () => {
+    setTimeout(() => {
+      if (promptSent) return;
+      try {
+        const promptPath = fs.readFileSync(
+          path.join(process.cwd(), ".claude", ".build-prompt-path"),
+          "utf-8",
+        ).trim();
+
+        if (promptPath && fs.existsSync(promptPath)) {
+          const promptContent = fs.readFileSync(promptPath, "utf-8");
+          const userMessage = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+            },
+          });
+          if (child.stdin?.writable) {
+            child.stdin.write(`${userMessage}\n`);
+            promptSent = true;
+          }
+        }
+      } catch {
+        // Prompt file not ready yet - will retry or fail gracefully
+      }
+    }, 200);
+  });
+
+  // Buffer and parse NDJSON
+  child.stdout?.on("data", (data: Buffer) => {
+    const chunk = data.toString();
+    buffer += chunk;
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      const displayText = parseNdjsonLine(line);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+        checkForCompletion(displayText.text);
+      }
+
+      const event = parseClaudeEvent(line);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+  });
+
+  child.stderr?.on("data", (data: Buffer) => {
+    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
+  });
+
+  child.on("close", (code) => {
+    if (buffer.trim()) {
+      const displayText = parseNdjsonLine(buffer);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+        checkForCompletion(displayText.text);
+      }
+      const event = parseClaudeEvent(buffer);
+      if (event && eventCallback) {
+        eventCallback(event);
+      }
+    }
+    if (exitCallback) exitCallback(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
+    if (eventCallback) {
+      eventCallback({ type: "error", message: err.message });
+    }
+  });
+
+  return {
+    result: resultPromise,
+    kill: () => child.kill("SIGTERM"),
+    onEvent: (callback) => {
+      eventCallback = callback;
+    },
+    onData: (callback) => {
+      dataCallback = callback;
+    },
+    onExit: (callback) => {
+      exitCallback = callback;
+    },
+    sendToolResult: (toolCallId: string, result: string) => {
+      if (child.stdin?.writable) {
+        const message = formatToolResult(toolCallId, result);
+        child.stdin.write(`${message}\n`);
+      }
+    },
+    sendUserMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: message,
+          },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
+    },
+    close: () => {
+      if (child.stdin?.writable) {
+        child.stdin.end();
+      }
+    },
+  };
+}
+
+// Run build script (old build.sh) for CLI usage - no TUI loop control
+// This is kept for backwards compatibility with CLI commands
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
   const buildScript = path.join(scriptsDir, "build.sh");
 
-  // Filter out -i/--interactive flags (TUI uses streaming mode)
   const filteredArgs = args.filter((a) => a !== "-i" && a !== "--interactive");
+  const buildArgs = [...filteredArgs];
 
-  // Build command args
-  const buildArgs = ["--streaming", ...filteredArgs];
-
-  // Add epic filter if provided
   if (epicId) {
     buildArgs.push("--epic", epicId);
   }
 
-  // Use inherit for stdin (build script manages its own stdin), pipe for output
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
     stdio: ["inherit", "pipe", "pipe"],
@@ -256,18 +463,15 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
 
   let dataCallback: ((data: DisplayOutput) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
-  let buffer = ""; // Buffer for incomplete NDJSON lines
+  let buffer = "";
 
-  // Buffer and parse NDJSON, only emit displayable content
   child.stdout?.on("data", (data: Buffer) => {
     const chunk = data.toString();
     buffer += chunk;
 
-    // Split into complete lines
     const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+    buffer = lines.pop() || "";
 
-    // Parse each line and emit only displayable content
     for (const line of lines) {
       const displayText = parseNdjsonLine(line);
       if (displayText && dataCallback) {
@@ -281,7 +485,6 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   });
 
   child.on("close", (code) => {
-    // Flush any remaining buffer
     if (buffer.trim()) {
       const displayOutput = parseNdjsonLine(buffer);
       if (displayOutput && dataCallback) {
@@ -555,113 +758,3 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   };
 }
 
-// Run build script with interactive bidirectional communication
-// Note: Build loop passes prompts as file arguments (not stdin) to allow multi-iteration loops
-// Stdin is NOT used for prompts because closing stdin breaks subsequent iterations
-export function runBuildInteractive(
-  args: string[],
-  epicId?: string,
-): InteractiveProcessHandle {
-  const scriptsDir = findScriptsDir();
-  const buildScript = path.join(scriptsDir, "build.sh");
-
-  // Filter out -i/--interactive flags (TUI uses streaming mode)
-  const filteredArgs = args.filter((a) => a !== "-i" && a !== "--interactive");
-
-  // Build command args - streaming mode handles output format internally
-  const buildArgs = ["--streaming", ...filteredArgs];
-
-  // Add epic filter if provided
-  if (epicId) {
-    buildArgs.push("--epic", epicId);
-  }
-
-  // Use pipe for stdout/stderr, inherit stdin for build loop
-  // Build script passes prompts as file arguments, not stdin
-  const child = spawn("bash", [buildScript, ...buildArgs], {
-    cwd: process.cwd(),
-    stdio: ["inherit", "pipe", "pipe"],
-    env: process.env,
-  });
-
-  let eventCallback: ((event: ClaudeEvent) => void) | null = null;
-  let dataCallback: ((data: DisplayOutput) => void) | null = null;
-  let exitCallback: ((code: number) => void) | null = null;
-  let buffer = "";
-
-  // Buffer and parse NDJSON, only emit displayable content
-  child.stdout?.on("data", (data: Buffer) => {
-    const chunk = data.toString();
-    buffer += chunk;
-
-    // Parse NDJSON lines
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      // Emit displayable content to dataCallback
-      const displayText = parseNdjsonLine(line);
-      if (displayText && dataCallback) {
-        dataCallback(displayText);
-      }
-
-      // Also emit parsed events for eventCallback
-      const event = parseClaudeEvent(line);
-      if (event && eventCallback) {
-        eventCallback(event);
-      }
-    }
-  });
-
-  child.stderr?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
-  });
-
-  child.on("close", (code) => {
-    // Process any remaining buffer
-    if (buffer.trim()) {
-      const displayText = parseNdjsonLine(buffer);
-      if (displayText && dataCallback) {
-        dataCallback(displayText);
-      }
-      const event = parseClaudeEvent(buffer);
-      if (event && eventCallback) {
-        eventCallback(event);
-      }
-    }
-    if (exitCallback) exitCallback(code ?? 1);
-  });
-
-  child.on("error", (err) => {
-    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
-    if (eventCallback) {
-      eventCallback({ type: "error", message: err.message });
-    }
-  });
-
-  return {
-    kill: () => child.kill("SIGTERM"),
-    onEvent: (callback) => {
-      eventCallback = callback;
-    },
-    onData: (callback) => {
-      dataCallback = callback;
-    },
-    onExit: (callback) => {
-      exitCallback = callback;
-    },
-    // Note: sendToolResult and sendUserMessage are no-ops for build
-    // Build uses file-based prompts, not stdin, to support multi-iteration loops
-    sendToolResult: (_toolCallId: string, _result: string) => {
-      // No-op: build loop doesn't use stdin for communication
-    },
-    sendUserMessage: (_message: string) => {
-      // No-op: build loop doesn't use stdin for communication
-    },
-    close: () => {
-      // No-op: build loop manages its own stdin
-    },
-  };
-}
