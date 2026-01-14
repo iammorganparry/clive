@@ -67,7 +67,7 @@ export interface ProcessHandle {
   sendMessage?: (message: string) => void;
 }
 
-// Run build script and stream output
+// Run build script and stream output with bidirectional communication
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
   const buildScript = path.join(scriptsDir, "build.sh");
@@ -83,16 +83,47 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     buildArgs.push("--epic", epicId);
   }
 
-  // Ignore stdin - we're not using bidirectional communication in this mode
-  // (prompt is passed as CLI arg, not via stdin)
+  // Use pipe for stdin to enable bidirectional communication
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
 
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
+  let promptSent = false;
+
+  // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
+  child.on("spawn", () => {
+    // Wait a moment for build.sh to write the prompt path, then read and send it
+    setTimeout(() => {
+      if (promptSent) return;
+      try {
+        const promptPath = fs.readFileSync(
+          path.join(process.cwd(), ".claude", ".build-prompt-path"),
+          "utf-8",
+        ).trim();
+
+        if (promptPath && fs.existsSync(promptPath)) {
+          const promptContent = fs.readFileSync(promptPath, "utf-8");
+          const userMessage = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+            },
+          });
+          if (child.stdin?.writable) {
+            child.stdin.write(`${userMessage}\n`);
+            promptSent = true;
+          }
+        }
+      } catch {
+        // Prompt file not ready yet or error reading - will retry or fail gracefully
+      }
+    }, 200); // Wait for build.sh to write the prompt path
+  });
 
   child.stdout?.on("data", (data: Buffer) => {
     if (dataCallback) dataCallback(data.toString());
@@ -117,6 +148,15 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     },
     onExit: (callback) => {
       exitCallback = callback;
+    },
+    sendMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: { role: "user", content: message },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
     },
   };
 }
@@ -245,11 +285,10 @@ export function runBuildInteractive(
     buildArgs.push("--epic", epicId);
   }
 
-  // Note: build.sh no longer uses --input-format stream-json, so bidirectional
-  // communication is not supported. Keeping stdin as ignore for simplicity.
+  // Use pipe for stdin to enable bidirectional communication
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
 
@@ -257,6 +296,38 @@ export function runBuildInteractive(
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
+  let promptSent = false;
+
+  // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
+  child.on("spawn", () => {
+    // Wait a moment for build.sh to write the prompt path, then read and send it
+    setTimeout(() => {
+      if (promptSent) return;
+      try {
+        const promptPath = fs.readFileSync(
+          path.join(process.cwd(), ".claude", ".build-prompt-path"),
+          "utf-8",
+        ).trim();
+
+        if (promptPath && fs.existsSync(promptPath)) {
+          const promptContent = fs.readFileSync(promptPath, "utf-8");
+          const userMessage = JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: `Read and execute all instructions in this prompt:\n\n${promptContent}`,
+            },
+          });
+          if (child.stdin?.writable) {
+            child.stdin.write(`${userMessage}\n`);
+            promptSent = true;
+          }
+        }
+      } catch {
+        // Prompt file not ready yet or error reading - will retry or fail gracefully
+      }
+    }, 200); // Wait for build.sh to write the prompt path
+  });
 
   // Process stdout as NDJSON
   child.stdout?.on("data", (data: Buffer) => {
@@ -312,15 +383,28 @@ export function runBuildInteractive(
     onExit: (callback) => {
       exitCallback = callback;
     },
-    // Note: These methods are no-ops since bidirectional communication is not supported
-    sendToolResult: (_toolCallId: string, _result: string) => {
-      // Not supported in current build.sh mode
+    sendToolResult: (toolCallId: string, result: string) => {
+      if (child.stdin?.writable) {
+        const message = formatToolResult(toolCallId, result);
+        child.stdin.write(`${message}\n`);
+      }
     },
-    sendUserMessage: (_message: string) => {
-      // Not supported in current build.sh mode
+    sendUserMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: message,
+          },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
     },
     close: () => {
-      // No-op - stdin is ignored
+      if (child.stdin?.writable) {
+        child.stdin.end();
+      }
     },
   };
 }
