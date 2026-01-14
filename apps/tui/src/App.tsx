@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
   } = useSessions();
 
   // Get output actions from machine - does NOT subscribe to lines
-  const { appendOutput, appendSystemMessage, setIsRunning } =
+  const { appendOutput, appendSystemMessage, setIsRunning, clear } =
     useOutputActions();
 
   // Get running state separately
@@ -76,6 +76,7 @@ const AppContent: React.FC = () => {
   const commandContext = useMemo<CommandContext>(
     () => ({
       appendOutput,
+      clearOutput: clear,
       setActiveSession: setActiveSessionId,
       refreshSessions,
       refreshTasks,
@@ -84,6 +85,7 @@ const AppContent: React.FC = () => {
     }),
     [
       appendOutput,
+      clear,
       setActiveSessionId,
       refreshSessions,
       refreshTasks,

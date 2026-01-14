@@ -37,6 +37,7 @@ export interface OutputLine {
 
 export interface CommandContext {
   appendOutput: (text: string, type?: OutputLine["type"]) => void;
+  clearOutput: () => void;
   setActiveSession: (id: string) => void;
   refreshSessions: () => void;
   refreshTasks: () => void;
