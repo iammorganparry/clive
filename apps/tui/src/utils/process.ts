@@ -16,7 +16,7 @@ const __dirname = dirname(__filename);
 // Find the clive CLI scripts directory
 function findScriptsDir(): string {
   const possiblePaths = [
-    path.join(__dirname, "..", "..", "..", "cli", "scripts"), // apps/tui/dist -> apps/cli/scripts
+    path.join(__dirname, "..", "..", "cli", "scripts"), // apps/tui/dist -> apps/cli/scripts
     path.join(process.cwd(), "apps", "cli", "scripts"),
     "/usr/local/share/clive/scripts",
   ];
@@ -25,7 +25,10 @@ function findScriptsDir(): string {
     if (fs.existsSync(p)) return p;
   }
 
-  return process.cwd();
+  // Fallback: throw an error if scripts not found
+  throw new Error(
+    `Could not find clive CLI scripts directory. Searched: ${possiblePaths.join(", ")}`,
+  );
 }
 
 export function cancelBuild(): void {
