@@ -69,6 +69,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     // Tool calls - compact box with muted styling
     if (line.type === "tool_call" && line.toolName) {
       const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, "").trim();
+      const truncatedRest = rest.length > 50 ? rest.slice(0, 50) + "…" : rest;
       return (
         <Box
           borderStyle="single"
@@ -83,7 +84,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
           <Text dimColor>
             <Text color={theme.syntax.yellow}>⚡ </Text>
             <Text color={theme.fg.muted}>{line.toolName}</Text>
-            {rest && <Text color={theme.fg.comment}> {rest.slice(0, 50)}{rest.length > 50 ? "…" : ""}</Text>}
+            {truncatedRest && <Text color={theme.fg.comment}> {truncatedRest}</Text>}
           </Text>
         </Box>
       );
@@ -92,10 +93,9 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     // Tool results - compact muted text in indented box
     if (line.type === "tool_result") {
       const content = text.replace(/^[└→┃│]\s*/, "").trim();
-      // Truncate long results
-      const truncated = content.length > 80 ? content.slice(0, 80) + "…" : content;
+      const truncated = content.length > 60 ? content.slice(0, 60) + "…" : content;
       return (
-        <Box marginLeft={2} paddingLeft={1}>
+        <Box marginLeft={3}>
           <Text dimColor color={theme.fg.comment}>
             ↳ {truncated}
           </Text>
@@ -103,47 +103,37 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
       );
     }
 
-    // User input - darker background with red left border (like Clive logo)
+    // User input - box with red left border
     if (line.type === "user_input") {
       const content = text.replace(/^[❯>]\s*/, "");
       return (
-        <Box flexGrow={1}>
-          <Box
-            borderStyle="single"
-            borderLeft
-            borderRight={false}
-            borderTop={false}
-            borderBottom={false}
-            borderColor={theme.syntax.red}
-            paddingLeft={1}
-            flexGrow={1}
-          >
-            <Box backgroundColor={theme.bg.tertiary} flexGrow={1} paddingX={1}>
-              <Text color={theme.fg.primary}>{content}</Text>
-            </Box>
-          </Box>
+        <Box
+          borderStyle="single"
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          borderColor={theme.syntax.red}
+          paddingLeft={1}
+        >
+          <Text color={theme.fg.primary}>{content}</Text>
         </Box>
       );
     }
 
-    // Assistant responses - markdown rendered with cyan left border
+    // Assistant responses - box with cyan left border
     if (line.type === "assistant") {
       return (
-        <Box flexGrow={1}>
-          <Box
-            borderStyle="single"
-            borderLeft
-            borderRight={false}
-            borderTop={false}
-            borderBottom={false}
-            borderColor={theme.syntax.cyan}
-            paddingLeft={1}
-            flexGrow={1}
-          >
-            <Box backgroundColor={theme.bg.tertiary} flexGrow={1} paddingX={1}>
-              <MarkdownText>{text}</MarkdownText>
-            </Box>
-          </Box>
+        <Box
+          borderStyle="single"
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          borderColor={theme.syntax.cyan}
+          paddingLeft={1}
+        >
+          <MarkdownText>{text}</MarkdownText>
         </Box>
       );
     }
