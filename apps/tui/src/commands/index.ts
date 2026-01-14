@@ -5,10 +5,12 @@ import {
   formatQuestionResponse,
 } from "../utils/claude-events.js";
 import {
+  BUILD_EXIT_CODES,
+  type BuildIterationHandle,
   cancelBuild,
   type DisplayOutput,
   type InteractiveProcessHandle,
-  runBuildInteractive,
+  runBuildIteration,
   runPlanInteractive,
 } from "../utils/process.js";
 
@@ -26,8 +28,13 @@ function mapOutputType(output: DisplayOutput): "assistant" | "tool_call" | "stdo
 }
 
 // Track running process (interactive for both build and plan)
-let currentBuildProcess: InteractiveProcessHandle | null = null;
+let currentBuildProcess: BuildIterationHandle | null = null;
 let currentPlanProcess: InteractiveProcessHandle | null = null;
+
+// Build loop state
+let buildLoopRunning = false;
+let currentIteration = 0;
+const DEFAULT_MAX_ITERATIONS = 50;
 
 // Event handler for dispatching to output machine (only for events that need UI)
 let eventHandler: ((event: ClaudeEvent) => void) | null = null;
@@ -137,7 +144,7 @@ export function sendApprovalResponse(
  * Check if a process is currently running
  */
 export function isProcessRunning(): boolean {
-  return currentBuildProcess !== null || currentPlanProcess !== null;
+  return buildLoopRunning || currentBuildProcess !== null || currentPlanProcess !== null;
 }
 
 // Patterns to detect beads commands that modify state
@@ -210,13 +217,20 @@ export const commands: Record<string, CommandHandler> = {
   },
 
   build: async (args, ctx) => {
-    if (currentBuildProcess || currentPlanProcess) {
+    if (buildLoopRunning || currentPlanProcess) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
       );
       return;
     }
+
+    // Parse args for --once flag and max iterations
+    const runOnce = args.includes("--once");
+    const maxIterationsIndex = args.indexOf("--max-iterations");
+    const maxIterations = maxIterationsIndex !== -1 && args[maxIterationsIndex + 1]
+      ? parseInt(args[maxIterationsIndex + 1], 10)
+      : DEFAULT_MAX_ITERATIONS;
 
     // Clear welcome messages and start fresh
     ctx.clearOutput();
@@ -230,38 +244,111 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.setIsRunning(true);
-    currentBuildProcess = runBuildInteractive(args, epicId);
+    buildLoopRunning = true;
+    currentIteration = 0;
 
-    // Handle parsed Claude events (questions, approvals)
-    // Auto-approves Write/Edit/Bash in build mode via handleClaudeEvent
-    currentBuildProcess.onEvent((event: ClaudeEvent) => {
-      handleClaudeEvent(event);
-    });
-
-    currentBuildProcess.onData((output: DisplayOutput) => {
-      ctx.appendOutput(output.text, mapOutputType(output));
-      // Check for beads commands to trigger refresh
-      checkForBeadsCommands(output.text);
-    });
-
-    currentBuildProcess.onExit((code: number) => {
-      ctx.setIsRunning(false);
-      if (code === 0) {
-        ctx.appendOutput("Build complete!", "system");
-      } else {
-        ctx.appendOutput(`Build exited with code ${code}`, "system");
+    // Build loop - runs iterations until complete or cancelled
+    const runNextIteration = async () => {
+      if (!buildLoopRunning) {
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
       }
+
+      currentIteration++;
+
+      if (currentIteration > maxIterations) {
+        ctx.appendOutput(`⚠️ Max iterations (${maxIterations}) reached`, "system");
+        buildLoopRunning = false;
+        currentBuildProcess = null;
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
+      }
+
+      if (runOnce && currentIteration > 1) {
+        ctx.appendOutput("🔄 Single iteration complete (--once flag)", "system");
+        buildLoopRunning = false;
+        currentBuildProcess = null;
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
+      }
+
+      ctx.appendOutput(`🔄 Iteration ${currentIteration}/${maxIterations}`, "system");
+
+      // Spawn fresh process for this iteration (new stdin pipe)
+      currentBuildProcess = runBuildIteration(
+        currentIteration,
+        maxIterations,
+        epicId,
+      );
+
+      // Handle Claude events (questions need user input)
+      currentBuildProcess.onEvent((event: ClaudeEvent) => {
+        handleClaudeEvent(event);
+      });
+
+      // Stream output to TUI
+      currentBuildProcess.onData((output: DisplayOutput) => {
+        ctx.appendOutput(output.text, mapOutputType(output));
+        checkForBeadsCommands(output.text);
+      });
+
+      // Wait for iteration to complete
+      const result = await currentBuildProcess.result;
+
+      // Check result and decide next action
+      if (!buildLoopRunning) {
+        // Cancelled during iteration
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
+      }
+
+      if (result.allComplete || result.exitCode === BUILD_EXIT_CODES.ALL_COMPLETE) {
+        ctx.appendOutput("✅ All tasks complete!", "system");
+        buildLoopRunning = false;
+        currentBuildProcess = null;
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
+      }
+
+      if (result.exitCode === BUILD_EXIT_CODES.ERROR) {
+        ctx.appendOutput(`Build error in iteration ${currentIteration}`, "stderr");
+        buildLoopRunning = false;
+        currentBuildProcess = null;
+        ctx.setIsRunning(false);
+        ctx.refreshTasks();
+        return;
+      }
+
+      // Task complete - continue to next iteration
+      ctx.appendOutput("---", "system");
       currentBuildProcess = null;
-      ctx.refreshTasks();
-    });
+
+      // Small delay between iterations
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Run next iteration
+      runNextIteration();
+    };
+
+    // Start the build loop
+    runNextIteration();
   },
 
   cancel: async (_args, ctx) => {
-    if (currentBuildProcess) {
+    if (buildLoopRunning || currentBuildProcess) {
       ctx.appendOutput("Cancelling build...", "system");
       cancelBuild();
-      currentBuildProcess.kill();
-      currentBuildProcess = null;
+      buildLoopRunning = false;
+      if (currentBuildProcess) {
+        currentBuildProcess.kill();
+        currentBuildProcess = null;
+      }
+      currentIteration = 0;
       ctx.setIsRunning(false);
       ctx.appendOutput("Cancelled", "system");
     } else if (currentPlanProcess) {
