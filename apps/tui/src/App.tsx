@@ -2,7 +2,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Box, useStdout } from "ink";
 import type React from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { executeCommand } from "./commands/index.js";
+import {
+  executeCommand,
+  sendApprovalResponse,
+  sendQuestionAnswer,
+  sendUserMessage,
+} from "./commands/index.js";
 import { CommandInput } from "./components/CommandInput.js";
 import { Header } from "./components/Header.js";
 import { HelpOverlay } from "./components/HelpOverlay.js";
@@ -96,11 +101,36 @@ const AppContent: React.FC = () => {
   );
 
   const handleCommand = useCallback(
-    (command: string) => {
-      appendSystemMessage(`> ${command}`);
-      executeCommand(command, commandContext);
+    (input: string) => {
+      // When agent is running and input is not a command, send as guidance
+      if (isRunning && !input.startsWith("/")) {
+        // Show the user's message in output
+        appendOutput(input, "user_input");
+        // Send to active agent
+        sendUserMessage(input);
+      } else {
+        // Normal command execution - auto-add "/" if missing
+        const command = input.startsWith("/") ? input : `/${input}`;
+        appendSystemMessage(`> ${command}`);
+        executeCommand(command, commandContext);
+      }
     },
-    [appendSystemMessage, commandContext],
+    [appendOutput, appendSystemMessage, commandContext, isRunning],
+  );
+
+  // Handlers for interactive prompts
+  const handleQuestionAnswer = useCallback(
+    (toolCallId: string, answers: Record<string, string>) => {
+      sendQuestionAnswer(toolCallId, answers);
+    },
+    [],
+  );
+
+  const handleApprovalResponse = useCallback(
+    (toolCallId: string, approved: boolean) => {
+      sendApprovalResponse(toolCallId, approved);
+    },
+    [],
   );
 
   // Tab navigation helpers
@@ -182,7 +212,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height} paddingX={1}>
       <Header />
       <TabBar
         sessions={sessions}
@@ -194,18 +224,27 @@ const AppContent: React.FC = () => {
         }}
       />
 
-      <Box flexGrow={1} minHeight={10} height={height - 8}>
+      <Box flexGrow={1} minHeight={10} height={height - 8} marginY={1}>
         {/* TaskSidebar subscribes to tasks directly from machine */}
         <TaskSidebar />
         {/* TerminalOutput subscribes to lines directly from machine */}
-        <TerminalOutput maxLines={height - 12} />
+        <TerminalOutput
+          maxLines={height - 12}
+          onQuestionAnswer={handleQuestionAnswer}
+          onApprovalResponse={handleApprovalResponse}
+        />
       </Box>
 
-      <CommandInput
-        ref={inputRef}
-        onSubmit={handleCommand}
-        onFocusChange={setIsInputFocused}
-      />
+      <Box marginBottom={1}>
+        <CommandInput
+          ref={inputRef}
+          onSubmit={handleCommand}
+          onFocusChange={setIsInputFocused}
+          placeholder={
+            isRunning ? "Type to guide agent..." : "Enter command..."
+          }
+        />
+      </Box>
 
       <StatusBar session={activeSession} tasks={tasks} isRunning={isRunning} />
     </Box>

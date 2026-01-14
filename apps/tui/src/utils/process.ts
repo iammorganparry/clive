@@ -59,6 +59,8 @@ export interface InteractiveProcessHandle {
   onExit: (callback: (code: number) => void) => void;
   /** Send a tool result back to the process */
   sendToolResult: (toolCallId: string, result: string) => void;
+  /** Send a user guidance message to the process */
+  sendUserMessage: (message: string) => void;
   /** Close stdin to signal completion */
   close: () => void;
 }
@@ -237,6 +239,18 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
         child.stdin.write(`${message}\n`);
       }
     },
+    sendUserMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: message,
+          },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
+    },
     close: () => {
       if (child.stdin?.writable) {
         child.stdin.end();
@@ -338,6 +352,18 @@ export function runBuildInteractive(
       if (child.stdin?.writable) {
         const message = formatToolResult(toolCallId, result);
         child.stdin.write(`${message}\n`);
+      }
+    },
+    sendUserMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: message,
+          },
+        });
+        child.stdin.write(`${userMessage}\n`);
       }
     },
     close: () => {
