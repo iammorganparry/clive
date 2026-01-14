@@ -341,20 +341,27 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - use Claude CLI directly for TUI compatibility
-        # Docker sandbox has TTY requirements that don't work with piped output
+        # Streaming mode - output structured JSON events for TUI parsing
+        # Format: {"type":"assistant|tool_use|tool_result","text":"...","name":"..."}
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
             if [[ -n "$line" ]]; then
-                # Extract text from NDJSON events using jq
-                text=$(echo "$line" | jq -r '
-                    if .type == "content_block_delta" and .delta.type == "text_delta" then .delta.text
-                    elif .type == "content_block_start" and .content_block.type == "text" then .content_block.text
-                    elif .type == "assistant" then (.message.content[]? | select(.type == "text") | .text)
+                # Parse NDJSON and output structured events for TUI
+                event=$(echo "$line" | jq -c '
+                    if .type == "content_block_delta" and .delta.type == "text_delta" then
+                        {type: "assistant", text: .delta.text}
+                    elif .type == "content_block_start" and .content_block.type == "text" then
+                        {type: "assistant", text: .content_block.text}
+                    elif .type == "content_block_start" and .content_block.type == "tool_use" then
+                        {type: "tool_use", name: .content_block.name, id: .content_block.id}
+                    elif .type == "assistant" then
+                        (.message.content[]? | select(.type == "text") | {type: "assistant", text: .text})
+                    elif .type == "user" then
+                        (.message.content[]? | select(.type == "tool_result") | {type: "tool_result", id: .tool_use_id})
                     else empty
                     end
                 ' 2>/dev/null)
-                if [[ -n "$text" ]]; then
-                    printf '%s' "$text"
+                if [[ -n "$event" ]]; then
+                    echo "$event"
                 fi
             fi
         done
