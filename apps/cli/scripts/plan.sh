@@ -1,6 +1,6 @@
 #!/bin/bash
 # Plan command - creates work plan using beads epics/tasks
-# Usage: ./plan.sh [custom request]
+# Usage: ./plan.sh [--streaming] [custom request]
 
 set -e
 
@@ -15,6 +15,27 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/../../claude-code-plugin/commands"
 PLAN_PROMPT="$PLUGIN_DIR/plan.md"
+
+# Defaults
+STREAMING=false
+
+# Parse arguments
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --streaming)
+            STREAMING=true
+            shift
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Restore positional args
+set -- "${POSITIONAL_ARGS[@]}"
 
 # Verify prompt file exists
 if [ ! -f "$PLAN_PROMPT" ]; then
@@ -34,7 +55,7 @@ if [ ! -d ".beads" ]; then
     bd init || true
 fi
 
-# Get user input
+# Get user input from remaining args
 USER_INPUT="${*:-}"
 
 echo "Creating work plan..."
@@ -60,10 +81,24 @@ trap "rm -f $TEMP_PROMPT" EXIT
 echo "Starting Claude planning session..."
 echo ""
 
-# Run claude in Docker sandbox (isolated environment with full permissions)
-docker sandbox run claude --dangerously-skip-permissions \
-    --add-dir "$(dirname "$TEMP_PROMPT")" \
-    "Read and execute all instructions in the file: $TEMP_PROMPT"
+# Build claude args - add dirs for file access, acceptEdits for permission mode
+CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
+
+if [ "$STREAMING" = true ]; then
+    # Streaming mode for TUI - bidirectional communication via stdin/stdout
+    # Write prompt path for TUI to read and send via stdin
+    echo "$TEMP_PROMPT" > .claude/.plan-prompt-path
+
+    # --input-format stream-json: prompt sent via stdin as JSON
+    # --output-format stream-json: responses streamed as NDJSON
+    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
+    claude "${CLAUDE_ARGS[@]}" 2>&1
+else
+    # Interactive mode - use Docker sandbox (isolated environment with full permissions)
+    docker sandbox run claude --dangerously-skip-permissions \
+        --add-dir "$(dirname "$TEMP_PROMPT")" \
+        "Read and execute all instructions in the file: $TEMP_PROMPT"
+fi
 
 echo ""
 echo ""

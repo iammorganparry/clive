@@ -1,6 +1,6 @@
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import type React from "react";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useOutputLines,
   usePendingInteraction,
@@ -12,6 +12,70 @@ import { ApprovalPrompt } from "./ApprovalPrompt.js";
 import { MarkdownText } from "./MarkdownText.js";
 import { QuestionPrompt } from "./QuestionPrompt.js";
 import { Spinner } from "./Spinner.js";
+
+/**
+ * Virtual scrolling hook for terminal output
+ * Only renders lines that are visible in the viewport
+ */
+function useVirtualScroll(
+  totalItems: number,
+  viewportHeight: number,
+  itemHeight: number = 1,
+) {
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [isAutoScroll, setIsAutoScroll] = useState(true);
+  const prevTotalItems = useRef(totalItems);
+
+  // Calculate visible range
+  const startIndex = Math.floor(scrollOffset / itemHeight);
+  const endIndex = Math.min(
+    totalItems,
+    Math.ceil((scrollOffset + viewportHeight) / itemHeight),
+  );
+
+  // Auto-scroll to bottom when new items added
+  useEffect(() => {
+    if (isAutoScroll && totalItems > prevTotalItems.current) {
+      const maxScroll = Math.max(0, totalItems * itemHeight - viewportHeight);
+      setScrollOffset(maxScroll);
+    }
+    prevTotalItems.current = totalItems;
+  }, [totalItems, viewportHeight, itemHeight, isAutoScroll]);
+
+  const scrollTo = useCallback(
+    (offset: number) => {
+      const maxScroll = Math.max(0, totalItems * itemHeight - viewportHeight);
+      const newOffset = Math.max(0, Math.min(offset, maxScroll));
+      setScrollOffset(newOffset);
+      // Disable auto-scroll if user scrolled up
+      setIsAutoScroll(newOffset >= maxScroll - itemHeight);
+    },
+    [totalItems, viewportHeight, itemHeight],
+  );
+
+  const scrollBy = useCallback(
+    (delta: number) => {
+      scrollTo(scrollOffset + delta);
+    },
+    [scrollOffset, scrollTo],
+  );
+
+  const scrollToBottom = useCallback(() => {
+    const maxScroll = Math.max(0, totalItems * itemHeight - viewportHeight);
+    setScrollOffset(maxScroll);
+    setIsAutoScroll(true);
+  }, [totalItems, viewportHeight, itemHeight]);
+
+  return {
+    startIndex,
+    endIndex,
+    scrollOffset,
+    scrollBy,
+    scrollToBottom,
+    isAutoScroll,
+    totalHeight: totalItems * itemHeight,
+  };
+}
 
 interface TerminalOutputProps {
   maxLines?: number;
@@ -67,14 +131,14 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     const text = line.text;
     const indent = line.indent ? "  ".repeat(line.indent) : "";
 
-    // Tool calls - compact box with muted styling
+    // Tool calls - compact box with muted styling and left border
     if (line.type === "tool_call" && line.toolName) {
       const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, "").trim();
-      const truncatedRest = rest.length > 50 ? rest.slice(0, 50) + "…" : rest;
+      const truncatedRest = rest.length > 60 ? rest.slice(0, 60) + "…" : rest;
       return (
         <Box
           borderStyle="single"
-          borderColor={theme.ui.border}
+          borderColor={theme.syntax.yellow}
           borderLeft
           borderRight={false}
           borderTop={false}
@@ -82,10 +146,9 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
           paddingLeft={1}
           marginLeft={1}
         >
-          <Text dimColor>
-            <Text color={theme.syntax.yellow}>⚡ </Text>
-            <Text color={theme.fg.muted}>{line.toolName}</Text>
-            {truncatedRest && <Text color={theme.fg.comment}> {truncatedRest}</Text>}
+          <Text>
+            <Text color={theme.syntax.yellow}>⚡ {line.toolName}</Text>
+            {truncatedRest && <Text color={theme.fg.muted}> {truncatedRest}</Text>}
           </Text>
         </Box>
       );
@@ -122,7 +185,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
       );
     }
 
-    // Assistant responses - box with cyan left border
+    // Assistant responses - block with background and cyan left border
     if (line.type === "assistant") {
       return (
         <Box
@@ -133,20 +196,32 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
           borderBottom={false}
           borderColor={theme.syntax.cyan}
           paddingLeft={1}
+          paddingRight={1}
+          marginY={1}
         >
-          <MarkdownText>{text}</MarkdownText>
+          <Box flexDirection="column">
+            <MarkdownText>{text}</MarkdownText>
+          </Box>
         </Box>
       );
     }
 
-    // System messages - cyan bullet
+    // System messages - block with magenta left border
     if (line.type === "system") {
       if (text.trim() === "") return <Text> </Text>;
       return (
-        <Text>
-          <Text color={theme.syntax.cyan}>● </Text>
+        <Box
+          borderStyle="single"
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          borderColor={theme.syntax.magenta}
+          paddingLeft={1}
+          marginY={1}
+        >
           <Text color={theme.syntax.cyan}>{text}</Text>
-        </Text>
+        </Box>
       );
     }
 
@@ -468,21 +543,68 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
     const { isRunning, startTime } = useRunningState();
     const pendingInteraction = usePendingInteraction();
 
-    // Memoize visible lines
+    // Calculate available height for lines
+    // Account for: header (2), spinner (2 when running), prompts (~8 when active), border (2)
+    const headerOverhead = 2; // OUTPUT header + margin
+    const spinnerOverhead = isRunning ? 2 : 0;
+    const promptOverhead = pendingInteraction ? 8 : 0;
+    const borderOverhead = 2; // top + bottom border
+    const viewportHeight = Math.max(5, maxLines - headerOverhead - spinnerOverhead - promptOverhead - borderOverhead);
+
+    // Virtual scrolling - only render visible lines
+    const { startIndex, endIndex, scrollBy, scrollToBottom, isAutoScroll } =
+      useVirtualScroll(lines.length, viewportHeight);
+
+    // Get only the visible slice of lines
     const visibleLines = useMemo(
-      () => lines.slice(-maxLines),
-      [lines, maxLines],
+      () => lines.slice(startIndex, endIndex),
+      [lines, startIndex, endIndex],
     );
 
-    // Group consecutive tool lines to reduce visual noise
+    // Handle scroll input
+    useInput(
+      (input, key) => {
+        // Don't handle scroll when interaction is pending
+        if (pendingInteraction) return;
+
+        if (key.upArrow || input === "k") {
+          scrollBy(-3);
+        } else if (key.downArrow || input === "j") {
+          scrollBy(3);
+        } else if (key.pageUp) {
+          scrollBy(-viewportHeight);
+        } else if (key.pageDown) {
+          scrollBy(viewportHeight);
+        } else if (input === "G") {
+          scrollToBottom();
+        }
+      },
+      { isActive: !pendingInteraction },
+    );
+
+    // Add spacing between different content types for visual clarity
     const shouldAddMargin = (line: OutputLine, prevLine: OutputLine | null) => {
       if (!prevLine) return false;
-      // Add margin when switching between major content types
-      const majorTypes = ["assistant", "user_input", "system"];
-      const isPrevMajor = majorTypes.includes(prevLine.type);
-      const isCurrMajor = majorTypes.includes(line.type);
-      // Margin when going from tool to major content, or between major content
-      if (isCurrMajor && (isPrevMajor || prevLine.type === "tool_result")) return true;
+
+      // Always add margin between different major content types
+      const majorTypes = ["assistant", "user_input", "system", "marker"];
+      const toolTypes = ["tool_call", "tool_result"];
+
+      // Margin when switching between major content types
+      if (majorTypes.includes(line.type) && majorTypes.includes(prevLine.type)) {
+        return line.type !== prevLine.type;
+      }
+
+      // Margin when going from tools to major content
+      if (majorTypes.includes(line.type) && toolTypes.includes(prevLine.type)) {
+        return true;
+      }
+
+      // Margin when going from major content to tools
+      if (toolTypes.includes(line.type) && majorTypes.includes(prevLine.type)) {
+        return true;
+      }
+
       return false;
     };
 
@@ -497,33 +619,47 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
         paddingY={1}
         overflow="hidden"
       >
-        <Box marginBottom={1}>
-          <Text bold color={theme.syntax.magenta}>
-            OUTPUT
-          </Text>
-          {isRunning && <Text color={theme.fg.muted}> · streaming</Text>}
+        {/* Header with scroll indicator */}
+        <Box marginBottom={1} justifyContent="space-between">
+          <Box>
+            <Text bold color={theme.syntax.magenta}>
+              OUTPUT
+            </Text>
+            {isRunning && <Text color={theme.fg.muted}> · streaming</Text>}
+          </Box>
+          {/* Scroll indicator */}
+          {lines.length > viewportHeight && (
+            <Text color={theme.fg.muted} dimColor>
+              {isAutoScroll ? "↓ auto" : `${startIndex + 1}-${endIndex}/${lines.length}`}
+            </Text>
+          )}
         </Box>
 
-        <Box flexDirection="column" flexGrow={1} gap={0} paddingBottom={2}>
+        {/* Virtualized content container */}
+        <Box
+          flexDirection="column"
+          height={viewportHeight}
+          overflow="hidden"
+        >
           {visibleLines.length === 0 && !isRunning ? (
             <Text color={theme.fg.muted}>
               No output yet. Use <Text color={theme.syntax.yellow}>/build</Text>{" "}
               or press <Text color={theme.syntax.yellow}>b</Text> to start.
             </Text>
-          ) : visibleLines.length === 0 ? null : (
-            <>
-              {visibleLines.map((line, index) => (
+          ) : (
+            visibleLines.map((line, index) => {
+              const globalIndex = startIndex + index;
+              const prevLine = globalIndex > 0 ? lines[globalIndex - 1] : null;
+              return (
                 <Box
                   key={line.id}
                   width="100%"
-                  marginTop={shouldAddMargin(line, visibleLines[index - 1] ?? null) ? 1 : 0}
+                  marginTop={shouldAddMargin(line, prevLine) ? 1 : 0}
                 >
                   <StyledLine line={line} theme={theme} />
                 </Box>
-              ))}
-              {/* Bottom clearance spacer */}
-              <Box height={1} />
-            </>
+              );
+            })
           )}
         </Box>
 
