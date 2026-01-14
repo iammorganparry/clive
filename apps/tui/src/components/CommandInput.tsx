@@ -102,7 +102,11 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(
         </Text>
         <TextInput
           value={value}
-          onChange={setValue}
+          onChange={(newValue) => {
+            // Filter out [ and ] - these are reserved for tab switching
+            const filtered = newValue.replace(/[\[\]]/g, "");
+            setValue(filtered);
+          }}
           onSubmit={handleSubmit}
           placeholder={placeholder}
         />

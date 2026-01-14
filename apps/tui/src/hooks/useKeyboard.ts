@@ -16,13 +16,8 @@ export function useKeyboard(
   isInputFocused: boolean = false,
 ) {
   useInput((input, key) => {
-    // Skip all shortcuts when input is focused (let input handle its own keys)
-    if (isInputFocused) {
-      return;
-    }
-
-    // Tab switching with [ (previous) and ] (next)
-    // Using brackets to avoid conflict with ink's focus management
+    // Tab switching with [ and ] - always active, even when input is focused
+    // These keys are consumed here to prevent them from being typed
     if (input === "[") {
       handlers.prevTab?.();
       return;
@@ -30,6 +25,11 @@ export function useKeyboard(
 
     if (input === "]") {
       handlers.nextTab?.();
+      return;
+    }
+
+    // Skip remaining shortcuts when input is focused (let input handle its own keys)
+    if (isInputFocused) {
       return;
     }
 
