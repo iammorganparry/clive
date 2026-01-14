@@ -41,21 +41,26 @@ export const TabBar: React.FC<TabBarProps> = memo(
           const isActive = session.id === activeSessionId;
           const isRunning = session.isActive && session.iteration !== undefined;
 
+          // Status indicator: ▸ for selected, ● for running, ○ for idle
+          const statusIcon = isActive ? "▸" : isRunning ? "●" : "○";
+
+          // Color logic: selected gets white on blue, running gets green, others are muted
+          const textColor = isActive
+            ? "#FFFFFF"
+            : isRunning
+              ? theme.syntax.green
+              : theme.fg.muted;
+
           return (
             <Box key={session.id}>
               <Text
                 backgroundColor={isActive ? theme.syntax.blue : undefined}
-                color={
-                  isActive
-                    ? "#FFFFFF"
-                    : isRunning
-                      ? theme.syntax.green
-                      : theme.fg.secondary
-                }
+                color={textColor}
                 bold={isActive}
+                dimColor={!isActive && !isRunning}
               >
                 {" "}
-                {isRunning ? "●" : "○"} {session.name}
+                {statusIcon} {session.name}
                 {isRunning &&
                   ` (${session.iteration}/${session.maxIterations})`}{" "}
               </Text>
