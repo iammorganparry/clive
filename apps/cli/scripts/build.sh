@@ -245,7 +245,16 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         # Get next task from beads, optionally filtered by epic
         if [ -n "$EPIC_FILTER" ]; then
             # Filter ready tasks to those under the specified epic
-            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '[.[] | select(.parent == $epic)] | .[0] // empty')
+            # Derive parent from ID convention: "epic-id.1" -> parent is "epic-id"
+            # Uses .parent if set, otherwise derives from ID by removing last .N segment
+            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
+              [.[] |
+                ((.parent // null) as $explicit_parent |
+                 (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |
+                 ($explicit_parent // $derived_parent)) as $parent |
+                select($parent == $epic)
+              ] | .[0] // empty
+            ')
         else
             NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
         fi
