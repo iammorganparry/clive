@@ -40,6 +40,12 @@ function getCurrentBlockId(): string {
   return currentBlockId;
 }
 
+// Reset block state (called when output is cleared)
+function resetBlockState(): void {
+  blockIdCounter = 0;
+  currentBlockId = null;
+}
+
 // Pending interaction types
 export interface PendingQuestion {
   type: "question";
@@ -234,9 +240,13 @@ export const outputMachine = setup({
       isRunning: false,
       startTime: null,
     }),
-    clearLines: assign({
-      lines: [],
-      pendingLines: [],
+    clearLines: assign(() => {
+      // Reset block state when clearing output
+      resetBlockState();
+      return {
+        lines: [],
+        pendingLines: [],
+      };
     }),
     setQuestion: assign(({ event }) => {
       if (event.type !== "QUESTION_RECEIVED") return {};
