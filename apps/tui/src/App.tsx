@@ -219,11 +219,12 @@ const AppContent: React.FC = () => {
       />
 
       <Box flexGrow={1} minHeight={10} height={height - 8} marginY={1}>
-        {/* TaskSidebar uses React Query for task polling */}
-        <TaskSidebar session={activeSession} isRunning={isRunning} />
-        {/* TerminalOutput subscribes to lines directly from machine */}
+        {/* Fixed width sidebar - 30 chars */}
+        <TaskSidebar session={activeSession} isRunning={isRunning} width={30} />
+        {/* Fixed width output - remaining space minus sidebar and padding */}
         <TerminalOutput
           maxLines={height - 12}
+          width={width - 30 - 4}
           onQuestionAnswer={handleQuestionAnswer}
           onApprovalResponse={handleApprovalResponse}
         />

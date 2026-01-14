@@ -10,6 +10,7 @@ interface TaskSidebarProps {
   session: Session | null;
   isRunning?: boolean;
   maxPerCategory?: number;
+  width?: number;
 }
 
 // Status display order and styling
@@ -26,7 +27,7 @@ const STATUS_CONFIG: Array<{
 ];
 
 export const TaskSidebar: React.FC<TaskSidebarProps> = memo(
-  ({ session, isRunning = false, maxPerCategory = 10 }) => {
+  ({ session, isRunning = false, maxPerCategory = 10, width = 30 }) => {
     const theme = useTheme();
     const { isFocused } = useFocus({ id: "task-sidebar" });
 
@@ -75,7 +76,7 @@ export const TaskSidebar: React.FC<TaskSidebarProps> = memo(
     return (
       <Box
         flexDirection="column"
-        width={36}
+        width={width}
         borderStyle="round"
         borderColor={isFocused ? theme.syntax.blue : theme.ui.border}
         borderRight={false}

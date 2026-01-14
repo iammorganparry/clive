@@ -15,6 +15,7 @@ import { Spinner } from "./Spinner.js";
 
 interface TerminalOutputProps {
   maxLines?: number;
+  width?: number;
   onQuestionAnswer?: (id: string, answers: Record<string, string>) => void;
   onApprovalResponse?: (id: string, approved: boolean) => void;
 }
@@ -459,7 +460,7 @@ StyledLine.displayName = "StyledLine";
 
 // Main component - subscribes to lines from machine
 export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
-  ({ maxLines = 50, onQuestionAnswer, onApprovalResponse }) => {
+  ({ maxLines = 50, width, onQuestionAnswer, onApprovalResponse }) => {
     const theme = useTheme();
 
     // Subscribe to lines from machine - only this component re-renders on line changes
@@ -488,7 +489,8 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
     return (
       <Box
         flexDirection="column"
-        flexGrow={1}
+        width={width}
+        flexGrow={width ? 0 : 1}
         borderStyle="round"
         borderColor={theme.ui.border}
         paddingX={2}
