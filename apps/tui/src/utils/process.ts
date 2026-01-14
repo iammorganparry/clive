@@ -83,11 +83,10 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     buildArgs.push("--epic", epicId);
   }
 
-  // Use ignore for stdin for now - piped stdin causes output buffering issues
-  // TODO: Fix bidirectional communication
+  // Use pipe for stdin to enable user guidance messages
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
   });
 
@@ -118,9 +117,15 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     onExit: (callback) => {
       exitCallback = callback;
     },
-    sendMessage: (_message: string) => {
-      // TODO: Bidirectional communication disabled due to buffering issues
-      // Requires fixing stdin piping without breaking output streaming
+    sendMessage: (message: string) => {
+      if (child.stdin?.writable) {
+        // Send as JSON message for Claude to process
+        const userMessage = JSON.stringify({
+          type: "user",
+          message: { role: "user", content: message },
+        });
+        child.stdin.write(`${userMessage}\n`);
+      }
     },
   };
 }

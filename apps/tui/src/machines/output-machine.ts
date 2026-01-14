@@ -63,8 +63,8 @@ const TOOL_CALL_PATTERN = new RegExp(
 const TOOL_RESULT_PATTERN = /^[└→┃│]\s/;
 const USER_INPUT_PATTERN = /^[❯>]\s/;
 
-// Structured event from build.sh streaming output
-interface StreamEvent {
+// Parsed event for display
+interface ParsedEvent {
   type: "assistant" | "tool_use" | "tool_result";
   text?: string;
   name?: string;
@@ -109,17 +109,60 @@ function formatToolInput(name: string, input?: Record<string, unknown>): string 
   return name;
 }
 
-// Try to parse a line as a structured JSON event from Claude CLI
-function parseStreamEvent(line: string): StreamEvent | null {
+// Try to parse a line as raw Claude NDJSON event
+function parseStreamEvent(line: string): ParsedEvent | null {
   try {
-    const event = JSON.parse(line) as StreamEvent;
-    if (event.type && (event.type === "assistant" || event.type === "tool_use" || event.type === "tool_result")) {
-      return event;
+    const raw = JSON.parse(line);
+
+    // Handle pre-processed events (backwards compatibility)
+    if (raw.type === "assistant" || raw.type === "tool_use" || raw.type === "tool_result") {
+      return raw as ParsedEvent;
     }
+
+    // Handle raw Claude NDJSON events
+    if (raw.type === "content_block_delta" && raw.delta?.type === "text_delta") {
+      return { type: "assistant", text: raw.delta.text };
+    }
+
+    if (raw.type === "content_block_start" && raw.content_block?.type === "text") {
+      return { type: "assistant", text: raw.content_block.text || "" };
+    }
+
+    if (raw.type === "content_block_start" && raw.content_block?.type === "tool_use") {
+      return {
+        type: "tool_use",
+        name: raw.content_block.name,
+        id: raw.content_block.id,
+        input: raw.content_block.input,
+      };
+    }
+
+    // Handle message-level events
+    if (raw.type === "assistant" && raw.message?.content) {
+      for (const block of raw.message.content) {
+        if (block.type === "text") {
+          return { type: "assistant", text: block.text };
+        }
+      }
+    }
+
+    if (raw.type === "user" && raw.message?.content) {
+      for (const block of raw.message.content) {
+        if (block.type === "tool_result") {
+          const content = typeof block.content === "string"
+            ? block.content.slice(0, 200)
+            : JSON.stringify(block.content).slice(0, 200);
+          return { type: "tool_result", id: block.tool_use_id, content };
+        }
+      }
+    }
+
+    // Ignore other event types (message_start, message_stop, etc.)
+    return null;
   } catch {
     // Not JSON, ignore
+    return null;
   }
-  return null;
 }
 
 // Parse text into typed OutputLines

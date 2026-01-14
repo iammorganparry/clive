@@ -336,39 +336,16 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
 
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
-        CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
+        # --input-format stream-json allows receiving user messages via stdin
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
     fi
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - output structured JSON events for TUI parsing
-        # Format: {"type":"assistant|tool_use|tool_result","text":"...","name":"..."}
-        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
-            if [[ -n "$line" ]]; then
-                # Parse NDJSON and output structured events for TUI
-                event=$(echo "$line" | jq -c '
-                    if .type == "content_block_delta" and .delta.type == "text_delta" then
-                        {type: "assistant", text: .delta.text}
-                    elif .type == "content_block_start" and .content_block.type == "text" then
-                        {type: "assistant", text: .content_block.text}
-                    elif .type == "content_block_start" and .content_block.type == "tool_use" then
-                        {type: "tool_use", name: .content_block.name, id: .content_block.id, input: .content_block.input}
-                    elif .type == "assistant" then
-                        (.message.content[]? | select(.type == "text") | {type: "assistant", text: .text})
-                    elif .type == "user" then
-                        (.message.content[]? | select(.type == "tool_result") | {
-                            type: "tool_result",
-                            id: .tool_use_id,
-                            content: (if .content | type == "string" then .content[0:200] else (.content | tostring)[0:200] end)
-                        })
-                    else empty
-                    end
-                ' 2>/dev/null)
-                if [[ -n "$event" ]]; then
-                    echo "$event"
-                fi
-            fi
-        done
+        # Streaming mode - pass raw NDJSON directly to TUI
+        # TUI handles parsing and transformation
+        # stdin is passed through to claude for user guidance messages (--input-format stream-json)
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
     elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
         # Non-streaming with tspin - use Claude CLI directly, pipe to tspin
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
