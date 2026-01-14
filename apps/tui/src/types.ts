@@ -28,7 +28,8 @@ export interface OutputLine {
     | "marker"
     | "tool_call"
     | "tool_result"
-    | "user_input";
+    | "user_input"
+    | "assistant"; // Agent conversational responses
   timestamp: Date;
   toolName?: string; // For tool_call type
   indent?: number; // Indentation level (0, 1, 2)

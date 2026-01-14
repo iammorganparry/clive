@@ -104,6 +104,19 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
       );
     }
 
+    // Assistant responses - darker background with cyan left border
+    if (line.type === "assistant") {
+      return (
+        <Box>
+          <Text color={theme.syntax.cyan}>│ </Text>
+          <Text backgroundColor={theme.bg.tertiary} color={theme.fg.primary}>
+            {" "}
+            {text}{" "}
+          </Text>
+        </Box>
+      );
+    }
+
     // System messages - cyan bullet
     if (line.type === "system") {
       if (text.trim() === "") return <Text> </Text>;

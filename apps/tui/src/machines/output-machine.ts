@@ -63,6 +63,35 @@ const TOOL_CALL_PATTERN = new RegExp(
 const TOOL_RESULT_PATTERN = /^[└→┃│]\s/;
 const USER_INPUT_PATTERN = /^[❯>]\s/;
 
+// Patterns that indicate assistant conversational text (not system/tool output)
+const ASSISTANT_TEXT_PATTERNS = [
+  /^Let me /i,
+  /^I'll /i,
+  /^I will /i,
+  /^I need to /i,
+  /^I'm going to /i,
+  /^Now /i,
+  /^First,? /i,
+  /^Next,? /i,
+  /^Looking at /i,
+  /^Based on /i,
+  /^The /i,
+  /^This /i,
+  /^Here /i,
+  /^To /i,
+  /^After /i,
+  /^Before /i,
+  /^Since /i,
+  /^It /i,
+  /^We /i,
+  /^You /i,
+];
+
+// Check if text looks like assistant conversational output
+function isAssistantText(line: string): boolean {
+  return ASSISTANT_TEXT_PATTERNS.some((pattern) => pattern.test(line.trim()));
+}
+
 // Parse text into typed OutputLines
 function parseLines(
   text: string,
@@ -87,6 +116,11 @@ function parseLines(
 
       if (USER_INPUT_PATTERN.test(line)) {
         return createLine(line, "user_input");
+      }
+
+      // Detect assistant conversational text
+      if (isAssistantText(line)) {
+        return createLine(line, "assistant");
       }
 
       return createLine(line, type);
