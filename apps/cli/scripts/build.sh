@@ -329,13 +329,14 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     } > "$TEMP_PROMPT"
 
     # Build claude args
-    # Use acceptEdits permission mode - allows file edits without prompting
+    # --add-dir gives Claude access to read the temp prompt file
+    # --permission-mode acceptEdits allows file edits without prompting
     # but still requires approval for dangerous operations (bash, etc.)
-    CLAUDE_ARGS=(--permission-mode acceptEdits)
+    CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --permission-mode acceptEdits)
 
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
-        CLAUDE_ARGS+=(-p --verbose --output-format stream-json)
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
     fi
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
