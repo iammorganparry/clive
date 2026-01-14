@@ -297,18 +297,29 @@ export function runBuildIteration(
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
   let promptSent = false;
+  let stdinClosed = false;
   let allComplete = false;
   let taskComplete = false;
 
-  // Check if output contains completion markers
+  // Close stdin to signal Claude to exit
+  const closeStdin = (): void => {
+    if (!stdinClosed && child.stdin?.writable) {
+      stdinClosed = true;
+      child.stdin.end();
+    }
+  };
+
+  // Check if output contains completion markers and close stdin if found
   const checkForCompletion = (text: string): void => {
     if (text.includes(COMPLETION_MARKERS.ALL_TASKS_COMPLETE) ||
         text.includes(COMPLETION_MARKERS.ALL_SUITES_COMPLETE)) {
       allComplete = true;
       taskComplete = true;
+      closeStdin(); // Signal Claude to exit
     } else if (text.includes(COMPLETION_MARKERS.TASK_COMPLETE) ||
                text.includes(COMPLETION_MARKERS.ITERATION_COMPLETE)) {
       taskComplete = true;
+      closeStdin(); // Signal Claude to exit
     }
   };
 
