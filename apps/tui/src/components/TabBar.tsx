@@ -70,6 +70,11 @@ export const TabBar: React.FC<TabBarProps> = memo(
             [+ New]
           </Text>
         </Box>
+        <Box flexGrow={1} justifyContent="flex-end">
+          <Text color={theme.fg.muted} dimColor>
+            Tab/⇧Tab to switch
+          </Text>
+        </Box>
       </Box>
     );
   },
