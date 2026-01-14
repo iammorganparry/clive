@@ -110,12 +110,19 @@ function formatToolInput(name: string, input?: Record<string, unknown>): string 
 }
 
 // Try to parse a line as raw Claude NDJSON event
+// Returns ParsedEvent if it should be displayed, null if it should be filtered
 function parseStreamEvent(line: string): ParsedEvent | null {
   try {
     const raw = JSON.parse(line);
 
     // Handle pre-processed events (backwards compatibility)
-    if (raw.type === "assistant" || raw.type === "tool_use" || raw.type === "tool_result") {
+    if (raw.type === "assistant" && typeof raw.text === "string") {
+      return raw as ParsedEvent;
+    }
+    if (raw.type === "tool_use" && raw.name) {
+      return raw as ParsedEvent;
+    }
+    if (raw.type === "tool_result" && raw.id) {
       return raw as ParsedEvent;
     }
 
@@ -143,24 +150,41 @@ function parseStreamEvent(line: string): ParsedEvent | null {
         if (block.type === "text") {
           return { type: "assistant", text: block.text };
         }
-      }
-    }
-
-    if (raw.type === "user" && raw.message?.content) {
-      for (const block of raw.message.content) {
-        if (block.type === "tool_result") {
-          const content = typeof block.content === "string"
-            ? block.content.slice(0, 200)
-            : JSON.stringify(block.content).slice(0, 200);
-          return { type: "tool_result", id: block.tool_use_id, content };
+        if (block.type === "tool_use") {
+          return {
+            type: "tool_use",
+            name: block.name,
+            id: block.id,
+            input: block.input,
+          };
         }
       }
+      // Handled but no displayable content
+      return null;
     }
 
-    // Ignore other event types (message_start, message_stop, etc.)
+    // User messages with tool results - filter these out (internal event)
+    // These are echoed back from Claude and shouldn't be displayed
+    if (raw.type === "user") {
+      return null;
+    }
+
+    // System events - filter out
+    if (raw.type === "system") {
+      return null;
+    }
+
+    // Message lifecycle events - filter out
+    if (raw.type === "message_start" || raw.type === "message_delta" ||
+        raw.type === "message_stop" || raw.type === "content_block_stop" ||
+        raw.type === "result" || raw.type === "error") {
+      return null;
+    }
+
+    // Any other JSON event - filter out (don't display raw JSON)
     return null;
   } catch {
-    // Not JSON, ignore
+    // Not JSON, return null to let pattern matching handle it
     return null;
   }
 }
