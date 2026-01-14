@@ -334,19 +334,25 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     # but still requires approval for dangerous operations (bash, etc.)
     CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
 
-    if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
-        # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
-        # Note: We don't use --input-format stream-json here because the prompt is passed as CLI arg
-        # User guidance messages are not supported in this mode (would require stdin prompt approach)
+    if [ "$STREAMING" = true ]; then
+        # Streaming mode for TUI - bidirectional communication via stdin/stdout
+        # --input-format stream-json: prompt and user messages sent via stdin as JSON
+        # --output-format stream-json: responses streamed as NDJSON
+        # Note: prompt is NOT passed as CLI arg - TUI sends it via stdin
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
+    elif [ "$INTERACTIVE" = false ]; then
+        # Non-interactive, non-streaming mode (e.g., with tspin)
         CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
     fi
 
     # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - pass raw NDJSON directly to TUI
-        # TUI handles parsing and transformation
-        # stdin is passed through to claude for user guidance messages (--input-format stream-json)
-        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
+        # Streaming mode - TUI controls stdin/stdout
+        # TUI sends prompt via stdin, receives NDJSON on stdout
+        # The prompt file path is passed to TUI which reads and sends it
+        # We write the prompt path to a state file for TUI to read
+        echo "$TEMP_PROMPT" > .claude/.build-prompt-path
+        claude "${CLAUDE_ARGS[@]}" 2>&1
     elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
         # Non-streaming with tspin - use Claude CLI directly, pipe to tspin
         claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
