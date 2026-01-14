@@ -329,10 +329,10 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     } > "$TEMP_PROMPT"
 
     # Build claude args
-    # --add-dir gives Claude access to read the temp prompt file
+    # --add-dir gives Claude access to read files
     # --permission-mode acceptEdits allows file edits without prompting
     # but still requires approval for dangerous operations (bash, etc.)
-    CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --permission-mode acceptEdits)
+    CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
 
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
