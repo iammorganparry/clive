@@ -1,18 +1,14 @@
 /**
- * MarkdownText component - renders markdown using glow if available
- * Falls back to styled text rendering otherwise
+ * MarkdownText component - renders markdown with styled text
  */
 
 import { Box, Text } from "ink";
 import type React from "react";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { useTheme } from "../theme.js";
-import { isGlowAvailable, renderMarkdown } from "../utils/markdown.js";
 
 interface MarkdownTextProps {
   children: string;
-  /** Width for glow rendering (default: 80) */
-  width?: number;
 }
 
 /**
@@ -158,29 +154,9 @@ function FallbackMarkdownLine({
 }
 
 export const MarkdownText: React.FC<MarkdownTextProps> = memo(
-  ({ children, width = 80 }) => {
+  ({ children }) => {
     const theme = useTheme();
-    const text = children;
-
-    // Try glow rendering
-    const glowOutput = useMemo(() => {
-      if (!isGlowAvailable()) return null;
-      return renderMarkdown(text);
-    }, [text]);
-
-    // If glow rendered successfully, display its output
-    if (glowOutput) {
-      return (
-        <Box flexDirection="column">
-          {glowOutput.split("\n").map((line, i) => (
-            <Text key={i}>{line}</Text>
-          ))}
-        </Box>
-      );
-    }
-
-    // Fallback: render with our own styling
-    const lines = text.split("\n");
+    const lines = children.split("\n");
 
     return (
       <Box flexDirection="column">
