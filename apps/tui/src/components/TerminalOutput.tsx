@@ -502,22 +502,26 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
           {isRunning && <Text color={theme.fg.muted}> · streaming</Text>}
         </Box>
 
-        <Box flexDirection="column" flexGrow={1} gap={0}>
+        <Box flexDirection="column" flexGrow={1} gap={0} paddingBottom={2}>
           {visibleLines.length === 0 && !isRunning ? (
             <Text color={theme.fg.muted}>
               No output yet. Use <Text color={theme.syntax.yellow}>/build</Text>{" "}
               or press <Text color={theme.syntax.yellow}>b</Text> to start.
             </Text>
           ) : visibleLines.length === 0 ? null : (
-            visibleLines.map((line, index) => (
-              <Box
-                key={line.id}
-                width="100%"
-                marginTop={shouldAddMargin(line, visibleLines[index - 1] ?? null) ? 1 : 0}
-              >
-                <StyledLine line={line} theme={theme} />
-              </Box>
-            ))
+            <>
+              {visibleLines.map((line, index) => (
+                <Box
+                  key={line.id}
+                  width="100%"
+                  marginTop={shouldAddMargin(line, visibleLines[index - 1] ?? null) ? 1 : 0}
+                >
+                  <StyledLine line={line} theme={theme} />
+                </Box>
+              ))}
+              {/* Bottom clearance spacer */}
+              <Box height={1} />
+            </>
           )}
         </Box>
 
