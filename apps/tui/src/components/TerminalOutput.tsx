@@ -9,6 +9,7 @@ import {
 import { type Theme, useTheme } from "../theme.js";
 import type { OutputLine } from "../types.js";
 import { ApprovalPrompt } from "./ApprovalPrompt.js";
+import { MarkdownText } from "./MarkdownText.js";
 import { QuestionPrompt } from "./QuestionPrompt.js";
 import { Spinner } from "./Spinner.js";
 
@@ -113,7 +114,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
       );
     }
 
-    // Assistant responses - darker background with cyan left border
+    // Assistant responses - markdown rendered with cyan left border
     if (line.type === "assistant") {
       return (
         <Box flexGrow={1}>
@@ -128,7 +129,7 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
             flexGrow={1}
           >
             <Box backgroundColor={theme.bg.tertiary} flexGrow={1} paddingX={1}>
-              <Text color={theme.fg.primary}>{text}</Text>
+              <MarkdownText>{text}</MarkdownText>
             </Box>
           </Box>
         </Box>
