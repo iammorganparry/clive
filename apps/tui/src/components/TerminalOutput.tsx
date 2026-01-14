@@ -66,28 +66,40 @@ const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
     const text = line.text;
     const indent = line.indent ? "  ".repeat(line.indent) : "";
 
-    // Tool calls - yellow bullet with bold tool name
+    // Tool calls - compact box with muted styling
     if (line.type === "tool_call" && line.toolName) {
-      const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, "");
+      const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, "").trim();
       return (
-        <Text>
-          <Text color={theme.syntax.yellow}>● </Text>
-          <Text bold color={theme.syntax.yellow}>
-            {line.toolName}
+        <Box
+          borderStyle="single"
+          borderColor={theme.ui.border}
+          borderLeft
+          borderRight={false}
+          borderTop={false}
+          borderBottom={false}
+          paddingLeft={1}
+          marginLeft={1}
+        >
+          <Text dimColor>
+            <Text color={theme.syntax.yellow}>⚡ </Text>
+            <Text color={theme.fg.muted}>{line.toolName}</Text>
+            {rest && <Text color={theme.fg.comment}> {rest.slice(0, 50)}{rest.length > 50 ? "…" : ""}</Text>}
           </Text>
-          <Text color={theme.fg.primary}>{rest}</Text>
-        </Text>
+        </Box>
       );
     }
 
-    // Tool results - indented with tree character
+    // Tool results - compact muted text in indented box
     if (line.type === "tool_result") {
-      const content = text.replace(/^[└→┃│]\s*/, "");
+      const content = text.replace(/^[└→┃│]\s*/, "").trim();
+      // Truncate long results
+      const truncated = content.length > 80 ? content.slice(0, 80) + "…" : content;
       return (
-        <Text>
-          <Text color={theme.fg.muted}>{indent} └ </Text>
-          <Text color={theme.fg.secondary}>{content}</Text>
-        </Text>
+        <Box marginLeft={2} paddingLeft={1}>
+          <Text dimColor color={theme.fg.comment}>
+            ↳ {truncated}
+          </Text>
+        </Box>
       );
     }
 
@@ -471,31 +483,48 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
       [lines, maxLines],
     );
 
+    // Group consecutive tool lines to reduce visual noise
+    const shouldAddMargin = (line: OutputLine, prevLine: OutputLine | null) => {
+      if (!prevLine) return false;
+      // Add margin when switching between major content types
+      const majorTypes = ["assistant", "user_input", "system"];
+      const isPrevMajor = majorTypes.includes(prevLine.type);
+      const isCurrMajor = majorTypes.includes(line.type);
+      // Margin when going from tool to major content, or between major content
+      if (isCurrMajor && (isPrevMajor || prevLine.type === "tool_result")) return true;
+      return false;
+    };
+
     return (
       <Box
         flexDirection="column"
         flexGrow={1}
         borderStyle="round"
         borderColor={theme.ui.border}
-        paddingX={1}
+        paddingX={2}
+        paddingY={1}
         overflow="hidden"
       >
         <Box marginBottom={1}>
           <Text bold color={theme.syntax.magenta}>
-            TERMINAL OUTPUT
+            OUTPUT
           </Text>
           {isRunning && <Text color={theme.fg.muted}> · streaming</Text>}
         </Box>
 
-        <Box flexDirection="column" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} gap={0}>
           {visibleLines.length === 0 ? (
             <Text color={theme.fg.muted}>
               No output yet. Use <Text color={theme.syntax.yellow}>/build</Text>{" "}
               or press <Text color={theme.syntax.yellow}>b</Text> to start.
             </Text>
           ) : (
-            visibleLines.map((line) => (
-              <Box key={line.id} width="100%">
+            visibleLines.map((line, index) => (
+              <Box
+                key={line.id}
+                width="100%"
+                marginTop={shouldAddMargin(line, visibleLines[index - 1] ?? null) ? 1 : 0}
+              >
                 <StyledLine line={line} theme={theme} />
               </Box>
             ))
