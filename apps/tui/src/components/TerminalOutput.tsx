@@ -513,12 +513,12 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
         </Box>
 
         <Box flexDirection="column" flexGrow={1} gap={0}>
-          {visibleLines.length === 0 ? (
+          {visibleLines.length === 0 && !isRunning ? (
             <Text color={theme.fg.muted}>
               No output yet. Use <Text color={theme.syntax.yellow}>/build</Text>{" "}
               or press <Text color={theme.syntax.yellow}>b</Text> to start.
             </Text>
-          ) : (
+          ) : visibleLines.length === 0 ? null : (
             visibleLines.map((line, index) => (
               <Box
                 key={line.id}

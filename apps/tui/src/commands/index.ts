@@ -62,6 +62,8 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
+    // Clear welcome messages and start fresh
+    ctx.clearOutput();
     ctx.appendOutput(`Creating plan: ${request}`, "system");
     ctx.setIsRunning(true);
 
@@ -92,10 +94,13 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
+    // Clear welcome messages and start fresh
+    ctx.clearOutput();
+
     // Pass the active epic ID to filter tasks
     const epicId = ctx.activeSession?.epicId;
     if (epicId) {
-      ctx.appendOutput(`Building for: ${ctx.activeSession?.name}`, "system");
+      ctx.appendOutput(`Building: ${ctx.activeSession?.name}`, "system");
     } else {
       ctx.appendOutput("Starting build...", "system");
     }
