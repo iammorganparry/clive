@@ -1,4 +1,4 @@
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import type React from "react";
 import { memo, useEffect, useState } from "react";
 import { useTheme } from "../theme.js";
@@ -48,13 +48,15 @@ export const Spinner: React.FC<SpinnerProps> = memo(
     };
 
     return (
-      <Text>
-        <Text color={theme.syntax.yellow}>{FRAMES[frame]} </Text>
-        <Text color={theme.syntax.cyan}>{label}…</Text>
-        {elapsedSeconds > 0 && (
-          <Text color={theme.fg.muted}> · {formatTime(elapsedSeconds)}</Text>
-        )}
-      </Text>
+      <Box backgroundColor={theme.bg.secondary} paddingX={1}>
+        <Text>
+          <Text color={theme.syntax.yellow}>{FRAMES[frame]} </Text>
+          <Text color={theme.syntax.cyan}>{label}…</Text>
+          {elapsedSeconds > 0 && (
+            <Text color={theme.fg.muted}> · {formatTime(elapsedSeconds)}</Text>
+          )}
+        </Text>
+      </Box>
     );
   },
 );
