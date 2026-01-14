@@ -328,20 +328,19 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
     } > "$TEMP_PROMPT"
 
-    # Build docker sandbox args and claude args separately
-    TEMP_DIR=$(dirname "$TEMP_PROMPT")
-    SANDBOX_ARGS=(-v "${TEMP_DIR}:${TEMP_DIR}:ro")
-    CLAUDE_ARGS=(--dangerously-skip-permissions)
+    # Build claude args
+    CLAUDE_ARGS=()
 
     if [ "$INTERACTIVE" = false ] || [ "$STREAMING" = true ]; then
         # -p for non-interactive, --output-format stream-json for real-time NDJSON streaming
-        CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
+        CLAUDE_ARGS=(-p --verbose --output-format stream-json)
     fi
 
-    # Invoke claude via Docker sandbox and parse NDJSON output
+    # Invoke claude - use CLI directly for streaming (TUI), docker sandbox for interactive
     if [ "$STREAMING" = true ]; then
-        # Streaming mode - parse NDJSON and extract text content for TUI
-        docker sandbox run "${SANDBOX_ARGS[@]}" claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
+        # Streaming mode - use Claude CLI directly for TUI compatibility
+        # Docker sandbox has TTY requirements that don't work with piped output
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
             if [[ -n "$line" ]]; then
                 # Extract text from NDJSON events using jq
                 text=$(echo "$line" | jq -r '
@@ -357,8 +356,8 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
             fi
         done
     elif [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
-        # Non-streaming with tspin - parse NDJSON then pipe to tspin
-        docker sandbox run "${SANDBOX_ARGS[@]}" claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
+        # Non-streaming with tspin - use Claude CLI directly, pipe to tspin
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1 | while IFS= read -r line; do
             if [[ -n "$line" ]]; then
                 text=$(echo "$line" | jq -r '
                     if .type == "content_block_delta" and .delta.type == "text_delta" then .delta.text
@@ -374,7 +373,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         done | tspin
     else
         # Interactive mode - no -p flag, let Claude handle TTY directly
-        docker sandbox run "${SANDBOX_ARGS[@]}" claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"
+        claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT"
     fi
 
     # Check for completion markers in progress file (generic and legacy)
