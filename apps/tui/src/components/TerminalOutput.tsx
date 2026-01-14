@@ -580,11 +580,13 @@ const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
     // If only other types (system, user_input, etc.), render them individually
     if (!group.hasAssistant && !group.hasTools) {
       return (
-        <>
+        <Box flexDirection="column" width="100%">
           {otherLines.map(line => (
-            <StyledLine key={line.id} line={line} theme={theme} />
+            <Box key={line.id} width="100%">
+              <StyledLine line={line} theme={theme} />
+            </Box>
           ))}
-        </>
+        </Box>
       );
     }
 
@@ -594,6 +596,7 @@ const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
       return (
         <Box
           flexDirection="column"
+          width="100%"
           borderStyle="single"
           borderLeft
           borderRight={false}
@@ -604,19 +607,19 @@ const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
           marginY={1}
         >
           {/* Assistant text */}
-          <Box flexDirection="column">
+          <Box flexDirection="column" width="100%">
             <MarkdownText>{assistantText}</MarkdownText>
           </Box>
 
           {/* Nested tool calls */}
           {toolLines.length > 0 && (
-            <Box flexDirection="column" marginTop={1} marginLeft={1}>
+            <Box flexDirection="column" width="100%" marginTop={1} marginLeft={1}>
               {toolLines.map(line => {
                 if (line.type === "tool_call" && line.toolName) {
                   const rest = line.text.replace(/^[●◆⏺▶→]\s*\w+/, "").trim();
                   const truncatedRest = rest.length > 50 ? rest.slice(0, 50) + "…" : rest;
                   return (
-                    <Box key={line.id}>
+                    <Box key={line.id} width="100%">
                       <Text>
                         <Text color={theme.syntax.yellow}>⚡ {line.toolName}</Text>
                         {truncatedRest && <Text color={theme.fg.muted}> {truncatedRest}</Text>}
@@ -628,7 +631,7 @@ const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
                   const content = line.text.replace(/^[└→┃│]\s*/, "").trim();
                   const truncated = content.length > 50 ? content.slice(0, 50) + "…" : content;
                   return (
-                    <Box key={line.id} marginLeft={2}>
+                    <Box key={line.id} width="100%" marginLeft={2}>
                       <Text dimColor color={theme.fg.comment}>↳ {truncated}</Text>
                     </Box>
                   );
@@ -644,9 +647,11 @@ const ResponseBlock: React.FC<{ group: LineGroup; theme: Theme }> = memo(
     // Tools only (no assistant text) - render as standalone tool block
     if (group.hasTools && !group.hasAssistant) {
       return (
-        <Box flexDirection="column" marginLeft={1}>
+        <Box flexDirection="column" width="100%" marginLeft={1}>
           {toolLines.map(line => (
-            <StyledLine key={line.id} line={line} theme={theme} />
+            <Box key={line.id} width="100%">
+              <StyledLine line={line} theme={theme} />
+            </Box>
           ))}
         </Box>
       );
@@ -753,7 +758,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
             </Text>
           ) : (
             responseBlocks.map((group) => (
-              <Box key={group.blockId} width="100%">
+              <Box key={group.blockId} flexDirection="column" width="100%">
                 <ResponseBlock group={group} theme={theme} />
               </Box>
             ))
