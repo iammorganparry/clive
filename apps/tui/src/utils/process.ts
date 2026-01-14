@@ -67,6 +67,65 @@ export interface ProcessHandle {
   sendMessage?: (message: string) => void;
 }
 
+/**
+ * Parse NDJSON line and return displayable text (like extension's parseCliOutput)
+ * Returns null for events that should be filtered out
+ */
+function parseNdjsonLine(line: string): string | null {
+  if (!line.trim()) return null;
+
+  try {
+    const data = JSON.parse(line);
+
+    // Text deltas - main content
+    if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+      return data.delta.text;
+    }
+
+    // Text block start
+    if (data.type === "content_block_start" && data.content_block?.type === "text") {
+      return data.content_block.text || null;
+    }
+
+    // Tool use - format nicely
+    if (data.type === "content_block_start" && data.content_block?.type === "tool_use") {
+      const name = data.content_block.name;
+      const input = data.content_block.input;
+      let detail = "";
+      if (input?.file_path) detail = ` ${input.file_path}`;
+      else if (input?.pattern) detail = ` "${input.pattern}"`;
+      else if (input?.command) detail = ` ${String(input.command).slice(0, 50)}`;
+      else if (input?.description) detail = ` ${input.description}`;
+      return `● ${name}${detail}\n`;
+    }
+
+    // Assistant message with content
+    if (data.type === "assistant" && data.message?.content) {
+      for (const block of data.message.content) {
+        if (block.type === "text") {
+          return block.text;
+        }
+        if (block.type === "tool_use") {
+          return `● ${block.name}\n`;
+        }
+      }
+      return null;
+    }
+
+    // Filter out all other JSON events:
+    // - user (tool results echoed back)
+    // - system
+    // - message_start, message_delta, message_stop
+    // - content_block_stop
+    // - result, error
+    // - input_json_delta (streaming tool input)
+    return null;
+  } catch {
+    // Not JSON - return as plain text (bash script output, etc.)
+    return line + "\n";
+  }
+}
+
 // Run build script and stream output with bidirectional communication
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
@@ -93,6 +152,7 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let promptSent = false;
+  let buffer = ""; // Buffer for incomplete NDJSON lines
 
   // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
   child.on("spawn", () => {
@@ -125,8 +185,22 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     }, 200); // Wait for build.sh to write the prompt path
   });
 
+  // Buffer and parse NDJSON, only emit displayable content
   child.stdout?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    const chunk = data.toString();
+    buffer += chunk;
+
+    // Split into complete lines
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    // Parse each line and emit only displayable content
+    for (const line of lines) {
+      const displayText = parseNdjsonLine(line);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+    }
   });
 
   child.stderr?.on("data", (data: Buffer) => {
@@ -134,6 +208,13 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   });
 
   child.on("close", (code) => {
+    // Flush any remaining buffer
+    if (buffer.trim()) {
+      const displayText = parseNdjsonLine(buffer);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+    }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
@@ -329,13 +410,10 @@ export function runBuildInteractive(
     }, 200); // Wait for build.sh to write the prompt path
   });
 
-  // Process stdout as NDJSON
+  // Buffer and parse NDJSON, only emit displayable content
   child.stdout?.on("data", (data: Buffer) => {
     const chunk = data.toString();
     buffer += chunk;
-
-    // Also emit raw data for display
-    if (dataCallback) dataCallback(chunk);
 
     // Parse NDJSON lines
     const lines = buffer.split("\n");
@@ -343,6 +421,14 @@ export function runBuildInteractive(
 
     for (const line of lines) {
       if (!line.trim()) continue;
+
+      // Emit displayable content to dataCallback
+      const displayText = parseNdjsonLine(line);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
+
+      // Also emit parsed events for eventCallback
       const event = parseClaudeEvent(line);
       if (event && eventCallback) {
         eventCallback(event);
@@ -357,6 +443,10 @@ export function runBuildInteractive(
   child.on("close", (code) => {
     // Process any remaining buffer
     if (buffer.trim()) {
+      const displayText = parseNdjsonLine(buffer);
+      if (displayText && dataCallback) {
+        dataCallback(displayText);
+      }
       const event = parseClaudeEvent(buffer);
       if (event && eventCallback) {
         eventCallback(event);
