@@ -1,13 +1,59 @@
 import type { CommandContext, CommandHandler } from "../types.js";
 import {
+  formatApprovalResponse,
+  formatQuestionResponse,
+} from "../utils/claude-events.js";
+import {
   cancelBuild,
-  type ProcessHandle,
-  runBuild,
-  runPlan,
+  type InteractiveProcessHandle,
+  runBuildInteractive,
+  runPlanInteractive,
 } from "../utils/process.js";
 
-// Track running process
-let currentProcess: ProcessHandle | null = null;
+// Track running process with interactive handle for bidirectional communication
+let currentProcessHandle: InteractiveProcessHandle | null = null;
+
+/**
+ * Send a user guidance message to the active agent
+ */
+export function sendUserMessage(message: string): void {
+  if (currentProcessHandle) {
+    currentProcessHandle.sendUserMessage(message);
+  }
+}
+
+/**
+ * Send a question answer to the active agent
+ */
+export function sendQuestionAnswer(
+  toolCallId: string,
+  answers: Record<string, string>,
+): void {
+  if (currentProcessHandle) {
+    const response = formatQuestionResponse(toolCallId, answers);
+    currentProcessHandle.sendToolResult(toolCallId, response);
+  }
+}
+
+/**
+ * Send an approval response to the active agent
+ */
+export function sendApprovalResponse(
+  toolCallId: string,
+  approved: boolean,
+): void {
+  if (currentProcessHandle) {
+    const response = formatApprovalResponse(toolCallId, approved);
+    currentProcessHandle.sendToolResult(toolCallId, response);
+  }
+}
+
+/**
+ * Check if a process is currently running
+ */
+export function isProcessRunning(): boolean {
+  return currentProcessHandle !== null;
+}
 
 export const commands: Record<string, CommandHandler> = {
   plan: async (args, ctx) => {
@@ -18,7 +64,7 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
-    if (currentProcess) {
+    if (currentProcessHandle) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -27,26 +73,28 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.appendOutput(`Creating plan: ${request}`, "system");
+    ctx.setIsRunning(true);
 
-    currentProcess = runPlan(args);
+    currentProcessHandle = runPlanInteractive(args);
 
-    currentProcess.onData((data: string) => {
+    currentProcessHandle.onData((data: string) => {
       ctx.appendOutput(data, "stdout");
     });
 
-    currentProcess.onExit((code: number) => {
+    currentProcessHandle.onExit((code: number) => {
+      ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Plan created successfully", "system");
         ctx.refreshSessions();
       } else {
         ctx.appendOutput(`Plan failed with code ${code}`, "stderr");
       }
-      currentProcess = null;
+      currentProcessHandle = null;
     });
   },
 
   build: async (args, ctx) => {
-    if (currentProcess) {
+    if (currentProcessHandle) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -63,30 +111,30 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.setIsRunning(true);
-    currentProcess = runBuild(args, epicId);
+    currentProcessHandle = runBuildInteractive(args, epicId);
 
-    currentProcess.onData((data: string) => {
+    currentProcessHandle.onData((data: string) => {
       ctx.appendOutput(data, "stdout");
     });
 
-    currentProcess.onExit((code: number) => {
+    currentProcessHandle.onExit((code: number) => {
       ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Build complete!", "system");
       } else {
         ctx.appendOutput(`Build exited with code ${code}`, "system");
       }
-      currentProcess = null;
+      currentProcessHandle = null;
       ctx.refreshTasks();
     });
   },
 
   cancel: async (_args, ctx) => {
-    if (currentProcess) {
+    if (currentProcessHandle) {
       ctx.appendOutput("Cancelling...", "system");
       cancelBuild();
-      currentProcess.kill();
-      currentProcess = null;
+      currentProcessHandle.kill();
+      currentProcessHandle = null;
       ctx.setIsRunning(false);
       ctx.appendOutput("Cancelled", "system");
     } else {

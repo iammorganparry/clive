@@ -9,8 +9,9 @@ import React, {
 import { useTheme } from "../theme.js";
 
 interface CommandInputProps {
-  onSubmit: (command: string) => void;
+  onSubmit: (input: string) => void;
   onFocusChange?: (isFocused: boolean) => void;
+  placeholder?: string;
 }
 
 export interface CommandInputHandle {
@@ -20,7 +21,7 @@ export interface CommandInputHandle {
 const COMMAND_INPUT_ID = "command-input";
 
 export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(
-  ({ onSubmit, onFocusChange }, ref) => {
+  ({ onSubmit, onFocusChange, placeholder = "Type /help for commands..." }, ref) => {
     const theme = useTheme();
     const [value, setValue] = useState("");
     const [history, setHistory] = useState<string[]>([]);
@@ -82,9 +83,8 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(
         setHistory((prev) => [...prev, trimmed]);
         setHistoryIndex(-1);
 
-        // Auto-add slash if missing
-        const command = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-        onSubmit(command);
+        // Pass raw input to handler - let parent decide what to do
+        onSubmit(trimmed);
         setValue("");
       }
     };
@@ -104,7 +104,7 @@ export const CommandInput = forwardRef<CommandInputHandle, CommandInputProps>(
           value={value}
           onChange={setValue}
           onSubmit={handleSubmit}
-          placeholder="Type /help for commands..."
+          placeholder={placeholder}
         />
       </Box>
     );
