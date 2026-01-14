@@ -70,6 +70,43 @@ interface StreamEvent {
   name?: string;
   id?: string;
   content?: string;
+  input?: Record<string, unknown>;
+}
+
+// Format tool input for display
+function formatToolInput(name: string, input?: Record<string, unknown>): string {
+  if (!input) return name;
+
+  // Extract key metadata based on tool type
+  switch (name) {
+    case "Read":
+    case "Write":
+    case "Edit":
+      if (input.file_path) return `${name} ${input.file_path}`;
+      break;
+    case "Glob":
+      if (input.pattern) return `${name} ${input.pattern}`;
+      break;
+    case "Grep":
+      if (input.pattern) return `${name} "${input.pattern}"`;
+      break;
+    case "Bash":
+      if (input.command) {
+        const cmd = String(input.command).slice(0, 60);
+        return `${name} ${cmd}${String(input.command).length > 60 ? "..." : ""}`;
+      }
+      break;
+    case "Task":
+      if (input.description) return `${name} ${input.description}`;
+      break;
+    case "WebFetch":
+    case "WebSearch":
+      if (input.url) return `${name} ${input.url}`;
+      if (input.query) return `${name} "${input.query}"`;
+      break;
+  }
+
+  return name;
 }
 
 // Try to parse a line as a structured JSON event from Claude CLI
@@ -101,7 +138,8 @@ function parseLines(
           return createLine(streamEvent.text, "assistant");
         }
         if (streamEvent.type === "tool_use" && streamEvent.name) {
-          return createLine(`● ${streamEvent.name}`, "tool_call", { toolName: streamEvent.name });
+          const displayText = formatToolInput(streamEvent.name, streamEvent.input);
+          return createLine(`● ${displayText}`, "tool_call", { toolName: streamEvent.name });
         }
         if (streamEvent.type === "tool_result") {
           // Show truncated content if available
