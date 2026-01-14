@@ -63,33 +63,25 @@ const TOOL_CALL_PATTERN = new RegExp(
 const TOOL_RESULT_PATTERN = /^[└→┃│]\s/;
 const USER_INPUT_PATTERN = /^[❯>]\s/;
 
-// Patterns that indicate assistant conversational text (not system/tool output)
-const ASSISTANT_TEXT_PATTERNS = [
-  /^Let me /i,
-  /^I'll /i,
-  /^I will /i,
-  /^I need to /i,
-  /^I'm going to /i,
-  /^Now /i,
-  /^First,? /i,
-  /^Next,? /i,
-  /^Looking at /i,
-  /^Based on /i,
-  /^The /i,
-  /^This /i,
-  /^Here /i,
-  /^To /i,
-  /^After /i,
-  /^Before /i,
-  /^Since /i,
-  /^It /i,
-  /^We /i,
-  /^You /i,
-];
+// Structured event from build.sh streaming output
+interface StreamEvent {
+  type: "assistant" | "tool_use" | "tool_result";
+  text?: string;
+  name?: string;
+  id?: string;
+}
 
-// Check if text looks like assistant conversational output
-function isAssistantText(line: string): boolean {
-  return ASSISTANT_TEXT_PATTERNS.some((pattern) => pattern.test(line.trim()));
+// Try to parse a line as a structured JSON event from Claude CLI
+function parseStreamEvent(line: string): StreamEvent | null {
+  try {
+    const event = JSON.parse(line) as StreamEvent;
+    if (event.type && (event.type === "assistant" || event.type === "tool_use" || event.type === "tool_result")) {
+      return event;
+    }
+  } catch {
+    // Not JSON, ignore
+  }
+  return null;
 }
 
 // Parse text into typed OutputLines
@@ -101,6 +93,21 @@ function parseLines(
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => {
+      // First, try to parse as structured JSON event from Claude CLI
+      const streamEvent = parseStreamEvent(line);
+      if (streamEvent) {
+        if (streamEvent.type === "assistant" && streamEvent.text) {
+          return createLine(streamEvent.text, "assistant");
+        }
+        if (streamEvent.type === "tool_use" && streamEvent.name) {
+          return createLine(`● ${streamEvent.name}`, "tool_call", { toolName: streamEvent.name });
+        }
+        if (streamEvent.type === "tool_result") {
+          return createLine("└ Result", "tool_result", { indent: 1 });
+        }
+      }
+
+      // Fall back to pattern matching for non-JSON output
       if (line.includes("<promise>")) {
         return createLine(line, "marker");
       }
@@ -116,11 +123,6 @@ function parseLines(
 
       if (USER_INPUT_PATTERN.test(line)) {
         return createLine(line, "user_input");
-      }
-
-      // Detect assistant conversational text
-      if (isAssistantText(line)) {
-        return createLine(line, "assistant");
       }
 
       return createLine(line, type);
