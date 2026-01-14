@@ -1,9 +1,13 @@
-import { setup, assign, fromCallback } from 'xstate';
-import type { Task, Session } from '../types.js';
-import { isBeadsAvailable, getEpicTasks, clearBeadsCache } from '../utils/beads.js';
+import { assign, fromCallback, setup } from "xstate";
+import type { Session, Task } from "../types.js";
+import {
+  clearBeadsCache,
+  getEpicTasks,
+  isBeadsAvailable,
+} from "../utils/beads.js";
 
 // Status priority for sorting (lower = first)
-const STATUS_ORDER: Record<Task['status'], number> = {
+const STATUS_ORDER: Record<Task["status"], number> = {
   in_progress: 0,
   pending: 1,
   blocked: 2,
@@ -33,17 +37,20 @@ export interface TasksContext {
 
 // Machine events
 export type TasksEvent =
-  | { type: 'SET_SESSION'; session: Session | null }
-  | { type: 'SET_POLLING'; polling: boolean }
-  | { type: 'POLL_TICK' }
-  | { type: 'REFRESH' };
+  | { type: "SET_SESSION"; session: Session | null }
+  | { type: "SET_POLLING"; polling: boolean }
+  | { type: "POLL_TICK" }
+  | { type: "REFRESH" };
 
 // Polling actor - ticks every 5 seconds
-const pollingActor = fromCallback<{ type: 'POLL_TICK' }, { isPolling: boolean }>(({ sendBack, input }) => {
+const pollingActor = fromCallback<
+  { type: "POLL_TICK" },
+  { isPolling: boolean }
+>(({ sendBack, input }) => {
   if (!input.isPolling) return () => {};
 
   const timer = setInterval(() => {
-    sendBack({ type: 'POLL_TICK' });
+    sendBack({ type: "POLL_TICK" });
   }, 5000);
 
   return () => clearInterval(timer);
@@ -72,8 +79,10 @@ function fetchTasks(session: Session | null): {
   const sortedTasks = sortTasks(epicTasks);
 
   // Extract metadata
-  const skills = [...new Set(epicTasks.map(t => t.skill).filter(Boolean))];
-  const categories = [...new Set(epicTasks.map(t => t.category).filter(Boolean))];
+  const skills = [...new Set(epicTasks.map((t) => t.skill).filter(Boolean))];
+  const categories = [
+    ...new Set(epicTasks.map((t) => t.category).filter(Boolean)),
+  ];
 
   return {
     tasks: sortedTasks,
@@ -94,7 +103,7 @@ export const tasksMachine = setup({
   actions: {
     refreshTasks: assign(({ context }) => fetchTasks(context.session)),
     setSession: assign(({ event }) => {
-      if (event.type !== 'SET_SESSION') return {};
+      if (event.type !== "SET_SESSION") return {};
       const result = fetchTasks(event.session);
       return {
         session: event.session,
@@ -102,13 +111,13 @@ export const tasksMachine = setup({
       };
     }),
     setPolling: assign(({ event }) => {
-      if (event.type !== 'SET_POLLING') return {};
+      if (event.type !== "SET_POLLING") return {};
       return { isPolling: event.polling };
     }),
   },
 }).createMachine({
-  id: 'tasks',
-  initial: 'idle',
+  id: "tasks",
+  initial: "idle",
   context: {
     session: null,
     tasks: [],
@@ -118,24 +127,24 @@ export const tasksMachine = setup({
     isPolling: false,
   },
   invoke: {
-    id: 'polling',
-    src: 'polling',
+    id: "polling",
+    src: "polling",
     input: ({ context }) => ({ isPolling: context.isPolling }),
   },
   on: {
     SET_SESSION: {
-      actions: 'setSession',
+      actions: "setSession",
     },
     SET_POLLING: {
-      actions: 'setPolling',
+      actions: "setPolling",
       // Restart polling actor with new input
       reenter: true,
     },
     POLL_TICK: {
-      actions: 'refreshTasks',
+      actions: "refreshTasks",
     },
     REFRESH: {
-      actions: 'refreshTasks',
+      actions: "refreshTasks",
     },
   },
   states: {

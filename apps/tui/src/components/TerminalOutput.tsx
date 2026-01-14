@@ -1,29 +1,53 @@
-import React, { memo, useMemo } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme, type Theme } from '../theme.js';
-import type { OutputLine } from '../types.js';
-import { Spinner } from './Spinner.js';
-import { useOutputLines, useRunningState } from '../machines/OutputMachineProvider.js';
+import { Box, Text } from "ink";
+import type React from "react";
+import { memo, useMemo } from "react";
+import {
+  useOutputLines,
+  usePendingInteraction,
+  useRunningState,
+} from "../machines/OutputMachineProvider.js";
+import { type Theme, useTheme } from "../theme.js";
+import type { OutputLine } from "../types.js";
+import { ApprovalPrompt } from "./ApprovalPrompt.js";
+import { QuestionPrompt } from "./QuestionPrompt.js";
+import { Spinner } from "./Spinner.js";
 
 interface TerminalOutputProps {
   maxLines?: number;
+  onQuestionAnswer?: (id: string, answers: Record<string, string>) => void;
+  onApprovalResponse?: (id: string, approved: boolean) => void;
 }
 
 // Tool names to highlight
 const TOOL_NAMES = [
-  'Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Task', 'WebFetch', 'WebSearch',
-  'TodoWrite', 'AskUserQuestion', 'NotebookEdit', 'Skill', 'KillShell', 'TaskOutput',
+  "Read",
+  "Write",
+  "Edit",
+  "Bash",
+  "Grep",
+  "Glob",
+  "Task",
+  "WebFetch",
+  "WebSearch",
+  "TodoWrite",
+  "AskUserQuestion",
+  "NotebookEdit",
+  "Skill",
+  "KillShell",
+  "TaskOutput",
 ];
 
 // Patterns for different output types
 const patterns = {
-  toolUse: /^(⏺|●|◆|▶|→)\s*(Read|Write|Edit|Bash|Grep|Glob|Task|WebFetch|WebSearch|TodoWrite|AskUserQuestion|NotebookEdit|Skill)\b/i,
+  toolUse:
+    /^(⏺|●|◆|▶|→)\s*(Read|Write|Edit|Bash|Grep|Glob|Task|WebFetch|WebSearch|TodoWrite|AskUserQuestion|NotebookEdit|Skill)\b/i,
   toolResult: /^(✓|✔|✅|─+\s*Result|Output:)/,
   thinking: /^(🤔|💭|Thinking|<thinking>)/i,
   error: /^(✗|✘|❌|Error:|ERROR:|Failed:|FAIL|error\[)/i,
   success: /^(✓|✔|✅|Success:|PASS|Done|Complete)/i,
   warning: /^(⚠|Warning:|WARN)/i,
-  filePath: /([\\/][\w\-\\.\\/]+\.(ts|tsx|js|jsx|json|md|py|go|rs|sh|yml|yaml|toml))/g,
+  filePath:
+    /([\\/][\w\-\\.\\/]+\.(ts|tsx|js|jsx|json|md|py|go|rs|sh|yml|yaml|toml))/g,
   lineNumber: /^(\s*\d+[→│|:])/,
   header: /^(#{1,3}\s|─{3,}|═{3,}|▸|▹)/,
   prompt: /^(>|\$|❯|λ)\s/,
@@ -36,272 +60,307 @@ const patterns = {
 };
 
 // Render a single line with syntax highlighting
-const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(({ line, theme }) => {
-  const text = line.text;
-  const indent = line.indent ? '  '.repeat(line.indent) : '';
+const StyledLine: React.FC<{ line: OutputLine; theme: Theme }> = memo(
+  ({ line, theme }) => {
+    const text = line.text;
+    const indent = line.indent ? "  ".repeat(line.indent) : "";
 
-  // Tool calls - yellow bullet with bold tool name
-  if (line.type === 'tool_call' && line.toolName) {
-    const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, '');
-    return (
-      <Text>
-        <Text color={theme.syntax.yellow}>● </Text>
-        <Text bold color={theme.syntax.yellow}>{line.toolName}</Text>
-        <Text color={theme.fg.primary}>{rest}</Text>
-      </Text>
-    );
-  }
-
-  // Tool results - indented with tree character
-  if (line.type === 'tool_result') {
-    const content = text.replace(/^[└→┃│]\s*/, '');
-    return (
-      <Text>
-        <Text color={theme.fg.muted}>{indent}  └ </Text>
-        <Text color={theme.fg.secondary}>{content}</Text>
-      </Text>
-    );
-  }
-
-  // User input - highlighted with green prompt
-  if (line.type === 'user_input') {
-    const content = text.replace(/^[❯>]\s*/, '');
-    return (
-      <Text>
-        <Text bold color={theme.syntax.green}>❯ </Text>
-        <Text bold color={theme.fg.primary}>{content}</Text>
-      </Text>
-    );
-  }
-
-  // System messages - cyan bullet
-  if (line.type === 'system') {
-    if (text.trim() === '') return <Text> </Text>;
-    return (
-      <Text>
-        <Text color={theme.syntax.cyan}>● </Text>
-        <Text color={theme.syntax.cyan}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Stderr - red bullet
-  if (line.type === 'stderr') {
-    return (
-      <Text>
-        <Text color={theme.syntax.red}>● </Text>
-        <Text color={theme.syntax.red}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Markers - section dividers
-  if (line.type === 'marker') {
-    return (
-      <Text>
-        <Text color={theme.syntax.magenta}>◆ </Text>
-        <Text backgroundColor={theme.bg.highlight} color={theme.syntax.magenta} bold>
-          {text}
-        </Text>
-      </Text>
-    );
-  }
-
-  // Tool use indicators (legacy pattern matching)
-  if (patterns.toolUse.test(text)) {
-    const match = text.match(patterns.toolUse);
-    if (match) {
-      const [, , toolName] = match;
-      const rest = text.slice(match[0].length);
+    // Tool calls - yellow bullet with bold tool name
+    if (line.type === "tool_call" && line.toolName) {
+      const rest = text.replace(/^[●◆⏺▶→]\s*\w+/, "");
       return (
         <Text>
           <Text color={theme.syntax.yellow}>● </Text>
-          <Text color={theme.syntax.yellow} bold>{toolName}</Text>
+          <Text bold color={theme.syntax.yellow}>
+            {line.toolName}
+          </Text>
           <Text color={theme.fg.primary}>{rest}</Text>
         </Text>
       );
     }
-  }
 
-  // Tool results / success
-  if (patterns.toolResult.test(text) || patterns.success.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.syntax.green}>✓ </Text>
-        <Text color={theme.syntax.green}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Thinking blocks
-  if (patterns.thinking.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.fg.comment}>○ </Text>
-        <Text color={theme.fg.comment} italic>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Errors
-  if (patterns.error.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.syntax.red}>✗ </Text>
-        <Text color={theme.syntax.red}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Warnings
-  if (patterns.warning.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.syntax.yellow}>⚠ </Text>
-        <Text color={theme.syntax.yellow}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Headers / section titles
-  if (patterns.header.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.syntax.blue}>▸ </Text>
-        <Text color={theme.syntax.blue} bold>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Line numbers (code output)
-  if (patterns.lineNumber.test(text)) {
-    const match = text.match(patterns.lineNumber);
-    if (match) {
-      const lineNum = match[1];
-      const rest = text.slice(lineNum.length);
+    // Tool results - indented with tree character
+    if (line.type === "tool_result") {
+      const content = text.replace(/^[└→┃│]\s*/, "");
       return (
         <Text>
-          <Text color={theme.fg.muted}>  {lineNum}</Text>
-          <Text color={theme.fg.primary}>{rest}</Text>
+          <Text color={theme.fg.muted}>{indent} └ </Text>
+          <Text color={theme.fg.secondary}>{content}</Text>
         </Text>
       );
     }
-  }
 
-  // Command prompts
-  if (patterns.prompt.test(text)) {
-    const match = text.match(patterns.prompt);
-    if (match) {
-      const prompt = match[0];
-      const rest = text.slice(prompt.length);
+    // User input - darker background with red left border (like Clive logo)
+    if (line.type === "user_input") {
+      const content = text.replace(/^[❯>]\s*/, "");
+      return (
+        <Box>
+          <Text color={theme.syntax.red}>│ </Text>
+          <Text backgroundColor={theme.bg.tertiary} color={theme.fg.primary}>
+            {" "}
+            {content}{" "}
+          </Text>
+        </Box>
+      );
+    }
+
+    // System messages - cyan bullet
+    if (line.type === "system") {
+      if (text.trim() === "") return <Text> </Text>;
       return (
         <Text>
-          <Text color={theme.syntax.green} bold>{prompt}</Text>
-          <Text color={theme.syntax.yellow}>{rest}</Text>
+          <Text color={theme.syntax.cyan}>● </Text>
+          <Text color={theme.syntax.cyan}>{text}</Text>
         </Text>
       );
     }
-  }
 
-  // Code blocks
-  if (patterns.codeBlock.test(text)) {
-    return (
-      <Text>
-        <Text color={theme.syntax.orange}>  {text}</Text>
-      </Text>
-    );
-  }
-
-  // Bullets
-  if (patterns.bullet.test(text)) {
-    const match = text.match(patterns.bullet);
-    if (match) {
-      const bullet = match[1];
-      const rest = text.slice(bullet.length);
+    // Stderr - red bullet
+    if (line.type === "stderr") {
       return (
         <Text>
-          <Text color={theme.syntax.blue}>{bullet}</Text>
-          <Text color={theme.fg.primary}>{rest}</Text>
+          <Text color={theme.syntax.red}>● </Text>
+          <Text color={theme.syntax.red}>{text}</Text>
         </Text>
       );
     }
-  }
 
-  // Test results
-  if (text.includes('PASS')) {
-    return (
-      <Text>
-        <Text color={theme.syntax.green}>✓ </Text>
-        <Text color={theme.syntax.green}>{text}</Text>
-      </Text>
-    );
-  }
-  if (text.includes('FAIL')) {
-    return (
-      <Text>
-        <Text color={theme.syntax.red}>✗ </Text>
-        <Text color={theme.syntax.red}>{text}</Text>
-      </Text>
-    );
-  }
-
-  // Check marks and X marks
-  if (text.includes('✓') || text.includes('✔')) {
-    return <Text color={theme.syntax.green}>  {text}</Text>;
-  }
-  if (text.includes('✗') || text.includes('✘')) {
-    return <Text color={theme.syntax.red}>  {text}</Text>;
-  }
-
-  // Tool names in text
-  for (const tool of TOOL_NAMES) {
-    if (text.includes(tool)) {
-      const parts = text.split(new RegExp(`(${tool})`, 'g'));
+    // Markers - section dividers
+    if (line.type === "marker") {
       return (
         <Text>
-          <Text color={theme.fg.primary}>  </Text>
-          {parts.map((part, i) => (
-            part === tool
-              ? <Text key={i} color={theme.syntax.magenta}>{part}</Text>
-              : <Text key={i} color={theme.fg.primary}>{part}</Text>
-          ))}
+          <Text color={theme.syntax.magenta}>◆ </Text>
+          <Text
+            backgroundColor={theme.bg.highlight}
+            color={theme.syntax.magenta}
+            bold
+          >
+            {text}
+          </Text>
         </Text>
       );
     }
-  }
 
-  // File paths
-  if (patterns.filePath.test(text)) {
-    const parts = text.split(patterns.filePath);
+    // Tool use indicators (legacy pattern matching)
+    if (patterns.toolUse.test(text)) {
+      const match = text.match(patterns.toolUse);
+      if (match) {
+        const [, , toolName] = match;
+        const rest = text.slice(match[0].length);
+        return (
+          <Text>
+            <Text color={theme.syntax.yellow}>● </Text>
+            <Text color={theme.syntax.yellow} bold>
+              {toolName}
+            </Text>
+            <Text color={theme.fg.primary}>{rest}</Text>
+          </Text>
+        );
+      }
+    }
+
+    // Tool results / success
+    if (patterns.toolResult.test(text) || patterns.success.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.syntax.green}>✓ </Text>
+          <Text color={theme.syntax.green}>{text}</Text>
+        </Text>
+      );
+    }
+
+    // Thinking blocks
+    if (patterns.thinking.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.fg.comment}>○ </Text>
+          <Text color={theme.fg.comment} italic>
+            {text}
+          </Text>
+        </Text>
+      );
+    }
+
+    // Errors
+    if (patterns.error.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.syntax.red}>✗ </Text>
+          <Text color={theme.syntax.red}>{text}</Text>
+        </Text>
+      );
+    }
+
+    // Warnings
+    if (patterns.warning.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.syntax.yellow}>⚠ </Text>
+          <Text color={theme.syntax.yellow}>{text}</Text>
+        </Text>
+      );
+    }
+
+    // Headers / section titles
+    if (patterns.header.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.syntax.blue}>▸ </Text>
+          <Text color={theme.syntax.blue} bold>
+            {text}
+          </Text>
+        </Text>
+      );
+    }
+
+    // Line numbers (code output)
+    if (patterns.lineNumber.test(text)) {
+      const match = text.match(patterns.lineNumber);
+      if (match) {
+        const lineNum = match[1];
+        const rest = text.slice(lineNum.length);
+        return (
+          <Text>
+            <Text color={theme.fg.muted}> {lineNum}</Text>
+            <Text color={theme.fg.primary}>{rest}</Text>
+          </Text>
+        );
+      }
+    }
+
+    // Command prompts
+    if (patterns.prompt.test(text)) {
+      const match = text.match(patterns.prompt);
+      if (match) {
+        const prompt = match[0];
+        const rest = text.slice(prompt.length);
+        return (
+          <Text>
+            <Text color={theme.syntax.green} bold>
+              {prompt}
+            </Text>
+            <Text color={theme.syntax.yellow}>{rest}</Text>
+          </Text>
+        );
+      }
+    }
+
+    // Code blocks
+    if (patterns.codeBlock.test(text)) {
+      return (
+        <Text>
+          <Text color={theme.syntax.orange}> {text}</Text>
+        </Text>
+      );
+    }
+
+    // Bullets
+    if (patterns.bullet.test(text)) {
+      const match = text.match(patterns.bullet);
+      if (match) {
+        const bullet = match[1];
+        const rest = text.slice(bullet.length);
+        return (
+          <Text>
+            <Text color={theme.syntax.blue}>{bullet}</Text>
+            <Text color={theme.fg.primary}>{rest}</Text>
+          </Text>
+        );
+      }
+    }
+
+    // Test results
+    if (text.includes("PASS")) {
+      return (
+        <Text>
+          <Text color={theme.syntax.green}>✓ </Text>
+          <Text color={theme.syntax.green}>{text}</Text>
+        </Text>
+      );
+    }
+    if (text.includes("FAIL")) {
+      return (
+        <Text>
+          <Text color={theme.syntax.red}>✗ </Text>
+          <Text color={theme.syntax.red}>{text}</Text>
+        </Text>
+      );
+    }
+
+    // Check marks and X marks
+    if (text.includes("✓") || text.includes("✔")) {
+      return <Text color={theme.syntax.green}> {text}</Text>;
+    }
+    if (text.includes("✗") || text.includes("✘")) {
+      return <Text color={theme.syntax.red}> {text}</Text>;
+    }
+
+    // Tool names in text
+    for (const tool of TOOL_NAMES) {
+      if (text.includes(tool)) {
+        const parts = text.split(new RegExp(`(${tool})`, "g"));
+        return (
+          <Text>
+            <Text color={theme.fg.primary}> </Text>
+            {parts.map((part, i) =>
+              part === tool ? (
+                <Text key={i} color={theme.syntax.magenta}>
+                  {part}
+                </Text>
+              ) : (
+                <Text key={i} color={theme.fg.primary}>
+                  {part}
+                </Text>
+              ),
+            )}
+          </Text>
+        );
+      }
+    }
+
+    // File paths
+    if (patterns.filePath.test(text)) {
+      const parts = text.split(patterns.filePath);
+      return (
+        <Text>
+          <Text color={theme.fg.primary}> </Text>
+          {parts.map((part, i) => {
+            if (patterns.filePath.test(part)) {
+              patterns.filePath.lastIndex = 0;
+              return (
+                <Text key={i} color={theme.syntax.cyan} underline>
+                  {part}
+                </Text>
+              );
+            }
+            return (
+              <Text key={i} color={theme.fg.primary}>
+                {part}
+              </Text>
+            );
+          })}
+        </Text>
+      );
+    }
+
+    // Numbered lists
+    const numberedMatch = text.match(patterns.numberedList);
+    if (numberedMatch) {
+      const [, num, content] = numberedMatch;
+      return (
+        <Text>
+          <Text color={theme.syntax.blue}> {num}. </Text>
+          {renderInlineMarkdown(content, theme)}
+        </Text>
+      );
+    }
+
+    // Default styling
     return (
-      <Text>
-        <Text color={theme.fg.primary}>  </Text>
-        {parts.map((part, i) => {
-          if (patterns.filePath.test(part)) {
-            patterns.filePath.lastIndex = 0;
-            return <Text key={i} color={theme.syntax.cyan} underline>{part}</Text>;
-          }
-          return <Text key={i} color={theme.fg.primary}>{part}</Text>;
-        })}
-      </Text>
+      <Text color={theme.fg.primary}> {renderInlineMarkdown(text, theme)}</Text>
     );
-  }
-
-  // Numbered lists
-  const numberedMatch = text.match(patterns.numberedList);
-  if (numberedMatch) {
-    const [, num, content] = numberedMatch;
-    return (
-      <Text>
-        <Text color={theme.syntax.blue}>  {num}. </Text>
-        {renderInlineMarkdown(content, theme)}
-      </Text>
-    );
-  }
-
-  // Default styling
-  return <Text color={theme.fg.primary}>  {renderInlineMarkdown(text, theme)}</Text>;
-});
+  },
+);
 
 // Helper to render inline markdown
 function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
@@ -316,89 +375,129 @@ function renderInlineMarkdown(text: string, theme: Theme): React.ReactNode {
       parts.push(
         <Text key={key++} color={theme.fg.primary}>
           {text.slice(lastIndex, match.index)}
-        </Text>
+        </Text>,
       );
     }
     parts.push(
       <Text key={key++} color={theme.syntax.orange} bold>
         {match[1]}
-      </Text>
+      </Text>,
     );
     lastIndex = match.index + match[0].length;
   }
 
   if (lastIndex < text.length) {
     const rest = text.slice(lastIndex);
-    if (rest.includes('**')) {
+    if (rest.includes("**")) {
       const boldParts = rest.split(/\*\*([^*]+)\*\*/g);
       boldParts.forEach((part, i) => {
         if (i % 2 === 1) {
-          parts.push(<Text key={key++} color={theme.fg.primary} bold>{part}</Text>);
+          parts.push(
+            <Text key={key++} color={theme.fg.primary} bold>
+              {part}
+            </Text>,
+          );
         } else if (part) {
-          parts.push(<Text key={key++} color={theme.fg.primary}>{part}</Text>);
+          parts.push(
+            <Text key={key++} color={theme.fg.primary}>
+              {part}
+            </Text>,
+          );
         }
       });
     } else {
-      parts.push(<Text key={key++} color={theme.fg.primary}>{rest}</Text>);
+      parts.push(
+        <Text key={key++} color={theme.fg.primary}>
+          {rest}
+        </Text>,
+      );
     }
   }
 
-  return parts.length > 0 ? <>{parts}</> : <Text color={theme.fg.primary}>{text}</Text>;
+  return parts.length > 0 ? (
+    <>{parts}</>
+  ) : (
+    <Text color={theme.fg.primary}>{text}</Text>
+  );
 }
 
-StyledLine.displayName = 'StyledLine';
+StyledLine.displayName = "StyledLine";
 
 // Main component - subscribes to lines from machine
-export const TerminalOutput: React.FC<TerminalOutputProps> = memo(({
-  maxLines = 50,
-}) => {
-  const theme = useTheme();
+export const TerminalOutput: React.FC<TerminalOutputProps> = memo(
+  ({ maxLines = 50, onQuestionAnswer, onApprovalResponse }) => {
+    const theme = useTheme();
 
-  // Subscribe to lines from machine - only this component re-renders on line changes
-  const lines = useOutputLines();
-  const { isRunning, startTime } = useRunningState();
+    // Subscribe to lines from machine - only this component re-renders on line changes
+    const lines = useOutputLines();
+    const { isRunning, startTime } = useRunningState();
+    const pendingInteraction = usePendingInteraction();
 
-  // Memoize visible lines
-  const visibleLines = useMemo(() => lines.slice(-maxLines), [lines, maxLines]);
+    // Memoize visible lines
+    const visibleLines = useMemo(
+      () => lines.slice(-maxLines),
+      [lines, maxLines],
+    );
 
-  return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      borderStyle="round"
-      borderColor={theme.ui.border}
-      paddingX={1}
-      overflow="hidden"
-    >
-      <Box marginBottom={1}>
-        <Text bold color={theme.syntax.magenta}>TERMINAL OUTPUT</Text>
-        {isRunning && (
-          <Text color={theme.fg.muted}> · streaming</Text>
-        )}
-      </Box>
-
-      <Box flexDirection="column" flexGrow={1}>
-        {visibleLines.length === 0 ? (
-          <Text color={theme.fg.muted}>
-            No output yet. Use <Text color={theme.syntax.yellow}>/build</Text> or press <Text color={theme.syntax.yellow}>b</Text> to start.
+    return (
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        borderStyle="round"
+        borderColor={theme.ui.border}
+        paddingX={1}
+        overflow="hidden"
+      >
+        <Box marginBottom={1}>
+          <Text bold color={theme.syntax.magenta}>
+            TERMINAL OUTPUT
           </Text>
-        ) : (
-          visibleLines.map(line => (
-            <Box key={line.id} width="100%">
-              <StyledLine line={line} theme={theme} />
-            </Box>
-          ))
+          {isRunning && <Text color={theme.fg.muted}> · streaming</Text>}
+        </Box>
+
+        <Box flexDirection="column" flexGrow={1}>
+          {visibleLines.length === 0 ? (
+            <Text color={theme.fg.muted}>
+              No output yet. Use <Text color={theme.syntax.yellow}>/build</Text>{" "}
+              or press <Text color={theme.syntax.yellow}>b</Text> to start.
+            </Text>
+          ) : (
+            visibleLines.map((line) => (
+              <Box key={line.id} width="100%">
+                <StyledLine line={line} theme={theme} />
+              </Box>
+            ))
+          )}
+        </Box>
+
+        {/* Render pending interaction prompts */}
+        {pendingInteraction?.type === "question" && onQuestionAnswer && (
+          <QuestionPrompt
+            questions={pendingInteraction.questions}
+            onSubmit={(answers) =>
+              onQuestionAnswer(pendingInteraction.id, answers)
+            }
+          />
+        )}
+
+        {pendingInteraction?.type === "approval" && onApprovalResponse && (
+          <ApprovalPrompt
+            toolName={pendingInteraction.toolName}
+            args={pendingInteraction.args}
+            onApprove={() => onApprovalResponse(pendingInteraction.id, true)}
+            onDeny={() => onApprovalResponse(pendingInteraction.id, false)}
+          />
+        )}
+
+        {/* Activity spinner when running */}
+        {isRunning && (
+          <Box marginTop={1} paddingLeft={0}>
+            <Spinner label="Working" startTime={startTime} />
+          </Box>
         )}
       </Box>
+    );
+  },
+);
 
-      {/* Activity spinner when running */}
-      {isRunning && (
-        <Box marginTop={1} paddingLeft={0}>
-          <Spinner label="Working" startTime={startTime} />
-        </Box>
-      )}
-    </Box>
-  );
-});
-
-TerminalOutput.displayName = 'TerminalOutput';
+TerminalOutput.displayName = "TerminalOutput";

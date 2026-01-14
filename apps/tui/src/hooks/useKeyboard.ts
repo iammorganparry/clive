@@ -1,4 +1,4 @@
-import { useInput, useFocusManager } from 'ink';
+import { useInput } from "ink";
 
 export interface KeyboardHandlers {
   toggleHelp?: () => void;
@@ -11,67 +11,58 @@ export interface KeyboardHandlers {
   nextTab?: () => void;
 }
 
-export function useKeyboard(handlers: KeyboardHandlers, isInputFocused: boolean = false) {
-  const { focusNext, focusPrevious } = useFocusManager();
-
+export function useKeyboard(
+  handlers: KeyboardHandlers,
+  isInputFocused: boolean = false,
+) {
   useInput((input, key) => {
-    // Tab navigation works globally (even when input focused)
-    if (key.leftArrow) {
-      handlers.prevTab?.();
-      return;
-    }
-
-    if (key.rightArrow) {
-      handlers.nextTab?.();
-      return;
-    }
-
-    // Skip other global shortcuts when input is focused (let input handle its own keys)
+    // Skip all shortcuts when input is focused (let input handle its own keys)
     if (isInputFocused) {
       return;
     }
 
+    // Tab switching with Shift+Tab (previous) and Tab (next)
+    // Only when not focused on input
+    if (key.tab && key.shift) {
+      handlers.prevTab?.();
+      return;
+    }
+
+    if (key.tab) {
+      handlers.nextTab?.();
+      return;
+    }
+
     // Help toggle
-    if (input === '?') {
+    if (input === "?") {
       handlers.toggleHelp?.();
       return;
     }
 
     // Action shortcuts
-    if (input === 'n') {
+    if (input === "n") {
       handlers.newSession?.();
       return;
     }
 
-    if (input === 'b') {
+    if (input === "b") {
       handlers.startBuild?.();
       return;
     }
 
-    if (input === 'c') {
+    if (input === "c") {
       handlers.cancelBuild?.();
       return;
     }
 
-    if (input === 'r') {
+    if (input === "r") {
       handlers.refresh?.();
       return;
     }
 
     // Focus command input
-    if (input === '/') {
+    if (input === "/") {
       handlers.focusInput?.();
-      return;
-    }
-
-    // Focus cycling
-    if (key.tab && key.shift) {
-      focusPrevious();
-      return;
-    }
-
-    if (key.tab) {
-      focusNext();
       return;
     }
   });

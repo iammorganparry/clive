@@ -8,6 +8,7 @@ export * from "./types.js";
 export * from "./router.js";
 export * from "./procedure.js";
 export * from "./transport.js";
+export * from "./transports/stdio.js";
 export * from "./client.js";
 export * from "./hooks.js";
 

@@ -60,9 +60,9 @@ trap "rm -f $TEMP_PROMPT" EXIT
 echo "Starting Claude planning session..."
 echo ""
 
-# Run claude interactively (TUI is suspended, Claude has full terminal access)
-claude --add-dir "$(dirname "$TEMP_PROMPT")" \
-    --permission-mode acceptEdits \
+# Run claude in Docker sandbox (isolated environment with full permissions)
+docker sandbox run claude --dangerously-skip-permissions \
+    --add-dir "$(dirname "$TEMP_PROMPT")" \
     "Read and execute all instructions in the file: $TEMP_PROMPT"
 
 echo ""

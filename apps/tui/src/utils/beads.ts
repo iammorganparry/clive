@@ -1,6 +1,6 @@
-import { execSync, spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import type { Task } from '../types.js';
+import { execSync, spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import type { Task } from "../types.js";
 
 // Cache for beads data to prevent repeated expensive bd calls
 let issuesCache: BeadsIssue[] | null = null;
@@ -15,21 +15,21 @@ export function clearBeadsCache(): void {
 
 function getCachedIssues(): BeadsIssue[] {
   const now = Date.now();
-  if (issuesCache !== null && (now - cacheTimestamp) < CACHE_TTL_MS) {
+  if (issuesCache !== null && now - cacheTimestamp < CACHE_TTL_MS) {
     return issuesCache;
   }
 
   try {
-    const result = spawnSync('bd', ['list', '--json', '--all'], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const result = spawnSync("bd", ["list", "--json", "--all"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     if (result.status !== 0) {
       issuesCache = [];
     } else {
-      const rawIssues = JSON.parse(result.stdout || '[]') as BeadsIssue[];
-      issuesCache = rawIssues.map(issue => ({
+      const rawIssues = JSON.parse(result.stdout || "[]") as BeadsIssue[];
+      issuesCache = rawIssues.map((issue) => ({
         ...issue,
         parent: issue.parent ?? deriveParentId(issue.id),
       }));
@@ -69,8 +69,8 @@ interface BeadsIssue {
 
 export function isBeadsAvailable(): boolean {
   try {
-    execSync('which bd', { stdio: 'ignore' });
-    return fs.existsSync('.beads');
+    execSync("which bd", { stdio: "ignore" });
+    return fs.existsSync(".beads");
   } catch {
     return false;
   }
@@ -81,7 +81,7 @@ export function isBeadsAvailable(): boolean {
 // "clive-mar.1.2" → "clive-mar.1"
 // "clive-mar" → undefined (no parent)
 function deriveParentId(id: string): string | undefined {
-  const lastDot = id.lastIndexOf('.');
+  const lastDot = id.lastIndexOf(".");
   if (lastDot === -1) return undefined;
   return id.substring(0, lastDot);
 }
@@ -95,8 +95,8 @@ export function getEpics(): BeadsEpic[] {
   // Filter to epics - P0 priority issues that represent work plans
   // Only P0 issues are shown as sessions in the tab bar
   return issues
-    .filter(issue => issue.priority === 0)
-    .map(issue => ({
+    .filter((issue) => issue.priority === 0)
+    .map((issue) => ({
       id: issue.id,
       title: issue.title,
       status: issue.status,
@@ -116,10 +116,10 @@ export function getEpicTasks(epicId: string): Task[] {
 
   // Filter to tasks that have this epic as parent
   return issues
-    .filter(issue => issue.parent === epicId)
-    .map(issue => ({
+    .filter((issue) => issue.parent === epicId)
+    .map((issue) => ({
       id: issue.id,
-      title: issue.title.replace(/^Task:\s*/i, ''), // Clean up "Task: " prefix
+      title: issue.title.replace(/^Task:\s*/i, ""), // Clean up "Task: " prefix
       status: mapBeadsStatus(issue.status),
       tier: extractTier(issue.priority, issue.labels),
       skill: extractSkillFromLabels(issue.labels),
@@ -142,19 +142,19 @@ export function formatEpicName(title: string): string {
     // Convert kebab-case to Title Case
     return branch
       .split(/[-_]/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
   }
 
   // Clean up common patterns
   let name = title
-    .replace(/\s*-\s*\d{4}-\d{2}-\d{2}$/, '') // Remove date suffix
-    .replace(/^(Task|Epic|Feature|Bug):\s*/i, '') // Remove type prefix
+    .replace(/\s*-\s*\d{4}-\d{2}-\d{2}$/, "") // Remove date suffix
+    .replace(/^(Task|Epic|Feature|Bug):\s*/i, "") // Remove type prefix
     .trim();
 
   // Truncate if too long
   if (name.length > 30) {
-    name = name.slice(0, 27) + '...';
+    name = name.slice(0, 27) + "...";
   }
 
   return name || title;
@@ -163,31 +163,33 @@ export function formatEpicName(title: string): string {
 // Check if an epic has any in-progress tasks
 export function hasInProgressTasks(epicId: string): boolean {
   const tasks = getEpicTasks(epicId);
-  return tasks.some(t => t.status === 'in_progress');
+  return tasks.some((t) => t.status === "in_progress");
 }
 
-function extractCategoryFromLabels(labels: string[] | undefined): string | undefined {
+function extractCategoryFromLabels(
+  labels: string[] | undefined,
+): string | undefined {
   if (!labels) return undefined;
-  const categoryLabel = labels.find(l => l.startsWith('category:'));
-  return categoryLabel?.replace('category:', '');
+  const categoryLabel = labels.find((l) => l.startsWith("category:"));
+  return categoryLabel?.replace("category:", "");
 }
 
 export function getReadyTasks(): Task[] {
   if (!isBeadsAvailable()) return [];
 
   try {
-    const result = spawnSync('bd', ['ready', '--json'], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const result = spawnSync("bd", ["ready", "--json"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     if (result.status !== 0) return [];
 
-    const tasks = JSON.parse(result.stdout || '[]');
+    const tasks = JSON.parse(result.stdout || "[]");
     return tasks.map((t: Record<string, unknown>) => ({
       id: t.id as string,
       title: t.title as string,
-      status: 'pending' as const,
+      status: "pending" as const,
       skill: extractSkillFromLabels(t.labels as string[] | undefined),
     }));
   } catch {
@@ -200,7 +202,7 @@ export function getAllTasks(): Task[] {
 
   const issues = getCachedIssues();
 
-  return issues.map(issue => ({
+  return issues.map((issue) => ({
     id: issue.id,
     title: issue.title,
     status: mapBeadsStatus(issue.status),
@@ -209,12 +211,15 @@ export function getAllTasks(): Task[] {
   }));
 }
 
-function extractTier(priority: number | undefined, labels: string[] | undefined): number | undefined {
+function extractTier(
+  priority: number | undefined,
+  labels: string[] | undefined,
+): number | undefined {
   // Try to get tier from labels first (tier:1, tier:2, etc.)
   if (labels) {
-    const tierLabel = labels.find(l => l.startsWith('tier:'));
+    const tierLabel = labels.find((l) => l.startsWith("tier:"));
     if (tierLabel) {
-      const tier = parseInt(tierLabel.replace('tier:', ''), 10);
+      const tier = parseInt(tierLabel.replace("tier:", ""), 10);
       if (!isNaN(tier)) return tier;
     }
   }
@@ -225,26 +230,28 @@ function extractTier(priority: number | undefined, labels: string[] | undefined)
   return undefined;
 }
 
-function extractSkillFromLabels(labels: string[] | undefined): string | undefined {
+function extractSkillFromLabels(
+  labels: string[] | undefined,
+): string | undefined {
   if (!labels) return undefined;
-  const skillLabel = labels.find(l => l.startsWith('skill:'));
-  return skillLabel?.replace('skill:', '');
+  const skillLabel = labels.find((l) => l.startsWith("skill:"));
+  return skillLabel?.replace("skill:", "");
 }
 
-function mapBeadsStatus(status: string): Task['status'] {
+function mapBeadsStatus(status: string): Task["status"] {
   switch (status) {
-    case 'open':
-    case 'pending':
-      return 'pending';
-    case 'in_progress':
-      return 'in_progress';
-    case 'complete':
-    case 'closed':
-    case 'done':
-      return 'complete';
-    case 'blocked':
-      return 'blocked';
+    case "open":
+    case "pending":
+      return "pending";
+    case "in_progress":
+      return "in_progress";
+    case "complete":
+    case "closed":
+    case "done":
+      return "complete";
+    case "blocked":
+      return "blocked";
     default:
-      return 'pending';
+      return "pending";
   }
 }

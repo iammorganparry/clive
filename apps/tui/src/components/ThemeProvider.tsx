@@ -1,5 +1,5 @@
-import React from 'react';
-import { ThemeContext, oneDarkPro, type Theme } from '../theme.js';
+import type React from "react";
+import { oneDarkPro, type Theme, ThemeContext } from "../theme.js";
 
 interface ThemeProviderProps {
   theme?: Theme;
@@ -11,8 +11,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
   children,
 }) => {
   return (
-    <ThemeContext.Provider value={theme}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
   );
 };

@@ -1,9 +1,18 @@
-import React, { createContext, useContext, type ReactNode } from 'react';
-import { useMachine, useSelector } from '@xstate/react';
-import { useCallback } from 'react';
-import { outputMachine, type OutputContext } from './output-machine.js';
-import type { OutputLine } from '../types.js';
-import type { ActorRefFrom } from 'xstate';
+import { useMachine, useSelector } from "@xstate/react";
+import React, {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+} from "react";
+import type { ActorRefFrom } from "xstate";
+import type { OutputLine } from "../types.js";
+import type { AgentQuestion } from "../utils/claude-events.js";
+import {
+  type OutputContext,
+  outputMachine,
+  type PendingInteraction,
+} from "./output-machine.js";
 
 type OutputActorRef = ActorRefFrom<typeof outputMachine>;
 
@@ -11,7 +20,9 @@ type OutputActorRef = ActorRefFrom<typeof outputMachine>;
 const OutputActorContext = createContext<OutputActorRef | null>(null);
 
 // Provider component - creates the machine once
-export const OutputMachineProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const OutputMachineProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   const [, , actorRef] = useMachine(outputMachine);
 
   return (
@@ -25,35 +36,48 @@ export const OutputMachineProvider: React.FC<{ children: ReactNode }> = ({ child
 function useOutputActor(): OutputActorRef {
   const actorRef = useContext(OutputActorContext);
   if (!actorRef) {
-    throw new Error('useOutputActor must be used within OutputMachineProvider');
+    throw new Error("useOutputActor must be used within OutputMachineProvider");
   }
   return actorRef;
 }
 
 // Selectors
 const selectLines = (state: { context: OutputContext }) => state.context.lines;
-const selectIsRunning = (state: { context: OutputContext }) => state.context.isRunning;
-const selectStartTime = (state: { context: OutputContext }) => state.context.startTime;
+const selectIsRunning = (state: { context: OutputContext }) =>
+  state.context.isRunning;
+const selectStartTime = (state: { context: OutputContext }) =>
+  state.context.startTime;
+const selectPendingInteraction = (state: { context: OutputContext }) =>
+  state.context.pendingInteraction;
 
 // Hook for components that need actions (App, Commands)
 // Does NOT subscribe to lines - prevents re-renders from output updates
 export function useOutputActions() {
   const actorRef = useOutputActor();
 
-  const appendOutput = useCallback((text: string, type?: OutputLine['type']) => {
-    actorRef.send({ type: 'APPEND_OUTPUT', text, outputType: type });
-  }, [actorRef]);
+  const appendOutput = useCallback(
+    (text: string, type?: OutputLine["type"]) => {
+      actorRef.send({ type: "APPEND_OUTPUT", text, outputType: type });
+    },
+    [actorRef],
+  );
 
-  const appendSystemMessage = useCallback((text: string) => {
-    actorRef.send({ type: 'APPEND_SYSTEM', text });
-  }, [actorRef]);
+  const appendSystemMessage = useCallback(
+    (text: string) => {
+      actorRef.send({ type: "APPEND_SYSTEM", text });
+    },
+    [actorRef],
+  );
 
-  const setIsRunning = useCallback((running: boolean) => {
-    actorRef.send({ type: running ? 'START_RUNNING' : 'STOP_RUNNING' });
-  }, [actorRef]);
+  const setIsRunning = useCallback(
+    (running: boolean) => {
+      actorRef.send({ type: running ? "START_RUNNING" : "STOP_RUNNING" });
+    },
+    [actorRef],
+  );
 
   const clear = useCallback(() => {
-    actorRef.send({ type: 'CLEAR' });
+    actorRef.send({ type: "CLEAR" });
   }, [actorRef]);
 
   // Only subscribe to isRunning (infrequent changes)
@@ -83,4 +107,40 @@ export function useRunningState() {
   const isRunning = useSelector(actorRef, selectIsRunning);
   const startTime = useSelector(actorRef, selectStartTime);
   return { isRunning, startTime };
+}
+
+// Hook for components that need pending interaction state (TerminalOutput)
+export function usePendingInteraction() {
+  const actorRef = useOutputActor();
+  const pendingInteraction = useSelector(actorRef, selectPendingInteraction);
+  return pendingInteraction;
+}
+
+// Hook for sending interaction events
+export function useInteractionActions() {
+  const actorRef = useOutputActor();
+
+  const sendQuestion = useCallback(
+    (id: string, questions: AgentQuestion[]) => {
+      actorRef.send({ type: "QUESTION_RECEIVED", id, questions });
+    },
+    [actorRef],
+  );
+
+  const sendApprovalRequest = useCallback(
+    (id: string, toolName: string, args: unknown) => {
+      actorRef.send({ type: "APPROVAL_REQUESTED", id, toolName, args });
+    },
+    [actorRef],
+  );
+
+  const resolveInteraction = useCallback(() => {
+    actorRef.send({ type: "INTERACTION_RESOLVED" });
+  }, [actorRef]);
+
+  return {
+    sendQuestion,
+    sendApprovalRequest,
+    resolveInteraction,
+  };
 }
