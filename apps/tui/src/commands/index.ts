@@ -1,58 +1,48 @@
 import type { CommandContext, CommandHandler } from "../types.js";
 import {
-  formatApprovalResponse,
-  formatQuestionResponse,
-} from "../utils/claude-events.js";
-import {
   cancelBuild,
-  type InteractiveProcessHandle,
-  runBuildInteractive,
-  runPlanInteractive,
+  type ProcessHandle,
+  runBuild,
+  runPlan,
 } from "../utils/process.js";
 
-// Track running process with interactive handle for bidirectional communication
-let currentProcessHandle: InteractiveProcessHandle | null = null;
+// Track running process
+let currentProcess: ProcessHandle | null = null;
 
 /**
  * Send a user guidance message to the active agent
  */
 export function sendUserMessage(message: string): void {
-  if (currentProcessHandle) {
-    currentProcessHandle.sendUserMessage(message);
+  if (currentProcess?.sendMessage) {
+    currentProcess.sendMessage(message);
   }
 }
 
 /**
- * Send a question answer to the active agent
+ * Send a question answer to the active agent (placeholder for future)
  */
 export function sendQuestionAnswer(
-  toolCallId: string,
-  answers: Record<string, string>,
+  _toolCallId: string,
+  _answers: Record<string, string>,
 ): void {
-  if (currentProcessHandle) {
-    const response = formatQuestionResponse(toolCallId, answers);
-    currentProcessHandle.sendToolResult(toolCallId, response);
-  }
+  // TODO: Implement bidirectional communication
 }
 
 /**
- * Send an approval response to the active agent
+ * Send an approval response to the active agent (placeholder for future)
  */
 export function sendApprovalResponse(
-  toolCallId: string,
-  approved: boolean,
+  _toolCallId: string,
+  _approved: boolean,
 ): void {
-  if (currentProcessHandle) {
-    const response = formatApprovalResponse(toolCallId, approved);
-    currentProcessHandle.sendToolResult(toolCallId, response);
-  }
+  // TODO: Implement bidirectional communication
 }
 
 /**
  * Check if a process is currently running
  */
 export function isProcessRunning(): boolean {
-  return currentProcessHandle !== null;
+  return currentProcess !== null;
 }
 
 export const commands: Record<string, CommandHandler> = {
@@ -64,7 +54,7 @@ export const commands: Record<string, CommandHandler> = {
       return;
     }
 
-    if (currentProcessHandle) {
+    if (currentProcess) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -75,13 +65,13 @@ export const commands: Record<string, CommandHandler> = {
     ctx.appendOutput(`Creating plan: ${request}`, "system");
     ctx.setIsRunning(true);
 
-    currentProcessHandle = runPlanInteractive(args);
+    currentProcess = runPlan(args);
 
-    currentProcessHandle.onData((data: string) => {
+    currentProcess.onData((data: string) => {
       ctx.appendOutput(data, "stdout");
     });
 
-    currentProcessHandle.onExit((code: number) => {
+    currentProcess.onExit((code: number) => {
       ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Plan created successfully", "system");
@@ -89,12 +79,12 @@ export const commands: Record<string, CommandHandler> = {
       } else {
         ctx.appendOutput(`Plan failed with code ${code}`, "stderr");
       }
-      currentProcessHandle = null;
+      currentProcess = null;
     });
   },
 
   build: async (args, ctx) => {
-    if (currentProcessHandle) {
+    if (currentProcess) {
       ctx.appendOutput(
         "A process is already running. Use /cancel to stop it.",
         "system",
@@ -111,30 +101,30 @@ export const commands: Record<string, CommandHandler> = {
     }
 
     ctx.setIsRunning(true);
-    currentProcessHandle = runBuildInteractive(args, epicId);
+    currentProcess = runBuild(args, epicId);
 
-    currentProcessHandle.onData((data: string) => {
+    currentProcess.onData((data: string) => {
       ctx.appendOutput(data, "stdout");
     });
 
-    currentProcessHandle.onExit((code: number) => {
+    currentProcess.onExit((code: number) => {
       ctx.setIsRunning(false);
       if (code === 0) {
         ctx.appendOutput("Build complete!", "system");
       } else {
         ctx.appendOutput(`Build exited with code ${code}`, "system");
       }
-      currentProcessHandle = null;
+      currentProcess = null;
       ctx.refreshTasks();
     });
   },
 
   cancel: async (_args, ctx) => {
-    if (currentProcessHandle) {
+    if (currentProcess) {
       ctx.appendOutput("Cancelling...", "system");
       cancelBuild();
-      currentProcessHandle.kill();
-      currentProcessHandle = null;
+      currentProcess.kill();
+      currentProcess = null;
       ctx.setIsRunning(false);
       ctx.appendOutput("Cancelled", "system");
     } else {

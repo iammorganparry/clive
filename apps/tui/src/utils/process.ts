@@ -40,13 +40,6 @@ export function cancelBuild(): void {
   fs.writeFileSync(cancelFile, new Date().toISOString());
 }
 
-// Process handle for streaming output
-export interface ProcessHandle {
-  kill: () => void;
-  onData: (callback: (data: string) => void) => void;
-  onExit: (callback: (code: number) => void) => void;
-}
-
 // Interactive process handle for bidirectional communication
 export interface InteractiveProcessHandle {
   /** Kill the process */
@@ -65,6 +58,15 @@ export interface InteractiveProcessHandle {
   close: () => void;
 }
 
+// Process handle for streaming output with optional stdin support
+export interface ProcessHandle {
+  kill: () => void;
+  onData: (callback: (data: string) => void) => void;
+  onExit: (callback: (code: number) => void) => void;
+  /** Send a message to the process stdin (optional) */
+  sendMessage?: (message: string) => void;
+}
+
 // Run build script and stream output
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
@@ -81,7 +83,8 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     buildArgs.push("--epic", epicId);
   }
 
-  // Always use --streaming flag for TUI output capture
+  // Use ignore for stdin for now - piped stdin causes output buffering issues
+  // TODO: Fix bidirectional communication
   const child = spawn("bash", [buildScript, ...buildArgs], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
@@ -114,6 +117,10 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     },
     onExit: (callback) => {
       exitCallback = callback;
+    },
+    sendMessage: (_message: string) => {
+      // TODO: Bidirectional communication disabled due to buffering issues
+      // Requires fixing stdin piping without breaking output streaming
     },
   };
 }
@@ -165,8 +172,8 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   const scriptsDir = findScriptsDir();
   const planScript = path.join(scriptsDir, "plan.sh");
 
-  // Add flags for stream-json output format to get NDJSON events
-  const planArgs = ["--output-format", "stream-json", ...args];
+  // Plan uses the provided args directly
+  const planArgs = [...args];
 
   const child = spawn("bash", [planScript, ...planArgs], {
     cwd: process.cwd(),
@@ -270,13 +277,8 @@ export function runBuildInteractive(
   // Filter out -i/--interactive flags (TUI uses streaming mode)
   const filteredArgs = args.filter((a) => a !== "-i" && a !== "--interactive");
 
-  // Build command args with stream-json output
-  const buildArgs = [
-    "--streaming",
-    "--output-format",
-    "stream-json",
-    ...filteredArgs,
-  ];
+  // Build command args - streaming mode handles output format internally
+  const buildArgs = ["--streaming", ...filteredArgs];
 
   // Add epic filter if provided
   if (epicId) {
