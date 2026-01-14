@@ -126,6 +126,14 @@ function parseNdjsonLine(line: string): string | null {
   }
 }
 
+// Completion markers that signal end of iteration
+const COMPLETION_MARKERS = [
+  "<promise>TASK_COMPLETE</promise>",
+  "<promise>ALL_TASKS_COMPLETE</promise>",
+  "<promise>ITERATION_COMPLETE</promise>", // Legacy
+  "<promise>ALL_SUITES_COMPLETE</promise>", // Legacy
+];
+
 // Run build script and stream output with bidirectional communication
 export function runBuild(args: string[], epicId?: string): ProcessHandle {
   const scriptsDir = findScriptsDir();
@@ -152,7 +160,21 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   let dataCallback: ((data: string) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let promptSent = false;
+  let stdinClosed = false;
   let buffer = ""; // Buffer for incomplete NDJSON lines
+
+  // Check if text contains a completion marker
+  const checkForCompletion = (text: string): boolean => {
+    return COMPLETION_MARKERS.some((marker) => text.includes(marker));
+  };
+
+  // Close stdin to signal Claude to exit (allows build loop to continue)
+  const closeStdin = () => {
+    if (!stdinClosed && child.stdin?.writable) {
+      stdinClosed = true;
+      child.stdin.end();
+    }
+  };
 
   // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
   child.on("spawn", () => {
@@ -199,6 +221,10 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
       const displayText = parseNdjsonLine(line);
       if (displayText && dataCallback) {
         dataCallback(displayText);
+        // Check for completion markers - close stdin to let Claude exit
+        if (checkForCompletion(displayText)) {
+          closeStdin();
+        }
       }
     }
   });
@@ -378,6 +404,20 @@ export function runBuildInteractive(
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
   let promptSent = false;
+  let stdinClosed = false;
+
+  // Close stdin to signal Claude to exit (allows build loop to continue)
+  const closeStdin = () => {
+    if (!stdinClosed && child.stdin?.writable) {
+      stdinClosed = true;
+      child.stdin.end();
+    }
+  };
+
+  // Check if text contains a completion marker
+  const checkForCompletion = (text: string): boolean => {
+    return COMPLETION_MARKERS.some((marker) => text.includes(marker));
+  };
 
   // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
   child.on("spawn", () => {
@@ -426,6 +466,10 @@ export function runBuildInteractive(
       const displayText = parseNdjsonLine(line);
       if (displayText && dataCallback) {
         dataCallback(displayText);
+        // Check for completion markers - close stdin to let Claude exit
+        if (checkForCompletion(displayText)) {
+          closeStdin();
+        }
       }
 
       // Also emit parsed events for eventCallback
