@@ -46,8 +46,8 @@ export interface InteractiveProcessHandle {
   kill: () => void;
   /** Subscribe to parsed Claude events */
   onEvent: (callback: (event: ClaudeEvent) => void) => void;
-  /** Subscribe to raw output data (for display) */
-  onData: (callback: (data: string) => void) => void;
+  /** Subscribe to typed display output (for display with proper styling) */
+  onData: (callback: (data: DisplayOutput) => void) => void;
   /** Subscribe to exit */
   onExit: (callback: (code: number) => void) => void;
   /** Send a tool result back to the process */
@@ -61,7 +61,7 @@ export interface InteractiveProcessHandle {
 // Process handle for streaming output with optional stdin support
 export interface ProcessHandle {
   kill: () => void;
-  onData: (callback: (data: string) => void) => void;
+  onData: (callback: (data: DisplayOutput) => void) => void;
   onExit: (callback: (code: number) => void) => void;
   /** Send a message to the process stdin (optional) */
   sendMessage?: (message: string) => void;
@@ -124,24 +124,32 @@ function extractToolDetail(name: string, input: Record<string, unknown> | undefi
 // Track partial tool inputs during streaming (indexed by content block index)
 const toolInputBuffers: Map<number, { name: string; partialJson: string }> = new Map();
 
+// Typed output from NDJSON parsing
+export interface DisplayOutput {
+  type: "assistant" | "tool" | "tool_detail" | "plain";
+  text: string;
+  toolName?: string;
+}
+
 /**
- * Parse NDJSON line and return displayable text (like extension's parseCliOutput)
+ * Parse NDJSON line and return typed displayable output
  * Returns null for events that should be filtered out
  */
-function parseNdjsonLine(line: string): string | null {
+function parseNdjsonLine(line: string): DisplayOutput | null {
   if (!line.trim()) return null;
 
   try {
     const data = JSON.parse(line);
 
-    // Text deltas - main content
+    // Text deltas - main content (assistant text)
     if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
-      return data.delta.text;
+      return { type: "assistant", text: data.delta.text };
     }
 
-    // Text block start
+    // Text block start (assistant text)
     if (data.type === "content_block_start" && data.content_block?.type === "text") {
-      return data.content_block.text || null;
+      const text = data.content_block.text;
+      return text ? { type: "assistant", text } : null;
     }
 
     // Tool use start - initialize buffer for streaming input
@@ -155,11 +163,7 @@ function parseNdjsonLine(line: string): string | null {
 
       // If input is already populated (non-streaming), show it
       const detail = extractToolDetail(name, input);
-      if (detail) {
-        return `● ${name}${detail}\n`;
-      }
-      // Otherwise just show the name - we'll update when we get input_json_delta
-      return `● ${name}\n`;
+      return { type: "tool", text: `● ${name}${detail}\n`, toolName: name };
     }
 
     // Streaming tool input - accumulate JSON and try to extract details
@@ -178,7 +182,7 @@ function parseNdjsonLine(line: string): string | null {
           if (detail) {
             // Clear buffer and emit the detail
             toolInputBuffers.delete(index);
-            return `  → ${detail.trim()}\n`;
+            return { type: "tool_detail", text: `  → ${detail.trim()}\n` };
           }
         } catch {
           // JSON not complete yet, keep accumulating
@@ -196,17 +200,24 @@ function parseNdjsonLine(line: string): string | null {
 
     // Assistant message with content (non-streaming format)
     if (data.type === "assistant" && data.message?.content) {
-      const results: string[] = [];
+      const results: DisplayOutput[] = [];
       for (const block of data.message.content) {
         if (block.type === "text") {
-          results.push(block.text);
+          results.push({ type: "assistant", text: block.text });
         }
         if (block.type === "tool_use") {
           const detail = extractToolDetail(block.name, block.input as Record<string, unknown>);
-          results.push(`● ${block.name}${detail}\n`);
+          results.push({ type: "tool", text: `● ${block.name}${detail}\n`, toolName: block.name });
         }
       }
-      return results.length > 0 ? results.join("") : null;
+      // Combine all text into one output
+      if (results.length > 0) {
+        const text = results.map(r => r.text).join("");
+        // If any is assistant type, return assistant type
+        const hasAssistant = results.some(r => r.type === "assistant");
+        return { type: hasAssistant ? "assistant" : "tool", text };
+      }
+      return null;
     }
 
     // Filter out all other JSON events:
@@ -217,7 +228,7 @@ function parseNdjsonLine(line: string): string | null {
     return null;
   } catch {
     // Not JSON - return as plain text (bash script output, etc.)
-    return line + "\n";
+    return { type: "plain", text: line + "\n" };
   }
 }
 
@@ -252,15 +263,15 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
     env: process.env,
   });
 
-  let dataCallback: ((data: string) => void) | null = null;
+  let dataCallback: ((data: DisplayOutput) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let promptSent = false;
   let stdinClosed = false;
   let buffer = ""; // Buffer for incomplete NDJSON lines
 
   // Check if text contains a completion marker
-  const checkForCompletion = (text: string): boolean => {
-    return COMPLETION_MARKERS.some((marker) => text.includes(marker));
+  const checkForCompletion = (output: DisplayOutput): boolean => {
+    return COMPLETION_MARKERS.some((marker) => output.text.includes(marker));
   };
 
   // Close stdin to signal Claude to exit (allows build loop to continue)
@@ -325,22 +336,22 @@ export function runBuild(args: string[], epicId?: string): ProcessHandle {
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
   });
 
   child.on("close", (code) => {
     // Flush any remaining buffer
     if (buffer.trim()) {
-      const displayText = parseNdjsonLine(buffer);
-      if (displayText && dataCallback) {
-        dataCallback(displayText);
+      const displayOutput = parseNdjsonLine(buffer);
+      if (displayOutput && dataCallback) {
+        dataCallback(displayOutput);
       }
     }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
   child.on("error", (err) => {
-    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
   });
 
   return {
@@ -378,7 +389,7 @@ export function runPlan(args: string[]): ProcessHandle {
     env: process.env,
   });
 
-  let dataCallback: ((data: string) => void) | null = null;
+  let dataCallback: ((data: DisplayOutput) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let promptSent = false;
   let buffer = ""; // Buffer for incomplete NDJSON lines
@@ -433,22 +444,22 @@ export function runPlan(args: string[]): ProcessHandle {
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
   });
 
   child.on("close", (code) => {
     // Flush any remaining buffer
     if (buffer.trim()) {
-      const displayText = parseNdjsonLine(buffer);
-      if (displayText && dataCallback) {
-        dataCallback(displayText);
+      const displayOutput = parseNdjsonLine(buffer);
+      if (displayOutput && dataCallback) {
+        dataCallback(displayOutput);
       }
     }
     if (exitCallback) exitCallback(code ?? 1);
   });
 
   child.on("error", (err) => {
-    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
   });
 
   return {
@@ -487,7 +498,7 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   });
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
-  let dataCallback: ((data: string) => void) | null = null;
+  let dataCallback: ((data: DisplayOutput) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
   let promptSent = false;
@@ -550,7 +561,7 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
   });
 
   child.on("close", (code) => {
@@ -569,7 +580,7 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   });
 
   child.on("error", (err) => {
-    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
     if (eventCallback) {
       eventCallback({ type: "error", message: err.message });
     }
@@ -639,7 +650,7 @@ export function runBuildInteractive(
   });
 
   let eventCallback: ((event: ClaudeEvent) => void) | null = null;
-  let dataCallback: ((data: string) => void) | null = null;
+  let dataCallback: ((data: DisplayOutput) => void) | null = null;
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
   let promptSent = false;
@@ -653,9 +664,9 @@ export function runBuildInteractive(
     }
   };
 
-  // Check if text contains a completion marker
-  const checkForCompletion = (text: string): boolean => {
-    return COMPLETION_MARKERS.some((marker) => text.includes(marker));
+  // Check if output contains a completion marker
+  const checkForCompletion = (output: DisplayOutput): boolean => {
+    return COMPLETION_MARKERS.some((marker) => output.text.includes(marker));
   };
 
   // Send prompt via stdin after spawn (like extension's claude-cli-service.ts)
@@ -720,7 +731,7 @@ export function runBuildInteractive(
   });
 
   child.stderr?.on("data", (data: Buffer) => {
-    if (dataCallback) dataCallback(data.toString());
+    if (dataCallback) dataCallback({ type: "plain", text: data.toString() });
   });
 
   child.on("close", (code) => {
@@ -739,7 +750,7 @@ export function runBuildInteractive(
   });
 
   child.on("error", (err) => {
-    if (dataCallback) dataCallback(`Error: ${err.message}\n`);
+    if (dataCallback) dataCallback({ type: "plain", text: `Error: ${err.message}\n` });
     if (eventCallback) {
       eventCallback({ type: "error", message: err.message });
     }

@@ -6,10 +6,24 @@ import {
 } from "../utils/claude-events.js";
 import {
   cancelBuild,
+  type DisplayOutput,
   type InteractiveProcessHandle,
   runBuildInteractive,
   runPlanInteractive,
 } from "../utils/process.js";
+
+// Map DisplayOutput type to OutputLine type
+function mapOutputType(output: DisplayOutput): "assistant" | "tool_call" | "stdout" {
+  switch (output.type) {
+    case "assistant":
+      return "assistant";
+    case "tool":
+    case "tool_detail":
+      return "tool_call";
+    default:
+      return "stdout";
+  }
+}
 
 // Track running process (interactive for both build and plan)
 let currentBuildProcess: InteractiveProcessHandle | null = null;
@@ -176,10 +190,10 @@ export const commands: Record<string, CommandHandler> = {
       handleClaudeEvent(event);
     });
 
-    currentPlanProcess.onData((data: string) => {
-      ctx.appendOutput(data, "stdout");
+    currentPlanProcess.onData((output: DisplayOutput) => {
+      ctx.appendOutput(output.text, mapOutputType(output));
       // Check for beads commands to trigger refresh
-      checkForBeadsCommands(data);
+      checkForBeadsCommands(output.text);
     });
 
     currentPlanProcess.onExit((code: number) => {
@@ -224,10 +238,10 @@ export const commands: Record<string, CommandHandler> = {
       handleClaudeEvent(event);
     });
 
-    currentBuildProcess.onData((data: string) => {
-      ctx.appendOutput(data, "stdout");
+    currentBuildProcess.onData((output: DisplayOutput) => {
+      ctx.appendOutput(output.text, mapOutputType(output));
       // Check for beads commands to trigger refresh
-      checkForBeadsCommands(data);
+      checkForBeadsCommands(output.text);
     });
 
     currentBuildProcess.onExit((code: number) => {

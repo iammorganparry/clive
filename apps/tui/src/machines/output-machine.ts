@@ -103,31 +103,8 @@ function parseLines(
         return createLine(line, "user_input");
       }
 
-      // Detect agent text responses (natural language from Claude)
-      // These come through as stdout but should be styled as assistant messages
-      if (type === "stdout") {
-        const trimmed = line.trim();
-        // Agent text typically:
-        // - Starts with capital letter or "I'll" / "Let me"
-        // - Is not a path, separator, or code output
-        // - Has meaningful length
-        const looksLikeAgentText =
-          ((/^[A-Z]/.test(trimmed) && trimmed.length > 15) || // Sentence starting with capital
-            /^(I'll|Let me|I'm |I am |I will |Now |First|Next|Here|This|The |Looking|Reading|Checking)/.test(trimmed)) &&
-          !trimmed.startsWith("/") && // Not a path
-          !trimmed.startsWith("●") && // Not a tool indicator
-          !trimmed.startsWith("⚡") && // Not a tool indicator
-          !trimmed.includes("===") && // Not a separator
-          !trimmed.includes("---") && // Not a separator
-          !/^\d+[→│|:]/.test(trimmed) && // Not line numbers
-          !/^(PASS|FAIL|Error|Warning)/.test(trimmed); // Not test output
-
-        if (looksLikeAgentText) {
-          return createLine(line, "assistant");
-        }
-      }
-
-      // Default to the provided type (stdout/stderr/system)
+      // Type is now properly set by process.ts JSON parsing
+      // assistant, tool_call, stdout, etc. come through with correct types
       return createLine(line, type);
     })
     .filter((line): line is OutputLine => line !== null);
