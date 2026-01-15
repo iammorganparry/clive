@@ -49,9 +49,16 @@ show_help() {
     echo "  clive build --skill unit-tests"
 }
 
-# If no args, launch TUI dashboard
+# If no args, launch TUI dashboard (Go version)
 if [ $# -eq 0 ]; then
-    exec node "$SCRIPT_DIR/../tui/bin/clive-tui.js"
+    GO_TUI="$SCRIPT_DIR/../tui-go/bin/clive-tui"
+    if [ -x "$GO_TUI" ]; then
+        exec "$GO_TUI"
+    else
+        echo "Go TUI not built. Building..."
+        (cd "$SCRIPT_DIR/../tui-go" && go build -o bin/clive-tui ./cmd/clive-tui)
+        exec "$GO_TUI"
+    fi
 fi
 
 case "${1:-}" in

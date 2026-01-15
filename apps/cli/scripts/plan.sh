@@ -92,7 +92,9 @@ if [ "$STREAMING" = true ]; then
     # --input-format stream-json: prompt sent via stdin as JSON
     # --output-format stream-json: responses streamed as NDJSON
     CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
-    claude "${CLAUDE_ARGS[@]}" 2>&1
+    # Redirect stderr to log file to prevent UI flickering from build tool output
+    mkdir -p "$HOME/.clive"
+    claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
 else
     # Interactive mode - use Docker sandbox (isolated environment with full permissions)
     docker sandbox run claude --dangerously-skip-permissions \
