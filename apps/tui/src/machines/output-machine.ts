@@ -152,6 +152,12 @@ function parseLines(
         return createLine(line, type, { blockId });
       }
 
+      if (type === "user_input") {
+        // User input gets its own block for visibility
+        const blockId = startNewBlock();
+        return createLine(line, type, { blockId });
+      }
+
       // Default: use current block for stdout/other
       const blockId = getCurrentBlockId();
       return createLine(line, type, { blockId });
