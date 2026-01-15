@@ -84,13 +84,17 @@ export function setRefreshCallback(callback: () => void): void {
 
 /**
  * Send a user guidance message to the active agent
+ * Returns true if message was sent, false if no active process
  */
-export function sendUserMessage(message: string): void {
+export function sendUserMessage(message: string): boolean {
   if (currentBuildProcess) {
     currentBuildProcess.sendUserMessage(message);
+    return true;
   } else if (currentPlanProcess) {
     currentPlanProcess.sendUserMessage(message);
+    return true;
   }
+  return false;
 }
 
 /**

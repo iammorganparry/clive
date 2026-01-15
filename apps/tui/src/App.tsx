@@ -117,9 +117,12 @@ const AppContent: React.FC = () => {
       // When agent is running and input is not a command, send as guidance
       if (isRunning && !input.startsWith("/")) {
         // Show the user's message in output
-        appendOutput(input, "user_input");
+        appendOutput(`You: ${input}`, "user_input");
         // Send to active agent
-        sendUserMessage(input);
+        const sent = sendUserMessage(input);
+        if (!sent) {
+          appendOutput("(No active agent to receive message)", "system");
+        }
       } else {
         // Normal command execution - auto-add "/" if missing
         const command = input.startsWith("/") ? input : `/${input}`;
