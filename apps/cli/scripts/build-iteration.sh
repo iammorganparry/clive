@@ -226,7 +226,8 @@ trap cleanup EXIT
 echo "$TEMP_PROMPT" > .claude/.build-prompt-path
 
 # Build claude args
-CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
+# Full permissions for build agents - they need to run bd commands, git, etc.
+CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
 
 if [ "$STREAMING" = true ]; then
     # Streaming mode for TUI - bidirectional communication via stdin/stdout

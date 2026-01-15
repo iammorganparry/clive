@@ -81,8 +81,8 @@ trap "rm -f $TEMP_PROMPT" EXIT
 echo "Starting Claude planning session..."
 echo ""
 
-# Build claude args - add dirs for file access, acceptEdits for permission mode
-CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
+# Full permissions for plan agents - they need to run bd commands, git, etc.
+CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
 
 if [ "$STREAMING" = true ]; then
     # Streaming mode for TUI - bidirectional communication via stdin/stdout

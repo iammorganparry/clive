@@ -301,7 +301,8 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     # --add-dir gives Claude access to read files
     # --permission-mode acceptEdits allows file edits without prompting
     # but still requires approval for dangerous operations (bash, etc.)
-    CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --permission-mode acceptEdits)
+    # Full permissions for build agents - they need to run bd commands, git, etc.
+    CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
 
     if [ "$STREAMING" = true ]; then
         # Streaming mode for TUI - NDJSON output for parsing
