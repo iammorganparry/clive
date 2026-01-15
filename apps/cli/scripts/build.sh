@@ -44,15 +44,19 @@ fi
 
 # Check for jq (required for beads JSON parsing)
 if ! command -v jq &>/dev/null; then
-    echo "⚠️  Warning: jq not found. Install with: brew install jq"
-    echo "   Beads task tracking will be disabled."
-    echo ""
-    BEADS_AVAILABLE=false
-# Check if beads is available
-elif command -v bd &>/dev/null && [ -d ".beads" ]; then
-    BEADS_AVAILABLE=true
-else
-    BEADS_AVAILABLE=false
+    echo "❌ Error: jq not found. Install with: brew install jq"
+    exit 1
+fi
+
+# Check if beads is available (REQUIRED)
+if ! command -v bd &>/dev/null; then
+    echo "❌ Error: Beads (bd) is required but not installed."
+    exit 1
+fi
+
+if [ ! -d ".beads" ]; then
+    echo "❌ Error: No .beads directory found. Run 'bd init' first."
+    exit 1
 fi
 
 # Parse arguments
@@ -93,32 +97,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Resolve plan file (supports both work-plan and legacy test-plan naming)
-resolve_plan_file() {
-    # New naming: work-plan-*
-    if [ -f ".claude/work-plan-latest.md" ]; then
-        readlink -f ".claude/work-plan-latest.md" 2>/dev/null || echo ".claude/work-plan-latest.md"
-    elif ls .claude/work-plan-*.md 1>/dev/null 2>&1; then
-        ls -t .claude/work-plan-*.md 2>/dev/null | head -1
-    # Legacy naming: test-plan-* (backwards compatibility)
-    elif [ -f ".claude/test-plan-latest.md" ]; then
-        readlink -f ".claude/test-plan-latest.md" 2>/dev/null || echo ".claude/test-plan-latest.md"
-    elif ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
-        ls -t .claude/test-plan-*.md 2>/dev/null | head -1
-    else
-        echo ".claude/work-plan.md"
-    fi
-}
-
-PLAN_FILE=$(resolve_plan_file)
-
-# Validate plan exists
-if [ ! -f "$PLAN_FILE" ]; then
-    echo "❌ No plan found at $PLAN_FILE"
-    echo "   Run 'clive plan' first to create a work plan."
-    exit 1
-fi
-
 # Verify skills directory exists
 if [ ! -d "$SKILLS_DIR" ]; then
     echo "❌ Error: Skills directory not found at $SKILLS_DIR"
@@ -142,11 +120,10 @@ if [ ! -f "$PROGRESS_FILE" ]; then
 fi
 
 # Write state files for TUI integration
-echo "$PLAN_FILE" > .claude/.build-plan-path
 echo "$MAX_ITERATIONS" > .claude/.build-max-iterations
 
 echo "🚀 Starting build loop"
-echo "   Plan: $PLAN_FILE"
+echo "   Task source: beads (bd ready)"
 echo "   Skills: $SKILLS_DIR"
 if [ -n "$EPIC_FILTER" ]; then
     echo "   Epic: $EPIC_FILTER"
@@ -168,11 +145,6 @@ else
 fi
 if [ "$HAS_TSPIN" = true ] && [ "$INTERACTIVE" = false ]; then
     echo "   Log highlighting: tailspin"
-fi
-if [ "$BEADS_AVAILABLE" = true ]; then
-    echo "   Task tracking: beads"
-else
-    echo "   Task tracking: plan file only"
 fi
 echo "   Progress: $PROGRESS_FILE"
 echo ""
@@ -241,7 +213,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     TASK_ID=""
     TASK_TITLE=""
 
-    if [ "$BEADS_AVAILABLE" = true ] && [ -z "$SKILL_OVERRIDE" ]; then
+    if [ -z "$SKILL_OVERRIDE" ]; then
         # Get next task from beads, optionally filtered by epic
         if [ -n "$EPIC_FILTER" ]; then
             # Filter ready tasks to those under the specified epic
@@ -292,7 +264,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "# Task Execution - Iteration $i/$MAX_ITERATIONS"
         echo ""
         echo "## Context"
-        echo "- Plan: $PLAN_FILE"
+        echo "- Task source: beads (bd ready)"
         echo "- Progress: $PROGRESS_FILE"
         echo "- Skill: $SKILL"
         if [ -n "$TASK_ID" ]; then
@@ -308,13 +280,10 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "## Instructions"
         echo ""
         echo "1. Read the skill file for execution instructions: $SKILL_FILE"
-        echo "2. Read the plan file for task details: $PLAN_FILE"
-        if [ "$BEADS_AVAILABLE" = true ]; then
-            echo "3. Use beads as source of truth: run 'bd ready' to confirm task"
-        fi
-        echo "4. Execute ONE task only following the skill instructions"
-        echo "5. Update status (beads AND plan file) after completion"
-        echo "6. Output completion marker and STOP"
+        echo "2. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
+        echo "3. Execute ONE task only following the skill instructions"
+        echo "4. Update beads status after completion: bd close $TASK_ID"
+        echo "5. Output completion marker and STOP"
         echo ""
         echo "## Completion Markers"
         echo "- Task done: $TASK_COMPLETE_MARKER"
@@ -322,7 +291,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo ""
         echo "## CRITICAL"
         echo "- Follow the skill file instructions exactly"
-        echo "- Update status in BOTH beads and plan file"
+        echo "- Update beads status (bd close) when task is complete"
         echo "- Create a LOCAL git commit before outputting completion marker"
         echo "- STOP immediately after outputting completion marker"
         echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
