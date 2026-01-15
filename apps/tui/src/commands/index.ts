@@ -108,15 +108,8 @@ export function sendQuestionAnswer(
     if (parsed.message?.content?.[0]?.content) {
       process.sendToolResult(toolCallId, parsed.message.content[0].content);
     }
-
-    // For plan process, close stdin after answering to signal completion
-    // This allows the build loop to proceed after plan approval
-    if (currentPlanProcess) {
-      // Give Claude a moment to process the answer before closing
-      setTimeout(() => {
-        currentPlanProcess?.close();
-      }, 100);
-    }
+    // Note: Don't close stdin after answering - the plan agent may ask follow-up questions.
+    // stdin is closed when the PLAN_COMPLETE marker is detected in process.ts
   }
 }
 

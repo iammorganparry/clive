@@ -807,9 +807,17 @@ echo ""
 echo "Run 'clive build' to begin execution."
 ```
 
+**Then output the completion marker:**
+```
+<promise>PLAN_COMPLETE</promise>
+```
+
+This marker signals to the TUI that planning is complete and allows the session to end gracefully.
+
 **CRITICAL:**
 - Do NOT invoke `/clive build` yourself
 - The user must explicitly run `/clive build` when ready
+- Always output the PLAN_COMPLETE marker after approval
 
 ---
 

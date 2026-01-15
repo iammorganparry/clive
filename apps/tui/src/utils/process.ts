@@ -234,6 +234,7 @@ function parseNdjsonLine(line: string): DisplayOutput | null {
 const COMPLETION_MARKERS = {
   TASK_COMPLETE: "<promise>TASK_COMPLETE</promise>",
   ALL_TASKS_COMPLETE: "<promise>ALL_TASKS_COMPLETE</promise>",
+  PLAN_COMPLETE: "<promise>PLAN_COMPLETE</promise>",
   // Legacy markers
   ITERATION_COMPLETE: "<promise>ITERATION_COMPLETE</promise>",
   ALL_SUITES_COMPLETE: "<promise>ALL_SUITES_COMPLETE</promise>",
@@ -648,6 +649,22 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   let exitCallback: ((code: number) => void) | null = null;
   let buffer = "";
   let promptSent = false;
+  let stdinClosed = false;
+
+  // Close stdin to signal Claude to exit
+  const closeStdin = (): void => {
+    if (!stdinClosed && child.stdin?.writable) {
+      stdinClosed = true;
+      child.stdin.end();
+    }
+  };
+
+  // Check for plan completion marker
+  const checkForPlanComplete = (text: string): void => {
+    if (text.includes(COMPLETION_MARKERS.PLAN_COMPLETE)) {
+      closeStdin();
+    }
+  };
 
   // Send prompt via stdin after spawn
   child.on("spawn", () => {
@@ -692,6 +709,9 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
     for (const line of lines) {
       if (!line.trim()) continue;
 
+      // Check for plan completion marker
+      checkForPlanComplete(line);
+
       // Emit displayable content to dataCallback
       const displayText = parseNdjsonLine(line);
       if (displayText && dataCallback) {
@@ -713,6 +733,9 @@ export function runPlanInteractive(args: string[]): InteractiveProcessHandle {
   child.on("close", (code) => {
     // Process any remaining buffer
     if (buffer.trim()) {
+      // Check for plan completion marker in remaining buffer
+      checkForPlanComplete(buffer);
+
       const displayText = parseNdjsonLine(buffer);
       if (displayText && dataCallback) {
         dataCallback(displayText);
