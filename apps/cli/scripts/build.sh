@@ -219,7 +219,8 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
             # Filter ready tasks to those under the specified epic
             # Derive parent from ID convention: "epic-id.1" -> parent is "epic-id"
             # Uses .parent if set, otherwise derives from ID by removing last .N segment
-            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
+            # Use higher limit to ensure we find tasks under the epic
+            NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
               [.[] |
                 ((.parent // null) as $explicit_parent |
                  (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |

@@ -139,7 +139,8 @@ TASK_TITLE=""
 
 if [ -z "$SKILL_OVERRIDE" ]; then
     if [ -n "$EPIC_FILTER" ]; then
-        NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
+        # Use higher limit to ensure we find tasks under the epic
+        NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
           [.[] |
             ((.parent // null) as $explicit_parent |
              (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |
@@ -236,11 +237,14 @@ if [ "$STREAMING" = true ]; then
     CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
 
     # Run Claude - TUI will send prompt via stdin
-    claude "${CLAUDE_ARGS[@]}" 2>&1
+    # Redirect stderr to log file to prevent UI flickering from build tool output
+    mkdir -p "$HOME/.clive"
+    claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
 else
     # Non-streaming mode - pass prompt as argument
     CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
-    claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>&1
+    mkdir -p "$HOME/.clive"
+    claude "${CLAUDE_ARGS[@]}" "Read and execute all instructions in the file: $TEMP_PROMPT" 2>>"$HOME/.clive/claude-stderr.log"
 fi
 
 # Check completion status from progress file
