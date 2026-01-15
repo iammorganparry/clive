@@ -114,15 +114,11 @@ const AppContent: React.FC = () => {
 
   const handleCommand = useCallback(
     (input: string) => {
-      // When agent is running and input is not a command, send as guidance
+      // When agent is running and input is not a command
       if (isRunning && !input.startsWith("/")) {
-        // Show the user's message in output
-        appendOutput(`You: ${input}`, "user_input");
-        // Send to active agent
-        const sent = sendUserMessage(input);
-        if (!sent) {
-          appendOutput("(No active agent to receive message)", "system");
-        }
+        // Mid-conversation messages are not supported by Claude CLI
+        // User can only interact via /cancel or when agent asks a question
+        appendOutput(`Tip: Use /cancel to stop the agent, or wait for it to ask a question`, "system");
       } else {
         // Normal command execution - auto-add "/" if missing
         const command = input.startsWith("/") ? input : `/${input}`;
