@@ -38,13 +38,21 @@ EPIC_FILTER=""
 EXTRA_CONTEXT=""
 STREAMING=false
 
-# Check for jq
+# Check for jq (required)
 if ! command -v jq &>/dev/null; then
-    BEADS_AVAILABLE=false
-elif command -v bd &>/dev/null && [ -d ".beads" ]; then
-    BEADS_AVAILABLE=true
-else
-    BEADS_AVAILABLE=false
+    echo "❌ Error: jq not found. Install with: brew install jq" >&2
+    exit 1
+fi
+
+# Check if beads is available (required)
+if ! command -v bd &>/dev/null; then
+    echo "❌ Error: Beads (bd) is required but not installed." >&2
+    exit 1
+fi
+
+if [ ! -d ".beads" ]; then
+    echo "❌ Error: No .beads directory found. Run 'bd init' first." >&2
+    exit 1
 fi
 
 # Parse arguments
@@ -77,29 +85,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Resolve plan file
-resolve_plan_file() {
-    if [ -f ".claude/work-plan-latest.md" ]; then
-        readlink -f ".claude/work-plan-latest.md" 2>/dev/null || echo ".claude/work-plan-latest.md"
-    elif ls .claude/work-plan-*.md 1>/dev/null 2>&1; then
-        ls -t .claude/work-plan-*.md 2>/dev/null | head -1
-    elif [ -f ".claude/test-plan-latest.md" ]; then
-        readlink -f ".claude/test-plan-latest.md" 2>/dev/null || echo ".claude/test-plan-latest.md"
-    elif ls .claude/test-plan-*.md 1>/dev/null 2>&1; then
-        ls -t .claude/test-plan-*.md 2>/dev/null | head -1
-    else
-        echo ".claude/work-plan.md"
-    fi
-}
-
-PLAN_FILE=$(resolve_plan_file)
-
-# Validate plan exists
-if [ ! -f "$PLAN_FILE" ]; then
-    echo "❌ No plan found at $PLAN_FILE" >&2
-    exit 1
-fi
-
 # Verify skills directory
 if [ ! -d "$SKILLS_DIR" ]; then
     echo "❌ Skills directory not found at $SKILLS_DIR" >&2
@@ -117,7 +102,6 @@ if [ ! -f "$PROGRESS_FILE" ]; then
 fi
 
 # Write state files for TUI
-echo "$PLAN_FILE" > .claude/.build-plan-path
 echo "$ITERATION" > .claude/.build-iteration
 echo "$MAX_ITERATIONS" > .claude/.build-max-iterations
 
@@ -153,7 +137,7 @@ SKILL="$SKILL_OVERRIDE"
 TASK_ID=""
 TASK_TITLE=""
 
-if [ "$BEADS_AVAILABLE" = true ] && [ -z "$SKILL_OVERRIDE" ]; then
+if [ -z "$SKILL_OVERRIDE" ]; then
     if [ -n "$EPIC_FILTER" ]; then
         NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
           [.[] |
@@ -205,7 +189,7 @@ trap cleanup EXIT
     echo "# Task Execution - Iteration $ITERATION/$MAX_ITERATIONS"
     echo ""
     echo "## Context"
-    echo "- Plan: $PLAN_FILE"
+    echo "- Task source: beads (bd ready)"
     echo "- Progress: $PROGRESS_FILE"
     echo "- Skill: $SKILL"
     if [ -n "$TASK_ID" ]; then
@@ -221,13 +205,10 @@ trap cleanup EXIT
     echo "## Instructions"
     echo ""
     echo "1. Read the skill file for execution instructions: $SKILL_FILE"
-    echo "2. Read the plan file for task details: $PLAN_FILE"
-    if [ "$BEADS_AVAILABLE" = true ]; then
-        echo "3. Use beads as source of truth: run 'bd ready' to confirm task"
-    fi
-    echo "4. Execute ONE task only following the skill instructions"
-    echo "5. Update status (beads AND plan file) after completion"
-    echo "6. Output completion marker and STOP"
+    echo "2. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
+    echo "3. Execute ONE task only following the skill instructions"
+    echo "4. Update beads status after completion: bd close $TASK_ID"
+    echo "5. Output completion marker and STOP"
     echo ""
     echo "## Completion Markers"
     echo "- Task done: $TASK_COMPLETE_MARKER"
@@ -235,7 +216,7 @@ trap cleanup EXIT
     echo ""
     echo "## CRITICAL"
     echo "- Follow the skill file instructions exactly"
-    echo "- Update status in BOTH beads and plan file"
+    echo "- Update beads status (bd close) when task is complete"
     echo "- Create a LOCAL git commit before outputting completion marker"
     echo "- STOP immediately after outputting completion marker"
     echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
