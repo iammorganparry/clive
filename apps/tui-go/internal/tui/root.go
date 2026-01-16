@@ -111,6 +111,10 @@ type Model struct {
 	// Ready state
 	ready bool
 
+	// Loading states
+	loadingEpics bool
+	loadingTasks bool
+
 	// Command suggestions
 	showSuggestions    bool
 	selectedSuggestion int
@@ -139,9 +143,6 @@ func NewRootModel() Model {
 	ti.CharLimit = 0  // No limit
 	ti.Width = 80     // Default width, will be updated on WindowSizeMsg
 
-	// Preload epics synchronously for instant display
-	sessions := beads.GetEpics(false)
-
 	return Model{
 		viewMode:        ViewModeSelection, // Start with epic selection
 		input:           ti,
@@ -150,7 +151,7 @@ func NewRootModel() Model {
 		ready:           false,
 		selectedIndex:   0,
 		defaultMaxIters: 50, // Default max iterations for build loop
-		sessions:        sessions, // Preloaded
+		loadingEpics:    true, // Start in loading state
 	}
 }
 
@@ -158,7 +159,9 @@ func NewRootModel() Model {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
-		tickCmd(), // Start normal tick for background refresh
+		loadEpics(),      // Load epics asynchronously
+		spinnerTickCmd(), // Animate loading spinner
+		tickCmd(),        // Start normal tick for background refresh
 	)
 }
 
@@ -237,11 +240,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case epicsLoadedMsg:
 		m.sessions = msg.sessions
+		m.loadingEpics = false
 
 	case tasksLoadedMsg:
 		m.tasks = msg.tasks
+		m.loadingTasks = false
 
 	case outputLineMsg:
+		// Handle exit message type - process has finished
+		if msg.line.Type == "exit" {
+			return m, func() tea.Msg {
+				return processFinishedMsg{exitCode: msg.line.ExitCode}
+			}
+		}
+
 		m.outputLines = append(m.outputLines, msg.line)
 		// Keep only last 500 lines
 		if len(m.outputLines) > 500 {
@@ -257,6 +269,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeSession != nil {
 				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 			}
+		}
+
+		// Handle CloseStdin flag - signal Claude to exit after TASK_COMPLETE
+		if msg.line.CloseStdin && m.processHandle != nil {
+			m.processHandle.CloseStdin()
 		}
 
 		// Handle question type - show question panel
@@ -275,7 +292,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case outputBatchMsg:
-		m.outputLines = append(m.outputLines, msg.lines...)
+		// Check for exit message in batch and extract exit code
+		var exitMsg *process.OutputLine
+		var regularLines []process.OutputLine
+		for i := range msg.lines {
+			if msg.lines[i].Type == "exit" {
+				exitMsg = &msg.lines[i]
+			} else {
+				regularLines = append(regularLines, msg.lines[i])
+			}
+		}
+
+		// Add non-exit lines to output
+		m.outputLines = append(m.outputLines, regularLines...)
 		// Keep only last 500 lines
 		if len(m.outputLines) > 500 {
 			m.outputLines = m.outputLines[len(m.outputLines)-500:]
@@ -284,20 +313,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.renderOutputContent())
 		m.viewport.GotoBottom()
 
-		// Check batch for RefreshTasks and questions
-		for _, line := range msg.lines {
+		// Check batch for RefreshTasks, CloseStdin, and questions
+		for _, line := range regularLines {
 			if line.RefreshTasks {
 				beads.ClearCache()
 				if m.activeSession != nil {
 					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 				}
-				break // Only need to refresh once
+			}
+			if line.CloseStdin && m.processHandle != nil {
+				m.processHandle.CloseStdin()
 			}
 		}
 
 		// Handle question type - show question panel (check last question in batch)
-		for i := len(msg.lines) - 1; i >= 0; i-- {
-			line := msg.lines[i]
+		for i := len(regularLines) - 1; i >= 0; i-- {
+			line := regularLines[i]
 			if line.Type == "question" && line.Question != nil {
 				m.pendingQuestion = line.Question
 				m.showQuestionPanel = true
@@ -306,6 +337,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Focus()
 				m.input.SetValue("")
 				break
+			}
+		}
+
+		// If we found an exit message, trigger process finished
+		if exitMsg != nil {
+			return m, func() tea.Msg {
+				return processFinishedMsg{exitCode: exitMsg.ExitCode}
 			}
 		}
 
@@ -389,8 +427,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinnerTickMsg:
-		// Advance spinner animation when running
-		if m.isRunning {
+		// Advance spinner animation when running or loading
+		if m.isRunning || m.loadingEpics || m.loadingTasks {
 			m.spinnerIndex = (m.spinnerIndex + 1) % len(spinnerFrames)
 			cmds = append(cmds, spinnerTickCmd())
 		}
@@ -1018,8 +1056,10 @@ func (m Model) renderStreamingIndicator() string {
 	}
 
 	elapsed := time.Since(m.streamStartTime)
-	spinner := spinnerFrames[m.spinnerIndex]
-	phrase := activityPhrases[m.spinnerIndex%len(activityPhrases)]
+	spinner := spinnerFrames[m.spinnerIndex%len(spinnerFrames)]
+	// Change phrase every 2 seconds (20 spinner ticks at 100ms each)
+	phraseIndex := int(elapsed.Seconds()/2) % len(activityPhrases)
+	phrase := activityPhrases[phraseIndex]
 
 	// Format: ⠙ Thinking… (ctrl+c to interrupt · 58s)
 	indicator := fmt.Sprintf("%s %s… ", spinner, phrase)
@@ -1183,7 +1223,13 @@ func (m Model) selectionView() string {
 	content.WriteString(title)
 	content.WriteString("\n\n")
 
-	if len(m.sessions) == 0 {
+	if m.loadingEpics {
+		// Show loading spinner
+		spinner := spinnerFrames[m.spinnerIndex%len(spinnerFrames)]
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(ColorYellow).
+			Render(spinner + " Loading epics..."))
+	} else if len(m.sessions) == 0 {
 		content.WriteString(lipgloss.NewStyle().
 			Foreground(ColorFgMuted).
 			Render("No epics found.\n\nPress n to create a new session."))
@@ -1309,6 +1355,9 @@ func (m *Model) startBuild() tea.Cmd {
 		return nil
 	}
 
+	// Reset streaming state to ensure clean detection for new build
+	process.ResetStreamingState()
+
 	// Initialize build loop state
 	m.isRunning = true
 	m.buildLoopRunning = true
@@ -1339,6 +1388,9 @@ func (m *Model) runNextBuildIteration() tea.Cmd {
 	if !m.buildLoopRunning {
 		return nil
 	}
+
+	// Reset streaming state from previous iteration to avoid stale TASK_COMPLETE detection
+	process.ResetStreamingState()
 
 	m.currentIteration++
 	m.outputChan = make(chan process.OutputLine, 100)
