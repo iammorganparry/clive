@@ -719,6 +719,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI
 func (m Model) View() string {
+	// Selection view can render before window size is known
+	if m.viewMode == ViewModeSelection {
+		return m.selectionView()
+	}
+
+	// Other views need terminal dimensions
 	if !m.ready {
 		return "Loading..."
 	}
@@ -726,8 +732,6 @@ func (m Model) View() string {
 	switch m.viewMode {
 	case ViewModeHelp:
 		return m.helpView()
-	case ViewModeSelection:
-		return m.selectionView()
 	default:
 		return m.mainView()
 	}
