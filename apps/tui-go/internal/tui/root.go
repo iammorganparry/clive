@@ -139,6 +139,9 @@ func NewRootModel() Model {
 	ti.CharLimit = 0  // No limit
 	ti.Width = 80     // Default width, will be updated on WindowSizeMsg
 
+	// Preload epics synchronously for instant display
+	sessions := beads.GetEpics(false)
+
 	return Model{
 		viewMode:        ViewModeSelection, // Start with epic selection
 		input:           ti,
@@ -147,23 +150,22 @@ func NewRootModel() Model {
 		ready:           false,
 		selectedIndex:   0,
 		defaultMaxIters: 50, // Default max iterations for build loop
+		sessions:        sessions, // Preloaded
 	}
 }
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		tea.EnterAltScreen,
 		textinput.Blink,
-		loadEpics(),
-		fastTickCmd(), // Fast initial tick for retry if loadEpics fails
+		tickCmd(), // Start normal tick for background refresh
 	)
 }
 
 // loadEpics loads epics from beads
 func loadEpics() tea.Cmd {
 	return func() tea.Msg {
-		sessions := beads.GetEpics(true) // Filter by current user
+		sessions := beads.GetEpics(false) // Don't filter - show all epics
 		return epicsLoadedMsg{sessions: sessions}
 	}
 }
