@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -48,6 +49,17 @@ type processFinishedMsg struct {
 type tickMsg time.Time
 
 type spinnerTickMsg struct{}
+
+// taskAddedMsg is sent when a task has been added via /add command
+type taskAddedMsg struct {
+	success bool
+	output  string
+	err     string
+}
+
+// pollingStoppedMsg is sent when the output channel closes.
+// This is distinct from processFinishedMsg - only explicit "exit" lines should trigger iteration logic.
+type pollingStoppedMsg struct{}
 
 // Spinner animation frames
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -127,6 +139,7 @@ var availableCommands = []struct {
 }{
 	{"/plan", "Create a work plan"},
 	{"/build", "Execute work plan"},
+	{"/add", "Add task to epic (build mode)"},
 	{"/cancel", "Cancel running process"},
 	{"/clear", "Clear output"},
 	{"/status", "Show current status"},
@@ -173,9 +186,12 @@ func loadEpics() tea.Cmd {
 	}
 }
 
-// loadTasks loads tasks for an epic
+// loadTasks loads tasks for an epic.
+// It clears the cache immediately before fetching to ensure fresh data,
+// avoiding race conditions with background tick refreshes.
 func loadTasks(epicID string) tea.Cmd {
 	return func() tea.Msg {
+		beads.ClearCache() // Clear cache at fetch time, not enqueue time
 		tasks := beads.GetEpicTasks(epicID)
 		return tasksLoadedMsg{tasks: tasks}
 	}
@@ -265,7 +281,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle RefreshTasks flag - immediately refresh task sidebar
 		if msg.line.RefreshTasks {
-			beads.ClearCache()
 			if m.activeSession != nil {
 				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 			}
@@ -273,7 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle CloseStdin flag - signal Claude to exit after TASK_COMPLETE
 		if msg.line.CloseStdin && m.processHandle != nil {
-			m.processHandle.CloseStdin()
+			go m.processHandle.CloseStdinWithTimeout(3 * time.Second)
 		}
 
 		// Handle question type - show question panel
@@ -316,13 +331,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check batch for RefreshTasks, CloseStdin, and questions
 		for _, line := range regularLines {
 			if line.RefreshTasks {
-				beads.ClearCache()
 				if m.activeSession != nil {
 					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 				}
 			}
 			if line.CloseStdin && m.processHandle != nil {
-				m.processHandle.CloseStdin()
+				go m.processHandle.CloseStdinWithTimeout(3 * time.Second)
 			}
 		}
 
@@ -360,6 +374,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.outputChan = nil
 		}
 
+		// Debug: show exit code and state
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("[DEBUG] processFinishedMsg: exitCode=%d, iteration=%d/%d, isSuccessful=%v, buildLoopRunning=%v",
+				exitCode, m.currentIteration, m.maxIterations, isSuccessfulExit(exitCode), m.buildLoopRunning),
+			Type: "system",
+		})
+
 		// Handle build loop continuation
 		if m.buildLoopRunning {
 			// Exit code 10 = all tasks complete
@@ -371,7 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.buildLoopRunning = false
 				m.currentIteration = 0
 				m.isRunning = false
-			} else if exitCode == 0 && m.currentIteration < m.maxIterations {
+			} else if isSuccessfulExit(exitCode) && m.currentIteration < m.maxIterations {
 				// Task complete, continue to next iteration
 				m.outputLines = append(m.outputLines, process.OutputLine{
 					Text: "",
@@ -395,7 +416,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 
 				// Refresh tasks before next iteration
-				beads.ClearCache()
 				if m.activeSession != nil {
 					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 				}
@@ -432,6 +452,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinnerIndex = (m.spinnerIndex + 1) % len(spinnerFrames)
 			cmds = append(cmds, spinnerTickCmd())
 		}
+
+	case taskAddedMsg:
+		if msg.success {
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "✓ Task added",
+				Type: "system",
+			})
+			// Refresh task list
+			if m.activeSession != nil {
+				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+			}
+		} else {
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "Failed to add task: " + msg.err,
+				Type: "stderr",
+			})
+		}
+
+	case pollingStoppedMsg:
+		// Channel closed - this is benign, just stop polling.
+		// The actual exit code comes from the "exit" type line, not channel close.
+		// This prevents duplicate processFinishedMsg when multiple polls are in flight.
 
 	case tickMsg:
 		// Use fast tick while loading, normal tick once loaded
@@ -1164,8 +1206,9 @@ func (m Model) renderStatusBar() string {
 			keyStyle.Render("Ctrl+C") + mutedStyle.Render(" quit")
 	} else if m.isRunning {
 		helpHint = mutedStyle.Render(" │ ") +
+			keyStyle.Render("i") + mutedStyle.Render(" message │ ") +
+			keyStyle.Render("/add") + mutedStyle.Render(" task │ ") +
 			keyStyle.Render("c") + mutedStyle.Render(" cancel │ ") +
-			keyStyle.Render("/") + mutedStyle.Render(" input │ ") +
 			keyStyle.Render("Ctrl+C") + mutedStyle.Render(" quit")
 	} else {
 		helpHint = mutedStyle.Render(" │ ") +
@@ -1282,6 +1325,19 @@ func (m Model) selectionView() string {
 func (m *Model) executeCommand(cmd string) tea.Cmd {
 	cmd = strings.TrimSpace(cmd)
 
+	// If not a command (doesn't start with / or :) and process is running, send as message to Claude
+	if !strings.HasPrefix(cmd, "/") && !strings.HasPrefix(cmd, ":") {
+		if m.isRunning && m.processHandle != nil {
+			return m.sendMessageToAgent(cmd)
+		}
+		// Not running - show hint
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "No process running. Use /plan or /build to start.",
+			Type: "stderr",
+		})
+		return nil
+	}
+
 	switch {
 	case strings.HasPrefix(cmd, "/plan"):
 		input := strings.TrimSpace(strings.TrimPrefix(cmd, "/plan"))
@@ -1289,6 +1345,10 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 
 	case strings.HasPrefix(cmd, "/build"):
 		return m.startBuild()
+
+	case strings.HasPrefix(cmd, "/add"):
+		input := strings.TrimSpace(strings.TrimPrefix(cmd, "/add"))
+		return m.addTask(input)
 
 	case cmd == "/cancel":
 		if m.isRunning && m.processHandle != nil {
@@ -1347,6 +1407,82 @@ func (m *Model) sendQuestionResponse(response string) {
 			Type: "system",
 		})
 	}
+}
+
+// addTask creates a new task in beads for the current epic
+// Only available during build mode - runs non-blocking so build continues
+func (m *Model) addTask(title string) tea.Cmd {
+	// Must be in build mode
+	if !m.buildLoopRunning {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "/add is only available during build mode. Run /build first.",
+			Type: "stderr",
+		})
+		return nil
+	}
+
+	// Need a title
+	if title == "" {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Usage: /add <task title>",
+			Type: "stderr",
+		})
+		return nil
+	}
+
+	// Need an active session/epic
+	if m.activeSession == nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "No active epic selected.",
+			Type: "stderr",
+		})
+		return nil
+	}
+
+	// Run bd create in background (non-blocking)
+	return m.runAddTask(title, m.activeSession.EpicID)
+}
+
+// runAddTask executes bd create and refreshes tasks
+func (m *Model) runAddTask(title, epicID string) tea.Cmd {
+	return func() tea.Msg {
+		// Execute bd create
+		cmd := exec.Command("bd", "create",
+			"--title", title,
+			"--type", "task",
+			"--parent", epicID,
+		)
+		output, err := cmd.CombinedOutput()
+
+		if err != nil {
+			return taskAddedMsg{success: false, err: err.Error()}
+		}
+		return taskAddedMsg{success: true, output: string(output)}
+	}
+}
+
+// sendMessageToAgent sends free-form text to the running Claude process
+func (m *Model) sendMessageToAgent(message string) tea.Cmd {
+	if m.processHandle == nil {
+		return nil
+	}
+
+	// Show user's message in output
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: "You: " + message,
+		Type: "system",
+	})
+
+	// Send to process (reuse existing SendMessage method)
+	err := m.processHandle.SendMessage(message)
+	if err != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Failed to send message: " + err.Error(),
+			Type: "stderr",
+		})
+	}
+
+	return nil
 }
 
 // startBuild starts the build loop (Ralph Wiggum loop)
@@ -1442,7 +1578,10 @@ func (m *Model) startPlan(input string) tea.Cmd {
 }
 
 // waitForOutput returns a command that blocks until output is available
-// and then drains all immediately available lines for efficiency
+// and then drains all immediately available lines for efficiency.
+// IMPORTANT: When channel closes, returns pollingStoppedMsg (not processFinishedMsg).
+// The actual exit code must come from an explicit "exit" type line, not channel close.
+// This prevents duplicate processFinishedMsg when multiple poll commands are in flight.
 func waitForOutput(outputChan <-chan process.OutputLine) tea.Cmd {
 	return func() tea.Msg {
 		if outputChan == nil {
@@ -1452,7 +1591,9 @@ func waitForOutput(outputChan <-chan process.OutputLine) tea.Cmd {
 		// First, block until we get at least one line
 		line, ok := <-outputChan
 		if !ok {
-			return processFinishedMsg{exitCode: 0}
+			// Channel closed - return benign message, not processFinishedMsg
+			// (the real exit code comes from the "exit" type line)
+			return pollingStoppedMsg{}
 		}
 
 		// Start with the first line
@@ -1467,7 +1608,7 @@ func waitForOutput(outputChan <-chan process.OutputLine) tea.Cmd {
 					if len(lines) > 0 {
 						return outputBatchMsg{lines: lines}
 					}
-					return processFinishedMsg{exitCode: 0}
+					return pollingStoppedMsg{}
 				}
 				lines = append(lines, l)
 			default:
@@ -1637,6 +1778,21 @@ func truncate(s string, max int) string {
 
 func itoa(i int) string {
 	return fmt.Sprintf("%d", i)
+}
+
+// isSuccessfulExit returns true if the exit code indicates successful task completion.
+// This includes clean exits (0) and killed processes (which happen when we force-terminate
+// after TASK_COMPLETE is detected via CloseStdinWithTimeout).
+func isSuccessfulExit(exitCode int) bool {
+	if exitCode == 0 {
+		return true
+	}
+	// Killed processes: -1 on macOS, or 128+signal on Linux
+	// SIGKILL (9) = 137, SIGTERM (15) = 143
+	if exitCode == -1 || exitCode == 137 || exitCode == 143 {
+		return true
+	}
+	return false
 }
 
 // wrapText wraps text to fit within a given width, preserving word boundaries
