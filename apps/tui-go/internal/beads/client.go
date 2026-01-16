@@ -18,6 +18,14 @@ var (
 	cacheTimestamp time.Time
 	cacheTTL       = 2 * time.Second
 	cacheMutex     sync.RWMutex
+
+	// Cached git user email (only fetched once)
+	gitUserEmail     string
+	gitUserEmailOnce sync.Once
+
+	// Cached beads availability check
+	beadsAvailable     bool
+	beadsAvailableOnce sync.Once
 )
 
 // Raw beads issue from JSON output
@@ -58,16 +66,20 @@ func findBeadsRoot() string {
 	return ""
 }
 
-// IsAvailable checks if beads CLI is available
+// IsAvailable checks if beads CLI is available (cached after first call)
 func IsAvailable() bool {
-	// Check if bd command exists
-	_, err := exec.LookPath("bd")
-	if err != nil {
-		return false
-	}
+	beadsAvailableOnce.Do(func() {
+		// Check if bd command exists
+		_, err := exec.LookPath("bd")
+		if err != nil {
+			beadsAvailable = false
+			return
+		}
 
-	// Check if .beads directory exists in current or parent directories
-	return findBeadsRoot() != ""
+		// Check if .beads directory exists in current or parent directories
+		beadsAvailable = findBeadsRoot() != ""
+	})
+	return beadsAvailable
 }
 
 // getCachedIssues fetches issues from cache or beads CLI
@@ -132,14 +144,18 @@ func deriveParentID(id string) string {
 	return id[:lastDot]
 }
 
-// GetGitUserEmail returns the current git user email
+// GetGitUserEmail returns the current git user email (cached after first call)
 func GetGitUserEmail() string {
-	cmd := exec.Command("git", "config", "user.email")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(output))
+	gitUserEmailOnce.Do(func() {
+		cmd := exec.Command("git", "config", "user.email")
+		output, err := cmd.Output()
+		if err != nil {
+			gitUserEmail = ""
+			return
+		}
+		gitUserEmail = strings.TrimSpace(string(output))
+	})
+	return gitUserEmail
 }
 
 // GetEpics returns all epics (P0 priority issues)
