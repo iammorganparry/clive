@@ -156,7 +156,7 @@ func (m Model) Init() tea.Cmd {
 		tea.EnterAltScreen,
 		textinput.Blink,
 		loadEpics(),
-		tickCmd(),
+		fastTickCmd(), // Fast initial tick for retry if loadEpics fails
 	)
 }
 
@@ -178,7 +178,14 @@ func loadTasks(epicID string) tea.Cmd {
 
 // tickCmd returns a tick command for polling
 func tickCmd() tea.Cmd {
-	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+// fastTickCmd returns a quick tick for initial load retry
+func fastTickCmd() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -387,13 +394,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
-		// Refresh data periodically
-		cmds = append(cmds, tickCmd())
+		// Use fast tick while loading, normal tick once loaded
+		if m.viewMode == ViewModeSelection && len(m.sessions) == 0 {
+			cmds = append(cmds, fastTickCmd())
+			cmds = append(cmds, loadEpics())
+		} else {
+			cmds = append(cmds, tickCmd())
+		}
 		// Check for output from process
 		if m.outputChan != nil {
 			cmds = append(cmds, m.pollOutput())
 		}
-		// Refresh epics and tasks
+		// Refresh tasks if in main view
 		if m.activeSession != nil {
 			cmds = append(cmds, loadTasks(m.activeSession.EpicID))
 		}
