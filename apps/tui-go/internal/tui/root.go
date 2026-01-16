@@ -47,6 +47,16 @@ type processFinishedMsg struct {
 
 type tickMsg time.Time
 
+type spinnerTickMsg struct{}
+
+// Spinner animation frames
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// Activity phrases (rotated during streaming)
+var activityPhrases = []string{
+	"Thinking", "Sprouting", "Pondering", "Computing", "Processing",
+}
+
 // Model is the root Bubble Tea model
 type Model struct {
 	// Terminal dimensions
@@ -80,6 +90,21 @@ type Model struct {
 	// Running state
 	isRunning bool
 
+	// Build loop state (Ralph Wiggum loop)
+	buildLoopRunning  bool // Whether the build loop is active
+	currentIteration  int  // Current iteration number
+	maxIterations     int  // Maximum iterations allowed
+	defaultMaxIters   int  // Default max iterations (50)
+
+	// Streaming indicator state
+	streamStartTime time.Time // When streaming started
+	spinnerIndex    int       // Animation frame index
+
+	// Question state (for AskUserQuestion)
+	pendingQuestion   *process.QuestionData
+	selectedOption    int  // Selected option index
+	showQuestionPanel bool // Whether question panel is visible
+
 	// Key bindings
 	keys KeyMap
 
@@ -111,15 +136,17 @@ func NewRootModel() Model {
 	ti.Placeholder = "Enter command..."
 	ti.Prompt = "❯ "
 	ti.PromptStyle = InputPromptStyle
-	ti.CharLimit = 256
+	ti.CharLimit = 0  // No limit
+	ti.Width = 80     // Default width, will be updated on WindowSizeMsg
 
 	return Model{
-		viewMode:      ViewModeSelection, // Start with epic selection
-		input:         ti,
-		inputFocused:  false,
-		keys:          DefaultKeyMap(),
-		ready:         false,
-		selectedIndex: 0,
+		viewMode:        ViewModeSelection, // Start with epic selection
+		input:           ti,
+		inputFocused:    false,
+		keys:            DefaultKeyMap(),
+		ready:           false,
+		selectedIndex:   0,
+		defaultMaxIters: 50, // Default max iterations for build loop
 	}
 }
 
@@ -156,6 +183,13 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+// spinnerTickCmd returns a fast tick command for spinner animation
+func spinnerTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -179,6 +213,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = 1
 		}
 
+		// Update input width (account for border, padding, and prompt)
+		inputWidth := m.width - 8 // 4 for border/padding, 4 for prompt "❯ "
+		if inputWidth < 10 {
+			inputWidth = 10
+		}
+		m.input.Width = inputWidth
+
 		// Re-render content if we have output
 		if len(m.outputLines) > 0 {
 			m.viewport.SetContent(m.renderOutputContent())
@@ -200,6 +241,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport content
 		m.viewport.SetContent(m.renderOutputContent())
 		m.viewport.GotoBottom()
+
+		// Handle RefreshTasks flag - immediately refresh task sidebar
+		if msg.line.RefreshTasks {
+			beads.ClearCache()
+			if m.activeSession != nil {
+				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+			}
+		}
+
+		// Handle question type - show question panel
+		if msg.line.Type == "question" && msg.line.Question != nil {
+			m.pendingQuestion = msg.line.Question
+			m.showQuestionPanel = true
+			m.selectedOption = 0
+			m.inputFocused = true
+			m.input.Focus()
+			m.input.SetValue("")
+		}
+
 		// Continue polling for more output
 		if m.outputChan != nil {
 			cmds = append(cmds, m.pollOutput())
@@ -214,21 +274,116 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport content
 		m.viewport.SetContent(m.renderOutputContent())
 		m.viewport.GotoBottom()
+
+		// Check batch for RefreshTasks and questions
+		for _, line := range msg.lines {
+			if line.RefreshTasks {
+				beads.ClearCache()
+				if m.activeSession != nil {
+					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+				}
+				break // Only need to refresh once
+			}
+		}
+
+		// Handle question type - show question panel (check last question in batch)
+		for i := len(msg.lines) - 1; i >= 0; i-- {
+			line := msg.lines[i]
+			if line.Type == "question" && line.Question != nil {
+				m.pendingQuestion = line.Question
+				m.showQuestionPanel = true
+				m.selectedOption = 0
+				m.inputFocused = true
+				m.input.Focus()
+				m.input.SetValue("")
+				break
+			}
+		}
+
 		// Continue polling for more output
 		if m.outputChan != nil {
 			cmds = append(cmds, m.pollOutput())
 		}
 
 	case processFinishedMsg:
-		m.isRunning = false
+		exitCode := msg.exitCode
 		m.processHandle = nil
 		if m.outputChan != nil {
 			close(m.outputChan)
 			m.outputChan = nil
 		}
+
+		// Handle build loop continuation
+		if m.buildLoopRunning {
+			// Exit code 10 = all tasks complete
+			if exitCode == 10 {
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "✅ All tasks complete!",
+					Type: "system",
+				})
+				m.buildLoopRunning = false
+				m.currentIteration = 0
+				m.isRunning = false
+			} else if exitCode == 0 && m.currentIteration < m.maxIterations {
+				// Task complete, continue to next iteration
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "",
+					Type: "system",
+				})
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+					Type: "system",
+				})
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "✓ Iteration complete · Starting fresh context",
+					Type: "system",
+				})
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+					Type: "system",
+				})
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "",
+					Type: "system",
+				})
+
+				// Refresh tasks before next iteration
+				beads.ClearCache()
+				if m.activeSession != nil {
+					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+				}
+
+				// Start next iteration
+				cmds = append(cmds, m.runNextBuildIteration())
+			} else if m.currentIteration >= m.maxIterations {
+				// Max iterations reached
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: fmt.Sprintf("⚠️ Max iterations (%d) reached", m.maxIterations),
+					Type: "system",
+				})
+				m.buildLoopRunning = false
+				m.currentIteration = 0
+				m.isRunning = false
+			} else {
+				// Error or cancelled
+				m.buildLoopRunning = false
+				m.currentIteration = 0
+				m.isRunning = false
+			}
+		} else {
+			m.isRunning = false
+		}
+
 		// Refresh tasks after process finishes
 		if m.activeSession != nil {
 			cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+		}
+
+	case spinnerTickMsg:
+		// Advance spinner animation when running
+		if m.isRunning {
+			m.spinnerIndex = (m.spinnerIndex + 1) % len(spinnerFrames)
+			cmds = append(cmds, spinnerTickCmd())
 		}
 
 	case tickMsg:
@@ -251,6 +406,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle input when focused
 		if m.inputFocused {
+			// Handle question panel navigation
+			if m.showQuestionPanel && m.pendingQuestion != nil {
+				totalOptions := len(m.pendingQuestion.Options) + 1 // +1 for "Other"
+
+				switch msg.Type {
+				case tea.KeyUp:
+					if m.selectedOption > 0 {
+						m.selectedOption--
+					}
+					return m, tea.Batch(cmds...)
+				case tea.KeyDown:
+					if m.selectedOption < totalOptions-1 {
+						m.selectedOption++
+					}
+					return m, tea.Batch(cmds...)
+				case tea.KeyEnter:
+					// If "Other" is selected and input is empty, just focus input
+					if m.selectedOption == len(m.pendingQuestion.Options) {
+						inputVal := m.input.Value()
+						if inputVal == "" {
+							// Just let user type in the input
+							break
+						}
+						// Send custom input
+						m.sendQuestionResponse(inputVal)
+					} else {
+						// Send selected option
+						opt := m.pendingQuestion.Options[m.selectedOption]
+						m.sendQuestionResponse(opt.Label)
+					}
+					m.showQuestionPanel = false
+					m.pendingQuestion = nil
+					m.selectedOption = 0
+					m.input.SetValue("")
+					return m, tea.Batch(cmds...)
+				case tea.KeyEsc:
+					m.showQuestionPanel = false
+					m.pendingQuestion = nil
+					m.selectedOption = 0
+					m.inputFocused = false
+					m.input.Blur()
+					return m, tea.Batch(cmds...)
+				default:
+					// Allow typing for "Other" option
+					if m.selectedOption == len(m.pendingQuestion.Options) {
+						var cmd tea.Cmd
+						m.input, cmd = m.input.Update(msg)
+						cmds = append(cmds, cmd)
+						return m, tea.Batch(cmds...)
+					}
+				}
+			}
+
 			// Update suggestions visibility based on input
 			inputVal := m.input.Value()
 			m.showSuggestions = strings.HasPrefix(inputVal, "/") && !strings.Contains(inputVal, " ")
@@ -346,6 +554,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.input, cmd = m.input.Update(msg)
 				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			case tea.KeyCtrlA:
+				// Select all text (Ctrl+A / Cmd+A)
+				m.input.CursorStart()
+				m.input.SetCursor(len(m.input.Value()))
+				// Use shift+home style selection by setting cursor at end after starting at beginning
+				// This triggers the built-in selection in textinput
+				m.input.CursorStart()
+				// Select to end
+				val := m.input.Value()
+				for range val {
+					m.input.SetCursor(m.input.Position() + 1)
+				}
 				return m, tea.Batch(cmds...)
 			default:
 				var cmd tea.Cmd
@@ -456,6 +677,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.isRunning && m.processHandle != nil {
 				m.processHandle.Kill()
 				m.isRunning = false
+				m.buildLoopRunning = false
+				m.currentIteration = 0
 				m.outputLines = append(m.outputLines, process.OutputLine{
 					Text: "Build cancelled",
 					Type: "system",
@@ -565,8 +788,14 @@ func (m Model) renderHeader() string {
 func (m Model) renderInput() string {
 	var result strings.Builder
 
-	// Render suggestions panel if active
-	if m.showSuggestions && m.inputFocused {
+	// Render question panel if active (takes priority over suggestions)
+	if m.showQuestionPanel && m.pendingQuestion != nil {
+		result.WriteString(m.renderQuestionPanel())
+		result.WriteString("\n")
+	}
+
+	// Render suggestions panel if active (but not when question panel is shown)
+	if m.showSuggestions && m.inputFocused && !m.showQuestionPanel {
 		suggestions := m.getFilteredSuggestions()
 		if len(suggestions) > 0 {
 			var suggestionsContent strings.Builder
@@ -677,14 +906,121 @@ func (m Model) renderSidebar(width, height int) string {
 		Render(content)
 }
 
+// renderQuestionPanel renders the question panel for AskUserQuestion
+func (m Model) renderQuestionPanel() string {
+	if !m.showQuestionPanel || m.pendingQuestion == nil {
+		return ""
+	}
+
+	q := m.pendingQuestion
+	var content strings.Builder
+
+	// Header
+	header := lipgloss.NewStyle().
+		Foreground(ColorBlue).
+		Bold(true).
+		Render("❓ " + q.Header)
+	content.WriteString(header)
+	content.WriteString("\n\n")
+
+	// Question text
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgPrimary).
+		Render(q.Question))
+	content.WriteString("\n\n")
+
+	// Options
+	for i, opt := range q.Options {
+		var optStyle lipgloss.Style
+		prefix := "  "
+		if i == m.selectedOption {
+			optStyle = lipgloss.NewStyle().
+				Background(ColorBgHighlight).
+				Foreground(ColorFgPrimary).
+				Bold(true).
+				Padding(0, 1)
+			prefix = "▸ "
+		} else {
+			optStyle = lipgloss.NewStyle().
+				Foreground(ColorFgPrimary).
+				Padding(0, 1)
+			prefix = "  "
+		}
+
+		optLine := optStyle.Render(prefix + opt.Label)
+		if opt.Description != "" {
+			optLine += lipgloss.NewStyle().
+				Foreground(ColorFgMuted).
+				Render(" - " + opt.Description)
+		}
+		content.WriteString(optLine)
+		content.WriteString("\n")
+	}
+
+	// Add "Other" option
+	otherIdx := len(q.Options)
+	var otherStyle lipgloss.Style
+	prefix := "  "
+	if m.selectedOption == otherIdx {
+		otherStyle = lipgloss.NewStyle().
+			Background(ColorBgHighlight).
+			Foreground(ColorFgPrimary).
+			Bold(true).
+			Padding(0, 1)
+		prefix = "▸ "
+	} else {
+		otherStyle = lipgloss.NewStyle().
+			Foreground(ColorFgPrimary).
+			Padding(0, 1)
+	}
+	content.WriteString(otherStyle.Render(prefix + "Other"))
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Render(" - Type a custom response"))
+	content.WriteString("\n")
+
+	// Navigation hint
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Render("↑/↓ navigate • Enter select • Esc cancel"))
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBlue).
+		Padding(1, 2).
+		Width(m.width - 8).
+		Render(content.String())
+}
+
+// renderStreamingIndicator renders the Claude Code-style activity indicator
+func (m Model) renderStreamingIndicator() string {
+	if !m.isRunning {
+		return ""
+	}
+
+	elapsed := time.Since(m.streamStartTime)
+	spinner := spinnerFrames[m.spinnerIndex]
+	phrase := activityPhrases[m.spinnerIndex%len(activityPhrases)]
+
+	// Format: ⠙ Thinking… (ctrl+c to interrupt · 58s)
+	indicator := fmt.Sprintf("%s %s… ", spinner, phrase)
+	meta := fmt.Sprintf("(ctrl+c to interrupt · %ds)", int(elapsed.Seconds()))
+
+	return lipgloss.NewStyle().
+		Foreground(ColorYellow).
+		Render(indicator) +
+		lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Render(meta)
+}
+
 // renderOutput renders the output area with fixed-height scrollable viewport
 func (m Model) renderOutput(width, height int) string {
-	// Header row with title and scroll indicator
+	// Header row with title and streaming indicator
 	title := OutputHeaderStyle.Render("OUTPUT")
 	if m.isRunning {
-		title += lipgloss.NewStyle().
-			Foreground(ColorGreen).
-			Render(" · streaming")
+		title += "  " + m.renderStreamingIndicator()
 	}
 
 	// Scroll indicator (show position if content exceeds viewport)
@@ -894,6 +1230,8 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 		if m.isRunning && m.processHandle != nil {
 			m.processHandle.Kill()
 			m.isRunning = false
+			m.buildLoopRunning = false
+			m.currentIteration = 0
 			m.outputLines = append(m.outputLines, process.OutputLine{
 				Text: "Build cancelled",
 				Type: "system",
@@ -925,28 +1263,89 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 	}
 }
 
-// startBuild starts a build iteration
+// sendQuestionResponse sends the user's response to a question back to Claude
+func (m *Model) sendQuestionResponse(response string) {
+	if m.processHandle == nil {
+		return
+	}
+
+	// Send the response via stdin
+	err := m.processHandle.SendMessage(response)
+	if err != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Failed to send response: " + err.Error(),
+			Type: "stderr",
+		})
+	} else {
+		// Show user's response in output
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "You: " + response,
+			Type: "system",
+		})
+	}
+}
+
+// startBuild starts the build loop (Ralph Wiggum loop)
 func (m *Model) startBuild() tea.Cmd {
 	if m.isRunning {
 		return nil
 	}
 
+	// Initialize build loop state
 	m.isRunning = true
+	m.buildLoopRunning = true
+	m.currentIteration = 0
+	m.maxIterations = m.defaultMaxIters
+
+	// Clear output and show build header
+	m.outputLines = nil
+
+	if m.activeSession != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("Building: %s", m.activeSession.Name),
+			Type: "system",
+		})
+	} else {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Starting build...",
+			Type: "system",
+		})
+	}
+
+	// Start first iteration
+	return m.runNextBuildIteration()
+}
+
+// runNextBuildIteration starts the next iteration of the build loop
+func (m *Model) runNextBuildIteration() tea.Cmd {
+	if !m.buildLoopRunning {
+		return nil
+	}
+
+	m.currentIteration++
 	m.outputChan = make(chan process.OutputLine, 100)
+
+	// Initialize streaming indicator state
+	m.streamStartTime = time.Now()
+	m.spinnerIndex = 0
 
 	var epicID string
 	if m.activeSession != nil {
 		epicID = m.activeSession.EpicID
 	}
 
-	m.processHandle = process.RunBuildIteration(1, 50, epicID, m.outputChan)
-
 	m.outputLines = append(m.outputLines, process.OutputLine{
-		Text: "Starting build...",
+		Text: fmt.Sprintf("🔄 Iteration %d/%d · New Claude session", m.currentIteration, m.maxIterations),
+		Type: "system",
+	})
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: "",
 		Type: "system",
 	})
 
-	return m.pollOutput()
+	m.processHandle = process.RunBuildIteration(m.currentIteration, m.maxIterations, epicID, m.outputChan)
+
+	return tea.Batch(m.pollOutput(), spinnerTickCmd())
 }
 
 // startPlan starts the plan process
@@ -958,6 +1357,10 @@ func (m *Model) startPlan(input string) tea.Cmd {
 	m.isRunning = true
 	m.outputChan = make(chan process.OutputLine, 100)
 
+	// Initialize streaming indicator state
+	m.streamStartTime = time.Now()
+	m.spinnerIndex = 0
+
 	m.processHandle = process.RunPlan(input, m.outputChan)
 
 	m.outputLines = append(m.outputLines, process.OutputLine{
@@ -965,7 +1368,7 @@ func (m *Model) startPlan(input string) tea.Cmd {
 		Type: "system",
 	})
 
-	return m.pollOutput()
+	return tea.Batch(m.pollOutput(), spinnerTickCmd())
 }
 
 // waitForOutput returns a command that blocks until output is available
@@ -1023,18 +1426,33 @@ func (m Model) renderOutputContent() string {
 		wrapWidth = 20
 	}
 
-	for _, line := range m.outputLines {
+	// Combine consecutive assistant lines into single blocks
+	i := 0
+	for i < len(m.outputLines) {
+		line := m.outputLines[i]
 		text := strings.TrimRight(line.Text, "\n")
 
 		switch line.Type {
 		case "assistant":
-			// Assistant responses - blue left border block with word wrapping
-			wrappedText := wrapText(text, wrapWidth-4) // Extra padding for block style
-			block := AssistantStyle.Width(wrapWidth).Render(
-				lipgloss.NewStyle().Foreground(ColorFgPrimary).Render(wrappedText),
-			)
-			sb.WriteString(block)
-			sb.WriteString("\n")
+			// Collect all consecutive assistant lines
+			var assistantText strings.Builder
+			assistantText.WriteString(text)
+			i++
+			for i < len(m.outputLines) && m.outputLines[i].Type == "assistant" {
+				assistantText.WriteString(strings.TrimRight(m.outputLines[i].Text, "\n"))
+				i++
+			}
+			// Render combined assistant text as one block
+			fullText := assistantText.String()
+			if fullText != "" {
+				wrappedText := wrapText(fullText, wrapWidth-4)
+				block := AssistantStyle.Width(wrapWidth).Render(
+					lipgloss.NewStyle().Foreground(ColorFgPrimary).Render(wrappedText),
+				)
+				sb.WriteString(block)
+				sb.WriteString("\n")
+			}
+			continue // Skip the i++ at the end since we already incremented
 
 		case "tool_call":
 			// Tool calls - yellow left border with lightning icon
@@ -1060,16 +1478,40 @@ func (m Model) renderOutputContent() string {
 			sb.WriteString("\n")
 
 		case "tool_result":
-			// Tool results - indented with muted arrow, wrapped
-			wrappedResult := wrapText(text, wrapWidth-6)
-			resultText := "↳ " + wrappedResult
+			// Tool results - indented with muted arrow, truncated (user says truncation is fine)
+			truncatedResult := text
+			maxLen := wrapWidth - 6
+			if maxLen < 20 {
+				maxLen = 20
+			}
+			if len(truncatedResult) > maxLen {
+				truncatedResult = truncatedResult[:maxLen-3] + "..."
+			}
+			resultText := "↳ " + truncatedResult
 			sb.WriteString(ToolResultStyle.Width(wrapWidth).Render(resultText))
 			sb.WriteString("\n")
 
 		case "stderr":
-			// Errors - red bullet, wrapped
+			// Errors - red bullet, wrapped (show full errors)
 			wrappedErr := wrapText(text, wrapWidth-2)
 			sb.WriteString(ErrorStyle.Width(wrapWidth).Render("● " + wrappedErr))
+			sb.WriteString("\n")
+
+		case "question":
+			// Questions from Claude - blue left border with question icon
+			questionText := "❓ " + line.ToolName
+			if line.Question != nil {
+				questionText = "❓ " + line.Question.Question
+			}
+			wrappedQ := wrapText(questionText, wrapWidth-4)
+			block := lipgloss.NewStyle().
+				BorderLeft(true).
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(ColorBlue).
+				PaddingLeft(1).
+				Width(wrapWidth).
+				Render(lipgloss.NewStyle().Foreground(ColorBlue).Render(wrappedQ))
+			sb.WriteString(block)
 			sb.WriteString("\n")
 
 		case "system":
@@ -1087,6 +1529,7 @@ func (m Model) renderOutputContent() string {
 			sb.WriteString(lipgloss.NewStyle().Foreground(ColorFgPrimary).Width(wrapWidth).Render(wrappedDefault))
 			sb.WriteString("\n")
 		}
+		i++
 	}
 
 	return sb.String()

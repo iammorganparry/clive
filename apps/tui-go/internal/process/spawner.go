@@ -26,9 +26,25 @@ type ProcessHandle struct {
 
 // OutputLine represents a line of output from the process
 type OutputLine struct {
-	Text     string
-	Type     string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system"
-	ToolName string
+	Text         string
+	Type         string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system", "question"
+	ToolName     string
+	RefreshTasks bool // Set true when TodoWrite is called to trigger immediate task refresh
+	// Question data for AskUserQuestion tool
+	Question *QuestionData
+}
+
+// QuestionData represents a question from Claude's AskUserQuestion tool
+type QuestionData struct {
+	Header   string
+	Question string
+	Options  []QuestionOption
+}
+
+// QuestionOption represents a single option in a question
+type QuestionOption struct {
+	Label       string
+	Description string
 }
 
 // Kill terminates the process
@@ -292,6 +308,8 @@ func extractToolDetail(name string, input map[string]interface{}) string {
 		if query, ok := input["query"].(string); ok {
 			return "\"" + query + "\""
 		}
+	case "AskUserQuestion":
+		return "waiting for your response"
 	}
 
 	// Fallback: try common field names
@@ -305,6 +323,54 @@ func extractToolDetail(name string, input map[string]interface{}) string {
 		return desc
 	}
 
+	return ""
+}
+
+// parseQuestionData extracts question data from AskUserQuestion tool input
+func parseQuestionData(input map[string]interface{}) *QuestionData {
+	if input == nil {
+		return nil
+	}
+
+	questions, ok := input["questions"].([]interface{})
+	if !ok || len(questions) == 0 {
+		return nil
+	}
+
+	// For now, just take the first question
+	firstQ, ok := questions[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	qd := &QuestionData{
+		Header:   getString(firstQ, "header"),
+		Question: getString(firstQ, "question"),
+	}
+
+	// Parse options
+	opts, ok := firstQ["options"].([]interface{})
+	if ok {
+		for _, opt := range opts {
+			optMap, ok := opt.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			qd.Options = append(qd.Options, QuestionOption{
+				Label:       getString(optMap, "label"),
+				Description: getString(optMap, "description"),
+			})
+		}
+	}
+
+	return qd
+}
+
+// getString safely gets a string value from a map
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
 	return ""
 }
 
@@ -349,7 +415,23 @@ func parseNDJSONLine(line string) *OutputLine {
 			if detail != "" {
 				text += " " + detail
 			}
-			return &OutputLine{Text: text + "\n", Type: "tool_call", ToolName: name}
+
+			// Special handling for AskUserQuestion - emit as question type
+			if name == "AskUserQuestion" {
+				return &OutputLine{
+					Text:     text + "\n",
+					Type:     "question",
+					ToolName: name,
+					Question: parseQuestionData(input),
+				}
+			}
+
+			return &OutputLine{
+				Text:         text + "\n",
+				Type:         "tool_call",
+				ToolName:     name,
+				RefreshTasks: name == "TodoWrite",
+			}
 		}
 		if blockType == "text" {
 			text, _ := contentBlock["text"].(string)
@@ -368,6 +450,7 @@ func parseNDJSONLine(line string) *OutputLine {
 			return nil
 		}
 		var result string
+		var refreshTasks bool
 		for _, c := range content {
 			block, ok := c.(map[string]interface{})
 			if !ok {
@@ -381,6 +464,9 @@ func parseNDJSONLine(line string) *OutputLine {
 			}
 			if block["type"] == "tool_use" {
 				name, _ := block["name"].(string)
+				if name == "TodoWrite" {
+					refreshTasks = true
+				}
 				input, _ := block["input"].(map[string]interface{})
 				detail := extractToolDetail(name, input)
 				text := "● " + name
@@ -391,7 +477,7 @@ func parseNDJSONLine(line string) *OutputLine {
 			}
 		}
 		if result != "" {
-			return &OutputLine{Text: result, Type: "assistant"}
+			return &OutputLine{Text: result, Type: "assistant", RefreshTasks: refreshTasks}
 		}
 
 	case "error":
