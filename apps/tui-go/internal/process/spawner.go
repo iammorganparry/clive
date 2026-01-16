@@ -18,8 +18,20 @@ var (
 	streamingTextBuffer strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
 	currentToolName     string          // Current tool being streamed
 	currentToolInput    strings.Builder // Accumulates tool input JSON
+	pendingBdRefresh    bool            // True when a bd command was seen and we need to refresh after execution
 	streamStateMu       sync.Mutex
 )
+
+// ResetStreamingState clears all streaming state buffers
+// Must be called at the start of each new build iteration to avoid stale data
+func ResetStreamingState() {
+	streamStateMu.Lock()
+	defer streamStateMu.Unlock()
+	streamingTextBuffer.Reset()
+	currentToolName = ""
+	currentToolInput.Reset()
+	pendingBdRefresh = false
+}
 
 // ProcessHandle manages a spawned process
 type ProcessHandle struct {
@@ -577,21 +589,22 @@ func parseNDJSONLine(line string) []OutputLine {
 
 	case "content_block_stop":
 		// Check accumulated tool input for bd commands when tool block ends
+		// Set a flag to refresh after tool execution (not immediately, since command hasn't run yet)
 		streamStateMu.Lock()
 		toolName := currentToolName
 		accumulated := currentToolInput.String()
 		// Reset state
 		currentToolName = ""
 		currentToolInput.Reset()
-		streamStateMu.Unlock()
 
 		if toolName == "Bash" && accumulated != "" {
 			if strings.Contains(accumulated, "bd update") ||
 				strings.Contains(accumulated, "bd close") ||
 				strings.Contains(accumulated, "bd create") {
-				return []OutputLine{{Type: "system", RefreshTasks: true}}
+				pendingBdRefresh = true
 			}
 		}
+		streamStateMu.Unlock()
 		return nil
 
 	case "assistant":
@@ -658,7 +671,17 @@ func parseNDJSONLine(line string) []OutputLine {
 
 	case "result":
 		// Tool execution result from Claude CLI
-		// Check if it was a beads command that modifies tasks
+		// Check if we have a pending bd refresh (set when we saw the bd command in tool input)
+		streamStateMu.Lock()
+		needRefresh := pendingBdRefresh
+		pendingBdRefresh = false
+		streamStateMu.Unlock()
+
+		if needRefresh {
+			return []OutputLine{{Type: "system", RefreshTasks: true}}
+		}
+
+		// Also check result content as fallback
 		subtype, _ := data["subtype"].(string)
 		if subtype == "tool_result" {
 			toolName, _ := data["tool_name"].(string)
