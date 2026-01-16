@@ -13,6 +13,14 @@ import (
 	"time"
 )
 
+// Streaming state for accumulating text and tool inputs across chunks
+var (
+	streamingTextBuffer strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
+	currentToolName     string          // Current tool being streamed
+	currentToolInput    strings.Builder // Accumulates tool input JSON
+	streamStateMu       sync.Mutex
+)
+
 // ProcessHandle manages a spawned process
 type ProcessHandle struct {
 	cmd    *exec.Cmd
@@ -24,12 +32,24 @@ type ProcessHandle struct {
 	killed bool
 }
 
+// CloseStdin closes the stdin pipe to signal the process to exit
+func (p *ProcessHandle) CloseStdin() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stdin != nil {
+		p.stdin.Close()
+		p.stdin = nil
+	}
+}
+
 // OutputLine represents a line of output from the process
 type OutputLine struct {
 	Text         string
-	Type         string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system", "question"
+	Type         string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system", "question", "exit"
 	ToolName     string
 	RefreshTasks bool // Set true when TodoWrite is called to trigger immediate task refresh
+	ExitCode     int  // Exit code when Type is "exit"
+	CloseStdin   bool // Set true when TASK_COMPLETE detected - signals Claude to exit
 	// Question data for AskUserQuestion tool
 	Question *QuestionData
 }
@@ -175,8 +195,6 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 
 	// Send prompt via stdin after spawn (Claude CLI with --input-format stream-json expects this)
 	go func() {
-		time.Sleep(200 * time.Millisecond)
-
 		// Determine prompt path file based on type
 		var promptPathFile string
 		if promptType == "plan" {
@@ -185,10 +203,38 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 			promptPathFile = filepath.Join(".claude", ".build-prompt-path")
 		}
 
-		// Read the path to the actual prompt file
-		data, err := os.ReadFile(promptPathFile)
-		if err != nil {
-			return
+		// Delete any stale prompt path file from previous runs
+		// This ensures we wait for the fresh file from this run
+		os.Remove(promptPathFile)
+
+		// Poll for the prompt path file to exist (build scripts may take time to write it)
+		// Build scripts run bd ready which can take 5+ seconds in large repos
+		var data []byte
+		var err error
+		maxWait := 30 * time.Second
+		pollInterval := 100 * time.Millisecond
+		startTime := time.Now()
+
+		for {
+			data, err = os.ReadFile(promptPathFile)
+			if err == nil && len(data) > 0 {
+				break
+			}
+
+			// Check if process was killed or timed out
+			handle.mu.Lock()
+			killed := handle.killed
+			handle.mu.Unlock()
+			if killed {
+				return
+			}
+
+			if time.Since(startTime) > maxWait {
+				outputChan <- OutputLine{Text: "Timeout waiting for prompt file\n", Type: "stderr"}
+				return
+			}
+
+			time.Sleep(pollInterval)
 		}
 
 		promptFile := strings.TrimSpace(string(data))
@@ -196,10 +242,27 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 			return
 		}
 
-		// Read the prompt content
-		content, err := os.ReadFile(promptFile)
-		if err != nil {
-			return
+		// Poll for the actual prompt file to have content
+		var content []byte
+		for {
+			content, err = os.ReadFile(promptFile)
+			if err == nil && len(content) > 0 {
+				break
+			}
+
+			handle.mu.Lock()
+			killed := handle.killed
+			handle.mu.Unlock()
+			if killed {
+				return
+			}
+
+			if time.Since(startTime) > maxWait {
+				outputChan <- OutputLine{Text: "Timeout waiting for prompt content\n", Type: "stderr"}
+				return
+			}
+
+			time.Sleep(pollInterval)
 		}
 
 		// Send as stream-json message
@@ -223,8 +286,13 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		}
 	}()
 
+	// Use WaitGroup to know when stdout/stderr readers are done
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	// Read stdout (NDJSON)
 	go func() {
+		defer wg.Done()
 		scanner := bufio.NewScanner(stdout)
 		// Increase buffer for long lines
 		buf := make([]byte, 0, 64*1024)
@@ -232,25 +300,36 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 
 		for scanner.Scan() {
 			line := scanner.Text()
-			output := parseNDJSONLine(line)
-			if output != nil {
-				outputChan <- *output
+			outputs := parseNDJSONLine(line)
+			for _, output := range outputs {
+				outputChan <- output
 			}
 		}
 	}()
 
 	// Read stderr
 	go func() {
+		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			outputChan <- OutputLine{Text: scanner.Text(), Type: "stderr"}
 		}
 	}()
 
-	// Wait for process to exit
+	// Wait for process to exit, then send exit message and close channel
 	go func() {
 		cmd.Wait()
 		close(handle.done)
+
+		// Wait for readers to finish
+		wg.Wait()
+
+		// Send exit message with actual exit code
+		exitCode := 0
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		outputChan <- OutputLine{Type: "exit", ExitCode: exitCode}
 	}()
 
 	return handle
@@ -282,6 +361,15 @@ func extractToolDetail(name string, input map[string]interface{}) string {
 		if desc, ok := input["description"].(string); ok {
 			return desc
 		}
+	case "BashRefreshTasks": // Internal marker to check if bash command updates tasks
+		if cmd, ok := input["command"].(string); ok {
+			// Check if it's a beads command that modifies tasks
+			if strings.Contains(cmd, "bd update") || strings.Contains(cmd, "bd close") ||
+				strings.Contains(cmd, "bd create") {
+				return "true"
+			}
+		}
+		return ""
 	case "Grep":
 		if pattern, ok := input["pattern"].(string); ok {
 			detail := "\"" + pattern + "\""
@@ -375,12 +463,13 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 // parseNDJSONLine parses a line of NDJSON from Claude CLI
-func parseNDJSONLine(line string) *OutputLine {
+// Returns a slice of OutputLines since some events contain multiple blocks
+func parseNDJSONLine(line string) []OutputLine {
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(line), &data); err != nil {
 		// Not JSON, return as plain text
 		if line != "" {
-			return &OutputLine{Text: line + "\n", Type: "stdout"}
+			return []OutputLine{{Text: line + "\n", Type: "stdout"}}
 		}
 		return nil
 	}
@@ -397,8 +486,38 @@ func parseNDJSONLine(line string) *OutputLine {
 		if deltaType == "text_delta" {
 			text, _ := delta["text"].(string)
 			if text != "" {
-				return &OutputLine{Text: text, Type: "assistant"}
+				// Accumulate text to detect completion markers across chunks
+				streamStateMu.Lock()
+				streamingTextBuffer.WriteString(text)
+				accumulated := streamingTextBuffer.String()
+
+				// Check for completion markers in accumulated text
+				isComplete := strings.Contains(accumulated, "TASK_COMPLETE") ||
+					strings.Contains(accumulated, "ALL_TASKS_COMPLETE")
+
+				// Keep buffer small - only need last 50 chars for marker detection
+				if streamingTextBuffer.Len() > 100 {
+					s := streamingTextBuffer.String()
+					streamingTextBuffer.Reset()
+					streamingTextBuffer.WriteString(s[len(s)-50:])
+				}
+				streamStateMu.Unlock()
+
+				return []OutputLine{{
+					Text:         text,
+					Type:         "assistant",
+					RefreshTasks: isComplete,
+					CloseStdin:   isComplete,
+				}}
 			}
+		}
+		// Handle input_json_delta for tool inputs (accumulate for bd command detection)
+		if deltaType == "input_json_delta" {
+			partialJSON, _ := delta["partial_json"].(string)
+			streamStateMu.Lock()
+			currentToolInput.WriteString(partialJSON)
+			streamStateMu.Unlock()
+			return nil
 		}
 
 	case "content_block_start":
@@ -410,6 +529,12 @@ func parseNDJSONLine(line string) *OutputLine {
 		if blockType == "tool_use" {
 			name, _ := contentBlock["name"].(string)
 			input, _ := contentBlock["input"].(map[string]interface{})
+
+			// Store tool name and reset input buffer for streaming accumulation
+			streamStateMu.Lock()
+			currentToolName = name
+			currentToolInput.Reset()
+			streamStateMu.Unlock()
 			detail := extractToolDetail(name, input)
 			text := "● " + name
 			if detail != "" {
@@ -418,27 +543,56 @@ func parseNDJSONLine(line string) *OutputLine {
 
 			// Special handling for AskUserQuestion - emit as question type
 			if name == "AskUserQuestion" {
-				return &OutputLine{
+				return []OutputLine{{
 					Text:     text + "\n",
 					Type:     "question",
 					ToolName: name,
 					Question: parseQuestionData(input),
+				}}
+			}
+
+			// Check if this tool call should trigger task refresh
+			refreshTasks := name == "TodoWrite"
+			if name == "Bash" && detail != "" {
+				// Check if bash command modifies beads tasks (check detail since input may be empty in streaming)
+				if strings.Contains(detail, "bd update") || strings.Contains(detail, "bd close") ||
+					strings.Contains(detail, "bd create") {
+					refreshTasks = true
 				}
 			}
 
-			return &OutputLine{
+			return []OutputLine{{
 				Text:         text + "\n",
 				Type:         "tool_call",
 				ToolName:     name,
-				RefreshTasks: name == "TodoWrite",
-			}
+				RefreshTasks: refreshTasks,
+			}}
 		}
 		if blockType == "text" {
 			text, _ := contentBlock["text"].(string)
 			if text != "" {
-				return &OutputLine{Text: text, Type: "assistant"}
+				return []OutputLine{{Text: text, Type: "assistant"}}
 			}
 		}
+
+	case "content_block_stop":
+		// Check accumulated tool input for bd commands when tool block ends
+		streamStateMu.Lock()
+		toolName := currentToolName
+		accumulated := currentToolInput.String()
+		// Reset state
+		currentToolName = ""
+		currentToolInput.Reset()
+		streamStateMu.Unlock()
+
+		if toolName == "Bash" && accumulated != "" {
+			if strings.Contains(accumulated, "bd update") ||
+				strings.Contains(accumulated, "bd close") ||
+				strings.Contains(accumulated, "bd create") {
+				return []OutputLine{{Type: "system", RefreshTasks: true}}
+			}
+		}
+		return nil
 
 	case "assistant":
 		message, ok := data["message"].(map[string]interface{})
@@ -449,8 +603,8 @@ func parseNDJSONLine(line string) *OutputLine {
 		if !ok {
 			return nil
 		}
-		var result string
-		var refreshTasks bool
+		// Return separate OutputLines for each content block
+		var results []OutputLine
 		for _, c := range content {
 			block, ok := c.(map[string]interface{})
 			if !ok {
@@ -459,25 +613,65 @@ func parseNDJSONLine(line string) *OutputLine {
 			if block["type"] == "text" {
 				text, _ := block["text"].(string)
 				if text != "" {
-					result += text
+					results = append(results, OutputLine{Text: text, Type: "assistant"})
 				}
 			}
 			if block["type"] == "tool_use" {
 				name, _ := block["name"].(string)
-				if name == "TodoWrite" {
-					refreshTasks = true
-				}
 				input, _ := block["input"].(map[string]interface{})
 				detail := extractToolDetail(name, input)
 				text := "● " + name
 				if detail != "" {
 					text += " " + detail
 				}
-				result += text + "\n"
+
+				// Check if this tool call should trigger task refresh
+				refreshTasks := name == "TodoWrite"
+				if name == "Bash" {
+					if cmd, ok := input["command"].(string); ok {
+						if strings.Contains(cmd, "bd update") || strings.Contains(cmd, "bd close") ||
+							strings.Contains(cmd, "bd create") {
+							refreshTasks = true
+						}
+					}
+				}
+
+				// Special handling for AskUserQuestion
+				if name == "AskUserQuestion" {
+					results = append(results, OutputLine{
+						Text:     text + "\n",
+						Type:     "question",
+						ToolName: name,
+						Question: parseQuestionData(input),
+					})
+				} else {
+					results = append(results, OutputLine{
+						Text:         text + "\n",
+						Type:         "tool_call",
+						ToolName:     name,
+						RefreshTasks: refreshTasks,
+					})
+				}
 			}
 		}
-		if result != "" {
-			return &OutputLine{Text: result, Type: "assistant", RefreshTasks: refreshTasks}
+		return results
+
+	case "result":
+		// Tool execution result from Claude CLI
+		// Check if it was a beads command that modifies tasks
+		subtype, _ := data["subtype"].(string)
+		if subtype == "tool_result" {
+			toolName, _ := data["tool_name"].(string)
+			if toolName == "Bash" {
+				// Check the command or result for bd commands
+				result, _ := data["result"].(string)
+				command, _ := data["command"].(string)
+				checkStr := result + " " + command
+				if strings.Contains(checkStr, "bd update") || strings.Contains(checkStr, "bd close") ||
+					strings.Contains(checkStr, "bd create") {
+					return []OutputLine{{Type: "system", RefreshTasks: true}}
+				}
+			}
 		}
 
 	case "error":
@@ -485,7 +679,7 @@ func parseNDJSONLine(line string) *OutputLine {
 		if errData != nil {
 			msg, _ := errData["message"].(string)
 			if msg != "" {
-				return &OutputLine{Text: "Error: " + msg + "\n", Type: "stderr"}
+				return []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr"}}
 			}
 		}
 	}
