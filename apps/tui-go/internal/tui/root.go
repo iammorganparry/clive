@@ -171,35 +171,30 @@ func NewRootModel(cfg *config.Config) Model {
 	ti.CharLimit = 0 // No limit
 	ti.Width = 80    // Default width, will be updated on WindowSizeMsg
 
-	// Determine starting view and provider
-	var viewMode ViewMode
-	var provider tracker.Provider
-	var loadingEpics bool
-
+	// Always start with tracker selection screen
+	// Pre-select the configured tracker if one exists
+	setupIdx := 0
 	if cfg != nil {
-		// Config exists - create provider and go to selection
-		viewMode = ViewModeSelection
-		loadingEpics = true
-		provider, _ = tracker.NewProvider(cfg.IssueTracker)
-	} else {
-		// No config - show setup to select tracker
-		viewMode = ViewModeSetup
-		loadingEpics = false
+		for i, t := range config.AvailableTrackers() {
+			if t.ID == cfg.IssueTracker {
+				setupIdx = i
+				break
+			}
+		}
 	}
 
 	return Model{
-		viewMode:        viewMode,
+		viewMode:        ViewModeSetup,
 		cfg:             cfg,
-		provider:        provider,
 		trackers:        config.AvailableTrackers(),
-		setupIdx:        0, // Beads is first and preselected
+		setupIdx:        setupIdx,
 		input:           ti,
 		inputFocused:    false,
 		keys:            DefaultKeyMap(),
 		ready:           false,
 		selectedIndex:   0,
 		defaultMaxIters: 50, // Default max iterations for build loop
-		loadingEpics:    loadingEpics,
+		loadingEpics:    false,
 	}
 }
 
@@ -250,7 +245,8 @@ func (m Model) loadTasksCmd(epicID string) tea.Cmd {
 func (m Model) saveConfigCmd(trackerType config.IssueTracker) tea.Cmd {
 	return func() tea.Msg {
 		cfg := &config.Config{
-			IssueTracker: trackerType,
+			IssueTracker:   trackerType,
+			SetupCompleted: true,
 		}
 		err := config.Save(cfg)
 		return configSavedMsg{cfg: cfg, err: err}

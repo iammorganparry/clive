@@ -8,7 +8,8 @@ import (
 
 // Config represents the user's configuration
 type Config struct {
-	IssueTracker IssueTracker `json:"issue_tracker"`
+	IssueTracker   IssueTracker `json:"issue_tracker"`
+	SetupCompleted bool         `json:"setup_completed"`
 }
 
 // DefaultConfig returns the default configuration
@@ -46,7 +47,7 @@ func Exists() bool {
 	return err == nil
 }
 
-// Load reads the config from disk
+// Load reads the config from disk, creating default if it doesn't exist
 func Load() (*Config, error) {
 	path, err := configPath()
 	if err != nil {
@@ -56,7 +57,12 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil // No config file yet
+			// Create default config
+			cfg := DefaultConfig()
+			if err := Save(cfg); err != nil {
+				return nil, err
+			}
+			return cfg, nil
 		}
 		return nil, err
 	}
