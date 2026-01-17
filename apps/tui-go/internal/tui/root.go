@@ -11,18 +11,20 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/clive/tui-go/internal/beads"
+	"github.com/clive/tui-go/internal/config"
 	"github.com/clive/tui-go/internal/model"
 	"github.com/clive/tui-go/internal/process"
+	"github.com/clive/tui-go/internal/tracker"
 )
 
 // ViewMode represents the current view
 type ViewMode int
 
 const (
-	ViewModeSelection ViewMode = iota
-	ViewModeMain
-	ViewModeHelp
+	ViewModeSetup     ViewMode = iota // Issue tracker selection (first run)
+	ViewModeSelection                 // Epic selection
+	ViewModeMain                      // Main dashboard
+	ViewModeHelp                      // Help overlay
 )
 
 // Messages
@@ -61,6 +63,12 @@ type taskAddedMsg struct {
 // This is distinct from processFinishedMsg - only explicit "exit" lines should trigger iteration logic.
 type pollingStoppedMsg struct{}
 
+// configSavedMsg is sent when the config has been saved
+type configSavedMsg struct {
+	cfg *config.Config
+	err error
+}
+
 // Spinner animation frames
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
@@ -77,6 +85,12 @@ type Model struct {
 
 	// View state
 	viewMode ViewMode
+
+	// Configuration and issue tracker
+	cfg      *config.Config
+	provider tracker.Provider
+	trackers []config.TrackerInfo // Available trackers for setup
+	setupIdx int                  // Selected tracker in setup view
 
 	// Command input
 	input          textinput.Model
@@ -147,53 +161,99 @@ var availableCommands = []struct {
 }
 
 // NewRootModel creates a new root model
-func NewRootModel() Model {
+// If cfg is nil, starts in setup mode to select issue tracker
+func NewRootModel(cfg *config.Config) Model {
 	// Create text input
 	ti := textinput.New()
 	ti.Placeholder = "Enter command..."
 	ti.Prompt = "❯ "
 	ti.PromptStyle = InputPromptStyle
-	ti.CharLimit = 0  // No limit
-	ti.Width = 80     // Default width, will be updated on WindowSizeMsg
+	ti.CharLimit = 0 // No limit
+	ti.Width = 80    // Default width, will be updated on WindowSizeMsg
+
+	// Determine starting view and provider
+	var viewMode ViewMode
+	var provider tracker.Provider
+	var loadingEpics bool
+
+	if cfg != nil {
+		// Config exists - create provider and go to selection
+		viewMode = ViewModeSelection
+		loadingEpics = true
+		provider, _ = tracker.NewProvider(cfg.IssueTracker)
+	} else {
+		// No config - show setup to select tracker
+		viewMode = ViewModeSetup
+		loadingEpics = false
+	}
 
 	return Model{
-		viewMode:        ViewModeSelection, // Start with epic selection
+		viewMode:        viewMode,
+		cfg:             cfg,
+		provider:        provider,
+		trackers:        config.AvailableTrackers(),
+		setupIdx:        0, // Beads is first and preselected
 		input:           ti,
 		inputFocused:    false,
 		keys:            DefaultKeyMap(),
 		ready:           false,
 		selectedIndex:   0,
 		defaultMaxIters: 50, // Default max iterations for build loop
-		loadingEpics:    true, // Start in loading state
+		loadingEpics:    loadingEpics,
 	}
 }
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		textinput.Blink,
-		loadEpics(),      // Load epics asynchronously
 		spinnerTickCmd(), // Animate loading spinner
 		tickCmd(),        // Start normal tick for background refresh
-	)
+	}
+
+	// Only load epics if we have a provider (not in setup mode)
+	if m.provider != nil {
+		cmds = append(cmds, m.loadEpicsCmd())
+	}
+
+	return tea.Batch(cmds...)
 }
 
-// loadEpics loads epics from beads
-func loadEpics() tea.Cmd {
+// loadEpicsCmd loads epics using the provider
+func (m Model) loadEpicsCmd() tea.Cmd {
+	provider := m.provider
 	return func() tea.Msg {
-		sessions := beads.GetEpics(false) // Don't filter - show all epics
+		if provider == nil {
+			return epicsLoadedMsg{sessions: nil}
+		}
+		sessions := provider.GetEpics(false) // Don't filter - show all epics
 		return epicsLoadedMsg{sessions: sessions}
 	}
 }
 
-// loadTasks loads tasks for an epic.
+// loadTasksCmd loads tasks for an epic.
 // It clears the cache immediately before fetching to ensure fresh data,
 // avoiding race conditions with background tick refreshes.
-func loadTasks(epicID string) tea.Cmd {
+func (m Model) loadTasksCmd(epicID string) tea.Cmd {
+	provider := m.provider
 	return func() tea.Msg {
-		beads.ClearCache() // Clear cache at fetch time, not enqueue time
-		tasks := beads.GetEpicTasks(epicID)
+		if provider == nil {
+			return tasksLoadedMsg{tasks: nil}
+		}
+		provider.ClearCache() // Clear cache at fetch time, not enqueue time
+		tasks := provider.GetEpicTasks(epicID)
 		return tasksLoadedMsg{tasks: tasks}
+	}
+}
+
+// saveConfigCmd saves the selected issue tracker to config
+func (m Model) saveConfigCmd(trackerType config.IssueTracker) tea.Cmd {
+	return func() tea.Msg {
+		cfg := &config.Config{
+			IssueTracker: trackerType,
+		}
+		err := config.Save(cfg)
+		return configSavedMsg{cfg: cfg, err: err}
 	}
 }
 
@@ -262,6 +322,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tasks = msg.tasks
 		m.loadingTasks = false
 
+	case configSavedMsg:
+		if msg.err != nil {
+			// Show error (could add error state to Model for better UX)
+			return m, nil
+		}
+		// Config saved successfully - create provider and go to selection
+		m.cfg = msg.cfg
+		m.provider, _ = tracker.NewProvider(msg.cfg.IssueTracker)
+		m.viewMode = ViewModeSelection
+		m.loadingEpics = true
+		return m, m.loadEpicsCmd()
+
 	case outputLineMsg:
 		// Handle exit message type - process has finished
 		if msg.line.Type == "exit" {
@@ -282,7 +354,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle RefreshTasks flag - immediately refresh task sidebar
 		if msg.line.RefreshTasks {
 			if m.activeSession != nil {
-				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 		}
 
@@ -332,7 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, line := range regularLines {
 			if line.RefreshTasks {
 				if m.activeSession != nil {
-					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 			}
 			if line.CloseStdin && m.processHandle != nil {
@@ -368,18 +440,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case processFinishedMsg:
 		exitCode := msg.exitCode
+
+		// Guard: ignore if we already processed this (no active process)
+		if m.processHandle == nil {
+			return m, tea.Batch(cmds...)
+		}
+
 		m.processHandle = nil
 		if m.outputChan != nil {
 			close(m.outputChan)
 			m.outputChan = nil
 		}
-
-		// Debug: show exit code and state
-		m.outputLines = append(m.outputLines, process.OutputLine{
-			Text: fmt.Sprintf("[DEBUG] processFinishedMsg: exitCode=%d, iteration=%d/%d, isSuccessful=%v, buildLoopRunning=%v",
-				exitCode, m.currentIteration, m.maxIterations, isSuccessfulExit(exitCode), m.buildLoopRunning),
-			Type: "system",
-		})
 
 		// Handle build loop continuation
 		if m.buildLoopRunning {
@@ -399,25 +470,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Type: "system",
 				})
 				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-					Type: "system",
-				})
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "✓ Iteration complete · Starting fresh context",
-					Type: "system",
-				})
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-					Type: "system",
-				})
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "",
+					Text: "--- Iteration complete ---",
 					Type: "system",
 				})
 
+				// Update viewport before starting next iteration
+				m.viewport.SetContent(m.renderOutputContent())
+				m.viewport.GotoBottom()
+
 				// Refresh tasks before next iteration
 				if m.activeSession != nil {
-					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 
 				// Start next iteration
@@ -443,7 +506,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Refresh tasks after process finishes
 		if m.activeSession != nil {
-			cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+			cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 		}
 
 	case spinnerTickMsg:
@@ -461,7 +524,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			// Refresh task list
 			if m.activeSession != nil {
-				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 		} else {
 			m.outputLines = append(m.outputLines, process.OutputLine{
@@ -479,7 +542,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Use fast tick while loading, normal tick once loaded
 		if m.viewMode == ViewModeSelection && len(m.sessions) == 0 {
 			cmds = append(cmds, fastTickCmd())
-			cmds = append(cmds, loadEpics())
+			cmds = append(cmds, m.loadEpicsCmd())
 		} else {
 			cmds = append(cmds, tickCmd())
 		}
@@ -489,7 +552,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Refresh tasks if in main view
 		if m.activeSession != nil {
-			cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+			cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 		}
 
 	case tea.KeyMsg:
@@ -676,6 +739,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Handle setup screen (issue tracker selection)
+		if m.viewMode == ViewModeSetup {
+			switch {
+			case key.Matches(msg, m.keys.Quit):
+				return m, tea.Quit
+			case key.Matches(msg, m.keys.Up):
+				if m.setupIdx > 0 {
+					m.setupIdx--
+				}
+			case key.Matches(msg, m.keys.Down):
+				if m.setupIdx < len(m.trackers)-1 {
+					m.setupIdx++
+				}
+			case key.Matches(msg, m.keys.Enter):
+				// Select tracker if available
+				if m.setupIdx < len(m.trackers) && m.trackers[m.setupIdx].Available {
+					selectedTracker := m.trackers[m.setupIdx].ID
+					return m, m.saveConfigCmd(selectedTracker)
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// Handle selection screen
 		if m.viewMode == ViewModeSelection {
 			switch {
@@ -698,7 +784,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Blur()
 					m.inputFocused = false
 					// Load tasks for selected epic
-					cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 			case msg.String() == "n":
 				// New session - go to main view
@@ -782,9 +868,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Refresh):
 			// Refresh epics and tasks
-			cmds = append(cmds, loadEpics())
+			cmds = append(cmds, m.loadEpicsCmd())
 			if m.activeSession != nil {
-				cmds = append(cmds, loadTasks(m.activeSession.EpicID))
+				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 			return m, tea.Batch(cmds...)
 
@@ -799,7 +885,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI
 func (m Model) View() string {
-	// Selection view can render before window size is known
+	// Setup and selection views can render before window size is known
+	if m.viewMode == ViewModeSetup {
+		return m.setupView()
+	}
+
 	if m.viewMode == ViewModeSelection {
 		return m.selectionView()
 	}
@@ -875,11 +965,11 @@ func (m Model) renderHeader() string {
 	// Build the header line
 	headerLine := title + "  " + subtitle + sessionInfo
 
-	// Add padding and return with newline
+	// Return header with explicit newline to ensure it takes space
 	return lipgloss.NewStyle().
 		PaddingLeft(1).
-		PaddingBottom(1).
-		Render(headerLine)
+		Width(m.width).
+		Render(headerLine) + "\n"
 }
 
 // renderInput renders the command input with suggestions
@@ -968,27 +1058,40 @@ func (m Model) renderSidebar(width, height int) string {
 	}
 
 	content := title + "\n\n"
+	maxDisplay := 10 // Max tasks to show per category
 
 	if len(inProgress) > 0 {
 		content += TaskInProgressStyle.Render("In Progress") + "\n"
-		for _, t := range inProgress {
+		displayCount := min(len(inProgress), maxDisplay)
+		for _, t := range inProgress[:displayCount] {
 			content += TaskInProgressStyle.Render("  ● "+truncate(t.Title, width-6)) + "\n"
+		}
+		if len(inProgress) > maxDisplay {
+			content += TaskInProgressStyle.Render(fmt.Sprintf("  + %d more", len(inProgress)-maxDisplay)) + "\n"
 		}
 		content += "\n"
 	}
 
 	if len(pending) > 0 {
 		content += TaskPendingStyle.Render("Pending") + "\n"
-		for _, t := range pending {
+		displayCount := min(len(pending), maxDisplay)
+		for _, t := range pending[:displayCount] {
 			content += TaskPendingStyle.Render("  ○ "+truncate(t.Title, width-6)) + "\n"
+		}
+		if len(pending) > maxDisplay {
+			content += TaskPendingStyle.Render(fmt.Sprintf("  + %d more", len(pending)-maxDisplay)) + "\n"
 		}
 		content += "\n"
 	}
 
 	if len(complete) > 0 {
 		content += TaskCompleteStyle.Render("Complete") + "\n"
-		for _, t := range complete {
+		displayCount := min(len(complete), maxDisplay)
+		for _, t := range complete[:displayCount] {
 			content += TaskCompleteStyle.Render("  ✓ "+truncate(t.Title, width-6)) + "\n"
+		}
+		if len(complete) > maxDisplay {
+			content += TaskCompleteStyle.Render(fmt.Sprintf("  + %d more", len(complete)-maxDisplay)) + "\n"
 		}
 	}
 
@@ -1254,6 +1357,73 @@ func (m Model) helpView() string {
 	)
 }
 
+// setupView renders the issue tracker selection screen
+func (m Model) setupView() string {
+	title := lipgloss.NewStyle().
+		Foreground(ColorBlue).
+		Bold(true).
+		MarginBottom(1).
+		Render("Select Issue Tracker")
+
+	var content strings.Builder
+	content.WriteString(title)
+	content.WriteString("\n\n")
+
+	for i, t := range m.trackers {
+		var line string
+		if i == m.setupIdx {
+			// Selected item - highlighted
+			style := lipgloss.NewStyle().
+				Background(ColorBgHighlight).
+				Foreground(ColorFgPrimary).
+				Bold(true).
+				Padding(0, 1)
+			if !t.Available {
+				style = style.Foreground(ColorFgMuted)
+			}
+			line = style.Render("▸ " + t.Name)
+		} else {
+			// Normal item
+			style := lipgloss.NewStyle().
+				Foreground(ColorFgPrimary).
+				Padding(0, 1)
+			if !t.Available {
+				style = style.Foreground(ColorFgMuted)
+			}
+			line = style.Render("  " + t.Name)
+		}
+
+		// Add description
+		desc := lipgloss.NewStyle().
+			Foreground(ColorFgMuted).
+			Render(" - " + t.Description)
+
+		content.WriteString(line + desc)
+		content.WriteString("\n")
+	}
+
+	// Add navigation hint
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Render("↑/↓ navigate • Enter select • q quit"))
+
+	// Center the selection box
+	selectionBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBorder).
+		Padding(1, 2).
+		Render(content.String())
+
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		selectionBox,
+	)
+}
+
 // selectionView renders the epic selection screen
 func (m Model) selectionView() string {
 	title := lipgloss.NewStyle().
@@ -1393,8 +1563,21 @@ func (m *Model) sendQuestionResponse(response string) {
 		return
 	}
 
-	// Send the response via stdin
-	err := m.processHandle.SendMessage(response)
+	// Get the tool_use_id from the pending question
+	var toolUseID string
+	if m.pendingQuestion != nil {
+		toolUseID = m.pendingQuestion.ToolUseID
+	}
+
+	var err error
+	if toolUseID != "" {
+		// Send as tool result (proper format for AskUserQuestion responses)
+		err = m.processHandle.SendToolResult(toolUseID, response)
+	} else {
+		// Fallback to regular message if no tool_use_id (shouldn't happen)
+		err = m.processHandle.SendMessage(response)
+	}
+
 	if err != nil {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: "Failed to send response: " + err.Error(),
@@ -1407,6 +1590,10 @@ func (m *Model) sendQuestionResponse(response string) {
 			Type: "system",
 		})
 	}
+
+	// Update viewport to show the message
+	m.viewport.SetContent(m.renderOutputContent())
+	m.viewport.GotoBottom()
 }
 
 // addTask creates a new task in beads for the current epic
@@ -1473,6 +1660,10 @@ func (m *Model) sendMessageToAgent(message string) tea.Cmd {
 		Type: "system",
 	})
 
+	// Update viewport to show the message
+	m.viewport.SetContent(m.renderOutputContent())
+	m.viewport.GotoBottom()
+
 	// Send to process (reuse existing SendMessage method)
 	err := m.processHandle.SendMessage(message)
 	if err != nil {
@@ -1480,6 +1671,8 @@ func (m *Model) sendMessageToAgent(message string) tea.Cmd {
 			Text: "Failed to send message: " + err.Error(),
 			Type: "stderr",
 		})
+		m.viewport.SetContent(m.renderOutputContent())
+		m.viewport.GotoBottom()
 	}
 
 	return nil
@@ -1515,8 +1708,8 @@ func (m *Model) startBuild() tea.Cmd {
 		})
 	}
 
-	// Start first iteration
-	return m.runNextBuildIteration()
+	// Start first iteration and spinner (spinner will self-sustain while isRunning)
+	return tea.Batch(m.runNextBuildIteration(), spinnerTickCmd())
 }
 
 // runNextBuildIteration starts the next iteration of the build loop
@@ -1551,7 +1744,7 @@ func (m *Model) runNextBuildIteration() tea.Cmd {
 
 	m.processHandle = process.RunBuildIteration(m.currentIteration, m.maxIterations, epicID, m.outputChan)
 
-	return tea.Batch(m.pollOutput(), spinnerTickCmd())
+	return m.pollOutput()
 }
 
 // startPlan starts the plan process
@@ -1574,6 +1767,7 @@ func (m *Model) startPlan(input string) tea.Cmd {
 		Type: "system",
 	})
 
+	// Start polling and spinner (spinner will self-sustain while isRunning)
 	return tea.Batch(m.pollOutput(), spinnerTickCmd())
 }
 
