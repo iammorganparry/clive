@@ -101,7 +101,7 @@ func getCachedIssues() []beadsIssue {
 		return issuesCache
 	}
 
-	cmd := exec.Command("bd", "list", "--json", "--all")
+	cmd := exec.Command("bd", "list", "--json", "--all", "--limit", "0")
 	// Run from beads root directory
 	if beadsRoot := findBeadsRoot(); beadsRoot != "" {
 		cmd.Dir = beadsRoot
@@ -195,7 +195,7 @@ func GetEpics(filterByCurrentUser bool) []model.Session {
 	return sessions
 }
 
-// GetEpicTasks returns all tasks under an epic
+// GetEpicTasks returns all tasks under an epic (including nested descendants)
 func GetEpicTasks(epicID string) []model.Task {
 	if !IsAvailable() {
 		return nil
@@ -203,9 +203,13 @@ func GetEpicTasks(epicID string) []model.Task {
 
 	issues := getCachedIssues()
 
+	// Match all descendants: tasks whose ID starts with "epicID."
+	// e.g., for epicID "trigify-1vw", match "trigify-1vw.1", "trigify-1vw.1.2", etc.
+	prefix := epicID + "."
+
 	var tasks []model.Task
 	for _, issue := range issues {
-		if issue.Parent != epicID {
+		if !strings.HasPrefix(issue.ID, prefix) {
 			continue
 		}
 

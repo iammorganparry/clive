@@ -1,7 +1,7 @@
 ---
 description: Analyze work request and create a comprehensive plan with category and skill assignment
 model: opus
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
+allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__linear__create_issue, mcp__linear__update_issue, mcp__linear__list_issue_labels
 ---
 
 # Work Planning Agent
@@ -28,7 +28,7 @@ The build agent will implement the work. Your job is ONLY to plan it.
 - Detect the work category (test, feature, refactor, bugfix, docs)
 - Assign appropriate skills to tasks
 - Ask clarifying questions
-- Create a work plan using beads epics and tasks (beads is REQUIRED)
+- Create a work plan using beads epics and tasks (if beads tracker) OR Linear parent issues and sub-issues (if Linear tracker)
 - Write to planning/state files ONLY (.claude/*.json, .claude/*.md)
 
 **Key Principles:**
@@ -72,19 +72,40 @@ The build agent will implement the work. Your job is ONLY to plan it.
 Parse `$ARGUMENTS` to determine the planning mode and detect work category:
 
 ```bash
-# Check if beads (bd) task tracker is available - REQUIRED
-if ! command -v bd &> /dev/null; then
-    echo "ERROR: Beads (bd) is required but not installed."
-    echo "Install beads and run 'bd init' to initialize."
-    exit 1
+# Read tracker preference from config
+CLIVE_CONFIG="$HOME/.clive/config.json"
+TRACKER="beads"  # Default
+
+if [ -f "$CLIVE_CONFIG" ]; then
+    TRACKER=$(cat "$CLIVE_CONFIG" | jq -r '.issue_tracker // "beads"')
 fi
 
-if [ ! -d ".beads" ]; then
-    echo "Initializing beads..."
-    bd init
-fi
+echo "Issue tracker: $TRACKER"
 
-echo "✓ Beads task tracker ready"
+# Check tracker availability
+if [ "$TRACKER" = "beads" ]; then
+    # Check if beads (bd) task tracker is available - REQUIRED for beads mode
+    if ! command -v bd &> /dev/null; then
+        echo "ERROR: Beads (bd) is required but not installed."
+        echo "Install beads and run 'bd init' to initialize."
+        exit 1
+    fi
+
+    if [ ! -d ".beads" ]; then
+        echo "Initializing beads..."
+        bd init
+    fi
+
+    echo "✓ Beads task tracker ready"
+elif [ "$TRACKER" = "linear" ]; then
+    # Read Linear team ID from config
+    LINEAR_TEAM_ID=$(cat "$CLIVE_CONFIG" | jq -r '.linear.team_id // empty')
+    if [ -z "$LINEAR_TEAM_ID" ]; then
+        echo "ERROR: Linear team ID not configured. Run clive setup first."
+        exit 1
+    fi
+    echo "✓ Linear issue tracker ready (team: $LINEAR_TEAM_ID)"
+fi
 
 # Detect planning mode
 if [ -z "$ARGUMENTS" ]; then
@@ -932,12 +953,17 @@ Use AskUserQuestion to request approval:
 
 ---
 
-## Step 9: Create Beads Epic and Tasks (AFTER APPROVAL ONLY)
+## Step 9: Create Issues (AFTER APPROVAL ONLY)
 
 **Only execute this step AFTER user explicitly approves the plan in Step 8.**
 
-### 9.1 Create Epic
+The issue creation depends on the tracker preference detected in Step 0.
 
+### 9.1 For Beads Tracker
+
+If `$TRACKER` is "beads", use beads CLI:
+
+**Create Epic:**
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 EPIC_TITLE="[${BRANCH}] Work Plan - $(date +%Y-%m-%d)"
@@ -947,16 +973,60 @@ echo "✓ Created work plan epic: $EPIC_ID"
 echo "  Title: $EPIC_TITLE"
 ```
 
-### 9.2 Create Tasks Under Epic
-
-For each task in the approved plan, create a beads task:
-
+**Create Tasks Under Epic:**
 ```bash
 # Create task with skill and category labels
 # Tier labels (tier:1, tier:2) control execution order
 bd create "Task: [Task Name]" -p 1 --parent "$EPIC_ID" \
     --labels "skill:$SKILL,category:$CATEGORY,tier:$TIER"
 ```
+
+**Verify:**
+```bash
+echo ""
+echo "=== Work Plan Created ==="
+echo "Epic: $EPIC_ID"
+bd list --tree 2>/dev/null | head -20
+echo ""
+echo "Ready tasks: $(bd ready --json 2>/dev/null | jq length)"
+```
+
+### 9.2 For Linear Tracker
+
+If `$TRACKER` is "linear", use Linear MCP tools:
+
+**Read Linear config:**
+```bash
+LINEAR_TEAM_ID=$(cat ~/.clive/config.json | jq -r '.linear.team_id')
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+EPIC_TITLE="[${BRANCH}] Work Plan - $(date +%Y-%m-%d)"
+```
+
+**Create Parent Issue (Epic equivalent):**
+Use the `mcp__linear__create_issue` tool with:
+- `team`: The LINEAR_TEAM_ID from config
+- `title`: The EPIC_TITLE (e.g., "[main] Work Plan - 2024-01-15")
+
+Store the returned issue ID as PARENT_ID.
+
+**Create Sub-Issues (Tasks):**
+For each task in the plan, use `mcp__linear__create_issue` with:
+- `team`: The LINEAR_TEAM_ID
+- `title`: The task title (e.g., "Implement user authentication")
+- `parentId`: The PARENT_ID from above
+- `labels`: Array of labels (e.g., `["skill:feature", "tier:1", "category:feature"]`)
+
+**Example Linear task creation:**
+```
+mcp__linear__create_issue(
+  team: "LINEAR_TEAM_ID",
+  title: "Task: Implement login form",
+  parentId: "PARENT_ISSUE_ID",
+  labels: ["skill:feature", "tier:1", "category:feature"]
+)
+```
+
+### 9.3 Label Reference
 
 **Skill labels for build.sh dispatch:**
 - `skill:feature` - Feature implementation
@@ -972,20 +1042,10 @@ bd create "Task: [Task Name]" -p 1 --parent "$EPIC_ID" \
 - `tier:2` - Execute second (dependent changes)
 - `tier:3` - Execute last (cleanup, polish)
 
-### 9.3 Verify and Complete
+### 9.4 Complete
 
-```bash
-echo ""
-echo "=== Work Plan Created ==="
-echo "Epic: $EPIC_ID"
-bd list --tree 2>/dev/null | head -20
-echo ""
-echo "Ready tasks: $(bd ready --json 2>/dev/null | jq length)"
-echo ""
-echo "Run '/build' to begin implementation."
-```
+After creating all issues, output the completion marker:
 
-**Output the completion marker:**
 ```
 <promise>PLAN_COMPLETE</promise>
 ```
@@ -995,7 +1055,7 @@ This marker signals to the TUI that planning is complete. The session will now e
 **CRITICAL:**
 - Do NOT invoke `/build` yourself
 - The user must explicitly run `/build` when ready
-- PLAN_COMPLETE must only appear AFTER beads are created
+- PLAN_COMPLETE must only appear AFTER issues are created in the chosen tracker
 
 ---
 
@@ -1045,14 +1105,14 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 2. **Write plan document** - Save to `.claude/current-plan.md`
 3. **Present plan** - Show summary to user
 4. **Ask for approval** - Use AskUserQuestion, wait for "Ready to implement"
-5. **Create beads** - ONLY after approval, create epic and tasks
+5. **Create issues** - ONLY after approval, create epic/parent and tasks/sub-issues (using beads OR Linear based on tracker preference)
 6. **Output PLAN_COMPLETE** - Session ends
 
 ### You are NOT allowed to:
 - Skip the interview phase
 - Assume what the user wants without asking
-- Create beads before user approves the plan
-- Output PLAN_COMPLETE before beads are created
+- Create issues before user approves the plan
+- Output PLAN_COMPLETE before issues are created
 - Start implementing any tasks
 - Write any code changes
 - Make any source file modifications
@@ -1063,8 +1123,8 @@ Your ONLY job is to:
 1. Interview the user thoroughly
 2. Create a plan document
 3. Get approval
-4. Create beads tasks
+4. Create issues (beads or Linear based on tracker preference)
 5. End the session
 
 If the user asks you to implement something, respond:
-> "I'm the planning agent - I create plans only. After you approve the plan, I'll create the beads tasks, then you can run `/build` to implement."
+> "I'm the planning agent - I create plans only. After you approve the plan, I'll create the issues, then you can run `/build` to implement."

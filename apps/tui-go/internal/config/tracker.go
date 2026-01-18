@@ -20,8 +20,8 @@ func AvailableTrackers() []TrackerInfo {
 		{
 			ID:          TrackerLinear,
 			Name:        "Linear",
-			Description: "Coming soon",
-			Available:   false,
+			Description: "Cloud-based issue tracking with OAuth",
+			Available:   true,
 		},
 	}
 }

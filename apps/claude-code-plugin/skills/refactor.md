@@ -3,7 +3,7 @@ name: refactor
 description: Restructure code without changing behavior
 category: refactor
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -16,20 +16,25 @@ You refactor code **ONE TASK AT A TIME**. Refactoring changes code structure wit
 
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
-1. **BEADS FIRST** - Use `bd ready` to find work, `bd close` to complete.
+1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
 2. **ONE TASK ONLY** - Refactor ONE scope, then STOP.
-3. **MUST UPDATE STATUS** - Update beads AND plan file after completion.
+3. **MUST UPDATE STATUS** - Update tracker AND plan file after completion.
 4. **NO BEHAVIOR CHANGES** - Only change structure, not functionality.
 
 ---
 
 ## Step 0: Read Your Context
 
-### 0.1 Check Beads First
+### 0.1 Detect Tracker and Check Ready Work
 ```bash
-if [ -d ".beads" ]; then
+# Read tracker preference
+TRACKER=$(cat ~/.clive/config.json 2>/dev/null | jq -r '.issue_tracker // "beads"')
+echo "Using tracker: $TRACKER"
+
+if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
     bd ready
 fi
+# For Linear: The TUI passes the current task info via $TASK_ID environment variable
 ```
 
 ### 0.2 Read the Plan File
@@ -307,9 +312,15 @@ After creating the task:
 
 ## Step 4: Update Status
 
+**For Beads:**
 ```bash
 bd close [TASK_ID]
 ```
+
+**For Linear:**
+Use `mcp__linear__update_issue` with:
+- `id`: The task ID
+- `state`: "Done" (or equivalent completed workflow state)
 
 Update plan: `- [x] **Status:** complete`
 

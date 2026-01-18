@@ -234,21 +234,34 @@ func NewRootModel(cfg *config.Config) Model {
 	apiKeyInput.CharLimit = 100
 	apiKeyInput.Width = 50
 
-	// Always start with tracker selection screen
-	// Pre-select the configured tracker if one exists
+	// Determine view mode and provider based on config
+	viewMode := ViewModeSetup
+	var provider tracker.Provider
 	setupIdx := 0
+
 	if cfg != nil {
+		// Pre-select the configured tracker
 		for i, t := range config.AvailableTrackers() {
 			if t.ID == cfg.IssueTracker {
 				setupIdx = i
 				break
 			}
 		}
+
+		// If setup is completed, try to create a provider
+		if cfg.SetupCompleted {
+			p, err := tracker.NewProviderWithConfig(cfg)
+			if err == nil && p.IsAvailable() {
+				provider = p
+				viewMode = ViewModeSelection
+			}
+		}
 	}
 
 	return Model{
-		viewMode:          ViewModeSetup,
+		viewMode:          viewMode,
 		cfg:               cfg,
+		provider:          provider,
 		trackers:          config.AvailableTrackers(),
 		setupIdx:          setupIdx,
 		input:             ti,

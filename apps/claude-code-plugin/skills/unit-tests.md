@@ -3,7 +3,7 @@ name: unit-tests
 description: Implement unit tests using the project's test framework
 category: test
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -16,9 +16,9 @@ You implement unit tests **ONE TASK AT A TIME** from the approved plan. Each inv
 
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
-1. **BEADS FIRST** - When beads (`.beads/` directory) exists, it is the SOURCE OF TRUTH. Use `bd ready` to find work, `bd close` to complete.
+1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
 2. **ONE TASK ONLY** - Implement ONE test suite, then STOP. Do NOT continue to the next task.
-3. **MUST UPDATE STATUS** - After completing a task, update beads (`bd close`) AND the plan file.
+3. **MUST UPDATE STATUS** - After completing a task, update tracker AND the plan file.
 
 **If you do not update status, the loop will repeat the same work forever.**
 
@@ -26,19 +26,22 @@ You implement unit tests **ONE TASK AT A TIME** from the approved plan. Each inv
 
 ## Step 0: Read Your Context (REQUIRED FIRST)
 
-### 0.1 Check Beads First (PRIMARY SOURCE OF TRUTH)
-
-**Beads is the primary source of truth when available:**
+### 0.1 Detect Tracker and Check Ready Work
 
 ```bash
-if command -v bd &> /dev/null && [ -d ".beads" ]; then
+# Read tracker preference
+TRACKER=$(cat ~/.clive/config.json 2>/dev/null | jq -r '.issue_tracker // "beads"')
+echo "Using tracker: $TRACKER"
+
+if [ "$TRACKER" = "beads" ] && command -v bd &> /dev/null && [ -d ".beads" ]; then
     echo "Beads available - using as primary source"
     bd ready  # Shows tasks with no blockers, ready to work on
 fi
+# For Linear: The TUI passes the current task info via $TASK_ID environment variable
 ```
 
-**If beads shows no ready tasks:**
-- Check if all tasks are complete: `bd list --status=open`
+**If no ready tasks:**
+- For Beads: Check if all tasks are complete: `bd list --status=open`
 - If no open tasks remain, output `<promise>ALL_TASKS_COMPLETE</promise>`
 
 ### 0.2 Read the Plan File
@@ -49,10 +52,16 @@ The plan file path is provided in your instructions. Read it to find the test ca
 
 ## Step 1: Mark Task In Progress
 
-### If beads is available (preferred):
+**For Beads:**
 ```bash
 bd update [TASK_ID] --status in_progress
 ```
+
+**For Linear:**
+Use `mcp__linear__update_issue` with:
+- `id`: The task ID
+- `state`: "In Progress" (or equivalent workflow state)
+- `assignee`: "me"
 
 ### Also update the plan file:
 - Change `- [ ] **Status:** pending` to `- [ ] **Status:** in_progress`
@@ -158,20 +167,21 @@ If truly stuck:
 
 **DO NOT do this work inline.** Instead:
 
-### 1. Create a Beads Task for Discovered Work
+### 1. Create a Task for Discovered Work
 
+**For Beads:**
 ```bash
-# Create a task with appropriate skill label
 bd create --title="[Brief description]" \
   --type=task \
   --priority=2 \
   --labels "skill:[appropriate-skill],category:[category],discovered:true"
-
-# Examples:
-bd create --title="Fix null check in auth middleware" --type=bug --priority=1 --labels "skill:bugfix,category:bugfix,discovered:true"
-bd create --title="Add tests for error handling in UserService" --type=task --priority=2 --labels "skill:unit-tests,category:test,discovered:true"
-bd create --title="Refactor tangled dependencies in auth module" --type=task --priority=3 --labels "skill:refactor,category:refactor,discovered:true"
 ```
+
+**For Linear:**
+Use `mcp__linear__create_issue` with:
+- `title`: Brief description of discovered work
+- `labels`: `["skill:[appropriate-skill]", "category:[category]", "discovered:true"]`
+- `parentId`: The current parent issue ID (to keep it grouped)
 
 ### 2. Note It and Continue
 
@@ -195,23 +205,33 @@ After creating the task:
 
 ### If ALL Tests Pass:
 
-**1. Update beads first (if available):**
+**For Beads:**
 ```bash
 bd close [TASK_ID]
 ```
 
-**2. Also update the plan file:**
+**For Linear:**
+Use `mcp__linear__update_issue` with:
+- `id`: The task ID
+- `state`: "Done" (or equivalent completed workflow state)
+
+**Also update the plan file:**
 - Find the line: `- [ ] **Status:** in_progress`
 - Change it to: `- [x] **Status:** complete`
 
 ### If Blocked:
 
-**1. Update beads (if available):**
+**For Beads:**
 ```bash
 bd update [TASK_ID] --status blocked
 ```
 
-**2. Also update the plan file:**
+**For Linear:**
+Use `mcp__linear__update_issue` with:
+- `id`: The task ID
+- `state`: "Blocked" (or add "blocked" label)
+
+**Also update the plan file:**
 - Change status to `blocked`
 - Add note: `**Blocked:** [error summary]`
 
