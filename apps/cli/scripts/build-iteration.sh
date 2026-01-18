@@ -185,11 +185,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Read scratchpad if it exists (context from previous iterations)
+SCRATCHPAD_FILE=".claude/scratchpad.md"
+SCRATCHPAD_CONTENT=""
+if [ -f "$SCRATCHPAD_FILE" ]; then
+    SCRATCHPAD_CONTENT=$(cat "$SCRATCHPAD_FILE")
+fi
+
 # Build the execution prompt
 {
     echo "# Task Execution - Iteration $ITERATION/$MAX_ITERATIONS"
     echo ""
-    echo "## Context"
+    echo "## Previous Context (Scratchpad)"
+    echo ""
+    if [ -n "$SCRATCHPAD_CONTENT" ]; then
+        echo "$SCRATCHPAD_CONTENT"
+    else
+        echo "_No previous context - this is the first iteration._"
+    fi
+    echo ""
+    echo "---"
+    echo ""
+    echo "## Current Task"
     echo "- Task source: beads (bd ready)"
     echo "- Progress: $PROGRESS_FILE"
     echo "- Skill: $SKILL"
@@ -206,10 +223,33 @@ trap cleanup EXIT
     echo "## Instructions"
     echo ""
     echo "1. Read the skill file for execution instructions: $SKILL_FILE"
-    echo "2. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
-    echo "3. Execute ONE task only following the skill instructions"
-    echo "4. Update beads status after completion: bd close $TASK_ID"
-    echo "5. Output completion marker and STOP"
+    echo "2. **Review the scratchpad above** for any relevant context from previous iterations"
+    echo "3. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
+    echo "4. Execute ONE task only following the skill instructions"
+    echo "5. Update beads status after completion: bd close $TASK_ID"
+    echo "6. **Update the scratchpad** with notes for the next iteration (see below)"
+    echo "7. Output completion marker and STOP"
+    echo ""
+    echo "## Scratchpad Update (REQUIRED before completing)"
+    echo ""
+    echo "Before outputting the completion marker, append to .claude/scratchpad.md:"
+    echo ""
+    echo '```bash'
+    echo 'cat >> .claude/scratchpad.md << '\''SCRATCHPAD'\'''
+    echo ""
+    echo "## Iteration $ITERATION - [Task Title]"
+    echo '**Completed:** $(date +%Y-%m-%d\ %H:%M)'
+    echo ""
+    echo "### Key Decisions"
+    echo "- [Decision and reasoning]"
+    echo ""
+    echo "### Notes for Next Agent"
+    echo "- [Important context]"
+    echo "- [Files modified]"
+    echo "- [Patterns used]"
+    echo ""
+    echo "SCRATCHPAD"
+    echo '```'
     echo ""
     echo "## Completion Markers"
     echo "- Task done: $TASK_COMPLETE_MARKER"
@@ -218,6 +258,7 @@ trap cleanup EXIT
     echo "## CRITICAL"
     echo "- Follow the skill file instructions exactly"
     echo "- Update beads status (bd close) when task is complete"
+    echo "- **Update the scratchpad before completing** - this helps the next agent"
     echo "- Create a LOCAL git commit before outputting completion marker"
     echo "- STOP immediately after outputting completion marker"
     echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"

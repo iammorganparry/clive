@@ -203,6 +203,33 @@ Skill: e2e-tests"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Key Decisions
+- [E2E test approach]
+- [Page objects/selectors used]
+
+### Files Modified
+- [Test files created/modified]
+
+### Notes for Next Agent
+- [Test data setup]
+- [Page object patterns]
+- [Flaky areas to watch]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```

@@ -208,6 +208,31 @@ Skill: docs"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Documentation Added
+- [What was documented]
+
+### Files Modified
+- [Doc files created/modified]
+
+### Notes for Next Agent
+- [Related docs that may need updating]
+- [Code areas that lack documentation]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```

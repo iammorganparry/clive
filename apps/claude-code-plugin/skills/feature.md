@@ -175,6 +175,40 @@ Skill: feature"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Key Decisions
+- [Architectural or implementation decision and why]
+
+### Files Modified
+- [List key files changed]
+
+### Notes for Next Agent
+- [Dependencies created]
+- [Patterns established]
+- [Gotchas discovered]
+- [Related work that might be affected]
+
+SCRATCHPAD
+```
+
+**What to include:**
+- Architectural decisions and reasoning
+- Patterns or conventions established
+- Files modified that other tasks depend on
+- Gotchas or edge cases discovered
+- Dependencies between tasks
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```

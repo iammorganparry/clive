@@ -60,8 +60,7 @@ var (
 	ToolCallStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(ColorYellow).
-			PaddingLeft(1).
-			MarginLeft(1)
+			PaddingLeft(1)
 
 	ToolNameStyle = lipgloss.NewStyle().
 			Foreground(ColorYellow).
@@ -76,17 +75,13 @@ var (
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(ColorBlue).
 			PaddingLeft(1).
-			PaddingRight(1).
-			MarginTop(1).
-			MarginBottom(1)
+			PaddingRight(1)
 
 	// System message styles
 	SystemStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(ColorMagenta).
-			PaddingLeft(1).
-			MarginTop(1).
-			MarginBottom(1)
+			PaddingLeft(1)
 
 	SystemTextStyle = lipgloss.NewStyle().
 			Foreground(ColorCyan)
@@ -94,8 +89,12 @@ var (
 	// User input styles
 	UserInputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(ColorRed).
+			BorderForeground(ColorGreen).
 			PaddingLeft(1)
+
+	UserTextStyle = lipgloss.NewStyle().
+			Foreground(ColorGreen).
+			Bold(true)
 
 	// Status bar styles
 	StatusBarStyle = lipgloss.NewStyle().

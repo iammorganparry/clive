@@ -217,6 +217,35 @@ Skill: bugfix"
 
 ---
 
+## Step 7.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Root Cause
+- [What caused the bug]
+
+### Fix Applied
+- [How it was fixed]
+
+### Files Modified
+- [Files changed]
+
+### Notes for Next Agent
+- [Related areas that might have similar issues]
+- [Regression test added]
+- [Edge cases discovered]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 8: Output Completion Marker
 
 ```

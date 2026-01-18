@@ -242,6 +242,34 @@ Skill: unit-tests"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Key Decisions
+- [Testing approach and why]
+- [Mock strategy used]
+
+### Files Modified
+- [Test files created/modified]
+
+### Notes for Next Agent
+- [Test patterns established]
+- [Mock factories available]
+- [Edge cases covered]
+- [Related code that tests depend on]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 5: Output Completion Marker and STOP
 
 **If this task is done (but more remain):**
