@@ -90,7 +90,9 @@ var (
 	UserInputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(ColorGreen).
-			PaddingLeft(1)
+			PaddingLeft(1).
+			MarginTop(1).
+			MarginBottom(1)
 
 	UserTextStyle = lipgloss.NewStyle().
 			Foreground(ColorGreen).
