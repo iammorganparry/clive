@@ -154,10 +154,12 @@ type Model struct {
 	historyIndex   int
 
 	// Data
-	sessions      []model.Session
-	activeSession *model.Session
-	tasks         []model.Task
-	selectedIndex int // For epic selection
+	sessions        []model.Session
+	activeSession   *model.Session
+	tasks           []model.Task
+	selectedIndex   int             // For epic selection
+	epicSearchInput textinput.Model // Search input for epic selection
+	epicSearchQuery string          // Current search query
 
 	// Output
 	outputLines  []process.OutputLine
@@ -234,6 +236,14 @@ func NewRootModel(cfg *config.Config) Model {
 	apiKeyInput.CharLimit = 100
 	apiKeyInput.Width = 50
 
+	// Create search input for epic selection
+	epicSearch := textinput.New()
+	epicSearch.Placeholder = "Search epics..."
+	epicSearch.Prompt = "🔍 "
+	epicSearch.CharLimit = 100
+	epicSearch.Width = 40
+	epicSearch.Focus() // Start focused
+
 	// Determine view mode and provider based on config
 	viewMode := ViewModeSetup
 	var provider tracker.Provider
@@ -266,11 +276,12 @@ func NewRootModel(cfg *config.Config) Model {
 		setupIdx:          setupIdx,
 		input:             ti,
 		linearAPIKeyInput: apiKeyInput,
+		epicSearchInput:   epicSearch,
 		inputFocused:      false,
-		keys:          DefaultKeyMap(),
-		ready:         false,
-		selectedIndex: 0,
-		loadingEpics:  false,
+		keys:              DefaultKeyMap(),
+		ready:             false,
+		selectedIndex:     0,
+		loadingEpics:      false,
 	}
 }
 
@@ -315,6 +326,31 @@ func (m Model) loadTasksCmd(epicID string) tea.Cmd {
 		tasks := provider.GetEpicTasks(epicID)
 		return tasksLoadedMsg{tasks: tasks}
 	}
+}
+
+// filteredSessions returns sessions filtered by search query, limited to maxResults
+func (m Model) filteredSessions(maxResults int) []model.Session {
+	query := strings.ToLower(strings.TrimSpace(m.epicSearchQuery))
+
+	// If no search query, return latest sessions (already sorted by updatedAt)
+	if query == "" {
+		if len(m.sessions) <= maxResults {
+			return m.sessions
+		}
+		return m.sessions[:maxResults]
+	}
+
+	// Filter by search query
+	var filtered []model.Session
+	for _, s := range m.sessions {
+		if strings.Contains(strings.ToLower(s.Name), query) {
+			filtered = append(filtered, s)
+			if len(filtered) >= maxResults {
+				break
+			}
+		}
+	}
+	return filtered
 }
 
 // saveConfigCmd saves the selected issue tracker to config
@@ -1137,6 +1173,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle selection screen
 		if m.viewMode == ViewModeSelection {
+			filtered := m.filteredSessions(10)
+
 			switch {
 			case key.Matches(msg, m.keys.Quit):
 				return m, tea.Quit
@@ -1145,17 +1183,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedIndex--
 				}
 			case key.Matches(msg, m.keys.Down):
-				if m.selectedIndex < len(m.sessions)-1 {
+				if m.selectedIndex < len(filtered)-1 {
 					m.selectedIndex++
 				}
 			case key.Matches(msg, m.keys.Enter):
-				if len(m.sessions) > 0 && m.selectedIndex < len(m.sessions) {
-					m.activeSession = &m.sessions[m.selectedIndex]
+				if len(filtered) > 0 && m.selectedIndex < len(filtered) {
+					m.activeSession = &filtered[m.selectedIndex]
 					m.viewMode = ViewModeMain
-					// Clear input when entering main view
+					// Clear inputs when entering main view
 					m.input.SetValue("")
 					m.input.Blur()
 					m.inputFocused = false
+					m.epicSearchInput.SetValue("")
+					m.epicSearchQuery = ""
 					// Load tasks for selected epic
 					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
@@ -1166,6 +1206,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Focus()
 				m.input.SetValue("/plan ")
 				m.input.CursorEnd()
+				// Clear search
+				m.epicSearchInput.SetValue("")
+				m.epicSearchQuery = ""
+			case msg.Type == tea.KeyEsc:
+				// Clear search on Escape
+				m.epicSearchInput.SetValue("")
+				m.epicSearchQuery = ""
+				m.selectedIndex = 0
+			default:
+				// Pass other key events to search input
+				var cmd tea.Cmd
+				m.epicSearchInput, cmd = m.epicSearchInput.Update(msg)
+				cmds = append(cmds, cmd)
+
+				// Update search query and reset selection if changed
+				newQuery := m.epicSearchInput.Value()
+				if newQuery != m.epicSearchQuery {
+					m.epicSearchQuery = newQuery
+					m.selectedIndex = 0
+				}
 			}
 			return m, tea.Batch(cmds...)
 		}
@@ -2134,33 +2194,67 @@ func (m Model) selectionView() string {
 			Foreground(ColorFgMuted).
 			Render("No epics found.\n\nPress n to create a new session."))
 	} else {
-		for i, s := range m.sessions {
-			var line string
-			if i == m.selectedIndex {
-				// Selected item - highlighted
-				line = lipgloss.NewStyle().
-					Background(ColorBgHighlight).
-					Foreground(ColorFgPrimary).
-					Bold(true).
-					Padding(0, 1).
-					Render("▸ " + s.Name)
-			} else {
-				// Normal item
-				line = lipgloss.NewStyle().
-					Foreground(ColorFgPrimary).
-					Padding(0, 1).
-					Render("  " + s.Name)
+		// Show search input
+		searchBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorBorder).
+			Padding(0, 1).
+			Width(44).
+			Render(m.epicSearchInput.View())
+		content.WriteString(searchBox)
+		content.WriteString("\n\n")
+
+		// Get filtered sessions (max 10)
+		filtered := m.filteredSessions(10)
+
+		// Show count indicator
+		countText := fmt.Sprintf("Showing %d of %d", len(filtered), len(m.sessions))
+		if m.epicSearchQuery != "" {
+			countText = fmt.Sprintf("Showing %d matches of %d total", len(filtered), len(m.sessions))
+		}
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(ColorFgMuted).
+			Italic(true).
+			Render(countText))
+		content.WriteString("\n\n")
+
+		if len(filtered) == 0 {
+			content.WriteString(lipgloss.NewStyle().
+				Foreground(ColorFgMuted).
+				Render("No matching epics found."))
+		} else {
+			for i, s := range filtered {
+				var line string
+				if i == m.selectedIndex {
+					// Selected item - highlighted
+					line = lipgloss.NewStyle().
+						Background(ColorBgHighlight).
+						Foreground(ColorFgPrimary).
+						Bold(true).
+						Padding(0, 1).
+						Render("▸ " + s.Name)
+				} else {
+					// Normal item
+					line = lipgloss.NewStyle().
+						Foreground(ColorFgPrimary).
+						Padding(0, 1).
+						Render("  " + s.Name)
+				}
+				content.WriteString(line)
+				content.WriteString("\n")
 			}
-			content.WriteString(line)
-			content.WriteString("\n")
 		}
 	}
 
 	// Add navigation hint
 	content.WriteString("\n")
+	hint := "↑/↓ navigate • Enter select • n new • q quit"
+	if m.epicSearchQuery != "" {
+		hint = "↑/↓ navigate • Enter select • Esc clear • n new • q quit"
+	}
 	content.WriteString(lipgloss.NewStyle().
 		Foreground(ColorFgMuted).
-		Render("↑/↓ navigate • Enter select • n new • q quit"))
+		Render(hint))
 
 	// Center the selection box
 	selectionBox := lipgloss.NewStyle().
