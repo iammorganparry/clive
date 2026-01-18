@@ -7,16 +7,66 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
+
+// ANSI escape code pattern for stripping all ANSI sequences from output
+// Matches: colors (\x1b[...m), cursor movement, clear screen, etc.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]`)
+
+// Orphaned ANSI suffixes that appear when escape char was stripped but suffix remains
+var orphanedAnsiRegex = regexp.MustCompile(`(?:^|[^0-9])[0-9;]*m(?:[^a-zA-Z]|$)`)
+
+// stripANSI removes ANSI escape codes from a string
+func stripANSI(s string) string {
+	// First pass: regex for standard sequences
+	result := ansiRegex.ReplaceAllString(s, "")
+
+	// Second pass: remove any remaining escape characters and partial sequences
+	var clean strings.Builder
+	clean.Grow(len(result))
+	inEscape := false
+	for i := 0; i < len(result); i++ {
+		c := result[i]
+		if c == 0x1b { // ESC character
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			// Skip until we hit a letter (end of sequence) or non-sequence char
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+				inEscape = false
+			} else if c != '[' && c != ';' && !(c >= '0' && c <= '9') {
+				// Not part of escape sequence, output it
+				inEscape = false
+				clean.WriteByte(c)
+			}
+			continue
+		}
+		clean.WriteByte(c)
+	}
+
+	// Third pass: remove orphaned ANSI suffixes like "0m", "1;34m" at line boundaries
+	result = clean.String()
+	result = strings.ReplaceAll(result, "0m", "")
+	result = strings.ReplaceAll(result, "1m", "")
+	result = strings.ReplaceAll(result, "2m", "")
+	result = strings.ReplaceAll(result, "22m", "")
+	result = strings.ReplaceAll(result, "39m", "")
+
+	return result
+}
 
 // Streaming state for accumulating text and tool inputs across chunks
 var (
 	streamingTextBuffer strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
 	currentToolName     string          // Current tool being streamed
+	currentToolID       string          // Current tool_use_id for responding to tool calls
 	currentToolInput    strings.Builder // Accumulates tool input JSON
 	pendingBdRefresh    bool            // True when a bd command was seen and we need to refresh after execution
 	streamStateMu       sync.Mutex
@@ -29,6 +79,7 @@ func ResetStreamingState() {
 	defer streamStateMu.Unlock()
 	streamingTextBuffer.Reset()
 	currentToolName = ""
+	currentToolID = ""
 	currentToolInput.Reset()
 	pendingBdRefresh = false
 }
@@ -54,6 +105,21 @@ func (p *ProcessHandle) CloseStdin() {
 	}
 }
 
+// CloseStdinWithTimeout closes stdin and kills process if it doesn't exit within timeout
+func (p *ProcessHandle) CloseStdinWithTimeout(timeout time.Duration) {
+	p.CloseStdin()
+
+	// Wait for process to exit with timeout
+	select {
+	case <-p.done:
+		// Process exited cleanly
+		return
+	case <-time.After(timeout):
+		// Timeout - force kill the process
+		p.Kill()
+	}
+}
+
 // OutputLine represents a line of output from the process
 type OutputLine struct {
 	Text         string
@@ -68,9 +134,10 @@ type OutputLine struct {
 
 // QuestionData represents a question from Claude's AskUserQuestion tool
 type QuestionData struct {
-	Header   string
-	Question string
-	Options  []QuestionOption
+	ToolUseID string // The tool_use_id needed for responding
+	Header    string
+	Question  string
+	Options   []QuestionOption
 }
 
 // QuestionOption represents a single option in a question
@@ -86,6 +153,16 @@ func (p *ProcessHandle) Kill() {
 	if !p.killed && p.cmd.Process != nil {
 		p.killed = true
 		p.cmd.Process.Kill()
+	}
+}
+
+// Interrupt sends SIGINT to the process (like pressing Ctrl+C)
+// This allows Claude to gracefully handle the interrupt and continue the conversation
+func (p *ProcessHandle) Interrupt() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.killed && p.cmd.Process != nil {
+		p.cmd.Process.Signal(syscall.SIGINT)
 	}
 }
 
@@ -111,6 +188,39 @@ func (p *ProcessHandle) SendMessage(message string) error {
 		"message": map[string]string{
 			"role":    "user",
 			"content": message,
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	_, err = p.stdin.Write(append(data, '\n'))
+	return err
+}
+
+// SendToolResult sends a tool result response to Claude
+// This is used for responding to AskUserQuestion and similar tools
+func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stdin == nil {
+		return nil
+	}
+
+	// Format as tool_result per Claude CLI stream-json spec
+	msg := map[string]interface{}{
+		"type": "user",
+		"message": map[string]interface{}{
+			"role": "user",
+			"content": []map[string]interface{}{
+				{
+					"type":        "tool_result",
+					"tool_use_id": toolUseID,
+					"content":     result,
+				},
+			},
 		},
 	}
 
@@ -505,7 +615,8 @@ func parseNDJSONLine(line string) []OutputLine {
 
 				// Check for completion markers in accumulated text
 				isComplete := strings.Contains(accumulated, "TASK_COMPLETE") ||
-					strings.Contains(accumulated, "ALL_TASKS_COMPLETE")
+					strings.Contains(accumulated, "ALL_TASKS_COMPLETE") ||
+					strings.Contains(accumulated, "PLAN_COMPLETE")
 
 				// Keep buffer small - only need last 50 chars for marker detection
 				if streamingTextBuffer.Len() > 100 {
@@ -516,7 +627,7 @@ func parseNDJSONLine(line string) []OutputLine {
 				streamStateMu.Unlock()
 
 				return []OutputLine{{
-					Text:         text,
+					Text:         stripANSI(text),
 					Type:         "assistant",
 					RefreshTasks: isComplete,
 					CloseStdin:   isComplete,
@@ -540,11 +651,13 @@ func parseNDJSONLine(line string) []OutputLine {
 		blockType, _ := contentBlock["type"].(string)
 		if blockType == "tool_use" {
 			name, _ := contentBlock["name"].(string)
+			toolID, _ := contentBlock["id"].(string)
 			input, _ := contentBlock["input"].(map[string]interface{})
 
-			// Store tool name and reset input buffer for streaming accumulation
+			// Store tool name, ID, and reset input buffer for streaming accumulation
 			streamStateMu.Lock()
 			currentToolName = name
+			currentToolID = toolID
 			currentToolInput.Reset()
 			streamStateMu.Unlock()
 			detail := extractToolDetail(name, input)
@@ -553,13 +666,13 @@ func parseNDJSONLine(line string) []OutputLine {
 				text += " " + detail
 			}
 
-			// Special handling for AskUserQuestion - emit as question type
+			// For AskUserQuestion in streaming mode, defer until content_block_stop
+			// when we have the full input JSON. Just emit a placeholder tool_call for now.
 			if name == "AskUserQuestion" {
 				return []OutputLine{{
 					Text:     text + "\n",
-					Type:     "question",
+					Type:     "tool_call",
 					ToolName: name,
-					Question: parseQuestionData(input),
 				}}
 			}
 
@@ -583,7 +696,16 @@ func parseNDJSONLine(line string) []OutputLine {
 		if blockType == "text" {
 			text, _ := contentBlock["text"].(string)
 			if text != "" {
-				return []OutputLine{{Text: text, Type: "assistant"}}
+				// Check for completion markers in non-streaming text blocks
+				isComplete := strings.Contains(text, "TASK_COMPLETE") ||
+					strings.Contains(text, "ALL_TASKS_COMPLETE") ||
+					strings.Contains(text, "PLAN_COMPLETE")
+				return []OutputLine{{
+					Text:         stripANSI(text),
+					Type:         "assistant",
+					RefreshTasks: isComplete,
+					CloseStdin:   isComplete,
+				}}
 			}
 		}
 
@@ -592,9 +714,11 @@ func parseNDJSONLine(line string) []OutputLine {
 		// Set a flag to refresh after tool execution (not immediately, since command hasn't run yet)
 		streamStateMu.Lock()
 		toolName := currentToolName
+		toolID := currentToolID
 		accumulated := currentToolInput.String()
 		// Reset state
 		currentToolName = ""
+		currentToolID = ""
 		currentToolInput.Reset()
 
 		if toolName == "Bash" && accumulated != "" {
@@ -605,6 +729,24 @@ func parseNDJSONLine(line string) []OutputLine {
 			}
 		}
 		streamStateMu.Unlock()
+
+		// For AskUserQuestion, now we have the full accumulated input - emit the question
+		if toolName == "AskUserQuestion" && accumulated != "" {
+			var input map[string]interface{}
+			if err := json.Unmarshal([]byte(accumulated), &input); err == nil {
+				qd := parseQuestionData(input)
+				if qd != nil {
+					qd.ToolUseID = toolID // Attach the tool_use_id for response
+				}
+				return []OutputLine{{
+					Text:     "❓ Awaiting response\n",
+					Type:     "question",
+					ToolName: toolName,
+					Question: qd,
+				}}
+			}
+		}
+
 		return nil
 
 	case "assistant":
@@ -626,11 +768,21 @@ func parseNDJSONLine(line string) []OutputLine {
 			if block["type"] == "text" {
 				text, _ := block["text"].(string)
 				if text != "" {
-					results = append(results, OutputLine{Text: text, Type: "assistant"})
+					// Check for completion markers in assistant text
+					isComplete := strings.Contains(text, "TASK_COMPLETE") ||
+						strings.Contains(text, "ALL_TASKS_COMPLETE") ||
+						strings.Contains(text, "PLAN_COMPLETE")
+					results = append(results, OutputLine{
+						Text:         stripANSI(text),
+						Type:         "assistant",
+						RefreshTasks: isComplete,
+						CloseStdin:   isComplete,
+					})
 				}
 			}
 			if block["type"] == "tool_use" {
 				name, _ := block["name"].(string)
+				toolID, _ := block["id"].(string)
 				input, _ := block["input"].(map[string]interface{})
 				detail := extractToolDetail(name, input)
 				text := "● " + name
@@ -651,11 +803,15 @@ func parseNDJSONLine(line string) []OutputLine {
 
 				// Special handling for AskUserQuestion
 				if name == "AskUserQuestion" {
+					qd := parseQuestionData(input)
+					if qd != nil {
+						qd.ToolUseID = toolID
+					}
 					results = append(results, OutputLine{
 						Text:     text + "\n",
 						Type:     "question",
 						ToolName: name,
-						Question: parseQuestionData(input),
+						Question: qd,
 					})
 				} else {
 					results = append(results, OutputLine{

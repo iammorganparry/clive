@@ -1226,6 +1226,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 
+		case key.Matches(msg, m.keys.Interrupt):
+			// Ctrl+C: interrupt running process (like pressing ctrl+c in terminal)
+			// This allows Claude to gracefully handle the interrupt and continue
+			if m.isRunning && m.processHandle != nil {
+				m.processHandle.Interrupt()
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "^C (interrupt sent)",
+					Type: "system",
+				})
+			} else {
+				// No process running - quit the app
+				return m, tea.Quit
+			}
+			return m, tea.Batch(cmds...)
+
 		case key.Matches(msg, m.keys.Refresh):
 			// Refresh epics and tasks
 			cmds = append(cmds, m.loadEpicsCmd())
