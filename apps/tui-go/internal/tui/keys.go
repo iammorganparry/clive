@@ -13,16 +13,18 @@ type KeyMap struct {
 	End      key.Binding
 
 	// Actions
-	Help    key.Binding
-	Build   key.Binding
-	Cancel  key.Binding
-	Refresh key.Binding
-	New     key.Binding
-	Switch  key.Binding
-	Focus   key.Binding
-	Escape  key.Binding
-	Enter   key.Binding
-	Quit    key.Binding
+	Help      key.Binding
+	Build     key.Binding
+	Cancel    key.Binding
+	Interrupt key.Binding
+	Refresh   key.Binding
+	New       key.Binding
+	Switch    key.Binding
+	Focus     key.Binding
+	Escape    key.Binding
+	Enter     key.Binding
+	Quit      key.Binding
+	Plan      key.Binding
 
 	// Selection
 	Select key.Binding
@@ -67,6 +69,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("c"),
 			key.WithHelp("c", "cancel"),
 		),
+		Interrupt: key.NewBinding(
+			key.WithKeys("ctrl+c"),
+			key.WithHelp("ctrl+c", "interrupt"),
+		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -92,8 +98,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("enter", "select"),
 		),
 		Quit: key.NewBinding(
-			key.WithKeys("q", "ctrl+c"),
+			key.WithKeys("q"),
 			key.WithHelp("q", "quit"),
+		),
+		Plan: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "show plan"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys("enter", " "),
@@ -112,6 +122,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown},
 		{k.Build, k.Cancel, k.Refresh, k.New},
-		{k.Help, k.Focus, k.Escape, k.Quit},
+		{k.Help, k.Plan, k.Focus, k.Escape, k.Quit},
 	}
 }
