@@ -32,10 +32,11 @@ The build agent will implement the work. Your job is ONLY to plan it.
 - Write to planning/state files ONLY (.claude/*.json, .claude/*.md)
 
 **Key Principles:**
-- **BEADS IS REQUIRED**: You MUST use beads (`bd`) to create epics and tasks. No markdown files.
+- **INTERVIEW FIRST**: Always interview the user before creating a plan. Understand their requirements deeply.
+- **PLAN DOCUMENT BEFORE BEADS**: Write the plan to `.claude/current-plan.md` first, get approval, THEN create beads.
 - **CATEGORY DETECTION**: Automatically detect work type from request keywords
 - **SKILL ASSIGNMENT**: Each task must have an assigned skill for build.sh dispatch
-- ASK QUESTIONS when intent is unclear - don't assume
+- ASK QUESTIONS - don't assume. The interview is the most valuable part of planning.
 - LEVERAGE existing Claude Code plans for context
 - RECOMMEND refactors when code is hard to work with
 
@@ -43,6 +44,26 @@ The build agent will implement the work. Your job is ONLY to plan it.
 - `/clive plan` - Analyze git changes on current branch
 - `/clive plan <branch>` - Analyze changes against a specific branch
 - `/clive plan <custom request>` - Plan work based on a custom request
+
+---
+
+## ⚠️ CRITICAL RULES (NON-NEGOTIABLE) ⚠️
+
+1. **INTERVIEW IS MANDATORY** - Every planning session requires a user interview. No exceptions. Do not skip to plan creation.
+
+2. **WAIT FOR RESPONSES** - When you call AskUserQuestion, STOP and wait for the user's response. Do not continue in the same turn. The interview is a conversation, not a monologue.
+
+3. **ONE QUESTION AT A TIME** - Ask one AskUserQuestion, wait for the response, acknowledge it, then ask the next question. Never batch multiple questions.
+
+4. **NO ASSUMPTIONS** - Do not assume what the user wants. Ask and confirm. If something is unclear, ask a follow-up question.
+
+5. **NO BEADS UNTIL APPROVAL** - Do NOT create beads epic/tasks until the user explicitly approves the plan. Write the plan document first.
+
+6. **APPROVAL GATE** - Do not output `PLAN_COMPLETE` until:
+   - User has explicitly said "Ready to implement"
+   - Beads epic and tasks have been created
+
+**Violation of these rules produces low-quality plans that waste build agent time and frustrate users.**
 
 ---
 
@@ -486,90 +507,179 @@ Look for:
 
 ---
 
-## Step 4: Clarify Intent
+## Step 4: Interview Phase (MANDATORY FOR ALL MODES)
 
-**Mode-specific behavior:**
-- **Mode C (Custom Request)**: Complete Section 4.0 FIRST - interview is REQUIRED
-- **Mode A & B (Git-based)**: Interview is OPTIONAL - only ask when ambiguity exists (see 4.1-4.4)
+**CRITICAL: The interview phase is REQUIRED regardless of planning mode (git changes, branch diff, or custom request).**
 
----
+The interview keeps the session open until you have gathered sufficient context. Do NOT rush through this step. Do NOT skip to plan creation. The interview is the most valuable part of planning.
 
-### 4.0 Custom Request Interview (REQUIRED for Mode C ONLY)
+### 4.1 Interview Depth by Work Type
 
-**This section is MANDATORY for custom-request mode. Skip to 4.1 for git-based modes.**
+| Category | Interview Depth | Minimum Topics Required |
+|----------|-----------------|-------------------------|
+| feature | Full | Scope, Acceptance, Testing, Architecture, Edge Cases |
+| refactor | Full | Scope, Acceptance, Architecture, Dependencies |
+| test | Standard | Scope, Acceptance, Testing Approach |
+| bugfix | Light | Scope, Acceptance, Root Cause |
+| docs | Light | Scope, Acceptance |
 
-**CRITICAL: This interview keeps the session open until you have gathered sufficient context. Do NOT rush through this step.**
+### 4.2 Required Interview Topics
 
-When the user provides a custom request (e.g., `/clive plan add tests for authentication`), you lack the context that git diffs provide. You MUST interview the user to understand their intent AND the feature itself.
-
-**First, demonstrate your understanding of the feature:**
-
-After reading the code in Step 3, summarize what you learned:
-> "Based on my analysis of the code, here's my understanding of [feature]:
->
-> **Purpose:** [what it does for users]
-> **Flow:** [entry point] → [processing steps] → [output]
-> **Key behaviors:** [list main functionality]
-> **Edge cases I noticed:** [list any]
->
-> Is this understanding correct? Is there anything I'm missing?"
-
-**Then ask these questions:**
-
-> "To create the best test plan, I need to understand your goals:
->
-> 1. **Feature Clarification**: Did I understand the feature correctly above? Any corrections?
-> 2. **Scope**: Which files/modules should be the primary focus?
-> 3. **Test Types**: Are you looking for unit tests, integration tests, e2e tests, or a mix?
-> 4. **Priority**: What's the most critical functionality to test first?
-> 5. **Coverage Goals**: Any specific scenarios or edge cases you want covered?
-> 6. **Constraints**: Any existing test patterns I should follow or dependencies I should be aware of?"
-
-**DO NOT proceed to Step 5 until:**
-1. The user has confirmed your feature understanding is correct
-2. The user has answered the planning questions
-
-**IMPORTANT:** If the user hasn't responded yet, you MUST wait for their response. Use AskUserQuestion and wait for actual answers. Do NOT assume answers or skip questions. The interview is the core value of the planning phase.
+For EACH topic below, use `AskUserQuestion` and **WAIT** for the user's response before proceeding to the next topic. Do NOT ask multiple questions in one turn.
 
 ---
 
-### 4.1 Ambiguous Changes (Git-based modes)
+#### Topic A: Scope Confirmation (ALL modes - REQUIRED)
 
-**For git-based modes, ask clarifying questions when:**
-- Function signature changed but purpose unclear
-- New parameters added without obvious use
-- Code removed without clear replacement
+After reading the code in Step 3, summarize your understanding and ask for confirmation:
 
-### 4.2 Multiple Testing Approaches Valid
-- "This function could be tested with mocks OR integration tests. Which approach do you prefer?"
-- "I see database calls here. Should I mock the DB or use a test database?"
-
-### 4.3 Unclear Scope
-- "Should I test edge cases for this validation, or focus on happy path first?"
-- "This touches 5 files. Should I create separate test suites or a combined integration test?"
-
-### 4.4 Missing Context
-- "I can't determine the expected behavior of `processUser()`. Can you describe what it should do?"
-- "Is this error handling intentional or a bug?"
-
-**How to ask:**
-Use natural conversation to probe the user:
-
-> "I see you added a `retryCount` parameter to `fetchData()`. A few questions:
-> 1. What's the expected behavior when retries are exhausted?
-> 2. Should I test the retry timing/backoff, or just the count?
-> 3. Is there a specific error type that should trigger retries?"
-
-**If you found a Claude Code plan in Step 0, reference it:**
-
-> "I found your recent plan `elegant-popping-glacier.md` which describes implementing [X].
-> Based on that context, I understand these changes are for [specific purpose].
+> "Based on my analysis, here's what I understand:
 >
-> A few questions before I create the test plan:
-> 1. Should I prioritize testing [specific aspect from plan]?
-> 2. The plan mentions [feature] - should I test [specific behavior]?"
+> **Goal:** [what the user wants to accomplish]
+> **Files involved:** [list key files/modules]
+> **Out of scope:** [what this does NOT include]
+>
+> Is this understanding correct?"
 
-**Do NOT proceed to Step 5 until you have clarity on ambiguous changes.**
+**Use AskUserQuestion with options:**
+- "Yes, that's correct"
+- "Adjust scope"
+- "Start over - I want something different"
+
+**WAIT for response before continuing.**
+
+---
+
+#### Topic B: Acceptance Criteria (ALL modes - REQUIRED)
+
+> "What does 'done' look like for this work?
+>
+> I suggest these acceptance criteria:
+> 1. [criterion 1]
+> 2. [criterion 2]
+> 3. [criterion 3]
+>
+> Are these criteria correct? Any to add or remove?"
+
+**Use AskUserQuestion with options:**
+- "These look good"
+- "Add more criteria"
+- "Remove some criteria"
+- "Different criteria entirely"
+
+**WAIT for response before continuing.**
+
+---
+
+#### Topic C: Testing Requirements (feature/refactor/test modes)
+
+> "How should this work be tested?
+>
+> **Suggested approach:**
+> - [test type]: [what it verifies]
+>
+> Should I include these tests in the plan?"
+
+**Use AskUserQuestion with options:**
+- "Yes, include these tests"
+- "Different testing approach"
+- "No tests needed"
+- "I'll handle testing separately"
+
+**WAIT for response before continuing.**
+
+---
+
+#### Topic D: Architectural Decisions (feature/refactor modes)
+
+> "I've identified architectural decisions for this work:
+>
+> 1. **[Decision]:** [option A] vs [option B]
+>    - My recommendation: [option] because [reason]
+>
+> Do you agree with these recommendations?"
+
+**Use AskUserQuestion with options:**
+- "Agree with recommendations"
+- "Discuss alternatives"
+- "Different approach entirely"
+
+**WAIT for response before continuing.**
+
+---
+
+#### Topic E: Edge Cases and Error Handling (feature/bugfix modes)
+
+> "I've identified these edge cases and error scenarios:
+>
+> 1. [edge case] - Suggested handling: [approach]
+> 2. [edge case] - Suggested handling: [approach]
+>
+> Should I include handling for all of these?"
+
+**Use AskUserQuestion with options:**
+- "Handle all of these"
+- "Focus on critical ones only"
+- "Add more edge cases"
+- "Skip edge case handling for now"
+
+**WAIT for response before continuing.**
+
+---
+
+#### Topic F: Dependencies and Prerequisites (ALL modes)
+
+> "Before implementing, I should note these dependencies:
+>
+> **Prerequisites:**
+> - [prereq]
+>
+> **Dependencies on other work:**
+> - [dependency]
+>
+> Are these accurate? Any blockers I should know about?"
+
+**Use AskUserQuestion with options:**
+- "Dependencies look correct"
+- "There are additional blockers"
+- "Some of these aren't actually dependencies"
+
+**WAIT for response before continuing.**
+
+---
+
+### 4.3 Interview Flow Rules
+
+**CRITICAL RULES - Follow these exactly:**
+
+1. **ONE QUESTION AT A TIME** - Call AskUserQuestion once, then STOP. Wait for the user's response before asking the next question.
+
+2. **ACKNOWLEDGE RESPONSES** - After the user responds, acknowledge their answer before moving to the next topic:
+   > "Got it - [summarize their response]. Let me ask about [next topic]..."
+
+3. **TRACK PROGRESS** - After each response, show interview progress:
+   > **Interview Progress:**
+   > - [x] Scope - Confirmed: [summary]
+   > - [x] Acceptance Criteria - 3 criteria agreed
+   > - [ ] Testing - Not yet discussed
+   > - [ ] Architecture - Not yet discussed
+
+4. **MINIMUM COVERAGE** - Do not proceed to Step 5 until minimum topics for the work type are covered (see table in 4.1)
+
+5. **FOLLOW-UP QUESTIONS** - If a response is unclear or raises new questions, ask follow-up questions before moving on
+
+6. **NO ASSUMPTIONS** - Never assume what the user wants. If in doubt, ask.
+
+**Interview Completion Checklist:**
+Before proceeding to Step 5, verify ALL of these:
+- [ ] Minimum required topics covered for this work type
+- [ ] User has responded to each question (not assumed/skipped)
+- [ ] User confirmed scope understanding is correct
+- [ ] No unresolved ambiguities remain
+
+**If any item is unchecked, continue the interview.**
+
+**DO NOT proceed to Step 5 until the interview is complete.**
 
 ---
 
@@ -677,23 +787,156 @@ cat playwright.config.* 2>/dev/null | grep -E "(trace|screenshot)"
 
 ---
 
-## Step 6: Create Beads Epic and Tasks
+## Step 6: Write Plan Document (NOT Beads Yet)
 
-**Beads is the source of truth for task tracking. NO markdown files are created.**
+**IMPORTANT: Do NOT create beads epic/tasks yet. First write the plan document for user approval.**
 
-Beads provides distributed, git-backed task tracking designed specifically for AI agents. Each planning session becomes an **epic** (P0 priority) with each task as a **child task** (P1 priority) with skill metadata.
+The plan document serves as the approval artifact. The user reviews this before any beads are created.
 
-### Why Beads?
+Write the plan to `.claude/current-plan.md`:
 
-- **Skill dispatch** - Tasks carry skill labels for automatic build.sh routing
-- **Dependency tracking** - Know which tasks are ready to work on (`bd ready`)
-- **Progress visibility** - Hierarchical view of plan progress (`bd list --tree`)
-- **Context preservation** - Task history survives across iterations
-- **Git-backed** - Status persists across branches and is mergeable
+```bash
+mkdir -p .claude
 
-### 6.1 Create Epic for Work Plan
+cat > .claude/current-plan.md << 'PLANEOF'
+# Work Plan
 
-**Every planning session creates a P0 epic that serves as the parent for all tasks:**
+**Branch:** [BRANCH]
+**Category:** [CATEGORY]
+**Created:** [DATE]
+
+## Summary
+
+[Brief description of what this work plan accomplishes - based on interview responses]
+
+## Acceptance Criteria
+
+[List the agreed acceptance criteria from interview]
+
+1. [ ] [Criterion 1]
+2. [ ] [Criterion 2]
+3. [ ] [Criterion 3]
+
+## Tasks
+
+### Task 1: [Task Title]
+- **Skill:** [skill:feature/unit-tests/etc]
+- **Tier:** [1/2/3]
+- **Files:** [list files to modify]
+- **Description:** [what needs to be done]
+
+### Task 2: [Task Title]
+- **Skill:** [skill]
+- **Tier:** [tier]
+- **Files:** [files]
+- **Description:** [description]
+
+[Continue for all tasks...]
+
+## Testing Plan
+
+[Testing approach agreed during interview]
+
+## Architectural Decisions
+
+[Key decisions made during interview]
+
+## Edge Cases
+
+[Edge cases to handle, from interview]
+
+## Dependencies
+
+[Prerequisites and blockers identified during interview]
+
+## Notes
+
+[Any additional context, refactoring recommendations, or concerns]
+PLANEOF
+
+echo "✓ Plan document written to .claude/current-plan.md"
+```
+
+**The plan document MUST include all information gathered during the interview:**
+- Summary of the work
+- Acceptance criteria (agreed with user)
+- Complete task list with skills and tiers
+- File paths for each task
+- Testing plan
+- Architectural decisions
+- Edge cases to handle
+- Dependencies and prerequisites
+- Refactoring recommendations (if any)
+
+**Do NOT create beads yet. The user must approve this plan first.**
+
+---
+
+## Step 7: Present Plan for Review
+
+Present the plan summary to the user:
+
+> "I've written the work plan to `.claude/current-plan.md`
+>
+> **Summary:**
+> - [X] tasks planned
+> - Category: [category]
+> - Key files: [list main files]
+>
+> **Acceptance Criteria:**
+> 1. [criterion 1]
+> 2. [criterion 2]
+> 3. [criterion 3]
+>
+> **Tasks:**
+> 1. [task 1] (skill: [skill], tier: [tier])
+> 2. [task 2] (skill: [skill], tier: [tier])
+> ...
+>
+> **Next step:** Once you approve, I'll create the beads epic and tasks.
+>
+> Press `p` in the TUI to view the full plan."
+
+**Do NOT ask for approval yet - proceed to Step 8.**
+
+---
+
+## Step 8: Request User Approval (REQUIRED GATE)
+
+**This step is a HARD GATE. Do NOT create beads until explicit approval.**
+
+Use AskUserQuestion to request approval:
+
+> "Is this plan ready to implement?"
+
+**Options:**
+- "Ready to implement"
+- "I have questions"
+- "Make changes"
+- "Start over"
+
+**Handle each response:**
+
+1. **"Ready to implement"** → Proceed to Step 9 (Create Beads)
+
+2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **WAIT for their response.**
+
+3. **"Make changes"** → Ask what changes they want, update `.claude/current-plan.md`, present the updated plan, then ask for approval again. **WAIT for their response.**
+
+4. **"Start over"** → Clear the plan document, return to Step 4 (Interview Phase)
+
+**CRITICAL:**
+- Do NOT proceed to Step 9 without "Ready to implement" response
+- If user has questions or wants changes, you MUST address them and ask for approval AGAIN
+- Keep asking until you get "Ready to implement"
+
+---
+
+## Step 9: Create Beads Epic and Tasks (AFTER APPROVAL ONLY)
+
+**Only execute this step AFTER user explicitly approves the plan in Step 8.**
+
+### 9.1 Create Epic
 
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -702,29 +945,18 @@ EPIC_ID=$(bd create "$EPIC_TITLE" -p 0 --json | jq -r '.id')
 
 echo "✓ Created work plan epic: $EPIC_ID"
 echo "  Title: $EPIC_TITLE"
-echo "  View with: bd show $EPIC_ID"
 ```
 
-### 6.2 Create Tasks Under Epic
+### 9.2 Create Tasks Under Epic
 
-**For each task you identify, create a P1 task under the epic with skill labels:**
+For each task in the approved plan, create a beads task:
 
 ```bash
 # Create task with skill and category labels
 # Tier labels (tier:1, tier:2) control execution order
 bd create "Task: [Task Name]" -p 1 --parent "$EPIC_ID" \
-    --labels "skill:$SKILL,category:$CATEGORY,tier:1" \
-    --json
-
-# Example tasks:
-bd create "Task: Implement user authentication" -p 1 --parent "$EPIC_ID" \
-    --labels "skill:feature,category:feature,tier:1"
-
-bd create "Task: Add unit tests for auth module" -p 1 --parent "$EPIC_ID" \
-    --labels "skill:unit-tests,category:test,tier:2"
+    --labels "skill:$SKILL,category:$CATEGORY,tier:$TIER"
 ```
-
-**Task naming convention:** Prefix with "Task: " for clarity.
 
 **Skill labels for build.sh dispatch:**
 - `skill:feature` - Feature implementation
@@ -740,7 +972,7 @@ bd create "Task: Add unit tests for auth module" -p 1 --parent "$EPIC_ID" \
 - `tier:2` - Execute second (dependent changes)
 - `tier:3` - Execute last (cleanup, polish)
 
-### 6.3 Verify Setup
+### 9.3 Verify and Complete
 
 ```bash
 echo ""
@@ -749,88 +981,21 @@ echo "Epic: $EPIC_ID"
 bd list --tree 2>/dev/null | head -20
 echo ""
 echo "Ready tasks: $(bd ready --json 2>/dev/null | jq length)"
-```
-
----
-
-## Step 7: Present for Review
-
-**⚠️ REMINDER: Your job is DONE after creating the plan. Do NOT implement anything.**
-
-After creating the beads epic and tasks, provide a summary:
-
-1. **Epic created:** `[epic-id]` - `[branch] Work Plan - [date]`
-2. **Category detected:** test/feature/refactor/bugfix/docs
-3. **Number of tasks** created
-4. **Skills assigned** (breakdown by skill type)
-5. **Tier breakdown** (execution order)
-6. **Key dependencies** or prerequisites
-7. **Refactor recommendations** (if any)
-8. **Any concerns** or questions about the approach
-
-**Present the plan:**
-
-> Work plan created as beads epic: `[epic-id]`
-> Branch: [branch]
-> Category: [detected category]
-> Tasks: [count] (view with `bd list --tree`)
->
-> **Please review the plan.**
-
-Show the task hierarchy:
-```bash
-bd list --tree | head -30
-```
-
-**Then proceed immediately to Step 8.**
-
----
-
-## Step 8: Request User Approval (REQUIRED)
-
-**This step is MANDATORY. Do NOT skip it.**
-
-After presenting the plan summary, you MUST ask the user for explicit approval.
-
-**Use AskUserQuestion to ask:**
-
-> "Is this work plan ready to implement? Or do you have questions or want changes?"
->
-> Options:
-> - Ready to implement
-> - I have questions
-> - Make changes
-
-**Handle each response:**
-
-1. **"Ready to implement"** → Confirm the plan is ready
-
-2. **"I have questions"** → Answer their questions, then ask again
-
-3. **"Make changes"** → Update tasks using `bd update` or `bd create`, then ask again
-
-**After receiving "Ready to implement" approval:**
-
-```bash
 echo ""
-echo "=== Plan Ready ==="
-echo "Epic: $EPIC_ID"
-echo "Tasks: $(bd list --parent $EPIC_ID --json | jq length)"
-echo ""
-echo "Run 'clive build' to begin execution."
+echo "Run '/build' to begin implementation."
 ```
 
-**Then output the completion marker:**
+**Output the completion marker:**
 ```
 <promise>PLAN_COMPLETE</promise>
 ```
 
-This marker signals to the TUI that planning is complete and allows the session to end gracefully.
+This marker signals to the TUI that planning is complete. The session will now end.
 
 **CRITICAL:**
-- Do NOT invoke `/clive build` yourself
-- The user must explicitly run `/clive build` when ready
-- Always output the PLAN_COMPLETE marker after approval
+- Do NOT invoke `/build` yourself
+- The user must explicitly run `/build` when ready
+- PLAN_COMPLETE must only appear AFTER beads are created
 
 ---
 
@@ -872,17 +1037,34 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 
 ---
 
-## ⛔ FINAL REMINDER: DO NOT IMPLEMENT ⛔
+## ⛔ FINAL REMINDER ⛔
 
-Your session ENDS after the user approves the plan and you output `PLAN_COMPLETE`.
+### Session Flow (MUST Follow This Order)
 
-**You are NOT allowed to:**
+1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic, wait for responses
+2. **Write plan document** - Save to `.claude/current-plan.md`
+3. **Present plan** - Show summary to user
+4. **Ask for approval** - Use AskUserQuestion, wait for "Ready to implement"
+5. **Create beads** - ONLY after approval, create epic and tasks
+6. **Output PLAN_COMPLETE** - Session ends
+
+### You are NOT allowed to:
+- Skip the interview phase
+- Assume what the user wants without asking
+- Create beads before user approves the plan
+- Output PLAN_COMPLETE before beads are created
 - Start implementing any tasks
 - Write any code changes
-- "Get started" on the work
 - Make any source file modifications
 
-**The BUILD agent will handle implementation.** Your only job was to create the plan.
+### The BUILD agent will handle implementation.
+
+Your ONLY job is to:
+1. Interview the user thoroughly
+2. Create a plan document
+3. Get approval
+4. Create beads tasks
+5. End the session
 
 If the user asks you to implement something, respond:
-> "I'm the planning agent - I can only create plans. Run `/build` to start the build agent which will implement the work."
+> "I'm the planning agent - I create plans only. After you approve the plan, I'll create the beads tasks, then you can run `/build` to implement."

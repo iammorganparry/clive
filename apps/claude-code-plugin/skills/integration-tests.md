@@ -179,6 +179,33 @@ Skill: integration-tests"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Key Decisions
+- [Integration test approach]
+- [External services mocked/stubbed]
+
+### Files Modified
+- [Test files created/modified]
+
+### Notes for Next Agent
+- [Test fixtures available]
+- [Setup/teardown patterns]
+- [Service dependencies]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```

@@ -331,6 +331,32 @@ Skill: refactor"
 
 ---
 
+## Step 4.6: Update Scratchpad (REQUIRED)
+
+**Before outputting the completion marker, update the scratchpad for the next agent:**
+
+```bash
+cat >> .claude/scratchpad.md << 'SCRATCHPAD'
+
+## [Task Title]
+**Completed:** [timestamp]
+
+### Refactoring Applied
+- [What was refactored and why]
+
+### Files Modified
+- [Files changed]
+
+### Notes for Next Agent
+- [New patterns/abstractions introduced]
+- [Migration steps if any]
+- [Related code that uses refactored modules]
+
+SCRATCHPAD
+```
+
+---
+
 ## Step 5: Output Completion Marker
 
 ```
