@@ -1019,6 +1019,7 @@ If `$CLIVE_PARENT_ID` is NOT set (empty), create a new parent issue:
 - Use the `mcp__linear__create_issue` tool with:
   - `team`: The LINEAR_TEAM_ID from config
   - `title`: The EPIC_TITLE (e.g., "[main] Work Plan - 2024-01-15")
+  - `labels`: `["Clive"]` - **REQUIRED: Always tag with "Clive" for visibility**
 - Store the returned issue ID as PARENT_ID.
 
 **Create Sub-Issues (Tasks):**
@@ -1026,7 +1027,7 @@ For each task in the plan, use `mcp__linear__create_issue` with:
 - `team`: The LINEAR_TEAM_ID
 - `title`: The task title (e.g., "Implement user authentication")
 - `parentId`: The PARENT_ID (either from `$CLIVE_PARENT_ID` or newly created)
-- `labels`: Array of labels (e.g., `["skill:feature", "tier:1", "category:feature"]`)
+- `labels`: Array of labels - **MUST include "Clive"** plus skill/tier/category (e.g., `["Clive", "skill:feature", "tier:1", "category:feature"]`)
 
 **Example Linear task creation:**
 ```
@@ -1034,11 +1035,14 @@ mcp__linear__create_issue(
   team: "LINEAR_TEAM_ID",
   title: "Task: Implement login form",
   parentId: "PARENT_ISSUE_ID",
-  labels: ["skill:feature", "tier:1", "category:feature"]
+  labels: ["Clive", "skill:feature", "tier:1", "category:feature"]
 )
 ```
 
 ### 9.3 Label Reference
+
+**Required label (ALWAYS include):**
+- `Clive` - Identifies issues created by Clive for visibility and filtering
 
 **Skill labels for build.sh dispatch:**
 - `skill:feature` - Feature implementation
