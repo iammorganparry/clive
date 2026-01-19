@@ -1011,6 +1011,19 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					if qd != nil {
 						qd.ToolUseID = toolID
 					}
+
+					// Save the tool_use block for later verification (same as streaming path)
+					// This prevents API errors from stale or invalid tool_use_id values
+					if handle != nil && toolID != "" {
+						handle.conversationMu.Lock()
+						handle.pendingToolUses[toolID] = ToolUseBlock{
+							ID:    toolID,
+							Name:  name,
+							Input: input,
+						}
+						handle.conversationMu.Unlock()
+					}
+
 					results = append(results, OutputLine{
 						Text:      "❓ Awaiting response\n",
 						Type:      "question",
