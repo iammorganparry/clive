@@ -265,13 +265,21 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	totalTracked := len(p.pendingToolUses)
 	var trackedIDs []string
 	for id := range p.pendingToolUses {
-		trackedIDs = append(trackedIDs, id[:8]+"...") // Show first 8 chars
+		shortID := id
+		if len(id) > 8 {
+			shortID = id[:8] + "..."
+		}
+		trackedIDs = append(trackedIDs, shortID)
 	}
 	p.conversationMu.Unlock()
 
 	// Log validation result (will appear in debug panel via stderr reader)
+	shortToolUseID := toolUseID
+	if len(toolUseID) > 8 {
+		shortToolUseID = toolUseID[:8] + "..."
+	}
 	fmt.Fprintf(os.Stderr, "[TOOL_RESULT] Validating tool_use_id=%s exists=%v total_tracked=%d tracked_ids=%v\n",
-		toolUseID[:8]+"...", exists, totalTracked, trackedIDs)
+		shortToolUseID, exists, totalTracked, trackedIDs)
 
 	if !exists {
 		return fmt.Errorf("tool_use_id %s not found in conversation (stale or invalid)", toolUseID)
@@ -1139,6 +1147,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						Type:      "debug",
 						DebugInfo: debugMsg,
 					})
+
+					// Mark this question as handled to prevent duplicates
+					if toolID != "" {
+						streamStateMu.Lock()
+						handledQuestionIDs[toolID] = true
+						streamStateMu.Unlock()
+					}
 					continue
 				}
 
