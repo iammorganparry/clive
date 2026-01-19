@@ -911,9 +911,14 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				text += " " + detail
 			}
 
-			// For AskUserQuestion in streaming mode, defer entirely until content_block_stop
+			// For AskUserQuestion in streaming mode, PAUSE IMMEDIATELY to prevent Claude
+			// from continuing past the question. Defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
+				// CRITICAL: Pause Claude NOW before it sends more messages
+				if handle != nil {
+					handle.PauseProcess()
+				}
 				return nil
 			}
 
