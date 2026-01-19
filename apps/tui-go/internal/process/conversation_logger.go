@@ -34,30 +34,45 @@ type ConversationEvent struct {
 // NewConversationLogger creates a logger for a conversation session
 func NewConversationLogger(epicID string, iteration int, mode string) (*ConversationLogger, error) {
 	// Determine log file path based on mode and epic
+	// IMPORTANT: Use global directory to avoid committing logs to git
 	var logPath string
 	timestamp := time.Now().Format("20060102-150405")
 
+	// Get home directory for global logs
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Get current working directory basename for project identification
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "unknown"
+	}
+	projectName := filepath.Base(cwd)
+
+	// Base log directory: ~/.clive/logs/{project-name}/
+	baseLogDir := filepath.Join(homeDir, ".clive", "logs", projectName)
+
 	if mode == "build" && epicID != "" {
-		// Build mode with epic: .claude/epics/{epicID}/conversation-build-{iteration}-{timestamp}.ndjson
-		epicDir := filepath.Join(".claude", "epics", epicID)
+		// Build mode with epic: ~/.clive/logs/{project}/epics/{epicID}/conversation-build-{iteration}-{timestamp}.ndjson
+		epicDir := filepath.Join(baseLogDir, "epics", epicID)
 		if err := os.MkdirAll(epicDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create epic directory: %w", err)
 		}
 		logPath = filepath.Join(epicDir, fmt.Sprintf("conversation-build-%d-%s.ndjson", iteration, timestamp))
 	} else if mode == "plan" {
-		// Plan mode: .claude/conversation-plan-{timestamp}.ndjson
-		claudeDir := ".claude"
-		if err := os.MkdirAll(claudeDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create .claude directory: %w", err)
+		// Plan mode: ~/.clive/logs/{project}/conversation-plan-{timestamp}.ndjson
+		if err := os.MkdirAll(baseLogDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
-		logPath = filepath.Join(claudeDir, fmt.Sprintf("conversation-plan-%s.ndjson", timestamp))
+		logPath = filepath.Join(baseLogDir, fmt.Sprintf("conversation-plan-%s.ndjson", timestamp))
 	} else {
 		// Fallback for build mode without epic
-		claudeDir := ".claude"
-		if err := os.MkdirAll(claudeDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create .claude directory: %w", err)
+		if err := os.MkdirAll(baseLogDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
-		logPath = filepath.Join(claudeDir, fmt.Sprintf("conversation-build-%d-%s.ndjson", iteration, timestamp))
+		logPath = filepath.Join(baseLogDir, fmt.Sprintf("conversation-build-%d-%s.ndjson", iteration, timestamp))
 	}
 
 	// Open file for writing
