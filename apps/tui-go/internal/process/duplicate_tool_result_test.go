@@ -313,3 +313,86 @@ func TestSendToolResult_StaleIDValidation(t *testing.T) {
 		t.Errorf("Expected 'not found' error, got: %v", err)
 	}
 }
+
+// TestSendToolResult_ConcurrentStdinWrites verifies only ONE message written to stdin during race
+func TestSendToolResult_ConcurrentStdinWrites(t *testing.T) {
+	ResetStreamingState()
+
+	reader, writer := createMockPipe(t)
+	defer reader.Close()
+	defer writer.Close()
+
+	handle := &ProcessHandle{
+		stdin:           writer,
+		pendingToolUses: make(map[string]ToolUseBlock),
+		conversationMu:  sync.Mutex{},
+	}
+
+	toolID := "toolu_stdin_race_test"
+	handle.conversationMu.Lock()
+	handle.pendingToolUses[toolID] = ToolUseBlock{
+		ID:   toolID,
+		Name: "AskUserQuestion",
+	}
+	handle.conversationMu.Unlock()
+
+	// Launch multiple goroutines trying to send concurrently
+	numThreads := 5
+	results := make(chan error, numThreads)
+	start := make(chan struct{})
+
+	for i := 0; i < numThreads; i++ {
+		go func() {
+			<-start // Wait for all goroutines to be ready
+			err := handle.SendToolResult(toolID, "Concurrent answer")
+			results <- err
+		}()
+	}
+
+	// Start all goroutines at once to maximize race condition chance
+	close(start)
+
+	// Wait for all to complete
+	for i := 0; i < numThreads; i++ {
+		<-results
+	}
+
+	// Give a moment for any buffered writes to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Parse stdin data to count actual messages written
+	writtenData := writer.target.data
+	if len(writtenData) == 0 {
+		t.Fatal("No data written to stdin")
+	}
+
+	dataStr := string(writtenData)
+
+	// Count messages containing our specific tool_use_id
+	// Each message is a JSON line ending with \n
+	lines := strings.Split(strings.TrimSpace(dataStr), "\n")
+
+	var messagesWithToolID int
+	for _, line := range lines {
+		if strings.Contains(line, toolID) {
+			// Verify it's actually a tool_result message
+			if strings.Contains(line, `"type":"tool_result"`) {
+				messagesWithToolID++
+			}
+		}
+	}
+
+	// CRITICAL: Only ONE tool_result message should be written to stdin
+	if messagesWithToolID != 1 {
+		t.Errorf("Race condition not prevented! Expected exactly 1 tool_result message written to stdin, got %d", messagesWithToolID)
+		t.Logf("Written data:\n%s", dataStr)
+	}
+
+	// Verify message format is correct
+	if !strings.Contains(dataStr, `"tool_use_id":"`+toolID+`"`) {
+		t.Error("Message missing tool_use_id field")
+	}
+	if !strings.Contains(dataStr, `"type":"tool_result"`) {
+		t.Error("Message missing type:tool_result")
+	}
+}
