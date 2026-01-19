@@ -3,6 +3,7 @@ package process
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -168,6 +169,29 @@ func (p *ProcessHandle) Interrupt() {
 	}
 }
 
+// PauseProcess sends SIGTSTP to pause the Claude process
+// This is used to prevent race conditions when AskUserQuestion is received -
+// we pause Claude so it doesn't continue generating output while waiting for user input
+func (p *ProcessHandle) PauseProcess() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil {
+		return fmt.Errorf("process not running")
+	}
+	return p.cmd.Process.Signal(syscall.SIGTSTP)
+}
+
+// ResumeProcess sends SIGCONT to resume the Claude process
+// This is called after sending the tool_result for AskUserQuestion
+func (p *ProcessHandle) ResumeProcess() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil {
+		return fmt.Errorf("process not running")
+	}
+	return p.cmd.Process.Signal(syscall.SIGCONT)
+}
+
 // Wait waits for the process to exit and returns the exit code
 func (p *ProcessHandle) Wait() int {
 	<-p.done
@@ -182,7 +206,7 @@ func (p *ProcessHandle) SendMessage(message string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.stdin == nil {
-		return nil
+		return fmt.Errorf("stdin is nil")
 	}
 
 	msg := map[string]interface{}{
@@ -195,11 +219,14 @@ func (p *ProcessHandle) SendMessage(message string) error {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal error: %w", err)
 	}
 
-	_, err = p.stdin.Write(append(data, '\n'))
-	return err
+	n, err := p.stdin.Write(append(data, '\n'))
+	if err != nil {
+		return fmt.Errorf("write error (wrote %d bytes): %w", n, err)
+	}
+	return nil
 }
 
 // SendToolResult sends a tool result response to Claude

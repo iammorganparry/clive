@@ -475,6 +475,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle question type - show question panel
 		if msg.line.Type == "question" && msg.line.Question != nil {
+			// Pause Claude to prevent race condition - it keeps generating while we wait for user input
+			if m.processHandle != nil {
+				m.processHandle.PauseProcess()
+			}
 			m.pendingQuestion = msg.line.Question
 			m.showQuestionPanel = true
 			m.selectedOption = 0
@@ -533,6 +537,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := len(regularLines) - 1; i >= 0; i-- {
 			line := regularLines[i]
 			if line.Type == "question" && line.Question != nil {
+				// Pause Claude to prevent race condition - it keeps generating while we wait for user input
+				if m.processHandle != nil {
+					m.processHandle.PauseProcess()
+				}
 				m.pendingQuestion = line.Question
 				m.showQuestionPanel = true
 				m.selectedOption = 0
@@ -1835,22 +1843,30 @@ func (m *Model) sendQuestionResponse(response string) {
 		return
 	}
 
-	// Get the tool_use_id from the pending question and clear it immediately
-	// to prevent reuse on subsequent calls
+	// Capture question text before clearing (for display in chat history)
+	var questionText string
 	var toolUseID string
-	if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" && m.showQuestionPanel {
+	if m.pendingQuestion != nil {
+		questionText = m.pendingQuestion.Question
 		toolUseID = m.pendingQuestion.ToolUseID
 		// Clear the ToolUseID immediately to prevent duplicate tool_result sends
 		m.pendingQuestion.ToolUseID = ""
 	}
 
+	// Send as tool_result if we have a toolUseID, otherwise fall back to regular message
 	var err error
 	if toolUseID != "" {
-		// Send as tool result (proper format for AskUserQuestion responses)
 		err = m.processHandle.SendToolResult(toolUseID, response)
 	} else {
-		// Send as regular message if no tool_use_id
 		err = m.processHandle.SendMessage(response)
+	}
+
+	// Show the question that was asked (for chat history reference)
+	if questionText != "" {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "❓ " + questionText,
+			Type: "assistant",
+		})
 	}
 
 	// Show user's response immediately (optimistic UI)
@@ -1859,18 +1875,25 @@ func (m *Model) sendQuestionResponse(response string) {
 		Type: "user",
 	})
 
-	// Update viewport to show the message
-	m.viewport.SetContent(m.renderOutputContent())
-	m.viewport.GotoBottom()
-
+	// Show error if send failed
 	if err != nil {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: "Failed to send response: " + err.Error(),
 			Type: "stderr",
 		})
-		m.viewport.SetContent(m.renderOutputContent())
-		m.viewport.GotoBottom()
 	}
+
+	// Resume Claude after sending the response
+	// We paused it when the question arrived to prevent race conditions
+	if m.processHandle != nil {
+		// Small delay to ensure stdin buffer is flushed before resuming
+		time.Sleep(50 * time.Millisecond)
+		m.processHandle.ResumeProcess()
+	}
+
+	// Update viewport to show the message
+	m.viewport.SetContent(m.renderOutputContent())
+	m.viewport.GotoBottom()
 }
 
 // addTask creates a new task in beads for the current epic
