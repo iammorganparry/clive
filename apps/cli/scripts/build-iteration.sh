@@ -337,6 +337,23 @@ echo "$TEMP_PROMPT" > .claude/.build-prompt-path
 # Full permissions for build agents - they need to run bd commands, git, etc.
 CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
 
+# Find and include MCP config if present (for Linear integration)
+# Search from current directory upward for .mcp.json
+MCP_CONFIG=""
+SEARCH_DIR="$(pwd)"
+while [ "$SEARCH_DIR" != "/" ]; do
+    if [ -f "$SEARCH_DIR/.mcp.json" ]; then
+        MCP_CONFIG="$SEARCH_DIR/.mcp.json"
+        echo "Found MCP config: $MCP_CONFIG"
+        break
+    fi
+    SEARCH_DIR="$(dirname "$SEARCH_DIR")"
+done
+
+if [ -n "$MCP_CONFIG" ]; then
+    CLAUDE_ARGS+=(--mcp-config "$MCP_CONFIG")
+fi
+
 if [ "$STREAMING" = true ]; then
     # Streaming mode for TUI - bidirectional communication via stdin/stdout
     # --input-format stream-json: prompt and user messages sent via stdin as JSON
