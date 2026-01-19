@@ -258,8 +258,10 @@ func (p *ProcessHandle) SendMessage(message string) error {
 // SendToolResult sends a tool result response to Claude
 // This is used for responding to AskUserQuestion and similar tools
 func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
-	// Verify the tool_use_id exists in our pending tool uses
+	// Verify the tool_use_id exists in our pending tool uses and delete it atomically
 	// This prevents API errors from sending tool_result for non-existent tool_use
+	// CRITICAL: Must delete BEFORE releasing lock to prevent race condition where
+	// multiple threads can validate and send the same tool_use_id
 	p.conversationMu.Lock()
 	_, exists := p.pendingToolUses[toolUseID]
 	totalTracked := len(p.pendingToolUses)
@@ -270,6 +272,11 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 			shortID = id[:8] + "..."
 		}
 		trackedIDs = append(trackedIDs, shortID)
+	}
+
+	// Delete immediately if exists - this prevents duplicate sends in race conditions
+	if exists {
+		delete(p.pendingToolUses, toolUseID)
 	}
 	p.conversationMu.Unlock()
 
@@ -323,12 +330,8 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 
 	_, err = p.stdin.Write(append(data, '\n'))
 
-	// Clean up after successful send
-	if err == nil {
-		p.conversationMu.Lock()
-		delete(p.pendingToolUses, toolUseID)
-		p.conversationMu.Unlock()
-	}
+	// Note: Cleanup already happened atomically during validation (before lock release)
+	// This prevents race conditions where multiple threads could send duplicate tool_results
 
 	return err
 }
