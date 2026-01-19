@@ -112,6 +112,9 @@ type ProcessHandle struct {
 	// This prevents API errors when sending tool_result with invalid tool_use_id
 	conversationMu  sync.Mutex
 	pendingToolUses map[string]ToolUseBlock // tool_use_id -> tool_use block
+
+	// Conversation logging for debugging
+	logger *ConversationLogger
 }
 
 // CloseStdin closes the stdin pipe to signal the process to exit
@@ -240,6 +243,11 @@ func (p *ProcessHandle) SendMessage(message string) error {
 		return fmt.Errorf("marshal error: %w", err)
 	}
 
+	// Log before sending
+	if p.logger != nil {
+		p.logger.LogSentMessage("user_message", msg, nil)
+	}
+
 	n, err := p.stdin.Write(append(data, '\n'))
 	if err != nil {
 		return fmt.Errorf("write error (wrote %d bytes): %w", n, err)
@@ -293,6 +301,16 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
+	}
+
+	// Log before sending
+	if p.logger != nil {
+		metadata := map[string]interface{}{
+			"tool_use_id":   toolUseID,
+			"validation":    "exists",
+			"pending_count": totalTracked,
+		}
+		p.logger.LogSentMessage("tool_result", msg, metadata)
 	}
 
 	_, err = p.stdin.Write(append(data, '\n'))
@@ -371,6 +389,24 @@ func RunPlan(input string, parentID string, outputChan chan<- OutputLine) *Proce
 	return runScript(args, "plan", outputChan)
 }
 
+// createConversationLogger creates a conversation logger from script args and mode
+func createConversationLogger(args []string, promptType string) (*ConversationLogger, error) {
+	// Parse args to extract epic ID and iteration
+	var epicID string
+	var iteration int
+	for i, arg := range args {
+		if arg == "--epic" && i+1 < len(args) {
+			epicID = args[i+1]
+		}
+		if arg == "--iteration" && i+1 < len(args) {
+			iteration, _ = strconv.Atoi(args[i+1])
+		}
+	}
+
+	mode := promptType // "plan" or "build"
+	return NewConversationLogger(epicID, iteration, mode)
+}
+
 // runScript runs a bash script and streams output
 func runScript(args []string, promptType string, outputChan chan<- OutputLine) *ProcessHandle {
 	cmd := exec.Command("bash", args...)
@@ -408,6 +444,13 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		done:            make(chan struct{}),
 		pendingToolUses: make(map[string]ToolUseBlock),
 	}
+
+	// Initialize conversation logger for debugging
+	logger, err := createConversationLogger(args, promptType)
+	if err == nil {
+		handle.logger = logger
+	}
+	// Don't fail if logger creation fails - continue without logging
 
 	if err := cmd.Start(); err != nil {
 		outputChan <- OutputLine{Text: "Failed to start: " + err.Error(), Type: "system"}
@@ -501,6 +544,15 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 			return
 		}
 
+		// Log initial prompt before sending
+		if handle.logger != nil {
+			metadata := map[string]interface{}{
+				"prompt_file": promptFile,
+				"prompt_size": len(content),
+			}
+			handle.logger.LogSentMessage("initial_prompt", msg, metadata)
+		}
+
 		handle.mu.Lock()
 		defer handle.mu.Unlock()
 		if handle.stdin != nil && !handle.killed {
@@ -550,6 +602,11 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 
 		// Wait for readers to finish
 		wg.Wait()
+
+		// Close conversation logger
+		if handle.logger != nil {
+			handle.logger.Close()
+		}
 
 		// Send exit message with actual exit code
 		exitCode := 0
@@ -745,12 +802,25 @@ func formatDebugInfo(eventType string, data map[string]interface{}) string {
 	return info
 }
 
+// logAndReturn logs the NDJSON event and returns outputs
+func logAndReturn(handle *ProcessHandle, line string, outputs []OutputLine) []OutputLine {
+	if handle != nil && handle.logger != nil && len(outputs) > 0 {
+		handle.logger.LogNDJSONEvent(line, &outputs[0])
+	}
+	return outputs
+}
+
 func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(line), &data); err != nil {
 		// Not JSON, return as plain text
 		if line != "" {
-			return []OutputLine{{Text: line + "\n", Type: "stdout", DebugInfo: "[raw] " + line}}
+			output := OutputLine{Text: line + "\n", Type: "stdout", DebugInfo: "[raw] " + line}
+			// Log non-JSON stdout
+			if handle != nil && handle.logger != nil {
+				handle.logger.LogNDJSONEvent(line, &output)
+			}
+			return []OutputLine{output}
 		}
 		return nil
 	}
@@ -789,13 +859,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}
 				streamStateMu.Unlock()
 
-				return []OutputLine{{
+				return logAndReturn(handle, line, []OutputLine{{
 					Text:         stripANSI(text),
 					Type:         "assistant",
 					RefreshTasks: isComplete,
 					CloseStdin:   isComplete,
 					DebugInfo:    debugInfo,
-				}}
+				}})
 			}
 		}
 		// Handle input_json_delta for tool inputs (accumulate for bd command detection)
@@ -850,13 +920,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				refreshTasks = true
 			}
 
-			return []OutputLine{{
+			return logAndReturn(handle, line, []OutputLine{{
 				Text:         text + "\n",
 				Type:         "tool_call",
 				ToolName:     name,
 				RefreshTasks: refreshTasks,
 				DebugInfo:    debugInfo,
-			}}
+			}})
 		}
 		if blockType == "text" {
 			text, _ := contentBlock["text"].(string)
@@ -865,13 +935,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				isComplete := strings.Contains(text, "TASK_COMPLETE") ||
 					strings.Contains(text, "ALL_TASKS_COMPLETE") ||
 					strings.Contains(text, "PLAN_COMPLETE")
-				return []OutputLine{{
+				return logAndReturn(handle, line, []OutputLine{{
 					Text:         stripANSI(text),
 					Type:         "assistant",
 					RefreshTasks: isComplete,
 					CloseStdin:   isComplete,
 					DebugInfo:    debugInfo,
-				}}
+				}})
 			}
 		}
 
@@ -931,7 +1001,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				streamStateMu.Unlock()
 
 				// Return both the question and a debug message
-				return []OutputLine{
+				return logAndReturn(handle, line, []OutputLine{
 					{
 						Text:      "❓ Awaiting response\n",
 						Type:      "question",
@@ -943,7 +1013,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						Type:      "debug",
 						DebugInfo: debugMsg,
 					},
-				}
+				})
 			}
 		}
 
@@ -1081,7 +1151,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				})
 			}
 		}
-		return results
+		return logAndReturn(handle, line, results)
 
 	case "result":
 		// Tool execution result from Claude CLI
@@ -1092,7 +1162,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		streamStateMu.Unlock()
 
 		if needRefresh {
-			return []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}}
+			return logAndReturn(handle, line, []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}})
 		}
 
 		// Also check result content as fallback
@@ -1106,7 +1176,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				checkStr := result + " " + command
 				if strings.Contains(checkStr, "bd update") || strings.Contains(checkStr, "bd close") ||
 					strings.Contains(checkStr, "bd create") {
-					return []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}}
+					return logAndReturn(handle, line, []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}})
 				}
 			}
 		}
@@ -1116,7 +1186,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		if errData != nil {
 			msg, _ := errData["message"].(string)
 			if msg != "" {
-				return []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr", DebugInfo: debugInfo}}
+				return logAndReturn(handle, line, []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr", DebugInfo: debugInfo}})
 			}
 		}
 	}
