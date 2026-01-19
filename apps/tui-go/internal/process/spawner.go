@@ -64,13 +64,13 @@ func stripANSI(s string) string {
 
 // Streaming state for accumulating text and tool inputs across chunks
 var (
-	streamingTextBuffer     strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
-	currentToolName         string          // Current tool being streamed
-	currentToolID           string          // Current tool_use_id for responding to tool calls
-	currentToolInput        strings.Builder // Accumulates tool input JSON
-	pendingBdRefresh        bool            // True when a bd command was seen and we need to refresh after execution
-	lastHandledQuestionID   string          // Track which tool_use_id was already emitted via streaming (for dedup)
-	streamStateMu           sync.Mutex
+	streamingTextBuffer   strings.Builder    // Accumulates text to detect TASK_COMPLETE across chunks
+	currentToolName       string             // Current tool being streamed
+	currentToolID         string             // Current tool_use_id for responding to tool calls
+	currentToolInput      strings.Builder    // Accumulates tool input JSON
+	pendingBdRefresh      bool               // True when a bd command was seen and we need to refresh after execution
+	handledQuestionIDs    = make(map[string]bool) // Track all tool_use_ids already emitted via streaming (for dedup)
+	streamStateMu         sync.Mutex
 )
 
 // ResetStreamingState clears all streaming state buffers
@@ -83,7 +83,7 @@ func ResetStreamingState() {
 	currentToolID = ""
 	currentToolInput.Reset()
 	pendingBdRefresh = false
-	lastHandledQuestionID = ""
+	handledQuestionIDs = make(map[string]bool) // Clear the map
 }
 
 // ProcessHandle manages a spawned process
@@ -747,7 +747,9 @@ func parseNDJSONLine(line string) []OutputLine {
 				}
 				// Mark this question as handled via streaming (for deduplication with assistant handler)
 				streamStateMu.Lock()
-				lastHandledQuestionID = toolID
+				if toolID != "" {
+					handledQuestionIDs[toolID] = true
+				}
 				streamStateMu.Unlock()
 				return []OutputLine{{
 					Text:     "❓ Awaiting response\n",
@@ -820,7 +822,9 @@ func parseNDJSONLine(line string) []OutputLine {
 					toolID, _ := block["id"].(string)
 					// Check if this question was already emitted via streaming (content_block_stop)
 					streamStateMu.Lock()
-					alreadyHandled := toolID != "" && toolID == lastHandledQuestionID
+					// Skip if: 1) exact ID match, OR 2) no ID but we've handled questions (likely duplicate)
+					alreadyHandled := (toolID != "" && handledQuestionIDs[toolID]) ||
+						(toolID == "" && len(handledQuestionIDs) > 0)
 					streamStateMu.Unlock()
 
 					if alreadyHandled {
