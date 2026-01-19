@@ -18,6 +18,7 @@ PLAN_PROMPT="$PLUGIN_DIR/plan.md"
 
 # Defaults
 STREAMING=false
+PARENT_ID=""
 
 # Parse arguments
 POSITIONAL_ARGS=()
@@ -26,6 +27,10 @@ while [[ $# -gt 0 ]]; do
         --streaming)
             STREAMING=true
             shift
+            ;;
+        --parent)
+            PARENT_ID="$2"
+            shift 2
             ;;
         *)
             POSITIONAL_ARGS+=("$1")
@@ -37,22 +42,46 @@ done
 # Restore positional args
 set -- "${POSITIONAL_ARGS[@]}"
 
+# Export parent ID for planning agent (if provided, skip creating a new parent issue)
+export CLIVE_PARENT_ID="$PARENT_ID"
+
 # Verify prompt file exists
 if [ ! -f "$PLAN_PROMPT" ]; then
     echo "Error: Plan prompt not found at $PLAN_PROMPT"
     exit 1
 fi
 
-# Check beads is available
-if ! command -v bd &> /dev/null; then
-    echo "Error: Beads (bd) is required but not installed."
-    exit 1
+# Detect configured task tracker
+CLIVE_CONFIG="${CLIVE_CONFIG:-$HOME/.clive/config.json}"
+if [ -f "$CLIVE_CONFIG" ]; then
+    TRACKER=$(jq -r '.issue_tracker // "beads"' "$CLIVE_CONFIG" 2>/dev/null || echo "beads")
+else
+    TRACKER="beads"
 fi
+export CLIVE_TRACKER="$TRACKER"
 
-# Initialize beads if not present (ignore error if already initialized)
-if [ ! -d ".beads" ]; then
-    echo "Initializing beads..."
-    bd init || true
+# Validate tracker is available
+if [ "$TRACKER" = "beads" ]; then
+    if ! command -v bd &> /dev/null; then
+        echo "Error: Beads (bd) is required but not installed."
+        exit 1
+    fi
+    # Initialize beads if not present (ignore error if already initialized)
+    if [ ! -d ".beads" ]; then
+        echo "Initializing beads..."
+        bd init || true
+    fi
+elif [ "$TRACKER" = "linear" ]; then
+    LINEAR_TEAM_ID=$(jq -r '.linear.team_id // empty' "$CLIVE_CONFIG" 2>/dev/null)
+    if [ -z "$LINEAR_TEAM_ID" ]; then
+        echo "Error: Linear team ID not configured in $CLIVE_CONFIG"
+        exit 1
+    fi
+    export LINEAR_TEAM_ID
+    echo "Using Linear tracker (team: $LINEAR_TEAM_ID)"
+else
+    echo "Error: Unknown tracker '$TRACKER'. Supported: beads, linear"
+    exit 1
 fi
 
 # Get user input from remaining args
@@ -91,7 +120,8 @@ if [ "$STREAMING" = true ]; then
 
     # --input-format stream-json: prompt sent via stdin as JSON
     # --output-format stream-json: responses streamed as NDJSON
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
+    # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
+    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan "${CLAUDE_ARGS[@]}")
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"
     claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
@@ -106,7 +136,11 @@ echo ""
 echo ""
 echo "Plan session complete."
 
-# Show what was created
-TASK_COUNT=$(bd list --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
-echo "Beads tasks: $TASK_COUNT"
-echo "Run 'bd list --tree' to see task hierarchy."
+# Show what was created (tracker-specific)
+if [ "$TRACKER" = "beads" ]; then
+    TASK_COUNT=$(bd list --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+    echo "Beads tasks: $TASK_COUNT"
+    echo "Run 'bd list --tree' to see task hierarchy."
+else
+    echo "Issues created in Linear. Check your Linear workspace for details."
+fi

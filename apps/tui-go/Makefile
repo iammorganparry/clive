@@ -1,8 +1,21 @@
-.PHONY: build run test clean dev
+.PHONY: build run test clean dev install
 
-# Build the binary
+# Binary name for local build (dev only)
+# NOTE: When installing to PATH, the binary should be named "clive" (not "clive-tui")
+# The cmd directory is named clive-tui for historical reasons, but the installed binary is "clive"
+LOCAL_BINARY := bin/clive-tui
+INSTALL_PATH := $(HOME)/bin/clive
+
+# Build the binary (local dev)
 build:
-	go build -o bin/clive-tui ./cmd/clive-tui
+	go build -o $(LOCAL_BINARY) ./cmd/clive-tui
+
+# Install to user's bin directory as "clive"
+# IMPORTANT: The installed binary name is "clive", not "clive-tui"
+install:
+	@mkdir -p $(HOME)/bin
+	go build -o $(INSTALL_PATH) ./cmd/clive-tui
+	@echo "Installed to $(INSTALL_PATH)"
 
 # Run the binary
 run: build

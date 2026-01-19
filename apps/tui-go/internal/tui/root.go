@@ -19,21 +19,6 @@ import (
 	"github.com/clive/tui-go/internal/tracker"
 )
 
-// LinearSetupStep tracks the current step in Linear setup flow
-type LinearSetupStep int
-
-const (
-	LinearStepSelectTracker  LinearSetupStep = iota // Initial tracker selection
-	LinearStepCheckMCP                              // Checking if MCP is configured
-	LinearStepNeedMCP                               // Needs MCP configuration via Claude
-	LinearStepConfigureMCP                          // Running Claude to configure MCP
-	LinearStepNeedAPIKey                            // Needs API key for direct access
-	LinearStepValidatingKey                         // Validating API key
-	LinearStepFetchTeams                            // Fetching teams
-	LinearStepSelectTeam                            // Team selection (if multiple)
-	LinearStepComplete                              // Done
-)
-
 // ViewMode represents the current view
 type ViewMode int
 
@@ -86,35 +71,6 @@ type configSavedMsg struct {
 	err error
 }
 
-// linearAuthCheckedMsg is sent after checking Linear authentication status
-type linearAuthCheckedMsg struct {
-	authenticated bool
-	token         string
-	err           error
-}
-
-// linearTeamsFetchedMsg is sent after fetching Linear teams
-type linearTeamsFetchedMsg struct {
-	teams []linear.Team
-	err   error
-}
-
-// linearAuthStartedMsg is sent when authentication process starts
-type linearAuthStartedMsg struct{}
-
-// linearAuthCompletedMsg is sent when authentication completes (user returned from browser)
-type linearAuthCompletedMsg struct {
-	success bool
-	err     error
-}
-
-// linearAPIKeyValidatedMsg is sent after validating the API key
-type linearAPIKeyValidatedMsg struct {
-	valid bool
-	teams []linear.Team
-	err   error
-}
-
 // Spinner animation frames
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
@@ -138,14 +94,8 @@ type Model struct {
 	trackers []config.TrackerInfo // Available trackers for setup
 	setupIdx int                  // Selected tracker in setup view
 
-	// Linear setup state
-	linearSetupStep   LinearSetupStep // Current step in Linear setup flow
-	linearAPIKey      string          // API key for direct Linear API access
-	linearAPIKeyInput textinput.Model // Input for API key entry
-	linearToken       string          // OAuth token from Keychain (for MCP validation)
-	linearTeams       []linear.Team   // Available teams from Linear
-	linearTeamIdx     int             // Selected team index
-	linearSetupError  string          // Error message to display
+	// Linear setup state (encapsulated in LinearSetup module)
+	linearSetup LinearSetup
 
 	// Command input
 	input          textinput.Model
@@ -227,15 +177,6 @@ func NewRootModel(cfg *config.Config) Model {
 	ti.CharLimit = 0 // No limit
 	ti.Width = 80    // Default width, will be updated on WindowSizeMsg
 
-	// Create API key input for Linear setup
-	apiKeyInput := textinput.New()
-	apiKeyInput.Placeholder = "lin_api_..."
-	apiKeyInput.Prompt = "API Key: "
-	apiKeyInput.PromptStyle = InputPromptStyle
-	apiKeyInput.EchoMode = textinput.EchoPassword // Hide the key
-	apiKeyInput.CharLimit = 100
-	apiKeyInput.Width = 50
-
 	// Create search input for epic selection
 	epicSearch := textinput.New()
 	epicSearch.Placeholder = "Search epics..."
@@ -269,19 +210,19 @@ func NewRootModel(cfg *config.Config) Model {
 	}
 
 	return Model{
-		viewMode:          viewMode,
-		cfg:               cfg,
-		provider:          provider,
-		trackers:          config.AvailableTrackers(),
-		setupIdx:          setupIdx,
-		input:             ti,
-		linearAPIKeyInput: apiKeyInput,
-		epicSearchInput:   epicSearch,
-		inputFocused:      false,
-		keys:              DefaultKeyMap(),
-		ready:             false,
-		selectedIndex:     0,
-		loadingEpics:      false,
+		viewMode:        viewMode,
+		cfg:             cfg,
+		provider:        provider,
+		trackers:        config.AvailableTrackers(),
+		setupIdx:        setupIdx,
+		input:           ti,
+		linearSetup:     NewLinearSetup(),
+		epicSearchInput: epicSearch,
+		inputFocused:    false,
+		keys:            DefaultKeyMap(),
+		ready:           false,
+		selectedIndex:   0,
+		loadingEpics:    false,
 	}
 }
 
@@ -289,8 +230,9 @@ func NewRootModel(cfg *config.Config) Model {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		textinput.Blink,
-		spinnerTickCmd(), // Animate loading spinner
-		tickCmd(),        // Start normal tick for background refresh
+		tea.EnableMouseCellMotion, // Enable mouse for scroll wheel; shift+drag for text selection
+		spinnerTickCmd(),          // Animate loading spinner
+		tickCmd(),                 // Start normal tick for background refresh
 	}
 
 	// Only load epics if we have a provider (not in setup mode)
@@ -400,70 +342,6 @@ func (m Model) saveLinearConfigWithAPIKeyCmd(team linear.Team, apiKey string) te
 	}
 }
 
-// checkLinearAuthCmd checks if Linear is authenticated
-func checkLinearAuthCmd() tea.Cmd {
-	return func() tea.Msg {
-		token, err := linear.GetLinearTokenFromKeychain()
-		if err != nil {
-			return linearAuthCheckedMsg{authenticated: false, err: err}
-		}
-
-		// We don't validate via API call because MCP OAuth tokens are specific
-		// to the MCP protocol and don't work with direct Linear API calls.
-		// If Claude Code shows Linear as "connected", we trust the token.
-		return linearAuthCheckedMsg{authenticated: true, token: token}
-	}
-}
-
-// fetchLinearTeamsCmd fetches teams from Linear
-func fetchLinearTeamsCmd(token string) tea.Cmd {
-	return func() tea.Msg {
-		client := linear.NewClient(token)
-		teams, err := client.GetTeams()
-		if err != nil {
-			return linearTeamsFetchedMsg{err: err}
-		}
-		return linearTeamsFetchedMsg{teams: teams}
-	}
-}
-
-// validateLinearAPIKeyCmd validates the API key by fetching teams
-func validateLinearAPIKeyCmd(apiKey string) tea.Cmd {
-	return func() tea.Msg {
-		client := linear.NewClient(apiKey)
-		teams, err := client.GetTeams()
-		if err != nil {
-			return linearAPIKeyValidatedMsg{valid: false, err: err}
-		}
-		return linearAPIKeyValidatedMsg{valid: true, teams: teams}
-	}
-}
-
-// startLinearAuthCmd starts the Linear authentication process
-// It uses tea.ExecProcess to suspend the TUI and run Claude interactively
-func startLinearAuthCmd() tea.Cmd {
-	// First, ensure Linear MCP is configured (do this synchronously)
-	if !linear.IsLinearMCPConfigured() {
-		if err := linear.ConfigureLinearMCP(); err != nil {
-			return func() tea.Msg {
-				return linearAuthCompletedMsg{success: false, err: fmt.Errorf("failed to configure Linear MCP: %w", err)}
-			}
-		}
-	}
-
-	// Use tea.ExecProcess to run Claude interactively
-	// This suspends the TUI and lets the user interact with Claude
-	// to trigger the OAuth flow (e.g., by typing "List my Linear issues")
-	cmd := linear.GetLinearAuthCommand()
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			return linearAuthCompletedMsg{success: false, err: err}
-		}
-		// Claude exited - check if we now have a valid token
-		return linearAuthCompletedMsg{success: true}
-	})
-}
-
 // tickCmd returns a tick command for polling
 func tickCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -531,7 +409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case configSavedMsg:
 		if msg.err != nil {
-			m.linearSetupError = "Failed to save config: " + msg.err.Error()
+			m.linearSetup.Error = "Failed to save config: " + msg.err.Error()
 			return m, nil
 		}
 		// Config saved successfully - create provider and go to selection
@@ -540,105 +418,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.provider, err = tracker.NewProviderWithConfig(msg.cfg)
 		if err != nil {
 			// For Linear, this might fail if not authenticated - that's expected
-			m.linearSetupError = "Failed to create provider: " + err.Error()
+			m.linearSetup.Error = "Failed to create provider: " + err.Error()
 		}
 		m.viewMode = ViewModeSelection
 		m.loadingEpics = true
-		m.linearSetupStep = LinearStepSelectTracker // Reset for next time
+		m.linearSetup.Step = LinearStepSelectTracker // Reset for next time
 		return m, m.loadEpicsCmd()
 
-	case linearAuthCheckedMsg:
-		// MCP auth check (step 2 of setup, after API key)
-		if msg.authenticated {
-			m.linearToken = msg.token
-			// MCP is authenticated - setup complete!
-			m.linearSetupStep = LinearStepComplete
-			// Save config with API key and team info
-			if len(m.linearTeams) > 0 {
-				team := m.linearTeams[m.linearTeamIdx]
-				return m, m.saveLinearConfigWithAPIKeyCmd(team, m.linearAPIKey)
+	case linearAuthCheckedMsg, linearTeamsFetchedMsg, linearAuthCompletedMsg, linearAPIKeyValidatedMsg:
+		// Delegate Linear setup messages to the LinearSetup module
+		var cmd tea.Cmd
+		m.linearSetup, cmd, _ = m.linearSetup.HandleMessage(msg, m.keys)
+
+		// Check if setup is complete - need to save config
+		if m.linearSetup.Step == LinearStepComplete {
+			team := m.linearSetup.SelectedTeam()
+			if team != nil {
+				return m, m.saveLinearConfigWithAPIKeyCmd(*team, m.linearSetup.APIKey)
 			}
-			// Fallback if no teams (shouldn't happen)
 			return m, m.saveConfigCmd(config.TrackerLinear)
 		}
-		// Not authenticated - show MCP auth prompt
-		m.linearSetupStep = LinearStepNeedMCP
-		if msg.err != nil {
-			m.linearSetupError = "MCP authentication needed: " + msg.err.Error()
-		}
-		return m, tea.Batch(cmds...)
 
-	case linearTeamsFetchedMsg:
-		// Teams fetched using API key (step 1 of setup)
-		if msg.err != nil {
-			m.linearSetupError = "Failed to fetch teams: " + msg.err.Error()
-			m.linearSetupStep = LinearStepNeedAPIKey // Go back to API key entry
-			m.linearAPIKeyInput.Focus()
-			return m, tea.Batch(cmds...)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-		m.linearTeams = msg.teams
-		if len(msg.teams) == 0 {
-			m.linearSetupError = "No teams found in your Linear account"
-			m.linearSetupStep = LinearStepNeedAPIKey
-			m.linearAPIKeyInput.Focus()
-			return m, tea.Batch(cmds...)
-		}
-		if len(msg.teams) == 1 {
-			// Single team - auto-select and proceed to MCP auth
-			m.linearTeamIdx = 0
-			m.linearSetupStep = LinearStepCheckMCP
-			return m, checkLinearAuthCmd()
-		}
-		// Multiple teams - show selection
-		m.linearSetupStep = LinearStepSelectTeam
-		m.linearTeamIdx = 0
-		return m, tea.Batch(cmds...)
-
-	case linearAuthCompletedMsg:
-		// MCP authentication completed (user returned from Claude Code)
-		if msg.success {
-			// Auth completed - check if token is now available
-			m.linearSetupStep = LinearStepCheckMCP
-			return m, checkLinearAuthCmd()
-		}
-		// Auth failed
-		m.linearSetupError = "MCP authentication failed"
-		if msg.err != nil {
-			m.linearSetupError = msg.err.Error()
-		}
-		m.linearSetupStep = LinearStepNeedMCP
-		return m, tea.Batch(cmds...)
-
-	case linearAPIKeyValidatedMsg:
-		// API key validation result (step 1 of setup)
-		if msg.valid {
-			// API key is valid - save teams and proceed to team selection or MCP auth
-			m.linearTeams = msg.teams
-			m.linearSetupError = ""
-			if len(msg.teams) == 0 {
-				m.linearSetupError = "No teams found in your Linear account"
-				m.linearSetupStep = LinearStepNeedAPIKey
-				m.linearAPIKeyInput.Focus()
-				return m, tea.Batch(cmds...)
-			}
-			if len(msg.teams) == 1 {
-				// Single team - auto-select and proceed to MCP auth
-				m.linearTeamIdx = 0
-				m.linearSetupStep = LinearStepCheckMCP
-				return m, checkLinearAuthCmd()
-			}
-			// Multiple teams - show selection
-			m.linearSetupStep = LinearStepSelectTeam
-			m.linearTeamIdx = 0
-			return m, tea.Batch(cmds...)
-		}
-		// API key invalid
-		m.linearSetupError = "Invalid API key"
-		if msg.err != nil {
-			m.linearSetupError = "Invalid API key: " + msg.err.Error()
-		}
-		m.linearSetupStep = LinearStepNeedAPIKey
-		m.linearAPIKeyInput.Focus()
 		return m, tea.Batch(cmds...)
 
 	case outputLineMsg:
@@ -678,6 +481,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputFocused = true
 			m.input.Focus()
 			m.input.SetValue("")
+		} else if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" {
+			// If we receive ANY output after showing a question (that's not another question),
+			// the tool_use_id becomes stale (Claude has moved on in the conversation).
+			// Clear it to prevent sending an invalid tool_result.
+			// This handles: assistant text, tool_call, tool_result, stdout, etc.
+			m.pendingQuestion.ToolUseID = ""
 		}
 
 		// Continue polling for more output
@@ -716,6 +525,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if line.CloseStdin && m.processHandle != nil {
 				go m.processHandle.CloseStdinWithTimeout(3 * time.Second)
+			}
+		}
+
+		// Check if any non-question content came through - if so, any pending tool_use_id is stale
+		if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" {
+			hasQuestion := false
+			for _, line := range regularLines {
+				if line.Type == "question" && line.Question != nil {
+					hasQuestion = true
+					break
+				}
+			}
+			// If there's content but no new question, the tool_use_id is stale
+			if len(regularLines) > 0 && !hasQuestion {
+				m.pendingQuestion.ToolUseID = ""
 			}
 		}
 
@@ -861,6 +685,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeSession != nil {
 			cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 		}
+
+	case tea.MouseMsg:
+		// Handle mouse wheel for viewport scrolling
+		if m.viewMode == ViewModeMain {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.viewport.LineUp(3)
+			case tea.MouseButtonWheelDown:
+				m.viewport.LineDown(3)
+			}
+		}
+		// Always consume mouse events to prevent escape sequences from reaching text input
+		// Terminal-native text selection still works with shift+drag
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		// Ctrl+C always quits, regardless of state
@@ -1048,98 +886,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle setup screen (issue tracker selection)
 		if m.viewMode == ViewModeSetup {
-			// Handle Linear API key entry step (step 1)
-			if m.linearSetupStep == LinearStepNeedAPIKey {
-				switch msg.Type {
-				case tea.KeyCtrlC:
-					return m, tea.Quit
-				case tea.KeyEnter:
-					// Submit API key for validation
-					apiKey := m.linearAPIKeyInput.Value()
-					if apiKey == "" {
-						m.linearSetupError = "Please enter your Linear API key"
-						return m, tea.Batch(cmds...)
+			// Handle Linear setup steps (API key, team selection, MCP auth)
+			if m.linearSetup.Step != LinearStepSelectTracker {
+				// Delegate to LinearSetup module
+				var cmd tea.Cmd
+				var handled bool
+				m.linearSetup, cmd, handled = m.linearSetup.HandleMessage(msg, m.keys)
+
+				// Check if setup is complete - need to save config
+				if m.linearSetup.Step == LinearStepComplete {
+					team := m.linearSetup.SelectedTeam()
+					if team != nil {
+						return m, m.saveLinearConfigWithAPIKeyCmd(*team, m.linearSetup.APIKey)
 					}
-					m.linearAPIKey = apiKey
-					m.linearSetupStep = LinearStepValidatingKey
-					m.linearSetupError = ""
-					return m, validateLinearAPIKeyCmd(apiKey)
-				case tea.KeyEsc:
-					// Go back to tracker selection
-					m.linearSetupStep = LinearStepSelectTracker
-					m.linearSetupError = ""
-					m.linearAPIKeyInput.SetValue("")
-					return m, tea.Batch(cmds...)
-				default:
-					// Pass key events to text input
-					var cmd tea.Cmd
-					m.linearAPIKeyInput, cmd = m.linearAPIKeyInput.Update(msg)
-					cmds = append(cmds, cmd)
+					return m, m.saveConfigCmd(config.TrackerLinear)
+				}
+
+				if handled {
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
 					return m, tea.Batch(cmds...)
 				}
-			}
-
-			// Handle Linear team selection step
-			if m.linearSetupStep == LinearStepSelectTeam {
-				switch {
-				case key.Matches(msg, m.keys.Quit):
-					return m, tea.Quit
-				case key.Matches(msg, m.keys.Up):
-					if m.linearTeamIdx > 0 {
-						m.linearTeamIdx--
-					}
-				case key.Matches(msg, m.keys.Down):
-					if m.linearTeamIdx < len(m.linearTeams)-1 {
-						m.linearTeamIdx++
-					}
-				case key.Matches(msg, m.keys.Enter):
-					// Select team and proceed to MCP auth (step 2)
-					if m.linearTeamIdx < len(m.linearTeams) {
-						m.linearSetupStep = LinearStepCheckMCP
-						return m, checkLinearAuthCmd()
-					}
-				case key.Matches(msg, m.keys.Escape):
-					// Go back to API key entry
-					m.linearSetupStep = LinearStepNeedAPIKey
-					m.linearAPIKeyInput.Focus()
-					m.linearSetupError = ""
-				}
-				return m, tea.Batch(cmds...)
-			}
-
-			// Handle Linear MCP auth needed step (step 2)
-			if m.linearSetupStep == LinearStepNeedMCP {
-				switch {
-				case key.Matches(msg, m.keys.Quit):
-					return m, tea.Quit
-				case key.Matches(msg, m.keys.Enter):
-					// Start MCP authentication via Claude Code
-					m.linearSetupStep = LinearStepConfigureMCP
-					m.linearSetupError = ""
-					return m, startLinearAuthCmd()
-				case key.Matches(msg, m.keys.Escape):
-					// Go back to team selection (or API key if single team)
-					if len(m.linearTeams) > 1 {
-						m.linearSetupStep = LinearStepSelectTeam
-					} else {
-						m.linearSetupStep = LinearStepNeedAPIKey
-						m.linearAPIKeyInput.Focus()
-					}
-					m.linearSetupError = ""
-				}
-				return m, tea.Batch(cmds...)
-			}
-
-			// Handle checking/validating states (show spinner, no key handling)
-			if m.linearSetupStep == LinearStepCheckMCP ||
-				m.linearSetupStep == LinearStepValidatingKey ||
-				m.linearSetupStep == LinearStepFetchTeams ||
-				m.linearSetupStep == LinearStepConfigureMCP {
-				// Only allow quit
-				if key.Matches(msg, m.keys.Quit) {
-					return m, tea.Quit
-				}
-				return m, tea.Batch(cmds...)
 			}
 
 			// Normal tracker selection
@@ -1160,9 +928,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selectedTracker := m.trackers[m.setupIdx].ID
 					if selectedTracker == config.TrackerLinear {
 						// Linear requires additional setup steps - start with API key entry
-						m.linearSetupStep = LinearStepNeedAPIKey
-						m.linearSetupError = ""
-						m.linearAPIKeyInput.Focus()
+						m.linearSetup.Step = LinearStepNeedAPIKey
+						m.linearSetup.Error = ""
+						m.linearSetup.APIKeyInput.Focus()
 						return m, textinput.Blink
 					}
 					return m, m.saveConfigCmd(selectedTracker)
@@ -1199,8 +967,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Load tasks for selected epic
 					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
-			case msg.String() == "n":
-				// New session - go to main view
+			case msg.String() == "n" && m.epicSearchInput.Value() == "":
+				// New session - only when search input is empty (not typing)
 				m.viewMode = ViewModeMain
 				m.inputFocused = true
 				m.input.Focus()
@@ -1807,16 +1575,12 @@ func (m Model) helpView() string {
 
 // setupView renders the issue tracker selection screen
 func (m Model) setupView() string {
-	// Handle different Linear setup steps
-	switch m.linearSetupStep {
-	case LinearStepNeedAPIKey:
-		return m.linearAPIKeyView()
-	case LinearStepValidatingKey, LinearStepCheckMCP, LinearStepFetchTeams:
-		return m.linearLoadingView()
-	case LinearStepSelectTeam:
-		return m.linearTeamSelectView()
-	case LinearStepNeedMCP, LinearStepConfigureMCP:
-		return m.linearMCPAuthView()
+	// Handle Linear setup steps via LinearSetup module
+	if m.linearSetup.Step != LinearStepSelectTracker {
+		// Update dimensions for centering
+		m.linearSetup.Width = m.width
+		m.linearSetup.Height = m.height
+		return m.linearSetup.View(m.spinnerIndex)
 	}
 
 	// Default: tracker selection
@@ -1897,277 +1661,6 @@ func (m Model) setupView() string {
 	)
 }
 
-// linearLoadingView renders the loading state for Linear setup
-func (m Model) linearLoadingView() string {
-	cliveLogo := lipgloss.NewStyle().
-		Foreground(ColorRed).
-		Bold(true).
-		Render("CLIVE")
-
-	subtitle := lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render(" · Linear Setup")
-
-	var content strings.Builder
-	content.WriteString(cliveLogo + subtitle)
-	content.WriteString("\n\n")
-
-	spinner := spinnerFrames[m.spinnerIndex%len(spinnerFrames)]
-	var statusText string
-	switch m.linearSetupStep {
-	case LinearStepValidatingKey:
-		statusText = "Validating API key..."
-	case LinearStepCheckMCP:
-		statusText = "Checking MCP authentication..."
-	case LinearStepFetchTeams:
-		statusText = "Fetching teams..."
-	default:
-		statusText = "Loading..."
-	}
-
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorYellow).
-		Render(spinner + " " + statusText))
-
-	selectionBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(1, 2).
-		Render(content.String())
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		selectionBox,
-	)
-}
-
-// linearAPIKeyView renders the API key entry screen (step 1)
-func (m Model) linearAPIKeyView() string {
-	cliveLogo := lipgloss.NewStyle().
-		Foreground(ColorRed).
-		Bold(true).
-		Render("CLIVE")
-
-	subtitle := lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render(" · Linear Setup (Step 1/2)")
-
-	var content strings.Builder
-	content.WriteString(cliveLogo + subtitle)
-	content.WriteString("\n\n")
-
-	// Title
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorBlue).
-		Bold(true).
-		Render("Enter Linear API Key"))
-	content.WriteString("\n\n")
-
-	// Show error if any
-	if m.linearSetupError != "" {
-		content.WriteString(lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Render("⚠ " + m.linearSetupError))
-		content.WriteString("\n\n")
-	}
-
-	// Instructions
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("Get your API key from Linear Settings > API:"))
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorBlue).
-		Render("https://linear.app/settings/api"))
-	content.WriteString("\n\n")
-
-	// API key input
-	inputBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorGreen).
-		Padding(0, 1).
-		Width(60).
-		Render(m.linearAPIKeyInput.View())
-	content.WriteString(inputBox)
-	content.WriteString("\n\n")
-
-	// Navigation hint
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("Enter to continue • Esc back • Ctrl+C quit"))
-
-	selectionBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(1, 2).
-		Render(content.String())
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		selectionBox,
-	)
-}
-
-// linearMCPAuthView renders the MCP authentication prompt for Linear (step 2)
-func (m Model) linearMCPAuthView() string {
-	cliveLogo := lipgloss.NewStyle().
-		Foreground(ColorRed).
-		Bold(true).
-		Render("CLIVE")
-
-	subtitle := lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render(" · Linear Setup (Step 2/2)")
-
-	var content strings.Builder
-	content.WriteString(cliveLogo + subtitle)
-	content.WriteString("\n\n")
-
-	// Title
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorBlue).
-		Bold(true).
-		Render("Connect Linear MCP for Builder Agent"))
-	content.WriteString("\n\n")
-
-	// Show selected team
-	if len(m.linearTeams) > 0 && m.linearTeamIdx < len(m.linearTeams) {
-		team := m.linearTeams[m.linearTeamIdx]
-		content.WriteString(lipgloss.NewStyle().
-			Foreground(ColorGreen).
-			Render("✓ API Key validated • Team: " + team.Name + " (" + team.Key + ")"))
-		content.WriteString("\n\n")
-	}
-
-	// Show error if any
-	if m.linearSetupError != "" {
-		content.WriteString(lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Render("⚠ " + m.linearSetupError))
-		content.WriteString("\n\n")
-	}
-
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgPrimary).
-		Render("The builder agent needs Linear MCP for issue updates."))
-	content.WriteString("\n\n")
-
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("This will open Claude Code. To authenticate:"))
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("  1. Type /mcp and select Linear"))
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("  2. Select \"Authenticate\""))
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("  3. Complete OAuth in your browser"))
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("  4. Type /exit to return to Clive"))
-	content.WriteString("\n\n")
-
-	// Auth button
-	buttonStyle := lipgloss.NewStyle().
-		Background(ColorBlue).
-		Foreground(lipgloss.Color("#ffffff")).
-		Bold(true).
-		Padding(0, 2)
-	content.WriteString(buttonStyle.Render("▸ Open Claude Code"))
-	content.WriteString("\n\n")
-
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("Enter to continue • Esc back • Ctrl+C quit"))
-
-	selectionBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(1, 2).
-		Render(content.String())
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		selectionBox,
-	)
-}
-
-// linearTeamSelectView renders the team selection for Linear
-func (m Model) linearTeamSelectView() string {
-	cliveLogo := lipgloss.NewStyle().
-		Foreground(ColorRed).
-		Bold(true).
-		Render("CLIVE")
-
-	subtitle := lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render(" · Select Linear Team")
-
-	var content strings.Builder
-	content.WriteString(cliveLogo + subtitle)
-	content.WriteString("\n\n")
-
-	for i, team := range m.linearTeams {
-		var line string
-		if i == m.linearTeamIdx {
-			// Selected item
-			line = lipgloss.NewStyle().
-				Background(ColorBgHighlight).
-				Foreground(ColorFgPrimary).
-				Bold(true).
-				Padding(0, 1).
-				Render("▸ " + team.Name)
-		} else {
-			line = lipgloss.NewStyle().
-				Foreground(ColorFgPrimary).
-				Padding(0, 1).
-				Render("  " + team.Name)
-		}
-
-		// Add team key
-		keyStyle := lipgloss.NewStyle().
-			Foreground(ColorFgMuted).
-			Render(" (" + team.Key + ")")
-
-		content.WriteString(line + keyStyle)
-		content.WriteString("\n")
-	}
-
-	content.WriteString("\n")
-	content.WriteString(lipgloss.NewStyle().
-		Foreground(ColorFgMuted).
-		Render("↑/↓ navigate • Enter select • Esc back • q quit"))
-
-	selectionBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(1, 2).
-		Render(content.String())
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		selectionBox,
-	)
-}
-
 // selectionView renders the epic selection screen
 func (m Model) selectionView() string {
 	cliveLogo := lipgloss.NewStyle().
@@ -2223,7 +1716,16 @@ func (m Model) selectionView() string {
 				Foreground(ColorFgMuted).
 				Render("No matching epics found."))
 		} else {
+			// Fixed width for epic items (matches search box width minus padding)
+			const epicItemWidth = 40
 			for i, s := range filtered {
+				// Truncate long epic names
+				name := s.Name
+				maxNameLen := epicItemWidth - 4 // Account for "▸ " prefix and padding
+				if len(name) > maxNameLen {
+					name = name[:maxNameLen-1] + "…"
+				}
+
 				var line string
 				if i == m.selectedIndex {
 					// Selected item - highlighted
@@ -2232,13 +1734,15 @@ func (m Model) selectionView() string {
 						Foreground(ColorFgPrimary).
 						Bold(true).
 						Padding(0, 1).
-						Render("▸ " + s.Name)
+						Width(epicItemWidth).
+						Render("▸ " + name)
 				} else {
 					// Normal item
 					line = lipgloss.NewStyle().
 						Foreground(ColorFgPrimary).
 						Padding(0, 1).
-						Render("  " + s.Name)
+						Width(epicItemWidth).
+						Render("  " + name)
 				}
 				content.WriteString(line)
 				content.WriteString("\n")
@@ -2256,11 +1760,12 @@ func (m Model) selectionView() string {
 		Foreground(ColorFgMuted).
 		Render(hint))
 
-	// Center the selection box
+	// Center the selection box with fixed width
 	selectionBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorBorder).
 		Padding(1, 2).
+		Width(52). // Fixed width: 44 (search box) + 4 (padding) + 4 (border)
 		Render(content.String())
 
 	return lipgloss.Place(
@@ -2344,10 +1849,13 @@ func (m *Model) sendQuestionResponse(response string) {
 		return
 	}
 
-	// Get the tool_use_id from the pending question
+	// Get the tool_use_id from the pending question and clear it immediately
+	// to prevent reuse on subsequent calls
 	var toolUseID string
-	if m.pendingQuestion != nil {
+	if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" && m.showQuestionPanel {
 		toolUseID = m.pendingQuestion.ToolUseID
+		// Clear the ToolUseID immediately to prevent duplicate tool_result sends
+		m.pendingQuestion.ToolUseID = ""
 	}
 
 	var err error
@@ -2355,7 +1863,7 @@ func (m *Model) sendQuestionResponse(response string) {
 		// Send as tool result (proper format for AskUserQuestion responses)
 		err = m.processHandle.SendToolResult(toolUseID, response)
 	} else {
-		// Fallback to regular message if no tool_use_id (shouldn't happen)
+		// Send as regular message if no tool_use_id
 		err = m.processHandle.SendMessage(response)
 	}
 
@@ -2562,7 +2070,14 @@ func (m *Model) startPlan(input string) tea.Cmd {
 	m.streamStartTime = time.Now()
 	m.spinnerIndex = 0
 
-	m.processHandle = process.RunPlan(input, m.outputChan)
+	// Pass the active session's EpicID if set, so the planning agent
+	// uses the existing Linear issue as parent instead of creating a new one
+	var parentID string
+	if m.activeSession != nil {
+		parentID = m.activeSession.EpicID
+	}
+
+	m.processHandle = process.RunPlan(input, parentID, m.outputChan)
 
 	m.outputLines = append(m.outputLines, process.OutputLine{
 		Text: "Starting plan...",

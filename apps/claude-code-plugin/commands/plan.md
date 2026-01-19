@@ -33,7 +33,7 @@ The build agent will implement the work. Your job is ONLY to plan it.
 
 **Key Principles:**
 - **INTERVIEW FIRST**: Always interview the user before creating a plan. Understand their requirements deeply.
-- **PLAN DOCUMENT BEFORE BEADS**: Write the plan to `.claude/current-plan.md` first, get approval, THEN create beads.
+- **PLAN DOCUMENT BEFORE ISSUES**: Write the plan to `.claude/current-plan.md` first, get approval, THEN create issues.
 - **CATEGORY DETECTION**: Automatically detect work type from request keywords
 - **SKILL ASSIGNMENT**: Each task must have an assigned skill for build.sh dispatch
 - ASK QUESTIONS - don't assume. The interview is the most valuable part of planning.
@@ -57,11 +57,11 @@ The build agent will implement the work. Your job is ONLY to plan it.
 
 4. **NO ASSUMPTIONS** - Do not assume what the user wants. Ask and confirm. If something is unclear, ask a follow-up question.
 
-5. **NO BEADS UNTIL APPROVAL** - Do NOT create beads epic/tasks until the user explicitly approves the plan. Write the plan document first.
+5. **NO ISSUES UNTIL APPROVAL** - Do NOT create issues until the user explicitly approves the plan. Write the plan document first.
 
 6. **APPROVAL GATE** - Do not output `PLAN_COMPLETE` until:
    - User has explicitly said "Ready to implement"
-   - Beads epic and tasks have been created
+   - Issues have been created in the configured tracker (Beads or Linear)
 
 **Violation of these rules produces low-quality plans that waste build agent time and frustrate users.**
 
@@ -808,11 +808,11 @@ cat playwright.config.* 2>/dev/null | grep -E "(trace|screenshot)"
 
 ---
 
-## Step 6: Write Plan Document (NOT Beads Yet)
+## Step 6: Write Plan Document (NOT Issues Yet)
 
-**IMPORTANT: Do NOT create beads epic/tasks yet. First write the plan document for user approval.**
+**IMPORTANT: Do NOT create issues yet. First write the plan document for user approval.**
 
-The plan document serves as the approval artifact. The user reviews this before any beads are created.
+The plan document serves as the approval artifact. The user reviews this before any issues are created.
 
 Write the plan to `.claude/current-plan.md`:
 
@@ -889,7 +889,7 @@ echo "✓ Plan document written to .claude/current-plan.md"
 - Dependencies and prerequisites
 - Refactoring recommendations (if any)
 
-**Do NOT create beads yet. The user must approve this plan first.**
+**Do NOT create issues yet. The user must approve this plan first.**
 
 ---
 
@@ -914,7 +914,7 @@ Present the plan summary to the user:
 > 2. [task 2] (skill: [skill], tier: [tier])
 > ...
 >
-> **Next step:** Once you approve, I'll create the beads epic and tasks.
+> **Next step:** Once you approve, I'll create the issues in your configured tracker.
 >
 > Press `p` in the TUI to view the full plan."
 
@@ -924,7 +924,7 @@ Present the plan summary to the user:
 
 ## Step 8: Request User Approval (REQUIRED GATE)
 
-**This step is a HARD GATE. Do NOT create beads until explicit approval.**
+**This step is a HARD GATE. Do NOT create issues until explicit approval.**
 
 Use AskUserQuestion to request approval:
 
@@ -938,7 +938,7 @@ Use AskUserQuestion to request approval:
 
 **Handle each response:**
 
-1. **"Ready to implement"** → Proceed to Step 9 (Create Beads)
+1. **"Ready to implement"** → Proceed to Step 9 (Create Issues)
 
 2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **WAIT for their response.**
 
@@ -995,25 +995,37 @@ echo "Ready tasks: $(bd ready --json 2>/dev/null | jq length)"
 
 If `$TRACKER` is "linear", use Linear MCP tools:
 
-**Read Linear config:**
+**Read Linear config and check for existing parent:**
 ```bash
 LINEAR_TEAM_ID=$(cat ~/.clive/config.json | jq -r '.linear.team_id')
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 EPIC_TITLE="[${BRANCH}] Work Plan - $(date +%Y-%m-%d)"
+
+# Check if a parent issue was provided by the TUI (user selected an existing Linear task)
+if [ -n "$CLIVE_PARENT_ID" ]; then
+    echo "Using existing parent issue: $CLIVE_PARENT_ID"
+    PARENT_ID="$CLIVE_PARENT_ID"
+else
+    echo "Will create new parent issue"
+    PARENT_ID=""
+fi
 ```
 
-**Create Parent Issue (Epic equivalent):**
-Use the `mcp__linear__create_issue` tool with:
-- `team`: The LINEAR_TEAM_ID from config
-- `title`: The EPIC_TITLE (e.g., "[main] Work Plan - 2024-01-15")
+**Create Parent Issue (ONLY if no existing parent):**
 
-Store the returned issue ID as PARENT_ID.
+**IMPORTANT:** If `$CLIVE_PARENT_ID` is set (non-empty), the user already selected an existing Linear task in the TUI. Use that as the parent - do NOT create a new one.
+
+If `$CLIVE_PARENT_ID` is NOT set (empty), create a new parent issue:
+- Use the `mcp__linear__create_issue` tool with:
+  - `team`: The LINEAR_TEAM_ID from config
+  - `title`: The EPIC_TITLE (e.g., "[main] Work Plan - 2024-01-15")
+- Store the returned issue ID as PARENT_ID.
 
 **Create Sub-Issues (Tasks):**
 For each task in the plan, use `mcp__linear__create_issue` with:
 - `team`: The LINEAR_TEAM_ID
 - `title`: The task title (e.g., "Implement user authentication")
-- `parentId`: The PARENT_ID from above
+- `parentId`: The PARENT_ID (either from `$CLIVE_PARENT_ID` or newly created)
 - `labels`: Array of labels (e.g., `["skill:feature", "tier:1", "category:feature"]`)
 
 **Example Linear task creation:**
@@ -1111,8 +1123,8 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 ### You are NOT allowed to:
 - Skip the interview phase
 - Assume what the user wants without asking
-- Create issues before user approves the plan
-- Output PLAN_COMPLETE before issues are created
+- Create issues (Beads or Linear) before user approves the plan
+- Output PLAN_COMPLETE before issues are created in the configured tracker
 - Start implementing any tasks
 - Write any code changes
 - Make any source file modifications

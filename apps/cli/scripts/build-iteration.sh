@@ -44,14 +44,34 @@ if ! command -v jq &>/dev/null; then
     exit 1
 fi
 
-# Check if beads is available (required)
-if ! command -v bd &>/dev/null; then
-    echo "❌ Error: Beads (bd) is required but not installed." >&2
-    exit 1
+# Detect configured task tracker
+CLIVE_CONFIG="${CLIVE_CONFIG:-$HOME/.clive/config.json}"
+if [ -f "$CLIVE_CONFIG" ]; then
+    TRACKER=$(jq -r '.issue_tracker // "beads"' "$CLIVE_CONFIG" 2>/dev/null || echo "beads")
+else
+    TRACKER="beads"
 fi
+export CLIVE_TRACKER="$TRACKER"
 
-if [ ! -d ".beads" ]; then
-    echo "❌ Error: No .beads directory found. Run 'bd init' first." >&2
+# Validate tracker is available
+if [ "$TRACKER" = "beads" ]; then
+    if ! command -v bd &>/dev/null; then
+        echo "❌ Error: Beads (bd) is required but not installed." >&2
+        exit 1
+    fi
+    if [ ! -d ".beads" ]; then
+        echo "❌ Error: No .beads directory found. Run 'bd init' first." >&2
+        exit 1
+    fi
+elif [ "$TRACKER" = "linear" ]; then
+    LINEAR_TEAM_ID=$(jq -r '.linear.team_id // empty' "$CLIVE_CONFIG" 2>/dev/null)
+    if [ -z "$LINEAR_TEAM_ID" ]; then
+        echo "❌ Error: Linear team ID not configured in $CLIVE_CONFIG" >&2
+        exit 1
+    fi
+    export LINEAR_TEAM_ID
+else
+    echo "❌ Error: Unknown tracker '$TRACKER'. Supported: beads, linear" >&2
     exit 1
 fi
 
@@ -136,35 +156,44 @@ get_skill_file() {
 SKILL="$SKILL_OVERRIDE"
 TASK_ID=""
 TASK_TITLE=""
+LINEAR_TASK_FETCH=false
 
 if [ -z "$SKILL_OVERRIDE" ]; then
-    if [ -n "$EPIC_FILTER" ]; then
-        # Use higher limit to ensure we find tasks under the epic
-        NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
-          [.[] |
-            ((.parent // null) as $explicit_parent |
-             (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |
-             ($explicit_parent // $derived_parent)) as $parent |
-            select($parent == $epic)
-          ] | .[0] // empty
-        ')
-    else
-        NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
-    fi
-
-    if [ -n "$NEXT_TASK" ] && [ "$NEXT_TASK" != "null" ]; then
-        TASK_ID=$(echo "$NEXT_TASK" | jq -r '.id // empty')
-        TASK_TITLE=$(echo "$NEXT_TASK" | jq -r '.title // empty')
-        SKILL=$(get_task_skill "$NEXT_TASK")
-    else
-        # No ready tasks - signal all complete
+    if [ "$TRACKER" = "beads" ]; then
+        # Beads: fetch next task via bd ready
         if [ -n "$EPIC_FILTER" ]; then
-            echo "No ready tasks under epic $EPIC_FILTER"
+            # Use higher limit to ensure we find tasks under the epic
+            NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
+              [.[] |
+                ((.parent // null) as $explicit_parent |
+                 (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |
+                 ($explicit_parent // $derived_parent)) as $parent |
+                select($parent == $epic)
+              ] | .[0] // empty
+            ')
         else
-            echo "No ready tasks available"
+            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
         fi
-        echo "✅ All ready tasks complete!"
-        exit 10  # Special exit code for "all complete"
+
+        if [ -n "$NEXT_TASK" ] && [ "$NEXT_TASK" != "null" ]; then
+            TASK_ID=$(echo "$NEXT_TASK" | jq -r '.id // empty')
+            TASK_TITLE=$(echo "$NEXT_TASK" | jq -r '.title // empty')
+            SKILL=$(get_task_skill "$NEXT_TASK")
+        else
+            # No ready tasks - signal all complete
+            if [ -n "$EPIC_FILTER" ]; then
+                echo "No ready tasks under epic $EPIC_FILTER"
+            else
+                echo "No ready tasks available"
+            fi
+            echo "✅ All ready tasks complete!"
+            exit 10  # Special exit code for "all complete"
+        fi
+    elif [ "$TRACKER" = "linear" ]; then
+        # Linear: Claude will fetch the next task via MCP tools
+        # We set a flag to include instructions in the prompt
+        LINEAR_TASK_FETCH=true
+        SKILL="feature"  # Default skill, Claude will determine from task labels
     fi
 fi
 
@@ -207,14 +236,29 @@ fi
     echo "---"
     echo ""
     echo "## Current Task"
-    echo "- Task source: beads (bd ready)"
+    echo "- Task tracker: $TRACKER"
     echo "- Progress: $PROGRESS_FILE"
     echo "- Skill: $SKILL"
-    if [ -n "$TASK_ID" ]; then
+    if [ "$TRACKER" = "beads" ] && [ -n "$TASK_ID" ]; then
         echo "- Task ID: $TASK_ID"
         echo "- Task: $TASK_TITLE"
     fi
     echo ""
+
+    # Linear-specific task fetching instructions
+    if [ "$LINEAR_TASK_FETCH" = true ]; then
+        echo "## Task Fetching (Linear)"
+        echo ""
+        echo "Use the Linear MCP tools to find the next ready task:"
+        echo "1. Call \`mcp__linear__list_issues\` with \`assignee: \"me\"\` and \`state: \"Todo\"\`"
+        if [ -n "$EPIC_FILTER" ]; then
+            echo "2. Filter for tasks under project/parent: $EPIC_FILTER"
+        fi
+        echo "3. Pick the first issue from the results as your current task"
+        echo "4. If no tasks are found, output the ALL_TASKS_COMPLETE marker and stop"
+        echo ""
+    fi
+
     if [ -n "$EXTRA_CONTEXT" ]; then
         echo "## Additional Context"
         echo "$EXTRA_CONTEXT"
@@ -224,9 +268,23 @@ fi
     echo ""
     echo "1. Read the skill file for execution instructions: $SKILL_FILE"
     echo "2. **Review the scratchpad above** for any relevant context from previous iterations"
-    echo "3. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
+
+    # Tracker-specific task details instruction
+    if [ "$TRACKER" = "beads" ]; then
+        echo "3. Use beads as source of truth: run 'bd show $TASK_ID' for task details"
+    else
+        echo "3. Use Linear as source of truth: call \`mcp__linear__get_issue\` with the task ID for details"
+    fi
+
     echo "4. Execute ONE task only following the skill instructions"
-    echo "5. Update beads status after completion: bd close $TASK_ID"
+
+    # Tracker-specific completion instruction
+    if [ "$TRACKER" = "beads" ]; then
+        echo "5. Update beads status after completion: bd close $TASK_ID"
+    else
+        echo "5. Update Linear status after completion: call \`mcp__linear__update_issue\` with state: \"Done\""
+    fi
+
     echo "6. **Update the scratchpad** with notes for the next iteration (see below)"
     echo "7. Output completion marker and STOP"
     echo ""
@@ -257,11 +315,19 @@ fi
     echo ""
     echo "## CRITICAL"
     echo "- Follow the skill file instructions exactly"
-    echo "- Update beads status (bd close) when task is complete"
+
+    # Tracker-specific status update reminder
+    if [ "$TRACKER" = "beads" ]; then
+        echo "- Update beads status (bd close) when task is complete"
+        echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
+    else
+        echo "- Update Linear status (mcp__linear__update_issue) when task is complete"
+        echo "- If you discover out-of-scope work, create a Linear issue for it (mcp__linear__create_issue)"
+    fi
+
     echo "- **Update the scratchpad before completing** - this helps the next agent"
     echo "- Create a LOCAL git commit before outputting completion marker"
     echo "- STOP immediately after outputting completion marker"
-    echo "- If you discover out-of-scope work, create a beads task for it (see skill file)"
 } > "$TEMP_PROMPT"
 
 # Write prompt path for TUI

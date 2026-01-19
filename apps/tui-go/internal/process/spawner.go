@@ -64,12 +64,13 @@ func stripANSI(s string) string {
 
 // Streaming state for accumulating text and tool inputs across chunks
 var (
-	streamingTextBuffer strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
-	currentToolName     string          // Current tool being streamed
-	currentToolID       string          // Current tool_use_id for responding to tool calls
-	currentToolInput    strings.Builder // Accumulates tool input JSON
-	pendingBdRefresh    bool            // True when a bd command was seen and we need to refresh after execution
-	streamStateMu       sync.Mutex
+	streamingTextBuffer     strings.Builder // Accumulates text to detect TASK_COMPLETE across chunks
+	currentToolName         string          // Current tool being streamed
+	currentToolID           string          // Current tool_use_id for responding to tool calls
+	currentToolInput        strings.Builder // Accumulates tool input JSON
+	pendingBdRefresh        bool            // True when a bd command was seen and we need to refresh after execution
+	lastHandledQuestionID   string          // Track which tool_use_id was already emitted via streaming (for dedup)
+	streamStateMu           sync.Mutex
 )
 
 // ResetStreamingState clears all streaming state buffers
@@ -82,6 +83,7 @@ func ResetStreamingState() {
 	currentToolID = ""
 	currentToolInput.Reset()
 	pendingBdRefresh = false
+	lastHandledQuestionID = ""
 }
 
 // ProcessHandle manages a spawned process
@@ -280,11 +282,16 @@ func RunBuildIteration(iteration, maxIterations int, epicID string, outputChan c
 }
 
 // RunPlan runs the plan script
-func RunPlan(input string, outputChan chan<- OutputLine) *ProcessHandle {
+// parentID is optional - if provided, the planning agent will use this existing issue
+// as the parent instead of creating a new one
+func RunPlan(input string, parentID string, outputChan chan<- OutputLine) *ProcessHandle {
 	scriptsDir := findScriptsDir()
 	planScript := filepath.Join(scriptsDir, "plan.sh")
 
 	args := []string{planScript, "--streaming"}
+	if parentID != "" {
+		args = append(args, "--parent", parentID)
+	}
 	if input != "" {
 		args = append(args, input)
 	}
@@ -666,14 +673,10 @@ func parseNDJSONLine(line string) []OutputLine {
 				text += " " + detail
 			}
 
-			// For AskUserQuestion in streaming mode, defer until content_block_stop
-			// when we have the full input JSON. Just emit a placeholder tool_call for now.
+			// For AskUserQuestion in streaming mode, defer entirely until content_block_stop
+			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
-				return []OutputLine{{
-					Text:     text + "\n",
-					Type:     "tool_call",
-					ToolName: name,
-				}}
+				return nil
 			}
 
 			// Check if this tool call should trigger task refresh
@@ -684,6 +687,10 @@ func parseNDJSONLine(line string) []OutputLine {
 					strings.Contains(detail, "bd create") {
 					refreshTasks = true
 				}
+			}
+			// Check for Linear MCP tools that modify issues
+			if name == "mcp__linear__create_issue" || name == "mcp__linear__update_issue" {
+				refreshTasks = true
 			}
 
 			return []OutputLine{{
@@ -738,6 +745,10 @@ func parseNDJSONLine(line string) []OutputLine {
 				if qd != nil {
 					qd.ToolUseID = toolID // Attach the tool_use_id for response
 				}
+				// Mark this question as handled via streaming (for deduplication with assistant handler)
+				streamStateMu.Lock()
+				lastHandledQuestionID = toolID
+				streamStateMu.Unlock()
 				return []OutputLine{{
 					Text:     "❓ Awaiting response\n",
 					Type:     "question",
@@ -782,7 +793,6 @@ func parseNDJSONLine(line string) []OutputLine {
 			}
 			if block["type"] == "tool_use" {
 				name, _ := block["name"].(string)
-				toolID, _ := block["id"].(string)
 				input, _ := block["input"].(map[string]interface{})
 				detail := extractToolDetail(name, input)
 				text := "● " + name
@@ -800,27 +810,44 @@ func parseNDJSONLine(line string) []OutputLine {
 						}
 					}
 				}
+				// Check for Linear MCP tools that modify issues
+				if name == "mcp__linear__create_issue" || name == "mcp__linear__update_issue" {
+					refreshTasks = true
+				}
 
-				// Special handling for AskUserQuestion
+				// Handle AskUserQuestion - check if already handled via streaming to avoid duplicates
 				if name == "AskUserQuestion" {
+					toolID, _ := block["id"].(string)
+					// Check if this question was already emitted via streaming (content_block_stop)
+					streamStateMu.Lock()
+					alreadyHandled := toolID != "" && toolID == lastHandledQuestionID
+					streamStateMu.Unlock()
+
+					if alreadyHandled {
+						// Skip - already showed this question via streaming path
+						continue
+					}
+
+					// Emit the question from assistant message (non-streaming fallback)
 					qd := parseQuestionData(input)
 					if qd != nil {
 						qd.ToolUseID = toolID
 					}
 					results = append(results, OutputLine{
-						Text:     text + "\n",
+						Text:     "❓ Awaiting response\n",
 						Type:     "question",
 						ToolName: name,
 						Question: qd,
 					})
-				} else {
-					results = append(results, OutputLine{
-						Text:         text + "\n",
-						Type:         "tool_call",
-						ToolName:     name,
-						RefreshTasks: refreshTasks,
-					})
+					continue
 				}
+
+				results = append(results, OutputLine{
+					Text:         text + "\n",
+					Type:         "tool_call",
+					ToolName:     name,
+					RefreshTasks: refreshTasks,
+				})
 			}
 		}
 		return results
