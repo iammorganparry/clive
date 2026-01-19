@@ -3,7 +3,7 @@ name: integration-tests
 description: Implement integration tests with real dependencies
 category: test
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__list_issues, mcp__linear__update_issue, mcp__linear__get_issue, mcp__linear__create_comment
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -17,8 +17,10 @@ You implement integration tests **ONE TASK AT A TIME**. Integration tests verify
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
 1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
-2. **ONE TASK ONLY** - Implement ONE test suite, then STOP.
-3. **MUST UPDATE STATUS** - Update tracker AND plan file after completion.
+2. **MARK IN PROGRESS IMMEDIATELY** - Update tracker status to "In Progress" before writing tests.
+3. **ONE TASK ONLY** - Implement ONE test suite, then STOP.
+4. **MARK DONE AT COMPLETION** - Update tracker status to "Done" after tests pass.
+5. **BOTH STATUS TRANSITIONS REQUIRED** - Must call status update at START and at COMPLETION.
 
 ---
 
@@ -33,9 +35,32 @@ Unlike unit tests, integration tests:
 
 ---
 
-## Step 0: Read Your Context
+## Step 0: Verify Task Information
 
-### 0.1 Detect Tracker and Check Ready Work
+**Before implementing tests, ensure you have task details:**
+
+**For Linear tracker:**
+- If you see instructions to fetch from Linear in the prompt above, do that FIRST
+- Call `mcp__linear__list_issues` as instructed to find your task
+- **If authentication fails:**
+  - Output: `ERROR: Linear MCP is not authenticated. Please cancel this build (press 'c'), run 'claude' to authenticate with Linear MCP, then restart with /build`
+  - Output: `<promise>TASK_COMPLETE</promise>`
+  - STOP immediately
+- Extract the task `id`, `identifier`, and `title` from the results
+
+**For Beads tracker:**
+- Task info is embedded in the prompt (look for "Task ID:" and "Task:" lines)
+- If not found, the build iteration wasn't set up correctly
+
+**If you cannot determine your task for other reasons:**
+- Output: `ERROR: Unable to determine task. Please check build configuration.`
+- STOP - do not proceed without a valid task
+
+---
+
+## Step 0.5: Read Your Context
+
+### 0.5.1 Detect Tracker and Check Ready Work
 ```bash
 # Read tracker preference
 TRACKER=$(cat ~/.clive/config.json 2>/dev/null | jq -r '.issue_tracker // "beads"')
@@ -44,7 +69,7 @@ echo "Using tracker: $TRACKER"
 if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
     bd ready
 fi
-# For Linear: The TUI passes the current task info via $TASK_ID environment variable
+# For Linear: Task info should now be available from Step 0
 ```
 
 ### 0.2 Read the Plan File
@@ -52,7 +77,9 @@ Get test cases and integration points from the plan.
 
 ---
 
-## Step 1: Mark Task In Progress
+## Step 1: Mark Task In Progress (REQUIRED - DO NOT SKIP)
+
+**You MUST update the tracker status before writing tests. This is NON-NEGOTIABLE.**
 
 **For Beads:**
 ```bash
@@ -60,9 +87,12 @@ bd update [TASK_ID] --status in_progress
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "In Progress" (or equivalent workflow state)
+Call `mcp__linear__update_issue` with these EXACT parameters:
+- `id`: The task ID (from environment $TASK_ID or passed in prompt)
+- `state`: "In Progress"
+- `assignee`: "me"
+
+**Verify the call succeeded before proceeding to test implementation.**
 - `assignee`: "me"
 
 Update plan file: `- [ ] **Status:** in_progress`
@@ -165,7 +195,13 @@ After creating the task:
 
 ---
 
-## Step 4: Update Status
+## Step 4: Mark Task Complete (REQUIRED - DO NOT SKIP)
+
+**Before outputting TASK_COMPLETE marker, you MUST:**
+
+1. Verify all integration tests pass
+2. Confirm components integrate correctly
+3. **Update tracker status to "Done"**
 
 **For Beads:**
 ```bash
@@ -173,9 +209,11 @@ bd close [TASK_ID]
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "Done" (or equivalent completed workflow state)
+Call `mcp__linear__update_issue` with:
+- `id`: The current task ID
+- `state`: "Done"
+
+**If this call fails, DO NOT mark the task complete. Debug the issue first.**
 
 Update plan: `- [x] **Status:** complete`
 
@@ -225,6 +263,15 @@ SCRATCHPAD
 ---
 
 ## Step 5: Output Completion Marker
+
+**ONLY output the marker if ALL of these are verified:**
+- [ ] All integration tests written and passing
+- [ ] Components integrate correctly with dependencies
+- [ ] Tracker status updated to "Done" (mcp__linear__update_issue or bd close called successfully)
+- [ ] Git commit created
+- [ ] Scratchpad updated with integration patterns
+
+**If any item is incomplete, complete it first. Then output:**
 
 ```
 Task "[name]" complete. [X] integration tests passing.

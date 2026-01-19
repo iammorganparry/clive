@@ -1023,6 +1023,32 @@ If `$CLIVE_PARENT_ID` is NOT set (empty), create a new parent issue:
   - `title`: The EPIC_TITLE (e.g., "[main] Work Plan - 2024-01-15")
   - `labels`: `["Clive"]` - **REQUIRED: Always tag with "Clive" for visibility**
 - Store the returned issue ID as PARENT_ID.
+- **CRITICAL: Save the Linear parent ID for build agent:**
+  ```bash
+  # Determine epic directory path
+  if [ -n "$CLIVE_PARENT_ID" ]; then
+      EPIC_DIR=".claude/epics/$CLIVE_PARENT_ID"
+  else
+      # For new epics without UUID, use Linear parent ID as epic ID
+      EPIC_DIR=".claude/epics/$PARENT_ID"
+  fi
+
+  # Create epic directory and save Linear parent issue ID
+  mkdir -p "$EPIC_DIR"
+  echo "$PARENT_ID" > "$EPIC_DIR/linear_issue_id.txt"
+  echo "✓ Saved Linear parent ID to $EPIC_DIR/linear_issue_id.txt"
+  ```
+
+**If `$CLIVE_PARENT_ID` IS set (existing epic), save the Linear parent ID:**
+```bash
+# For existing epics, also save the Linear parent ID for build agent reference
+if [ -n "$CLIVE_PARENT_ID" ]; then
+    EPIC_DIR=".claude/epics/$CLIVE_PARENT_ID"
+    mkdir -p "$EPIC_DIR"
+    echo "$PARENT_ID" > "$EPIC_DIR/linear_issue_id.txt"
+    echo "✓ Saved Linear parent ID to $EPIC_DIR/linear_issue_id.txt"
+fi
+```
 
 **Create Sub-Issues (Tasks):**
 For each task in the plan, use `mcp__linear__create_issue` with:

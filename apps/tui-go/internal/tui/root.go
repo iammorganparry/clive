@@ -467,6 +467,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.debug.AddLine(msg.line.DebugInfo)
 		}
 
+		// Handle debug-only messages - don't add to output, only to debug panel
+		if msg.line.Type == "debug" {
+			// Already added to debug panel above via DebugInfo
+			// Continue polling for more output
+			if m.outputChan != nil {
+				return m, m.pollOutput()
+			}
+			return m, nil
+		}
+
 		// Handle exit message type - process has finished
 		if msg.line.Type == "exit" {
 			return m, func() tea.Msg {
@@ -528,6 +538,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if msg.lines[i].Type == "exit" {
 				exitMsg = &msg.lines[i]
+			} else if msg.lines[i].Type == "debug" {
+				// Skip debug-only messages (already added to debug panel above)
+				continue
 			} else {
 				regularLines = append(regularLines, msg.lines[i])
 			}

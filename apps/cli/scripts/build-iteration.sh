@@ -204,8 +204,26 @@ if [ -z "$SKILL_OVERRIDE" ]; then
     elif [ "$TRACKER" = "linear" ]; then
         # Linear: Claude will fetch the next task via MCP tools
         # We set a flag to include instructions in the prompt
-        LINEAR_TASK_FETCH=true
+        export LINEAR_TASK_FETCH=true
         SKILL="feature"  # Default skill, Claude will determine from task labels
+
+        # Note: Linear MCP authentication will be verified when agent calls list_issues
+        # If authentication fails, agent will receive clear error instructions
+        echo "Note: Ensure you've authenticated with Linear MCP (run 'claude' and authenticate if needed)"
+
+        # Check for Linear parent issue ID (saved during planning)
+        if [ -n "$EPIC_DIR" ] && [ -f "$EPIC_DIR/linear_issue_id.txt" ]; then
+            LINEAR_PARENT_ID=$(cat "$EPIC_DIR/linear_issue_id.txt")
+            export LINEAR_PARENT_ID
+            echo "Found Linear parent issue: $LINEAR_PARENT_ID"
+        else
+            echo "Warning: Linear parent ID not found. Task filtering may be less precise."
+        fi
+
+        # Export Linear team ID if available
+        if [ -n "$LINEAR_TEAM_ID" ]; then
+            export LINEAR_TEAM_ID
+        fi
     fi
 fi
 
@@ -259,15 +277,91 @@ fi
 
     # Linear-specific task fetching instructions
     if [ "$LINEAR_TASK_FETCH" = true ]; then
-        echo "## Task Fetching (Linear)"
+        echo "## CRITICAL: Task Discovery Required"
         echo ""
-        echo "Use the Linear MCP tools to find the next ready task:"
-        echo "1. Call \`mcp__linear__list_issues\` with \`assignee: \"me\"\` and \`state: \"Todo\"\`"
-        if [ -n "$EPIC_FILTER" ]; then
-            echo "2. Filter for tasks under project/parent: $EPIC_FILTER"
+        echo "**Before doing ANYTHING else, you MUST fetch your task from Linear.**"
+        echo ""
+        echo "### Execute These Steps in Order:"
+        echo ""
+        echo "**Step 1: Call Linear MCP to list your tasks (include Backlog AND Todo)**"
+        echo ""
+        echo "Make TWO calls to get all available tasks:"
+        echo ""
+        echo "Call 1 - Todo tasks:"
+        echo "\`\`\`"
+        echo "mcp__linear__list_issues"
+        echo "  assignee: \"me\""
+        echo "  state: \"Todo\""
+        echo "\`\`\`"
+        echo ""
+        echo "Call 2 - Backlog tasks:"
+        echo "\`\`\`"
+        echo "mcp__linear__list_issues"
+        echo "  assignee: \"me\""
+        echo "  state: \"Backlog\""
+        echo "\`\`\`"
+        echo ""
+        echo "Combine both result sets before filtering."
+        echo ""
+        echo "**If you get an authentication error:**"
+        echo ""
+        echo "1. Output the following message to the user:"
+        echo "   \`\`\`"
+        echo "   ERROR: Linear MCP is not authenticated."
+        echo ""
+        echo "   To authenticate:"
+        echo "   1. Cancel this build (press 'c')"
+        echo "   2. Run: claude"
+        echo "   3. Ask: 'Please authenticate with Linear MCP'"
+        echo "   4. Follow the authentication flow"
+        echo "   5. Restart build with /build"
+        echo "   \`\`\`"
+        echo "2. Output the completion marker: \`TASK_COMPLETE\`"
+        echo "3. STOP immediately"
+        echo ""
+
+        if [ -n "$LINEAR_PARENT_ID" ]; then
+            echo "**Step 2: Filter for subtasks of parent issue: $LINEAR_PARENT_ID**"
+            echo ""
+            echo "From the results, find tasks where:"
+            echo "- \`parent.id == \"$LINEAR_PARENT_ID\"\`"
+            echo ""
+        else
+            echo "**Step 2: Filter for tasks in this epic**"
+            echo ""
+            if [ -n "$EPIC_FILTER" ]; then
+                echo "From the results, find tasks related to epic ID: $EPIC_FILTER"
+            else
+                echo "From the results, find tasks assigned to you in Todo state"
+            fi
+            echo ""
+            echo "Note: Without a parent issue ID, you may need to search by project or labels."
+            echo ""
         fi
-        echo "3. Pick the first issue from the results as your current task"
-        echo "4. If no tasks are found, output the ALL_TASKS_COMPLETE marker and stop"
+
+        echo "**Step 3: Select the first task**"
+        echo ""
+        echo "- Sort tasks by \`createdAt\` (oldest first) or \`sortOrder\` (lowest first)"
+        echo "- Pick the FIRST task from the filtered list"
+        echo "- Extract: \`id\`, \`identifier\` (e.g., \"TRI-1234\"), and \`title\`"
+        echo ""
+        echo "**Step 4: Proceed with the task**"
+        echo ""
+        echo "- Use the task's \`identifier\` for git commits and display"
+        echo "- Use the task's \`id\` (UUID) for MCP tool calls (\`mcp__linear__update_issue\`)"
+        echo ""
+        echo "**Step 5: If no tasks found**"
+        echo ""
+        echo "If there are NO tasks matching the filters:"
+        echo "- Output the exact text: \`ALL_TASKS_COMPLETE\`"
+        echo "- STOP immediately - do not attempt to do any work"
+        echo ""
+        echo "---"
+        echo ""
+        echo "**IMPORTANT REMINDERS:**"
+        echo "- There is NO \`TASK_ID\` environment variable - you must fetch it"
+        echo "- There is NO plan.md file in .claude/epics/ - task info comes from Linear"
+        echo "- Do NOT look for files or grep - use the Linear MCP tools"
         echo ""
     fi
 
@@ -288,15 +382,23 @@ fi
         echo "3. Use Linear as source of truth: call \`mcp__linear__get_issue\` with the task ID for details"
     fi
 
-    echo "4. Execute ONE task only following the skill instructions"
+    echo "4. **CRITICAL: Update tracker status at TWO points:**"
+    echo "   a. BEFORE starting work: mark 'In Progress'"
+    echo "   b. AFTER verification: mark 'Done'"
+    echo ""
 
-    # Tracker-specific completion instruction
     if [ "$TRACKER" = "beads" ]; then
-        echo "5. Update beads status after completion: bd close $TASK_ID"
+        echo "   - Start: bd update $TASK_ID --status in_progress"
+        echo "   - Complete: bd close $TASK_ID"
     else
-        echo "5. Update Linear status after completion: call \`mcp__linear__update_issue\` with state: \"Done\""
+        echo "   - Start: mcp__linear__update_issue (id: [task-id], state: 'In Progress')"
+        echo "   - Complete: mcp__linear__update_issue (id: [task-id], state: 'Done')"
+        echo ""
+        echo "   **VERIFY these calls succeed. If they fail, debug before proceeding.**"
     fi
 
+    echo ""
+    echo "5. Execute ONE task only following the skill instructions"
     echo "6. **Update the scratchpad** with notes for the next iteration (see below)"
     echo "7. Output completion marker and STOP"
     echo ""
@@ -340,6 +442,13 @@ fi
     echo "- **Update the scratchpad before completing** - this helps the next agent"
     echo "- Create a LOCAL git commit before outputting completion marker"
     echo "- STOP immediately after outputting completion marker"
+    echo ""
+    echo "## STATUS UPDATE VERIFICATION"
+    if [ "$TRACKER" = "linear" ]; then
+        echo "After calling mcp__linear__update_issue, check the tool result for errors."
+        echo "If you see 'Issue not found' or 'Invalid state', STOP and report the error."
+        echo "Do NOT continue if status updates fail."
+    fi
 } > "$TEMP_PROMPT"
 
 # Write prompt path for TUI

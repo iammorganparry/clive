@@ -142,7 +142,7 @@ func (p *ProcessHandle) CloseStdinWithTimeout(timeout time.Duration) {
 // OutputLine represents a line of output from the process
 type OutputLine struct {
 	Text         string
-	Type         string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system", "question", "exit"
+	Type         string // "stdout", "stderr", "tool_call", "tool_result", "assistant", "system", "question", "exit", "debug"
 	ToolName     string
 	RefreshTasks bool // Set true when TodoWrite is called to trigger immediate task refresh
 	ExitCode     int  // Exit code when Type is "exit"
@@ -254,7 +254,16 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	// This prevents API errors from sending tool_result for non-existent tool_use
 	p.conversationMu.Lock()
 	_, exists := p.pendingToolUses[toolUseID]
+	totalTracked := len(p.pendingToolUses)
+	var trackedIDs []string
+	for id := range p.pendingToolUses {
+		trackedIDs = append(trackedIDs, id[:8]+"...") // Show first 8 chars
+	}
 	p.conversationMu.Unlock()
+
+	// Log validation result (will appear in debug panel via stderr reader)
+	fmt.Fprintf(os.Stderr, "[TOOL_RESULT] Validating tool_use_id=%s exists=%v total_tracked=%d tracked_ids=%v\n",
+		toolUseID[:8]+"...", exists, totalTracked, trackedIDs)
 
 	if !exists {
 		return fmt.Errorf("tool_use_id %s not found in conversation (stale or invalid)", toolUseID)
@@ -517,6 +526,11 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 			for _, output := range outputs {
 				outputChan <- output
 			}
+		}
+		// Send debug message when scanner exits
+		outputChan <- OutputLine{
+			Type:      "debug",
+			DebugInfo: "NDJSON scanner exited",
 		}
 	}()
 
@@ -893,13 +907,19 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 				// Save the tool_use block for later verification when sending tool_result
 				// This prevents API errors from stale or invalid tool_use_id values
-				if handle != nil && toolID != "" {
+				debugMsg := ""
+				if handle == nil {
+					debugMsg = fmt.Sprintf("TRACK FAIL: handle is nil for question %s", toolID)
+				} else if toolID == "" {
+					debugMsg = fmt.Sprintf("TRACK FAIL: toolID is empty for %s", toolName)
+				} else {
 					handle.conversationMu.Lock()
 					handle.pendingToolUses[toolID] = ToolUseBlock{
 						ID:    toolID,
 						Name:  toolName,
 						Input: input,
 					}
+					debugMsg = fmt.Sprintf("TRACKED tool_use (streaming): id=%s name=%s total=%d", toolID, toolName, len(handle.pendingToolUses))
 					handle.conversationMu.Unlock()
 				}
 
@@ -909,13 +929,21 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					handledQuestionIDs[toolID] = true
 				}
 				streamStateMu.Unlock()
-				return []OutputLine{{
-					Text:      "❓ Awaiting response\n",
-					Type:      "question",
-					ToolName:  toolName,
-					Question:  qd,
-					DebugInfo: debugInfo,
-				}}
+
+				// Return both the question and a debug message
+				return []OutputLine{
+					{
+						Text:      "❓ Awaiting response\n",
+						Type:      "question",
+						ToolName:  toolName,
+						Question:  qd,
+						DebugInfo: debugInfo,
+					},
+					{
+						Type:      "debug",
+						DebugInfo: debugMsg,
+					},
+				}
 			}
 		}
 
@@ -1014,13 +1042,19 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 					// Save the tool_use block for later verification (same as streaming path)
 					// This prevents API errors from stale or invalid tool_use_id values
-					if handle != nil && toolID != "" {
+					debugMsg := ""
+					if handle == nil {
+						debugMsg = fmt.Sprintf("TRACK FAIL: handle is nil for question %s", toolID)
+					} else if toolID == "" {
+						debugMsg = fmt.Sprintf("TRACK FAIL: toolID is empty for %s", name)
+					} else {
 						handle.conversationMu.Lock()
 						handle.pendingToolUses[toolID] = ToolUseBlock{
 							ID:    toolID,
 							Name:  name,
 							Input: input,
 						}
+						debugMsg = fmt.Sprintf("TRACKED tool_use (assistant): id=%s name=%s total=%d", toolID, name, len(handle.pendingToolUses))
 						handle.conversationMu.Unlock()
 					}
 
@@ -1030,6 +1064,10 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						ToolName:  name,
 						Question:  qd,
 						DebugInfo: debugInfo,
+					})
+					results = append(results, OutputLine{
+						Type:      "debug",
+						DebugInfo: debugMsg,
 					})
 					continue
 				}

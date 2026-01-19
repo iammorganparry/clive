@@ -3,7 +3,7 @@ name: refactor
 description: Restructure code without changing behavior
 category: refactor
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__list_issues, mcp__linear__update_issue, mcp__linear__get_issue, mcp__linear__create_comment
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -17,15 +17,40 @@ You refactor code **ONE TASK AT A TIME**. Refactoring changes code structure wit
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
 1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
-2. **ONE TASK ONLY** - Refactor ONE scope, then STOP.
-3. **MUST UPDATE STATUS** - Update tracker AND plan file after completion.
-4. **NO BEHAVIOR CHANGES** - Only change structure, not functionality.
+2. **MARK IN PROGRESS IMMEDIATELY** - Update tracker status to "In Progress" before refactoring.
+3. **ONE TASK ONLY** - Refactor ONE scope, then STOP.
+4. **MARK DONE AT COMPLETION** - Update tracker status to "Done" after refactoring verified.
+5. **BOTH STATUS TRANSITIONS REQUIRED** - Must call status update at START and at COMPLETION.
+6. **NO BEHAVIOR CHANGES** - Only change structure, not functionality.
 
 ---
 
-## Step 0: Read Your Context
+## Step 0: Verify Task Information
 
-### 0.1 Detect Tracker and Check Ready Work
+**Before refactoring anything, ensure you have task details:**
+
+**For Linear tracker:**
+- If you see instructions to fetch from Linear in the prompt above, do that FIRST
+- Call `mcp__linear__list_issues` as instructed to find your task
+- **If authentication fails:**
+  - Output: `ERROR: Linear MCP is not authenticated. Please cancel this build (press 'c'), run 'claude' to authenticate with Linear MCP, then restart with /build`
+  - Output: `<promise>TASK_COMPLETE</promise>`
+  - STOP immediately
+- Extract the task `id`, `identifier`, and `title` from the results
+
+**For Beads tracker:**
+- Task info is embedded in the prompt (look for "Task ID:" and "Task:" lines)
+- If not found, the build iteration wasn't set up correctly
+
+**If you cannot determine your task for other reasons:**
+- Output: `ERROR: Unable to determine task. Please check build configuration.`
+- STOP - do not proceed without a valid task
+
+---
+
+## Step 0.5: Read Your Context
+
+### 0.5.1 Detect Tracker and Check Ready Work
 ```bash
 # Read tracker preference
 TRACKER=$(cat ~/.clive/config.json 2>/dev/null | jq -r '.issue_tracker // "beads"')
@@ -34,13 +59,13 @@ echo "Using tracker: $TRACKER"
 if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
     bd ready
 fi
-# For Linear: The TUI passes the current task info via $TASK_ID environment variable
+# For Linear: Task info should now be available from Step 0
 ```
 
-### 0.2 Read the Plan File
+### 0.5.2 Read the Plan File
 Get refactoring goals and target files from the plan.
 
-### 0.3 Understand Current Behavior
+### 0.5.3 Understand Current Behavior
 Before refactoring, document what the code currently does:
 - Read the target files thoroughly
 - Identify inputs, outputs, and side effects
@@ -69,11 +94,22 @@ ls -la CONTRIBUTING.md STYLE_GUIDE.md .editorconfig 2>/dev/null
 
 ---
 
-## Step 1: Mark Task In Progress
+## Step 1: Mark Task In Progress (REQUIRED - DO NOT SKIP)
 
+**You MUST update the tracker status before starting work. This is NON-NEGOTIABLE.**
+
+**For Beads:**
 ```bash
 bd update [TASK_ID] --status in_progress
 ```
+
+**For Linear:**
+Call `mcp__linear__update_issue` with these EXACT parameters:
+- `id`: The task ID (from environment $TASK_ID or passed in prompt)
+- `state`: "In Progress"
+- `assignee`: "me"
+
+**Verify the call succeeded before proceeding to implementation.**
 
 ---
 
@@ -310,7 +346,15 @@ After creating the task:
 
 ---
 
-## Step 4: Update Status
+## Step 4: Mark Task Complete (REQUIRED - DO NOT SKIP)
+
+**Before outputting TASK_COMPLETE marker, you MUST:**
+
+1. Verify all tests pass (npm test)
+2. Confirm type checking passes (tsc --noEmit)
+3. Confirm linting passes with zero warnings (npm run lint)
+4. Confirm build succeeds (npm run build)
+5. **Update tracker status to "Done"**
 
 **For Beads:**
 ```bash
@@ -318,9 +362,11 @@ bd close [TASK_ID]
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "Done" (or equivalent completed workflow state)
+Call `mcp__linear__update_issue` with:
+- `id`: The current task ID
+- `state`: "Done"
+
+**If this call fails, DO NOT mark the task complete. Debug the issue first.**
 
 Update plan: `- [x] **Status:** complete`
 
@@ -369,6 +415,16 @@ SCRATCHPAD
 ---
 
 ## Step 5: Output Completion Marker
+
+**Final checklist before outputting marker:**
+
+- [ ] All tests passing (npm test)
+- [ ] Type checking passes (tsc --noEmit)
+- [ ] Linting passes with zero warnings (npm run lint)
+- [ ] Build succeeds (npm run build)
+- [ ] Tracker status updated to "Done" (mcp__linear__update_issue or bd close called successfully)
+- [ ] Git commit created
+- [ ] Scratchpad updated
 
 ```
 Task "[name]" complete. Code refactored, all tests passing.

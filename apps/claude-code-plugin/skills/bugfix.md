@@ -3,7 +3,7 @@ name: bugfix
 description: Fix bugs with proper root cause analysis
 category: bugfix
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__list_issues, mcp__linear__update_issue, mcp__linear__get_issue, mcp__linear__create_comment
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -17,15 +17,40 @@ You fix bugs **ONE TASK AT A TIME** with proper root cause analysis. Each invoca
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
 1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
-2. **ONE TASK ONLY** - Fix ONE bug, then STOP.
-3. **MUST UPDATE STATUS** - Update tracker AND plan file after completion.
-4. **ADD REGRESSION TEST** - Prevent the bug from returning.
+2. **MARK IN PROGRESS IMMEDIATELY** - Update tracker status to "In Progress" before any fix work.
+3. **ONE TASK ONLY** - Fix ONE bug, then STOP.
+4. **MARK DONE AT COMPLETION** - Update tracker status to "Done" after verification passes.
+5. **BOTH STATUS TRANSITIONS REQUIRED** - Must call status update at START and at COMPLETION.
+6. **ADD REGRESSION TEST** - Prevent the bug from returning.
 
 ---
 
-## Step 0: Read Your Context
+## Step 0: Verify Task Information
 
-### 0.1 Detect Tracker and Check Ready Work
+**Before fixing anything, ensure you have task details:**
+
+**For Linear tracker:**
+- If you see instructions to fetch from Linear in the prompt above, do that FIRST
+- Call `mcp__linear__list_issues` as instructed to find your task
+- **If authentication fails:**
+  - Output: `ERROR: Linear MCP is not authenticated. Please cancel this build (press 'c'), run 'claude' to authenticate with Linear MCP, then restart with /build`
+  - Output: `<promise>TASK_COMPLETE</promise>`
+  - STOP immediately
+- Extract the task `id`, `identifier`, and `title` from the results
+
+**For Beads tracker:**
+- Task info is embedded in the prompt (look for "Task ID:" and "Task:" lines)
+- If not found, the build iteration wasn't set up correctly
+
+**If you cannot determine your task for other reasons:**
+- Output: `ERROR: Unable to determine task. Please check build configuration.`
+- STOP - do not proceed without a valid task
+
+---
+
+## Step 0.5: Read Your Context
+
+### 0.5.1 Detect Tracker and Check Ready Work
 ```bash
 # Read tracker preference
 TRACKER=$(cat ~/.clive/config.json 2>/dev/null | jq -r '.issue_tracker // "beads"')
@@ -34,15 +59,17 @@ echo "Using tracker: $TRACKER"
 if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
     bd ready
 fi
-# For Linear: The TUI passes the current task info via $TASK_ID environment variable
+# For Linear: Task info should now be available from Step 0
 ```
 
-### 0.2 Read the Plan File
+### 0.5.2 Read the Plan File
 Get bug description, reproduction steps, and expected behavior from the plan.
 
 ---
 
-## Step 1: Mark Task In Progress
+## Step 1: Mark Task In Progress (REQUIRED - DO NOT SKIP)
+
+**You MUST update the tracker status before starting the fix. This is NON-NEGOTIABLE.**
 
 **For Beads:**
 ```bash
@@ -50,10 +77,12 @@ bd update [TASK_ID] --status in_progress
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "In Progress" (or equivalent workflow state)
+Call `mcp__linear__update_issue` with these EXACT parameters:
+- `id`: The task ID (from environment $TASK_ID or passed in prompt)
+- `state`: "In Progress"
 - `assignee`: "me"
+
+**Verify the call succeeded before proceeding to investigation.**
 
 ---
 
@@ -203,7 +232,13 @@ After creating the task:
 
 ---
 
-## Step 7: Update Status
+## Step 7: Mark Task Complete (REQUIRED - DO NOT SKIP)
+
+**Before outputting TASK_COMPLETE marker, you MUST:**
+
+1. Verify bug is fixed and tests pass
+2. Confirm regression test added
+3. **Update tracker status to "Done"**
 
 **For Beads:**
 ```bash
@@ -211,9 +246,41 @@ bd close [TASK_ID]
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "Done" (or equivalent completed workflow state)
+
+1. **First, add a completion comment:**
+   Call `mcp__linear__create_comment` with:
+   - `issueId`: The current task ID
+   - `body`: A summary of the bug fix, including:
+     - Root cause identified
+     - Fix implemented
+     - Regression test added
+     - Files changed
+     - Any developer notes or gotchas
+
+   Example comment:
+   ```
+   🐛 Bug Fixed: [Brief summary]
+
+   Root Cause: [What caused the bug]
+
+   Fix:
+   - [Specific changes made]
+
+   Regression Test: [Test file and what it covers]
+
+   Files Changed:
+   - src/foo.ts
+   - src/bar.test.ts
+
+   Developer Notes: [Any important context for future devs]
+   ```
+
+2. **Then, mark the task Done:**
+   Call `mcp__linear__update_issue` with:
+   - `id`: The current task ID
+   - `state`: "Done"
+
+**If either call fails, DO NOT mark the task complete. Debug the issue first.**
 
 Update plan: `- [x] **Status:** complete`
 
@@ -265,6 +332,16 @@ SCRATCHPAD
 ---
 
 ## Step 8: Output Completion Marker
+
+**ONLY output the marker if ALL of these are verified:**
+- [ ] Bug fixed and root cause addressed
+- [ ] Regression test added
+- [ ] All tests pass
+- [ ] Tracker status updated to "Done" (mcp__linear__update_issue or bd close called successfully)
+- [ ] Git commit created
+- [ ] Scratchpad updated with notes for next agent
+
+**If any item is incomplete, complete it first. Then output:**
 
 ```
 Task "[name]" complete. Bug fixed with regression test.

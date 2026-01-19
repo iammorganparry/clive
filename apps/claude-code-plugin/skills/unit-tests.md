@@ -3,7 +3,7 @@ name: unit-tests
 description: Implement unit tests using the project's test framework
 category: test
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__update_issue, mcp__linear__get_issue
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, TodoWrite, mcp__linear__list_issues, mcp__linear__update_issue, mcp__linear__get_issue, mcp__linear__create_comment
 completion-marker: <promise>TASK_COMPLETE</promise>
 all-complete-marker: <promise>ALL_TASKS_COMPLETE</promise>
 ---
@@ -17,16 +17,41 @@ You implement unit tests **ONE TASK AT A TIME** from the approved plan. Each inv
 ## CRITICAL RULES (NON-NEGOTIABLE)
 
 1. **CHECK TRACKER FIRST** - Find work and update status using the configured tracker (beads or Linear).
-2. **ONE TASK ONLY** - Implement ONE test suite, then STOP. Do NOT continue to the next task.
-3. **MUST UPDATE STATUS** - After completing a task, update tracker AND the plan file.
+2. **MARK IN PROGRESS IMMEDIATELY** - Update tracker status to "In Progress" before writing tests.
+3. **ONE TASK ONLY** - Implement ONE test suite, then STOP. Do NOT continue to the next task.
+4. **MARK DONE AT COMPLETION** - Update tracker status to "Done" after tests pass.
+5. **BOTH STATUS TRANSITIONS REQUIRED** - Must call status update at START and at COMPLETION.
 
 **If you do not update status, the loop will repeat the same work forever.**
 
 ---
 
-## Step 0: Read Your Context (REQUIRED FIRST)
+## Step 0: Verify Task Information
 
-### 0.1 Detect Tracker and Check Ready Work
+**Before implementing tests, ensure you have task details:**
+
+**For Linear tracker:**
+- If you see instructions to fetch from Linear in the prompt above, do that FIRST
+- Call `mcp__linear__list_issues` as instructed to find your task
+- **If authentication fails:**
+  - Output: `ERROR: Linear MCP is not authenticated. Please cancel this build (press 'c'), run 'claude' to authenticate with Linear MCP, then restart with /build`
+  - Output: `<promise>TASK_COMPLETE</promise>`
+  - STOP immediately
+- Extract the task `id`, `identifier`, and `title` from the results
+
+**For Beads tracker:**
+- Task info is embedded in the prompt (look for "Task ID:" and "Task:" lines)
+- If not found, the build iteration wasn't set up correctly
+
+**If you cannot determine your task for other reasons:**
+- Output: `ERROR: Unable to determine task. Please check build configuration.`
+- STOP - do not proceed without a valid task
+
+---
+
+## Step 0.5: Read Your Context (REQUIRED FIRST)
+
+### 0.5.1 Detect Tracker and Check Ready Work
 
 ```bash
 # Read tracker preference
@@ -37,7 +62,7 @@ if [ "$TRACKER" = "beads" ] && command -v bd &> /dev/null && [ -d ".beads" ]; th
     echo "Beads available - using as primary source"
     bd ready  # Shows tasks with no blockers, ready to work on
 fi
-# For Linear: The TUI passes the current task info via $TASK_ID environment variable
+# For Linear: Task info should now be available from Step 0
 ```
 
 **If no ready tasks:**
@@ -50,7 +75,9 @@ The plan file path is provided in your instructions. Read it to find the test ca
 
 ---
 
-## Step 1: Mark Task In Progress
+## Step 1: Mark Task In Progress (REQUIRED - DO NOT SKIP)
+
+**You MUST update the tracker status before writing tests. This is NON-NEGOTIABLE.**
 
 **For Beads:**
 ```bash
@@ -58,9 +85,12 @@ bd update [TASK_ID] --status in_progress
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "In Progress" (or equivalent workflow state)
+Call `mcp__linear__update_issue` with these EXACT parameters:
+- `id`: The task ID (from environment $TASK_ID or passed in prompt)
+- `state`: "In Progress"
+- `assignee`: "me"
+
+**Verify the call succeeded before proceeding to test implementation.**
 - `assignee`: "me"
 
 ### Also update the plan file:
@@ -199,11 +229,13 @@ After creating the task:
 
 ---
 
-## Step 4: Update Status (REQUIRED - DO NOT SKIP)
+## Step 4: Mark Task Complete (REQUIRED - DO NOT SKIP)
 
-**THIS IS MANDATORY. If you skip this step, the loop will repeat forever.**
+**Before outputting TASK_COMPLETE marker, you MUST:**
 
-### If ALL Tests Pass:
+1. Verify all tests pass
+2. Confirm tests provide adequate coverage
+3. **Update tracker status to "Done"**
 
 **For Beads:**
 ```bash
@@ -211,9 +243,11 @@ bd close [TASK_ID]
 ```
 
 **For Linear:**
-Use `mcp__linear__update_issue` with:
-- `id`: The task ID
-- `state`: "Done" (or equivalent completed workflow state)
+Call `mcp__linear__update_issue` with:
+- `id`: The current task ID
+- `state`: "Done"
+
+**If this call fails, DO NOT mark the task complete. Debug the issue first.**
 
 **Also update the plan file:**
 - Find the line: `- [ ] **Status:** in_progress`
@@ -291,6 +325,15 @@ SCRATCHPAD
 ---
 
 ## Step 5: Output Completion Marker and STOP
+
+**ONLY output the marker if ALL of these are verified:**
+- [ ] All tests written and passing
+- [ ] Tests provide adequate coverage
+- [ ] Tracker status updated to "Done" (mcp__linear__update_issue or bd close called successfully)
+- [ ] Git commit created
+- [ ] Scratchpad updated with test patterns
+
+**If any item is incomplete, complete it first. Then output:**
 
 **If this task is done (but more remain):**
 ```
