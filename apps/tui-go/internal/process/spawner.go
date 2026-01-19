@@ -778,20 +778,11 @@ func parseNDJSONLine(line string) []OutputLine {
 			if !ok {
 				continue
 			}
+			// SKIP text blocks - they were already emitted via streaming (content_block_delta)
+			// This prevents duplicate text output including question preambles
+			// Completion markers are also detected via streaming, so no loss of functionality
 			if block["type"] == "text" {
-				text, _ := block["text"].(string)
-				if text != "" {
-					// Check for completion markers in assistant text
-					isComplete := strings.Contains(text, "TASK_COMPLETE") ||
-						strings.Contains(text, "ALL_TASKS_COMPLETE") ||
-						strings.Contains(text, "PLAN_COMPLETE")
-					results = append(results, OutputLine{
-						Text:         stripANSI(text),
-						Type:         "assistant",
-						RefreshTasks: isComplete,
-						CloseStdin:   isComplete,
-					})
-				}
+				continue
 			}
 			if block["type"] == "tool_use" {
 				name, _ := block["name"].(string)
