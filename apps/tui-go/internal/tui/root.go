@@ -481,13 +481,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputFocused = true
 			m.input.Focus()
 			m.input.SetValue("")
-		} else if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" {
-			// If we receive ANY output after showing a question (that's not another question),
-			// the tool_use_id becomes stale (Claude has moved on in the conversation).
-			// Clear it to prevent sending an invalid tool_result.
-			// This handles: assistant text, tool_call, tool_result, stdout, etc.
-			m.pendingQuestion.ToolUseID = ""
 		}
+		// NOTE: We intentionally do NOT clear ToolUseID when other content arrives.
+		// With streaming, Claude often sends more content after AskUserQuestion in the
+		// same response. Clearing the ID would prevent the user from answering properly.
 
 		// Continue polling for more output
 		if m.outputChan != nil {
@@ -528,20 +525,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Check if any non-question content came through - if so, any pending tool_use_id is stale
-		if m.pendingQuestion != nil && m.pendingQuestion.ToolUseID != "" {
-			hasQuestion := false
-			for _, line := range regularLines {
-				if line.Type == "question" && line.Question != nil {
-					hasQuestion = true
-					break
-				}
-			}
-			// If there's content but no new question, the tool_use_id is stale
-			if len(regularLines) > 0 && !hasQuestion {
-				m.pendingQuestion.ToolUseID = ""
-			}
-		}
+		// NOTE: We intentionally do NOT clear ToolUseID when other content arrives.
+		// With streaming, Claude often sends more content after AskUserQuestion in the
+		// same response. Clearing the ID would prevent the user from answering properly.
 
 		// Handle question type - show question panel (check last question in batch)
 		for i := len(regularLines) - 1; i >= 0; i-- {
@@ -2220,21 +2206,10 @@ func (m Model) renderOutputContent() string {
 			sb.WriteString("\n")
 
 		case "question":
-			// Questions from Claude - blue left border with question icon
-			questionText := "❓ " + line.ToolName
-			if line.Question != nil {
-				questionText = "❓ " + line.Question.Question
-			}
-			wrappedQ := wrapText(questionText, wrapWidth-4)
-			block := lipgloss.NewStyle().
-				BorderLeft(true).
-				BorderStyle(lipgloss.ThickBorder()).
-				BorderForeground(ColorBlue).
-				PaddingLeft(1).
-				Width(wrapWidth).
-				Render(lipgloss.NewStyle().Foreground(ColorBlue).Render(wrappedQ))
-			sb.WriteString(block)
-			sb.WriteString("\n")
+			// Questions are handled by the question panel - don't render them in the output
+			// to avoid duplicate display. The panel provides interactive selection.
+			i++
+			continue
 
 		case "user":
 			// User messages - green left border block, bold text for visibility

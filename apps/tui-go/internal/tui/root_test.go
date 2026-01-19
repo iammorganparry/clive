@@ -538,9 +538,9 @@ func createTestModelWithProcess() Model {
 	return m
 }
 
-// TestToolUseIDClearedOnAssistantOutput tests that stale tool_use_ids are cleared
-// when new output arrives (preventing 400 API errors)
-func TestToolUseIDClearedOnAssistantOutput(t *testing.T) {
+// TestToolUseIDPreservedOnAssistantOutput tests that tool_use_ids are preserved
+// when additional content arrives (allowing user to answer after streaming completes)
+func TestToolUseIDPreservedOnAssistantOutput(t *testing.T) {
 	m := createTestModel()
 	m.outputChan = make(chan process.OutputLine, 10)
 
@@ -560,7 +560,7 @@ func TestToolUseIDClearedOnAssistantOutput(t *testing.T) {
 		t.Fatal("expected ToolUseID to be set initially")
 	}
 
-	// Send assistant output (Claude continued the conversation)
+	// Send assistant output (Claude sends more content in same response)
 	assistantLine := process.OutputLine{
 		Type: "assistant",
 		Text: "Here's some additional context...",
@@ -569,14 +569,14 @@ func TestToolUseIDClearedOnAssistantOutput(t *testing.T) {
 	newModel, _ := m.Update(msg)
 	m = newModel.(Model)
 
-	// Tool_use_id should be cleared (it's now stale)
-	if m.pendingQuestion.ToolUseID != "" {
-		t.Errorf("expected ToolUseID to be cleared after assistant output, got %q", m.pendingQuestion.ToolUseID)
+	// Tool_use_id should be PRESERVED (user still needs to answer)
+	if m.pendingQuestion.ToolUseID != "toolu_test123" {
+		t.Errorf("expected ToolUseID to be preserved after assistant output, got %q", m.pendingQuestion.ToolUseID)
 	}
 }
 
-// TestToolUseIDClearedOnToolOutput tests clearing on tool call output
-func TestToolUseIDClearedOnToolOutput(t *testing.T) {
+// TestToolUseIDPreservedOnToolOutput tests that tool_use_id is preserved on tool call output
+func TestToolUseIDPreservedOnToolOutput(t *testing.T) {
 	m := createTestModel()
 	m.outputChan = make(chan process.OutputLine, 10)
 
@@ -587,7 +587,7 @@ func TestToolUseIDClearedOnToolOutput(t *testing.T) {
 	}
 	m.showQuestionPanel = true
 
-	// Send tool_call output
+	// Send tool_call output (Claude uses other tools in same response)
 	toolLine := process.OutputLine{
 		Type:     "tool_call",
 		ToolName: "Bash",
@@ -597,9 +597,9 @@ func TestToolUseIDClearedOnToolOutput(t *testing.T) {
 	newModel, _ := m.Update(msg)
 	m = newModel.(Model)
 
-	// Tool_use_id should be cleared
-	if m.pendingQuestion.ToolUseID != "" {
-		t.Errorf("expected ToolUseID to be cleared after tool output, got %q", m.pendingQuestion.ToolUseID)
+	// Tool_use_id should be PRESERVED (user still needs to answer)
+	if m.pendingQuestion.ToolUseID != "toolu_test456" {
+		t.Errorf("expected ToolUseID to be preserved after tool output, got %q", m.pendingQuestion.ToolUseID)
 	}
 }
 
@@ -637,8 +637,8 @@ func TestToolUseIDPreservedOnQuestionOutput(t *testing.T) {
 	}
 }
 
-// TestToolUseIDClearedInBatchOutput tests clearing in batch messages
-func TestToolUseIDClearedInBatchOutput(t *testing.T) {
+// TestToolUseIDPreservedInBatchOutput tests that tool_use_id is preserved in batch messages
+func TestToolUseIDPreservedInBatchOutput(t *testing.T) {
 	m := createTestModel()
 	m.outputChan = make(chan process.OutputLine, 10)
 
@@ -659,9 +659,9 @@ func TestToolUseIDClearedInBatchOutput(t *testing.T) {
 	newModel, _ := m.Update(msg)
 	m = newModel.(Model)
 
-	// Tool_use_id should be cleared
-	if m.pendingQuestion.ToolUseID != "" {
-		t.Errorf("expected ToolUseID to be cleared after batch output, got %q", m.pendingQuestion.ToolUseID)
+	// Tool_use_id should be PRESERVED (user still needs to answer)
+	if m.pendingQuestion.ToolUseID != "toolu_batch789" {
+		t.Errorf("expected ToolUseID to be preserved after batch output, got %q", m.pendingQuestion.ToolUseID)
 	}
 }
 
