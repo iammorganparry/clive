@@ -66,6 +66,7 @@ type taskAddedMsg struct {
 // This is distinct from processFinishedMsg - only explicit "exit" lines should trigger iteration logic.
 type pollingStoppedMsg struct{}
 
+
 // configSavedMsg is sent when the config has been saved
 type configSavedMsg struct {
 	cfg *config.Config
@@ -151,6 +152,14 @@ type Model struct {
 	// Command suggestions
 	showSuggestions    bool
 	selectedSuggestion int
+
+	// Debug panel
+	debug DebugPanel
+}
+
+// ModelOptions configures the TUI model
+type ModelOptions struct {
+	DebugMode bool // Enable debug panel showing raw events
 }
 
 // Available commands for suggestions
@@ -225,6 +234,13 @@ func NewRootModel(cfg *config.Config) Model {
 		selectedIndex:   0,
 		loadingEpics:    false,
 	}
+}
+
+// NewRootModelWithOptions creates a new root model with options
+func NewRootModelWithOptions(cfg *config.Config, opts ModelOptions) Model {
+	m := NewRootModel(cfg)
+	m.debug = NewDebugPanel(opts.DebugMode)
+	return m
 }
 
 // Init initializes the model
@@ -446,6 +462,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case outputLineMsg:
+		// Add debug info if present
+		if msg.line.DebugInfo != "" {
+			m.debug.AddLine(msg.line.DebugInfo)
+		}
+
 		// Handle exit message type - process has finished
 		if msg.line.Type == "exit" {
 			return m, func() tea.Msg {
@@ -501,6 +522,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var exitMsg *process.OutputLine
 		var regularLines []process.OutputLine
 		for i := range msg.lines {
+			// Add debug info if present
+			if msg.lines[i].DebugInfo != "" {
+				m.debug.AddLine(msg.lines[i].DebugInfo)
+			}
 			if msg.lines[i].Type == "exit" {
 				exitMsg = &msg.lines[i]
 			} else {
@@ -563,6 +588,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.outputChan != nil {
 			cmds = append(cmds, m.pollOutput())
 		}
+
+	case DebugEventMsg:
+		m.debug.AddLine(msg.Line)
 
 	case processFinishedMsg:
 		exitCode := msg.exitCode
@@ -1131,12 +1159,24 @@ func (m Model) mainView() string {
 	sidebarWidth := 30
 	sidebar := m.renderSidebar(sidebarWidth, bodyHeight)
 
-	// Output area (remaining width)
-	outputWidth := m.width - sidebarWidth - 2
+	// Debug panel width (when enabled)
+	debugWidth := 0
+	if m.debug.IsEnabled() {
+		debugWidth = 50
+	}
+
+	// Output area (remaining width minus debug panel)
+	outputWidth := m.width - sidebarWidth - debugWidth - 2
 	output := m.renderOutput(outputWidth, bodyHeight)
 
-	// Combine sidebar and output
-	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, output)
+	// Combine sidebar and output (and debug panel if enabled)
+	var body string
+	if m.debug.IsEnabled() {
+		debugPanel := m.debug.Render(debugWidth, bodyHeight)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, output, debugPanel)
+	} else {
+		body = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, output)
+	}
 
 	// Command input
 	input := m.renderInput()
@@ -1878,8 +1918,13 @@ func (m *Model) sendQuestionResponse(response string) {
 
 	// Show error if send failed
 	if err != nil {
+		errMsg := err.Error()
+		// Provide helpful context for tool_use_id validation errors
+		if strings.Contains(errMsg, "not found in conversation") {
+			errMsg = fmt.Sprintf("This question is no longer valid. %s\nPlease restart the plan.", errMsg)
+		}
 		m.outputLines = append(m.outputLines, process.OutputLine{
-			Text: "Failed to send response: " + err.Error(),
+			Text: "Failed to send response: " + errMsg,
 			Type: "stderr",
 		})
 	}
@@ -2196,7 +2241,14 @@ func (m Model) renderOutputContent() string {
 
 		case "tool_call":
 			// Tool calls - yellow left border with lightning icon
-			toolText := "⚡ " + line.ToolName
+			// Special handling for Linear status updates to make them visually distinct
+			var toolText string
+			if line.ToolName == "mcp__linear__update_issue" {
+				toolText = "🔄 Linear Status Update"
+			} else {
+				toolText = "⚡ " + line.ToolName
+			}
+
 			if rest := strings.TrimPrefix(text, "● "+line.ToolName); rest != "" {
 				rest = strings.TrimSpace(rest)
 				// Truncate long tool args but show more context
@@ -2208,7 +2260,12 @@ func (m Model) renderOutputContent() string {
 					rest = rest[:maxLen-3] + "..."
 				}
 				if rest != "" {
-					toolText += " " + lipgloss.NewStyle().Foreground(ColorFgMuted).Render(rest)
+					// For Linear status updates, show the state parameter prominently
+					if line.ToolName == "mcp__linear__update_issue" && strings.Contains(rest, "state") {
+						toolText += " " + lipgloss.NewStyle().Foreground(ColorGreen).Bold(true).Render(rest)
+					} else {
+						toolText += " " + lipgloss.NewStyle().Foreground(ColorFgMuted).Render(rest)
+					}
 				}
 			}
 			block := ToolCallStyle.Width(wrapWidth).Render(

@@ -91,6 +91,13 @@ func ResetStreamingState() {
 	handledQuestionIDs = make(map[string]bool) // Clear the map
 }
 
+// ToolUseBlock tracks a tool_use from Claude for matching with tool_result
+type ToolUseBlock struct {
+	ID    string
+	Name  string
+	Input map[string]interface{}
+}
+
 // ProcessHandle manages a spawned process
 type ProcessHandle struct {
 	cmd    *exec.Cmd
@@ -100,6 +107,11 @@ type ProcessHandle struct {
 	done   chan struct{}
 	mu     sync.Mutex
 	killed bool
+
+	// Conversation tracking for tool_use/tool_result matching
+	// This prevents API errors when sending tool_result with invalid tool_use_id
+	conversationMu  sync.Mutex
+	pendingToolUses map[string]ToolUseBlock // tool_use_id -> tool_use block
 }
 
 // CloseStdin closes the stdin pipe to signal the process to exit
@@ -238,6 +250,16 @@ func (p *ProcessHandle) SendMessage(message string) error {
 // SendToolResult sends a tool result response to Claude
 // This is used for responding to AskUserQuestion and similar tools
 func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
+	// Verify the tool_use_id exists in our pending tool uses
+	// This prevents API errors from sending tool_result for non-existent tool_use
+	p.conversationMu.Lock()
+	_, exists := p.pendingToolUses[toolUseID]
+	p.conversationMu.Unlock()
+
+	if !exists {
+		return fmt.Errorf("tool_use_id %s not found in conversation (stale or invalid)", toolUseID)
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.stdin == nil {
@@ -265,6 +287,14 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	}
 
 	_, err = p.stdin.Write(append(data, '\n'))
+
+	// Clean up after successful send
+	if err == nil {
+		p.conversationMu.Lock()
+		delete(p.pendingToolUses, toolUseID)
+		p.conversationMu.Unlock()
+	}
+
 	return err
 }
 
@@ -362,11 +392,12 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 	stderr, _ := cmd.StderrPipe()
 
 	handle := &ProcessHandle{
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-		done:   make(chan struct{}),
+		cmd:             cmd,
+		stdin:           stdin,
+		stdout:          stdout,
+		stderr:          stderr,
+		done:            make(chan struct{}),
+		pendingToolUses: make(map[string]ToolUseBlock),
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -482,7 +513,7 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 
 		for scanner.Scan() {
 			line := scanner.Text()
-			outputs := parseNDJSONLine(line)
+			outputs := parseNDJSONLine(line, handle)
 			for _, output := range outputs {
 				outputChan <- output
 			}
@@ -700,7 +731,7 @@ func formatDebugInfo(eventType string, data map[string]interface{}) string {
 	return info
 }
 
-func parseNDJSONLine(line string) []OutputLine {
+func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(line), &data); err != nil {
 		// Not JSON, return as plain text
@@ -859,6 +890,19 @@ func parseNDJSONLine(line string) []OutputLine {
 				if qd != nil {
 					qd.ToolUseID = toolID // Attach the tool_use_id for response
 				}
+
+				// Save the tool_use block for later verification when sending tool_result
+				// This prevents API errors from stale or invalid tool_use_id values
+				if handle != nil && toolID != "" {
+					handle.conversationMu.Lock()
+					handle.pendingToolUses[toolID] = ToolUseBlock{
+						ID:    toolID,
+						Name:  toolName,
+						Input: input,
+					}
+					handle.conversationMu.Unlock()
+				}
+
 				// Mark this question as handled via streaming (for deduplication with assistant handler)
 				streamStateMu.Lock()
 				if toolID != "" {
