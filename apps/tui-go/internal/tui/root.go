@@ -1894,6 +1894,15 @@ func (m *Model) sendQuestionResponse(response string) {
 		m.pendingQuestion.ToolUseID = ""
 	}
 
+	// Resume Claude BEFORE sending the response
+	// The process was paused when the question arrived - we need to resume it
+	// so it can read from stdin when we send the tool_result
+	if m.processHandle != nil {
+		m.processHandle.ResumeProcess()
+		// Small delay to ensure process is running and ready to read stdin
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	// Send as tool_result if we have a toolUseID, otherwise fall back to regular message
 	var err error
 	if toolUseID != "" {
@@ -1927,14 +1936,6 @@ func (m *Model) sendQuestionResponse(response string) {
 			Text: "Failed to send response: " + errMsg,
 			Type: "stderr",
 		})
-	}
-
-	// Resume Claude after sending the response
-	// We paused it when the question arrived to prevent race conditions
-	if m.processHandle != nil {
-		// Small delay to ensure stdin buffer is flushed before resuming
-		time.Sleep(50 * time.Millisecond)
-		m.processHandle.ResumeProcess()
 	}
 
 	// Update viewport to show the message
