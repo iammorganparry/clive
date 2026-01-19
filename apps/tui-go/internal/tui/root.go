@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -2004,9 +2005,17 @@ func (m *Model) startBuild() tea.Cmd {
 		return nil
 	}
 
-	// Clear scratchpad for fresh build session (context passed between iterations)
-	scratchpadPath := ".claude/scratchpad.md"
-	os.MkdirAll(".claude", 0755)
+	// Create epic-scoped scratchpad for context passed between iterations
+	var scratchpadPath string
+	if m.activeSession != nil && m.activeSession.EpicID != "" {
+		epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
+		os.MkdirAll(epicDir, 0755)
+		scratchpadPath = filepath.Join(epicDir, "scratchpad.md")
+	} else {
+		// Fallback for no epic (shouldn't happen in normal use)
+		os.MkdirAll(".claude", 0755)
+		scratchpadPath = ".claude/scratchpad.md"
+	}
 	scratchpadHeader := "# Build Session Scratchpad\n\nContext and notes passed between iterations.\n\n---\n\n"
 	os.WriteFile(scratchpadPath, []byte(scratchpadHeader), 0644)
 

@@ -33,7 +33,7 @@ The build agent will implement the work. Your job is ONLY to plan it.
 
 **Key Principles:**
 - **INTERVIEW FIRST**: Always interview the user before creating a plan. Understand their requirements deeply.
-- **PLAN DOCUMENT BEFORE ISSUES**: Write the plan to `.claude/current-plan.md` first, get approval, THEN create issues.
+- **PLAN DOCUMENT BEFORE ISSUES**: Write the plan to `${CLIVE_PLAN_FILE:-.claude/current-plan.md}` first, get approval, THEN create issues.
 - **CATEGORY DETECTION**: Automatically detect work type from request keywords
 - **SKILL ASSIGNMENT**: Each task must have an assigned skill for build.sh dispatch
 - ASK QUESTIONS - don't assume. The interview is the most valuable part of planning.
@@ -814,12 +814,14 @@ cat playwright.config.* 2>/dev/null | grep -E "(trace|screenshot)"
 
 The plan document serves as the approval artifact. The user reviews this before any issues are created.
 
-Write the plan to `.claude/current-plan.md`:
+Write the plan to the epic-scoped plan file (`${CLIVE_PLAN_FILE:-.claude/current-plan.md}`):
 
 ```bash
-mkdir -p .claude
+# Use epic-scoped path if set, otherwise default to .claude/current-plan.md
+PLAN_FILE="${CLIVE_PLAN_FILE:-.claude/current-plan.md}"
+mkdir -p "$(dirname "$PLAN_FILE")"
 
-cat > .claude/current-plan.md << 'PLANEOF'
+cat > "$PLAN_FILE" << 'PLANEOF'
 # Work Plan
 
 **Branch:** [BRANCH]
@@ -875,7 +877,7 @@ cat > .claude/current-plan.md << 'PLANEOF'
 [Any additional context, refactoring recommendations, or concerns]
 PLANEOF
 
-echo "✓ Plan document written to .claude/current-plan.md"
+echo "✓ Plan document written to $PLAN_FILE"
 ```
 
 **The plan document MUST include all information gathered during the interview:**
@@ -897,7 +899,7 @@ echo "✓ Plan document written to .claude/current-plan.md"
 
 Present the plan summary to the user:
 
-> "I've written the work plan to `.claude/current-plan.md`
+> "I've written the work plan to `$PLAN_FILE`
 >
 > **Summary:**
 > - [X] tasks planned
@@ -942,7 +944,7 @@ Use AskUserQuestion to request approval:
 
 2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **WAIT for their response.**
 
-3. **"Make changes"** → Ask what changes they want, update `.claude/current-plan.md`, present the updated plan, then ask for approval again. **WAIT for their response.**
+3. **"Make changes"** → Ask what changes they want, update `$PLAN_FILE`, present the updated plan, then ask for approval again. **WAIT for their response.**
 
 4. **"Start over"** → Clear the plan document, return to Step 4 (Interview Phase)
 
@@ -1118,7 +1120,7 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 ### Session Flow (MUST Follow This Order)
 
 1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic, wait for responses
-2. **Write plan document** - Save to `.claude/current-plan.md`
+2. **Write plan document** - Save to `$PLAN_FILE` (epic-scoped path)
 3. **Present plan** - Show summary to user
 4. **Ask for approval** - Use AskUserQuestion, wait for "Ready to implement"
 5. **Create issues** - ONLY after approval, create epic/parent and tasks/sub-issues (using beads OR Linear based on tracker preference)

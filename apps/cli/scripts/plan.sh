@@ -45,6 +45,17 @@ set -- "${POSITIONAL_ARGS[@]}"
 # Export parent ID for planning agent (if provided, skip creating a new parent issue)
 export CLIVE_PARENT_ID="$PARENT_ID"
 
+# Set epic-scoped paths for plan files
+if [ -n "$PARENT_ID" ]; then
+    EPIC_DIR=".claude/epics/$PARENT_ID"
+    mkdir -p "$EPIC_DIR"
+    export CLIVE_PLAN_FILE="$EPIC_DIR/current-plan.md"
+    export CLIVE_PROGRESS_FILE="$EPIC_DIR/progress.txt"
+else
+    export CLIVE_PLAN_FILE=".claude/current-plan.md"
+    export CLIVE_PROGRESS_FILE=".claude/progress.txt"
+fi
+
 # Verify prompt file exists
 if [ ! -f "$PLAN_PROMPT" ]; then
     echo "Error: Plan prompt not found at $PLAN_PROMPT"

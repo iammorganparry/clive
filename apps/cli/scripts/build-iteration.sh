@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/../../claude-code-plugin"
 SKILLS_DIR="$PLUGIN_DIR/skills"
-PROGRESS_FILE=".claude/progress.txt"
+# PROGRESS_FILE is set after argument parsing to support epic-scoped paths
 
 # Completion markers
 COMPLETION_MARKER="<promise>ALL_TASKS_COMPLETE</promise>"
@@ -104,6 +104,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set epic-scoped paths for scratchpad and progress files
+if [ -n "$EPIC_FILTER" ]; then
+    EPIC_DIR=".claude/epics/$EPIC_FILTER"
+    mkdir -p "$EPIC_DIR"
+    PROGRESS_FILE="$EPIC_DIR/progress.txt"
+    SCRATCHPAD_FILE="$EPIC_DIR/scratchpad.md"
+else
+    # Fallback for no epic (shouldn't happen in normal use)
+    PROGRESS_FILE=".claude/progress.txt"
+    SCRATCHPAD_FILE=".claude/scratchpad.md"
+fi
 
 # Verify skills directory
 if [ ! -d "$SKILLS_DIR" ]; then
@@ -215,7 +227,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Read scratchpad if it exists (context from previous iterations)
-SCRATCHPAD_FILE=".claude/scratchpad.md"
+# SCRATCHPAD_FILE is set earlier based on EPIC_FILTER
 SCRATCHPAD_CONTENT=""
 if [ -f "$SCRATCHPAD_FILE" ]; then
     SCRATCHPAD_CONTENT=$(cat "$SCRATCHPAD_FILE")
@@ -290,10 +302,10 @@ fi
     echo ""
     echo "## Scratchpad Update (REQUIRED before completing)"
     echo ""
-    echo "Before outputting the completion marker, append to .claude/scratchpad.md:"
+    echo "Before outputting the completion marker, append to $SCRATCHPAD_FILE:"
     echo ""
     echo '```bash'
-    echo 'cat >> .claude/scratchpad.md << '\''SCRATCHPAD'\'''
+    echo "cat >> $SCRATCHPAD_FILE << 'SCRATCHPAD'"
     echo ""
     echo "## Iteration $ITERATION - [Task Title]"
     echo '**Completed:** $(date +%Y-%m-%d\ %H:%M)'
