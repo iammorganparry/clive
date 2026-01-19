@@ -52,8 +52,16 @@ The build agent will implement the work. Your job is ONLY to plan it.
 1. **INTERVIEW IS MANDATORY** - Every planning session requires a user interview. No exceptions. Do not skip to plan creation.
 
 2. **WAIT FOR RESPONSES** - When you call AskUserQuestion, STOP and wait for the user's response. Do not continue in the same turn. The interview is a conversation, not a monologue.
+   - ⛔ **MANDATORY**: After calling AskUserQuestion, END YOUR TURN IMMEDIATELY
+   - ⛔ Do NOT call any other tools after AskUserQuestion
+   - ⛔ Do NOT output any additional text after AskUserQuestion
+   - ⛔ Do NOT read files, run bash commands, or do anything else
+   - ✅ ONLY call AskUserQuestion, then STOP
 
 3. **ONE QUESTION AT A TIME** - Ask one AskUserQuestion, wait for the response, acknowledge it, then ask the next question. Never batch multiple questions.
+   - ⛔ Do NOT ask multiple AskUserQuestion calls in one turn
+   - ⛔ Do NOT try to "fix" or "reformulate" a question in the same turn
+   - ⛔ If a question fails, STOP and wait for error handling
 
 4. **NO ASSUMPTIONS** - Do not assume what the user wants. Ask and confirm. If something is unclear, ask a follow-up question.
 
@@ -269,6 +277,12 @@ fi
 2. Ask the user: "I found an in-progress planning session. Would you like to resume or start fresh?"
 3. If resuming: Skip to the step indicated in the state file
 4. If starting fresh: Delete the state file and proceed from Step 1
+
+**⛔ CRITICAL: When resuming:**
+- Do NOT read previous answers from planning state and self-answer
+- Do NOT skip questions that were already asked
+- ALWAYS wait for user responses, even if resuming
+- The planning state shows WHAT to ask, not the answers
 
 **Planning state file format:**
 ```json
@@ -674,6 +688,12 @@ After reading the code in Step 3, summarize your understanding and ask for confi
 **CRITICAL RULES - Follow these exactly:**
 
 1. **ONE QUESTION AT A TIME** - Call AskUserQuestion once, then STOP. Wait for the user's response before asking the next question.
+   - ⛔ **YOU MUST END YOUR TURN AFTER AskUserQuestion**
+   - ⛔ Do NOT call AskUserQuestion multiple times in one turn
+   - ⛔ Do NOT continue with other work after calling AskUserQuestion
+   - ⛔ Do NOT try to self-answer by reading planning state or other files
+   - ⛔ Do NOT reformulate the question if you think the syntax is wrong - just wait
+   - ✅ Call AskUserQuestion → STOP → Wait for user → Resume in next turn
 
 2. **ACKNOWLEDGE RESPONSES** - After the user responds, acknowledge their answer before moving to the next topic:
    > "Got it - [summarize their response]. Let me ask about [next topic]..."
@@ -701,6 +721,64 @@ Before proceeding to Step 5, verify ALL of these:
 **If any item is unchecked, continue the interview.**
 
 **DO NOT proceed to Step 5 until the interview is complete.**
+
+---
+
+### 4.4 Anti-Patterns to AVOID
+
+**❌ WRONG: Asking multiple questions in one turn**
+```
+User: "I want to refactor the handlers"
+Assistant: [Reads code]
+Assistant: AskUserQuestion("Is this scope correct?")
+Assistant: AskUserQuestion("Which approach?")  # ❌ SECOND QUESTION - VIOLATION!
+Assistant: [Continues working]  # ❌ MORE WORK - VIOLATION!
+```
+
+**✅ CORRECT: One question, then STOP**
+```
+User: "I want to refactor the handlers"
+Assistant: [Reads code]
+Assistant: "I've analyzed the handlers. Let me confirm the scope..."
+Assistant: AskUserQuestion("Is this scope correct?")
+[TURN ENDS - Wait for user response]
+
+User: "Yes, that's correct"
+Assistant: "Great! Now let me ask about the approach..."
+Assistant: AskUserQuestion("Which approach?")
+[TURN ENDS - Wait for user response]
+```
+
+**❌ WRONG: Self-answering by reading planning state**
+```
+Assistant: AskUserQuestion("Which approach?")
+Assistant: "Let me check the planning state for the answer..."  # ❌ VIOLATION!
+Assistant: Bash("cat .claude/.planning-state.json")  # ❌ VIOLATION!
+Assistant: "I see the user wants unified handler..."  # ❌ VIOLATION!
+Assistant: SendToolResult("Unified handler")  # ❌ VIOLATION!
+```
+
+**✅ CORRECT: Wait for actual user response**
+```
+Assistant: AskUserQuestion("Which approach?")
+[TURN ENDS - Wait for user to answer]
+
+User: "Unified handler"
+Assistant: "Got it - unified handler approach. Moving on..."
+```
+
+**❌ WRONG: Reformulating question in same turn**
+```
+Assistant: AskUserQuestion("Question with possible syntax issue")
+Assistant: "Let me try with corrected syntax..."  # ❌ VIOLATION!
+Assistant: AskUserQuestion("Reformulated question")  # ❌ VIOLATION!
+```
+
+**✅ CORRECT: Accept the question as-is**
+```
+Assistant: AskUserQuestion("Question text")
+[TURN ENDS - If syntax error occurs, it will be handled by system]
+```
 
 ---
 
