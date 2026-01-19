@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/clive/tui-go/internal/config"
 )
 
 // ANSI escape code pattern for stripping all ANSI sequences from output
@@ -65,11 +67,12 @@ func stripANSI(s string) string {
 
 // Streaming state for accumulating text and tool inputs across chunks
 var (
-	streamingTextBuffer   strings.Builder    // Accumulates text to detect TASK_COMPLETE across chunks
-	currentToolName       string             // Current tool being streamed
-	currentToolID         string             // Current tool_use_id for responding to tool calls
-	currentToolInput      strings.Builder    // Accumulates tool input JSON
-	pendingBdRefresh      bool               // True when a bd command was seen and we need to refresh after execution
+	streamingTextBuffer   strings.Builder       // Accumulates text to detect TASK_COMPLETE across chunks
+	shownTextContent      strings.Builder       // Tracks all text shown via streaming to prevent duplicates
+	currentToolName       string                // Current tool being streamed
+	currentToolID         string                // Current tool_use_id for responding to tool calls
+	currentToolInput      strings.Builder       // Accumulates tool input JSON
+	pendingBdRefresh      bool                  // True when a bd command was seen and we need to refresh after execution
 	handledQuestionIDs    = make(map[string]bool) // Track all tool_use_ids already emitted via streaming (for dedup)
 	streamStateMu         sync.Mutex
 )
@@ -80,6 +83,7 @@ func ResetStreamingState() {
 	streamStateMu.Lock()
 	defer streamStateMu.Unlock()
 	streamingTextBuffer.Reset()
+	shownTextContent.Reset()
 	currentToolName = ""
 	currentToolID = ""
 	currentToolInput.Reset()
@@ -133,6 +137,8 @@ type OutputLine struct {
 	CloseStdin   bool // Set true when TASK_COMPLETE detected - signals Claude to exit
 	// Question data for AskUserQuestion tool
 	Question *QuestionData
+	// Debug info (raw event type and details for debug panel)
+	DebugInfo string
 }
 
 // QuestionData represents a question from Claude's AskUserQuestion tool
@@ -267,7 +273,7 @@ func findScriptsDir() string {
 	// Try relative to executable
 	execPath, err := os.Executable()
 	if err == nil {
-		// Go up from bin/clive-tui to tui-go, then to cli/scripts
+		// Go up from bin/clive to tui-go, then to cli/scripts
 		scriptsDir := filepath.Join(filepath.Dir(filepath.Dir(execPath)), "..", "cli", "scripts")
 		if _, err := os.Stat(scriptsDir); err == nil {
 			return scriptsDir
@@ -330,6 +336,26 @@ func RunPlan(input string, parentID string, outputChan chan<- OutputLine) *Proce
 func runScript(args []string, promptType string, outputChan chan<- OutputLine) *ProcessHandle {
 	cmd := exec.Command("bash", args...)
 	cmd.Dir, _ = os.Getwd()
+
+	// Pass environment variables to subprocess
+	// Include all current env vars, ensuring MCP-related vars are available
+	cmd.Env = os.Environ()
+
+	// Check if LINEAR_API_KEY is missing from environment
+	hasLinearKey := false
+	for _, env := range cmd.Env {
+		if strings.HasPrefix(env, "LINEAR_API_KEY=") {
+			hasLinearKey = true
+			break
+		}
+	}
+
+	// If missing, try to load from config as fallback
+	if !hasLinearKey {
+		if cfg, err := config.Load(); err == nil && cfg.Linear != nil && cfg.Linear.APIKey != "" {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("LINEAR_API_KEY=%s", cfg.Linear.APIKey))
+		}
+	}
 
 	stdin, _ := cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
@@ -620,17 +646,72 @@ func getString(m map[string]interface{}, key string) string {
 
 // parseNDJSONLine parses a line of NDJSON from Claude CLI
 // Returns a slice of OutputLines since some events contain multiple blocks
+// formatDebugInfo creates a debug string from an NDJSON event
+func formatDebugInfo(eventType string, data map[string]interface{}) string {
+	info := "[" + eventType + "]"
+
+	switch eventType {
+	case "content_block_delta":
+		if delta, ok := data["delta"].(map[string]interface{}); ok {
+			deltaType, _ := delta["type"].(string)
+			info += " " + deltaType
+			if deltaType == "text_delta" {
+				if text, ok := delta["text"].(string); ok {
+					if len(text) > 20 {
+						text = text[:20] + "..."
+					}
+					info += " \"" + strings.ReplaceAll(text, "\n", "\\n") + "\""
+				}
+			}
+		}
+	case "content_block_start":
+		if cb, ok := data["content_block"].(map[string]interface{}); ok {
+			blockType, _ := cb["type"].(string)
+			info += " " + blockType
+			if name, ok := cb["name"].(string); ok {
+				info += " " + name
+			}
+		}
+	case "content_block_stop":
+		if idx, ok := data["index"].(float64); ok {
+			info += fmt.Sprintf(" idx=%d", int(idx))
+		}
+	case "assistant":
+		if msg, ok := data["message"].(map[string]interface{}); ok {
+			if content, ok := msg["content"].([]interface{}); ok {
+				info += fmt.Sprintf(" blocks=%d", len(content))
+			}
+		}
+	case "result":
+		if subtype, ok := data["subtype"].(string); ok {
+			info += " " + subtype
+		}
+	case "error":
+		if errData, ok := data["error"].(map[string]interface{}); ok {
+			if msg, ok := errData["message"].(string); ok {
+				if len(msg) > 30 {
+					msg = msg[:30] + "..."
+				}
+				info += " " + msg
+			}
+		}
+	}
+
+	return info
+}
+
 func parseNDJSONLine(line string) []OutputLine {
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(line), &data); err != nil {
 		// Not JSON, return as plain text
 		if line != "" {
-			return []OutputLine{{Text: line + "\n", Type: "stdout"}}
+			return []OutputLine{{Text: line + "\n", Type: "stdout", DebugInfo: "[raw] " + line}}
 		}
 		return nil
 	}
 
 	eventType, _ := data["type"].(string)
+	debugInfo := formatDebugInfo(eventType, data)
 
 	switch eventType {
 	case "content_block_delta":
@@ -646,6 +727,9 @@ func parseNDJSONLine(line string) []OutputLine {
 				streamStateMu.Lock()
 				streamingTextBuffer.WriteString(text)
 				accumulated := streamingTextBuffer.String()
+
+				// Track this text as shown via streaming (for deduplication in assistant message)
+				shownTextContent.WriteString(text)
 
 				// Check for completion markers in accumulated text
 				isComplete := strings.Contains(accumulated, "TASK_COMPLETE") ||
@@ -665,6 +749,7 @@ func parseNDJSONLine(line string) []OutputLine {
 					Type:         "assistant",
 					RefreshTasks: isComplete,
 					CloseStdin:   isComplete,
+					DebugInfo:    debugInfo,
 				}}
 			}
 		}
@@ -725,6 +810,7 @@ func parseNDJSONLine(line string) []OutputLine {
 				Type:         "tool_call",
 				ToolName:     name,
 				RefreshTasks: refreshTasks,
+				DebugInfo:    debugInfo,
 			}}
 		}
 		if blockType == "text" {
@@ -739,6 +825,7 @@ func parseNDJSONLine(line string) []OutputLine {
 					Type:         "assistant",
 					RefreshTasks: isComplete,
 					CloseStdin:   isComplete,
+					DebugInfo:    debugInfo,
 				}}
 			}
 		}
@@ -779,10 +866,11 @@ func parseNDJSONLine(line string) []OutputLine {
 				}
 				streamStateMu.Unlock()
 				return []OutputLine{{
-					Text:     "❓ Awaiting response\n",
-					Type:     "question",
-					ToolName: toolName,
-					Question: qd,
+					Text:      "❓ Awaiting response\n",
+					Type:      "question",
+					ToolName:  toolName,
+					Question:  qd,
+					DebugInfo: debugInfo,
 				}}
 			}
 		}
@@ -805,10 +893,34 @@ func parseNDJSONLine(line string) []OutputLine {
 			if !ok {
 				continue
 			}
-			// SKIP text blocks - they were already emitted via streaming (content_block_delta)
-			// This prevents duplicate text output including question preambles
-			// Completion markers are also detected via streaming, so no loss of functionality
+			// Handle text blocks - only skip if already shown via streaming
 			if block["type"] == "text" {
+				textContent, _ := block["text"].(string)
+				if textContent != "" {
+					// Check if this text was already shown via streaming
+					streamStateMu.Lock()
+					shownViaStreaming := strings.Contains(shownTextContent.String(), textContent)
+					streamStateMu.Unlock()
+
+					if shownViaStreaming {
+						// Already displayed via content_block_delta - skip to avoid duplicate
+						continue
+					}
+
+					// Fallback: text wasn't shown via streaming, emit it now
+					// This prevents text loss if streaming events were missed
+					isComplete := strings.Contains(textContent, "TASK_COMPLETE") ||
+						strings.Contains(textContent, "ALL_TASKS_COMPLETE") ||
+						strings.Contains(textContent, "PLAN_COMPLETE")
+
+					results = append(results, OutputLine{
+						Text:         stripANSI(textContent) + "\n",
+						Type:         "assistant",
+						RefreshTasks: isComplete,
+						CloseStdin:   isComplete,
+						DebugInfo:    debugInfo,
+					})
+				}
 				continue
 			}
 			if block["type"] == "tool_use" {
@@ -856,10 +968,11 @@ func parseNDJSONLine(line string) []OutputLine {
 						qd.ToolUseID = toolID
 					}
 					results = append(results, OutputLine{
-						Text:     "❓ Awaiting response\n",
-						Type:     "question",
-						ToolName: name,
-						Question: qd,
+						Text:      "❓ Awaiting response\n",
+						Type:      "question",
+						ToolName:  name,
+						Question:  qd,
+						DebugInfo: debugInfo,
 					})
 					continue
 				}
@@ -869,6 +982,7 @@ func parseNDJSONLine(line string) []OutputLine {
 					Type:         "tool_call",
 					ToolName:     name,
 					RefreshTasks: refreshTasks,
+					DebugInfo:    debugInfo,
 				})
 			}
 		}
@@ -883,7 +997,7 @@ func parseNDJSONLine(line string) []OutputLine {
 		streamStateMu.Unlock()
 
 		if needRefresh {
-			return []OutputLine{{Type: "system", RefreshTasks: true}}
+			return []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}}
 		}
 
 		// Also check result content as fallback
@@ -897,7 +1011,7 @@ func parseNDJSONLine(line string) []OutputLine {
 				checkStr := result + " " + command
 				if strings.Contains(checkStr, "bd update") || strings.Contains(checkStr, "bd close") ||
 					strings.Contains(checkStr, "bd create") {
-					return []OutputLine{{Type: "system", RefreshTasks: true}}
+					return []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}}
 				}
 			}
 		}
@@ -907,7 +1021,7 @@ func parseNDJSONLine(line string) []OutputLine {
 		if errData != nil {
 			msg, _ := errData["message"].(string)
 			if msg != "" {
-				return []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr"}}
+				return []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr", DebugInfo: debugInfo}}
 			}
 		}
 	}
