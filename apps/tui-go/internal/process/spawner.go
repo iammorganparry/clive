@@ -74,6 +74,7 @@ var (
 	currentToolInput      strings.Builder       // Accumulates tool input JSON
 	pendingBdRefresh      bool                  // True when a bd command was seen and we need to refresh after execution
 	handledQuestionIDs    = make(map[string]bool) // Track all tool_use_ids already emitted via streaming (for dedup)
+	questionMessageIDs    = make(map[string]bool) // Track message IDs that contain AskUserQuestion (to skip text from those messages)
 	streamStateMu         sync.Mutex
 )
 
@@ -89,6 +90,7 @@ func ResetStreamingState() {
 	currentToolInput.Reset()
 	pendingBdRefresh = false
 	handledQuestionIDs = make(map[string]bool) // Clear the map
+	questionMessageIDs = make(map[string]bool) // Clear the map
 }
 
 // ToolUseBlock tracks a tool_use from Claude for matching with tool_result
@@ -1131,6 +1133,9 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			return nil
 		}
 
+		// Extract message ID for tracking question messages
+		messageID, _ := message["id"].(string)
+
 		// CRITICAL: Check if this message contains AskUserQuestion that was already handled via streaming
 		// Use the handledQuestionIDs map to check for specific tool_use_ids, not the generic flag
 		if handle != nil {
@@ -1155,18 +1160,33 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			}
 		}
 
-		// Pre-scan for AskUserQuestion - if found, skip all text blocks in this message
+		// Pre-scan for AskUserQuestion - if found, mark the message ID and skip all text blocks
 		// This prevents text like "Let me try that again..." from breaking message sequence
+		// CRITICAL: We track by message ID because Claude CLI may send text and tool_use as separate events
 		hasAskUserQuestion := false
 		for _, c := range content {
 			if block, ok := c.(map[string]interface{}); ok {
 				if block["type"] == "tool_use" {
 					if name, _ := block["name"].(string); name == "AskUserQuestion" {
 						hasAskUserQuestion = true
+						// Mark this message ID as containing a question
+						if messageID != "" {
+							streamStateMu.Lock()
+							questionMessageIDs[messageID] = true
+							streamStateMu.Unlock()
+						}
 						break
 					}
 				}
 			}
+		}
+
+		// Also check if this message ID was previously marked as containing a question
+		// This handles the case where text arrives in one event and tool_use in another
+		if !hasAskUserQuestion && messageID != "" {
+			streamStateMu.Lock()
+			hasAskUserQuestion = questionMessageIDs[messageID]
+			streamStateMu.Unlock()
 		}
 
 		// Return separate OutputLines for each content block
