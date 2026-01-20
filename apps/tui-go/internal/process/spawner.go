@@ -227,6 +227,11 @@ func (p *ProcessHandle) Wait() int {
 func (p *ProcessHandle) SendMessage(message string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Reset questionSeenThisTurn flag when user sends new input
+	// This allows the next AskUserQuestion to be shown
+	p.questionSeenThisTurn = false
+
 	if p.stdin == nil {
 		return fmt.Errorf("stdin is nil")
 	}
@@ -295,6 +300,11 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Reset questionSeenThisTurn flag when user responds to question
+	// This allows the next AskUserQuestion to be shown
+	p.questionSeenThisTurn = false
+
 	if p.stdin == nil {
 		return nil
 	}
@@ -1133,6 +1143,22 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					if alreadyHandled {
 						// Skip - already showed this question via streaming path
 						continue
+					}
+
+					// CRITICAL: Enforce single question per turn to prevent buffering issue
+					// where multiple questions arrive before pause takes effect
+					if handle != nil {
+						handle.mu.Lock()
+						if handle.questionSeenThisTurn {
+							handle.mu.Unlock()
+							fmt.Fprintf(os.Stderr, "[CLIVE] Discarding duplicate AskUserQuestion in assistant message (tool_id=%s)\n", toolID)
+							continue // Discard silently
+						}
+						handle.questionSeenThisTurn = true
+						handle.mu.Unlock()
+
+						// CRITICAL: Pause Claude NOW before it sends more messages
+						handle.PauseProcess()
 					}
 
 					// Emit the question from assistant message (non-streaming fallback)

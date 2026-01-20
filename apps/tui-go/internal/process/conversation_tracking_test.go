@@ -253,7 +253,8 @@ func TestQuestionDeduplication_DifferentToolUseID(t *testing.T) {
 		t.Error("Expected first question to be emitted")
 	}
 
-	// Second question with different ID should also be emitted
+	// Second question with different ID should be DISCARDED (new behavior to prevent 400 errors)
+	// Only ONE question per turn is allowed
 	outputs2 := parseNDJSONLine(createQuestion("toolu_second"), handle)
 	foundSecond := false
 	for _, output := range outputs2 {
@@ -262,8 +263,8 @@ func TestQuestionDeduplication_DifferentToolUseID(t *testing.T) {
 			break
 		}
 	}
-	if !foundSecond {
-		t.Error("Expected second question with different tool_use_id to be emitted")
+	if foundSecond {
+		t.Error("Expected second question with different tool_use_id to be discarded (only one question per turn)")
 	}
 }
 
@@ -424,8 +425,12 @@ func TestResetStreamingState_ClearsQuestionDedup(t *testing.T) {
 		t.Error("Expected second question to be deduplicated")
 	}
 
-	// Reset streaming state
+	// Reset streaming state (both global and per-handle)
 	ResetStreamingState()
+	// Also reset the per-handle flag so the next question can be shown
+	handle.mu.Lock()
+	handle.questionSeenThisTurn = false
+	handle.mu.Unlock()
 
 	// After reset, same question should be emitted again
 	outputs3 := parseNDJSONLine(string(msgJSON), handle)

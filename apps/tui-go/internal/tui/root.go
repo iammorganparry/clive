@@ -1914,6 +1914,11 @@ func (m *Model) sendQuestionResponse(response string) {
 		m.processHandle.ResumeProcess()
 		// Small delay to ensure process is running and ready to read stdin
 		time.Sleep(50 * time.Millisecond)
+
+		// Reset the questionSeenThisTurn flag so the next question can be shown
+		m.processHandle.mu.Lock()
+		m.processHandle.questionSeenThisTurn = false
+		m.processHandle.mu.Unlock()
 	}
 
 	// Send as tool_result if we have a toolUseID, otherwise fall back to regular message
