@@ -2162,6 +2162,12 @@ func (m *Model) sendAllQuestionResponses() {
 	}
 	response := string(answersJSON)
 
+	// DEBUG: Log what we're sending
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: fmt.Sprintf("[DEBUG] Sending tool_result content: %s", response),
+		Type: "debug",
+	})
+
 	// Send the same tool_result to ALL tool_use_ids (handles duplicates/retries)
 	var errors []string
 	for _, toolUseID := range toolUseIDs {
