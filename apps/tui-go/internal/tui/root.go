@@ -534,6 +534,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleQuestion(msg.line.Question)
 			// NOTE: We do NOT pause the process. The prompt instructs Claude to
 			// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
+		} else if msg.line.Type == "assistant" && m.pendingQuestion != nil {
+			// Clear pending question when we receive non-question assistant message
+			// This means Claude has moved on from asking questions
+			m.pendingQuestion = nil
+			m.showQuestionPanel = false
 		}
 		// NOTE: We intentionally do NOT clear ToolUseID when other content arrives.
 		// With streaming, Claude often sends more content after AskUserQuestion in the
@@ -591,10 +596,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// same response. Clearing the ID would prevent the user from answering properly.
 
 		// Handle question type - process each question through single handler
+		hasQuestion := false
+		hasAssistant := false
 		for _, line := range regularLines {
 			if line.Type == "question" && line.Question != nil {
 				m.handleQuestion(line.Question)
+				hasQuestion = true
+			} else if line.Type == "assistant" {
+				hasAssistant = true
 			}
+		}
+
+		// Clear pending question if we got assistant text but no new question
+		// This means Claude has moved on from asking questions
+		if hasAssistant && !hasQuestion && m.pendingQuestion != nil {
+			m.pendingQuestion = nil
+			m.showQuestionPanel = false
 		}
 
 		// If we found an exit message, trigger process finished
@@ -2117,8 +2134,9 @@ func (m *Model) sendAllQuestionResponses() {
 	}
 	toolUseIDs = deduplicatedIDs
 
-	// Clear state immediately to prevent duplicate sends
-	m.pendingQuestion.ToolUseID = ""
+	// Clear pendingQuestionIDs but KEEP pendingQuestion for duplicate detection
+	// Claude may send the same question again while streaming (before receiving our answer)
+	// We'll clear pendingQuestion when we receive a different message or a new question
 	m.pendingQuestionIDs = nil
 
 	// Reset the questionSeenThisTurn flag
