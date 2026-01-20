@@ -2142,42 +2142,37 @@ func (m *Model) sendAllQuestionResponses() {
 	// Reset the questionSeenThisTurn flag
 	m.processHandle.ResetQuestionFlag()
 
-	// Build the response according to AskUserQuestion spec from Claude Agent SDK docs:
-	// - Single question: send answer as plain string
-	// - Multiple questions: send as {"questions": [...], "answers": {"question text": "answer", ...}}
+	// Build the response according to Claude Agent SDK docs:
+	// ALWAYS send {"questions": [...], "answers": {"question text": "answer", ...}}
+	// This is required even for single questions!
 	// Keys in answers MUST be the actual question text, not indices
-	var response string
 
-	if len(m.pendingQuestion.Questions) == 1 {
-		// Single question - send plain string
-		response = m.questionAnswers["q0"]
-	} else {
-		// Multiple questions - map answers to question text (not indices)
-		answersMap := make(map[string]string)
-		for i, q := range m.pendingQuestion.Questions {
-			questionKey := fmt.Sprintf("q%d", i)
-			if answer, ok := m.questionAnswers[questionKey]; ok {
-				// Use the actual question text as the key
-				answersMap[q.Question] = answer
-			}
+	// Map answers to question text (not indices)
+	answersMap := make(map[string]string)
+	for i, q := range m.pendingQuestion.Questions {
+		questionKey := fmt.Sprintf("q%d", i)
+		if answer, ok := m.questionAnswers[questionKey]; ok {
+			// Use the actual question text as the key
+			answersMap[q.Question] = answer
 		}
-
-		// Include both the original questions array AND the answers
-		responseObj := map[string]interface{}{
-			"questions": m.pendingQuestion.Questions,
-			"answers":   answersMap,
-		}
-
-		answersJSON, marshalErr := json.Marshal(responseObj)
-		if marshalErr != nil {
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: "Failed to format answers: " + marshalErr.Error(),
-				Type: "stderr",
-			})
-			return
-		}
-		response = string(answersJSON)
 	}
+
+	// Include both the original questions array AND the answers
+	// This format is required for both single and multiple questions
+	responseObj := map[string]interface{}{
+		"questions": m.pendingQuestion.Questions,
+		"answers":   answersMap,
+	}
+
+	answersJSON, marshalErr := json.Marshal(responseObj)
+	if marshalErr != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Failed to format answers: " + marshalErr.Error(),
+			Type: "stderr",
+		})
+		return
+	}
+	response := string(answersJSON)
 
 	// Send the same tool_result to ALL tool_use_ids (handles duplicates/retries)
 	var errors []string
