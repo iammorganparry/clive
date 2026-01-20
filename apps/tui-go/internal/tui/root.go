@@ -1907,10 +1907,41 @@ func (m *Model) sendQuestionResponse(response string) {
 		m.pendingQuestion.ToolUseID = ""
 	}
 
-	// Resume Claude BEFORE sending the response
-	// The process was paused when the question arrived - we need to resume it
-	// so it can read from stdin when we send the tool_result
+	// Check if we need to restart the process (kill/restart approach for AskUserQuestion)
+	if m.processHandle != nil && m.processHandle.NeedsRestart() {
+		// Restart the process with the user's answer as continuation context
+		// This avoids the 400 error from stale tool_use_ids
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "🔄 Restarting session with your answer...",
+			Type: "system",
+		})
+		m.viewport.SetContent(m.renderOutputContent())
+		m.viewport.GotoBottom()
+
+		newHandle := m.processHandle.RestartWithAnswer(response)
+		if newHandle != nil {
+			m.processHandle = newHandle
+			m.processHandle.ClearPendingQuestion()
+		} else {
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "Failed to restart process",
+				Type: "stderr",
+			})
+		}
+
+		// Clear pending question state
+		m.pendingQuestion = nil
+		m.input.SetValue("")
+		m.showQuestionPanel = false
+		return
+	}
+
+	// Normal flow (no restart needed)
 	if m.processHandle != nil {
+
+		// Normal flow: Resume Claude BEFORE sending the response
+		// The process was paused when the question arrived - we need to resume it
+		// so it can read from stdin when we send the tool_result
 		m.processHandle.ResumeProcess()
 		// Small delay to ensure process is running and ready to read stdin
 		time.Sleep(50 * time.Millisecond)
