@@ -21,6 +21,9 @@ import (
 	"github.com/clive/tui-go/internal/tracker"
 )
 
+// Version is set at build time via ldflags
+var Version = "dev"
+
 // ViewMode represents the current view
 type ViewMode int
 
@@ -1010,6 +1013,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.epicSearchInput.SetValue("")
 					m.epicSearchQuery = ""
 					// Load tasks for selected epic
+					m.loadingTasks = true
 					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 			case msg.String() == "n" && m.epicSearchInput.Value() == "":
@@ -1129,8 +1133,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Refresh):
 			// Refresh epics and tasks
+			m.loadingEpics = true
 			cmds = append(cmds, m.loadEpicsCmd())
 			if m.activeSession != nil {
+				m.loadingTasks = true
 				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 			return m, tea.Batch(cmds...)
@@ -1317,6 +1323,20 @@ func (m Model) renderInput() string {
 func (m Model) renderSidebar(width, height int) string {
 	title := SidebarTitleStyle.Render("TASKS")
 
+	content := title + "\n\n"
+
+	// Show loading state if tasks are being fetched
+	if m.loadingTasks {
+		spinner := spinnerFrames[m.spinnerIndex%len(spinnerFrames)]
+		content += lipgloss.NewStyle().
+			Foreground(ColorYellow).
+			Render(spinner + " Loading tasks...")
+		return SidebarStyle.
+			Width(width).
+			Height(height).
+			Render(content)
+	}
+
 	// Group tasks by status
 	var pending, inProgress, complete []model.Task
 	for _, t := range m.tasks {
@@ -1330,7 +1350,6 @@ func (m Model) renderSidebar(width, height int) string {
 		}
 	}
 
-	content := title + "\n\n"
 	maxDisplay := 10 // Max tasks to show per category
 
 	if len(inProgress) > 0 {
@@ -1595,7 +1614,16 @@ func (m Model) renderStatusBar() string {
 			keyStyle.Render("Ctrl+C") + mutedStyle.Render(" quit")
 	}
 
-	return StatusBarStyle.Render(status + taskCount + helpHint)
+	// Version info - right aligned, small and faint
+	version := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(" │ v" + Version)
+
+	// Combine left and right parts
+	leftPart := status + taskCount + helpHint
+	fullBar := leftPart + version
+
+	return StatusBarStyle.Render(fullBar)
 }
 
 // helpView renders the help overlay
