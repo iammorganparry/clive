@@ -40,17 +40,40 @@ This is planning, not implementation. You analyze, ask questions, and create pla
 
 ## How This Conversation Works
 
-### Understanding the Work
+### Understanding the Work (Phase 1: Research & Understanding)
 
 The user has given you a request: `$ARGUMENTS`
 
-Your first job is to understand this request deeply. This means:
+Your first job is to **thoroughly investigate the codebase** to understand this request deeply.
 
-1. **Read the request carefully** - What are they actually asking for?
-2. **Explore the relevant code** - Where does this work fit in the codebase?
-3. **Ask clarifying questions** - What's unclear? What decisions need to be made?
+**Research checklist:**
+1. **Current architecture and relevant code patterns**
+   - How is similar functionality currently implemented?
+   - What patterns and conventions exist in the codebase?
 
-Don't rush. Take time to explore. Ask questions when you need to.
+2. **Existing implementations of similar features/fixes**
+   - Are there examples to learn from or follow?
+   - What worked well? What didn't?
+
+3. **Dependencies, libraries, and frameworks in use**
+   - What tools are already available?
+   - What needs to be added?
+
+4. **File structure and organization**
+   - Where does this work belong?
+   - What files will be affected?
+
+5. **Related components that may be affected**
+   - What depends on this code?
+   - What might break?
+
+**Then analyze the request** to identify:
+- Core requirements and objectives
+- Potential challenges or edge cases
+- Dependencies on other systems/components
+- Security, performance, or UX considerations
+
+Don't rush. Take time to explore thoroughly. Ask questions when you need to.
 
 ### Asking Questions
 
@@ -163,22 +186,67 @@ High-level approach and key decisions:
 Any important architectural choices made:
 - **[Decision]:** [Chosen approach] because [reasoning]
 
+## Implementation Plan
+
+**Organization:**
+- Group related tasks into **logical phases** (e.g., "Setup", "Core Implementation", "Testing", "Polish")
+- Each phase should build on the previous one
+- Within phases, order tasks by dependencies (prerequisites first)
+- Identify which tasks can be done in parallel
+
 ## Implementation Tasks
 
 ### Epic/Parent: [Epic Title]
 **Category:** [feature|refactor|test|bugfix|docs]
 
+**Task Breakdown Principles:**
+- Every task must be ATOMIC - a single, committable piece of work
+- Every task must include TESTS or another form of validation
+- Tasks should be small and focused - they compose up to achieve the sprint/epic goal
+- Each completed task should produce demoable, working software
+- Tasks should build on top of previous work incrementally
+- Be exhaustive and technical in task descriptions
+
+**Each task must:**
+- Be **specific and actionable** (not vague)
+- Be **small enough to complete in under 100k tokens** (estimate conservatively)
+- Have **clear inputs and outputs**
+- Be **independently testable** when possible
+- Include **file paths and specific code locations** when relevant
+- Include any **necessary dependencies or prerequisites** so eligible tasks can be completed in parallel
+- Include a **perceived complexity score (1-10)** to help prioritize
+
+**Breaking down large tasks:**
+If a task seems too large (e.g., "Implement entire authentication system"), break it into smaller tasks:
+- ✗ Bad: "Implement Google OAuth"
+- ✓ Good:
+  - "Add Google OAuth config to environment variables"
+  - "Install and configure passport-google-oauth20 package"
+  - "Create OAuth callback route handler in src/routes/auth.ts"
+  - "Add Google sign-in button to login UI"
+  - etc.
+
 #### Task 1: [Task Title]
 **Skill:** [nextjs|react|trpc|database|playwright|vitest|docs|general]
-**Description:** What needs to be done
-**Files:** Critical files that will be modified
+**Complexity:** [1-10, where 1=trivial, 10=very complex]
+**Description:** What needs to be done (be specific and technical)
+**Inputs:** What's needed to start this task (files, data, prerequisites)
+**Outputs:** What this task produces (files created/modified, functionality added)
+**Validation:** How to verify this task is complete (tests, manual verification, etc.)
+**Files:** Critical files that will be modified (with paths)
+**Dependencies:** Tasks that must complete before this one (if any)
 
 #### Task 2: [Task Title]
-**Skill:** [skill]
-**Description:** What needs to be done
-**Files:** Critical files
+**Skill:** [nextjs|react|trpc|database|playwright|vitest|docs|general]
+**Complexity:** [1-10]
+**Description:** What needs to be done (be specific and technical)
+**Inputs:** What's needed to start this task
+**Outputs:** What this task produces
+**Validation:** How to verify completion
+**Files:** Critical files that will be modified (with paths)
+**Dependencies:** Tasks that must complete before this one (if any)
 
-[... more tasks ...]
+[... more tasks with same structure ...]
 
 ## Testing Strategy
 How this work will be verified:
