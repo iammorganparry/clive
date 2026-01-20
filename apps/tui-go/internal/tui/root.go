@@ -2142,29 +2142,17 @@ func (m *Model) sendAllQuestionResponses() {
 	// Reset the questionSeenThisTurn flag
 	m.processHandle.ResetQuestionFlag()
 
-	// Build the response according to Claude Agent SDK docs:
-	// ALWAYS send {"questions": [...], "answers": {"question text": "answer", ...}}
-	// This is required even for single questions!
-	// Keys in answers MUST be the actual question text, not indices
-
-	// Map answers to question text (not indices)
+	// Build the response: Just send the answers object directly
+	// Keys must be the actual question text (not indices)
 	answersMap := make(map[string]string)
 	for i, q := range m.pendingQuestion.Questions {
 		questionKey := fmt.Sprintf("q%d", i)
 		if answer, ok := m.questionAnswers[questionKey]; ok {
-			// Use the actual question text as the key
 			answersMap[q.Question] = answer
 		}
 	}
 
-	// Include both the original questions array AND the answers
-	// This format is required for both single and multiple questions
-	responseObj := map[string]interface{}{
-		"questions": m.pendingQuestion.Questions,
-		"answers":   answersMap,
-	}
-
-	answersJSON, marshalErr := json.Marshal(responseObj)
+	answersJSON, marshalErr := json.Marshal(answersMap)
 	if marshalErr != nil {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: "Failed to format answers: " + marshalErr.Error(),
