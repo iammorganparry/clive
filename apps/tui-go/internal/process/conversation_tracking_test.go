@@ -427,9 +427,10 @@ func TestResetStreamingState_ClearsQuestionDedup(t *testing.T) {
 
 	// Reset streaming state (both global and per-handle)
 	ResetStreamingState()
-	// Also reset the per-handle flag so the next question can be shown
+	// Also reset the per-handle flags so the next question can be shown
 	handle.mu.Lock()
 	handle.questionSeenThisTurn = false
+	handle.skipUntilToolResult = false
 	handle.mu.Unlock()
 
 	// After reset, same question should be emitted again

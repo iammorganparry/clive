@@ -110,9 +110,10 @@ type ProcessHandle struct {
 
 	// Conversation tracking for tool_use/tool_result matching
 	// This prevents API errors when sending tool_result with invalid tool_use_id
-	conversationMu       sync.Mutex
-	pendingToolUses      map[string]ToolUseBlock // tool_use_id -> tool_use block
-	questionSeenThisTurn bool                     // Prevents duplicate AskUserQuestion from buffered output
+	conversationMu        sync.Mutex
+	pendingToolUses       map[string]ToolUseBlock // tool_use_id -> tool_use block
+	questionSeenThisTurn  bool                     // Prevents duplicate AskUserQuestion from buffered output
+	skipUntilToolResult   bool                     // Skip all messages after AskUserQuestion until user responds
 
 	// Conversation logging for debugging
 	logger *ConversationLogger
@@ -238,6 +239,8 @@ func (p *ProcessHandle) SendMessage(message string) error {
 	// Reset questionSeenThisTurn flag when user sends new input
 	// This allows the next AskUserQuestion to be shown
 	p.questionSeenThisTurn = false
+	// Also reset skipUntilToolResult flag
+	p.skipUntilToolResult = false
 
 	if p.stdin == nil {
 		return fmt.Errorf("stdin is nil")
@@ -311,6 +314,8 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	// Reset questionSeenThisTurn flag when user responds to question
 	// This allows the next AskUserQuestion to be shown
 	p.questionSeenThisTurn = false
+	// Also reset skipUntilToolResult flag - user has responded, resume processing messages
+	p.skipUntilToolResult = false
 
 	if p.stdin == nil {
 		return nil
@@ -1068,6 +1073,19 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		return nil
 
 	case "assistant":
+		// CRITICAL: Skip all assistant messages after AskUserQuestion until user responds
+		// This prevents showing messages that arrived in stdout buffer after the question
+		if handle != nil {
+			handle.mu.Lock()
+			shouldSkip := handle.skipUntilToolResult
+			handle.mu.Unlock()
+
+			if shouldSkip {
+				fmt.Fprintf(os.Stderr, "[CLIVE] Skipping assistant message (waiting for user response to question)\n")
+				return nil
+			}
+		}
+
 		message, ok := data["message"].(map[string]interface{})
 		if !ok {
 			return nil
@@ -1185,6 +1203,9 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 							continue // Discard silently
 						}
 						handle.questionSeenThisTurn = true
+						// CRITICAL: Set a flag to skip all subsequent messages until user responds
+						// This prevents rendering messages that arrive AFTER the question
+						handle.skipUntilToolResult = true
 						handle.mu.Unlock()
 
 						// CRITICAL: Pause Claude NOW before it sends more messages
