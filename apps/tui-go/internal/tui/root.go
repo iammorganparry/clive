@@ -1180,8 +1180,8 @@ func (m Model) mainView() string {
 	header := m.renderHeader()
 
 	// Calculate body dimensions
-	// Account for: header (2 lines), input (3 lines), status bar (1 line)
-	bodyHeight := m.height - 6
+	// Account for: header (2 lines), input (3 lines), status bar (1 line), version footer (1 line)
+	bodyHeight := m.height - 7
 
 	// Sidebar (30 chars wide)
 	sidebarWidth := 30
@@ -1212,11 +1212,15 @@ func (m Model) mainView() string {
 	// Status bar
 	statusBar := m.renderStatusBar()
 
+	// Version footer
+	versionFooter := m.renderVersionFooter()
+
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		body,
 		input,
 		statusBar,
+		versionFooter,
 	)
 }
 
@@ -1614,16 +1618,17 @@ func (m Model) renderStatusBar() string {
 			keyStyle.Render("Ctrl+C") + mutedStyle.Render(" quit")
 	}
 
-	// Version info - right aligned, small and faint
+	return StatusBarStyle.Render(status + taskCount + helpHint)
+}
+
+// renderVersionFooter renders a small centered version footer for all views
+func (m Model) renderVersionFooter() string {
 	version := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render(" │ v" + Version)
-
-	// Combine left and right parts
-	leftPart := status + taskCount + helpHint
-	fullBar := leftPart + version
-
-	return StatusBarStyle.Render(fullBar)
+		Width(m.width).
+		Align(lipgloss.Center).
+		Render("v" + Version)
+	return version
 }
 
 // helpView renders the help overlay
@@ -1649,12 +1654,21 @@ func (m Model) helpView() string {
 	// Center the help box
 	helpBox := HelpStyle.Render(content)
 
-	return lipgloss.Place(
+	// Place the help box centered, accounting for version footer
+	centeredHelp := lipgloss.Place(
 		m.width,
-		m.height,
+		m.height-1, // Reserve 1 line for version footer
 		lipgloss.Center,
 		lipgloss.Center,
 		helpBox,
+	)
+
+	// Add version footer at bottom
+	versionFooter := m.renderVersionFooter()
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		centeredHelp,
+		versionFooter,
 	)
 }
 
@@ -1737,12 +1751,21 @@ func (m Model) setupView() string {
 		Padding(1, 2).
 		Render(content.String())
 
-	return lipgloss.Place(
+	// Place the selection box centered, accounting for version footer
+	centeredBox := lipgloss.Place(
 		m.width,
-		m.height,
+		m.height-1, // Reserve 1 line for version footer
 		lipgloss.Center,
 		lipgloss.Center,
 		selectionBox,
+	)
+
+	// Add version footer at bottom
+	versionFooter := m.renderVersionFooter()
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		centeredBox,
+		versionFooter,
 	)
 }
 
@@ -1853,12 +1876,21 @@ func (m Model) selectionView() string {
 		Width(52). // Fixed width: 44 (search box) + 4 (padding) + 4 (border)
 		Render(content.String())
 
-	return lipgloss.Place(
+	// Place the selection box centered, accounting for version footer
+	centeredBox := lipgloss.Place(
 		m.width,
-		m.height,
+		m.height-1, // Reserve 1 line for version footer
 		lipgloss.Center,
 		lipgloss.Center,
 		selectionBox,
+	)
+
+	// Add version footer at bottom
+	versionFooter := m.renderVersionFooter()
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		centeredBox,
+		versionFooter,
 	)
 }
 
