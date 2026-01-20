@@ -1155,6 +1155,20 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			}
 		}
 
+		// Pre-scan for AskUserQuestion - if found, skip all text blocks in this message
+		// This prevents text like "Let me try that again..." from breaking message sequence
+		hasAskUserQuestion := false
+		for _, c := range content {
+			if block, ok := c.(map[string]interface{}); ok {
+				if block["type"] == "tool_use" {
+					if name, _ := block["name"].(string); name == "AskUserQuestion" {
+						hasAskUserQuestion = true
+						break
+					}
+				}
+			}
+		}
+
 		// Return separate OutputLines for each content block
 		var results []OutputLine
 		for _, c := range content {
@@ -1166,6 +1180,12 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			if block["type"] == "text" {
 				textContent, _ := block["text"].(string)
 				if textContent != "" {
+					// Skip text blocks if this message contains AskUserQuestion
+					// This prevents breaking the message sequence with text between tool_use and tool_result
+					if hasAskUserQuestion {
+						continue
+					}
+
 					// Check if this text was already shown via streaming
 					streamStateMu.Lock()
 					shownViaStreaming := strings.Contains(shownTextContent.String(), textContent)
