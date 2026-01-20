@@ -110,8 +110,9 @@ type ProcessHandle struct {
 
 	// Conversation tracking for tool_use/tool_result matching
 	// This prevents API errors when sending tool_result with invalid tool_use_id
-	conversationMu  sync.Mutex
-	pendingToolUses map[string]ToolUseBlock // tool_use_id -> tool_use block
+	conversationMu       sync.Mutex
+	pendingToolUses      map[string]ToolUseBlock // tool_use_id -> tool_use block
+	questionSeenThisTurn bool                     // Prevents duplicate AskUserQuestion from buffered output
 
 	// Conversation logging for debugging
 	logger *ConversationLogger
@@ -329,6 +330,9 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	}
 
 	_, err = p.stdin.Write(append(data, '\n'))
+
+	// Reset flag to allow next question (note: p.mu is still held from line 296)
+	p.questionSeenThisTurn = false
 
 	// Note: Cleanup already happened atomically during validation (before lock release)
 	// This prevents race conditions where multiple threads could send duplicate tool_results
@@ -915,8 +919,19 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			// from continuing past the question. Defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
-				// CRITICAL: Pause Claude NOW before it sends more messages
 				if handle != nil {
+					// CRITICAL: Only show ONE question per turn to prevent buffering issue
+					// where multiple questions arrive before pause takes effect
+					handle.mu.Lock()
+					if handle.questionSeenThisTurn {
+						handle.mu.Unlock()
+						fmt.Fprintf(os.Stderr, "[CLIVE] Discarding duplicate AskUserQuestion (tool_id=%s)\n", toolID)
+						return nil // Discard silently
+					}
+					handle.questionSeenThisTurn = true
+					handle.mu.Unlock()
+
+					// CRITICAL: Pause Claude NOW before it sends more messages
 					handle.PauseProcess()
 				}
 				return nil
