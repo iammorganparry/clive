@@ -244,7 +244,7 @@ func NewRootModel(cfg *config.Config) Model {
 		keys:            DefaultKeyMap(),
 		ready:           false,
 		selectedIndex:   0,
-		loadingEpics:    false,
+		loadingEpics:    true, // Start as loading to show spinner while fetching epics
 	}
 }
 
@@ -266,6 +266,7 @@ func (m Model) Init() tea.Cmd {
 
 	// Only load epics if we have a provider (not in setup mode)
 	if m.provider != nil {
+		m.loadingEpics = true
 		cmds = append(cmds, m.loadEpicsCmd())
 	}
 
@@ -435,9 +436,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tasksLoadedMsg:
 		m.tasks = msg.tasks
 		m.loadingTasks = false
-		// Cache tasks immediately after loading for the sidebar
-		// This ensures the cache is always fresh when build starts
-		m.cacheTasksForBuild()
+		// Cache tasks immediately after loading for the sidebar and build agent
+		// ALWAYS cache when we have an active session with an epic ID
+		if m.activeSession != nil && m.activeSession.EpicID != "" {
+			m.cacheTasksForBuild()
+		}
 
 	case configSavedMsg:
 		if msg.err != nil {
@@ -511,6 +514,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle RefreshTasks flag - immediately refresh task sidebar
 		if msg.line.RefreshTasks {
 			if m.activeSession != nil {
+				m.loadingTasks = true
 				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 		}
@@ -574,6 +578,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, line := range regularLines {
 			if line.RefreshTasks {
 				if m.activeSession != nil {
+					m.loadingTasks = true
 					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 			}
@@ -659,6 +664,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Refresh tasks before next iteration
 				if m.activeSession != nil {
+					m.loadingTasks = true
 					cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 				}
 
@@ -685,6 +691,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Refresh tasks after process finishes
 		if m.activeSession != nil {
+			m.loadingTasks = true
 			cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 		}
 
@@ -703,6 +710,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			// Refresh task list
 			if m.activeSession != nil {
+				m.loadingTasks = true
 				cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 			}
 		} else {
@@ -731,6 +739,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Refresh tasks if in main view
 		if m.activeSession != nil {
+			m.loadingTasks = true
 			cmds = append(cmds, m.loadTasksCmd(m.activeSession.EpicID))
 		}
 
@@ -1005,6 +1014,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.Enter):
 				if len(filtered) > 0 && m.selectedIndex < len(filtered) {
 					m.activeSession = &filtered[m.selectedIndex]
+
+					// Create cache directory structure IMMEDIATELY when epic is selected
+					// This ensures the build agent can find the cache even before tasks finish loading
+					if m.activeSession.EpicID != "" {
+						epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
+						if err := os.MkdirAll(epicDir, 0755); err == nil {
+							// Create empty tasks.json if it doesn't exist
+							tasksPath := filepath.Join(epicDir, "tasks.json")
+							if _, err := os.Stat(tasksPath); os.IsNotExist(err) {
+								os.WriteFile(tasksPath, []byte("[]"), 0644)
+							}
+						}
+					}
+
 					m.viewMode = ViewModeMain
 					// Clear inputs when entering main view
 					m.input.SetValue("")
@@ -2233,6 +2256,19 @@ func (m *Model) startPlan(input string) tea.Cmd {
 // cacheTasksForBuild writes the current task list to disk for the build agent
 // Returns true if successful, false if failed (with error output to user)
 func (m *Model) cacheTasksForBuild() bool {
+	// Debug: Log when cache function is called
+	epicID := "nil"
+	if m.activeSession != nil {
+		epicID = m.activeSession.EpicID
+	}
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: fmt.Sprintf("[CACHE] cacheTasksForBuild called - activeSession: %v, EpicID: %s, tasks: %d",
+			m.activeSession != nil,
+			epicID,
+			len(m.tasks)),
+		Type: "system",
+	})
+
 	if m.activeSession == nil || m.activeSession.EpicID == "" {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: "Warning: No active session - tasks not cached",
@@ -2251,6 +2287,11 @@ func (m *Model) cacheTasksForBuild() bool {
 
 	// Create epic directory
 	epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
+	absPath, _ := filepath.Abs(epicDir)
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: fmt.Sprintf("[CACHE] Writing to: %s", absPath),
+		Type: "system",
+	})
 	if err := os.MkdirAll(epicDir, 0755); err != nil {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: fmt.Sprintf("Error: Failed to create epic directory: %v", err),
