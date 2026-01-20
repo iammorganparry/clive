@@ -542,7 +542,18 @@ The interview keeps the session open until you have gathered sufficient context.
 
 ### 4.2 Required Interview Topics
 
-For EACH topic below, use `AskUserQuestion` and **WAIT** for the user's response before proceeding to the next topic. Do NOT ask multiple questions in one turn.
+For EACH topic below, use `AskUserQuestion` then **IMMEDIATELY END YOUR TURN**.
+
+**⚠️ CRITICAL - After calling AskUserQuestion:**
+1. **END YOUR TURN IMMEDIATELY** - Do NOT make any more tool calls (no Read, Bash, Write, etc.)
+2. Do NOT continue to the next interview topic
+3. Do NOT output any more text after the AskUserQuestion tool call
+4. Your turn MUST end after AskUserQuestion - the conversation will pause here
+5. You will receive the user's response in the next turn via tool_result and can continue naturally from where you left off
+
+**When you receive the tool_result**, continue naturally from the next interview topic or next step in your process. The conversation context is preserved - you remember all previous answers.
+
+**Do NOT ask multiple questions in one turn** - ask ONE question, END YOUR TURN, wait for response.
 
 ---
 
@@ -915,13 +926,18 @@ Use AskUserQuestion to request approval:
 - "Make changes"
 - "Start over"
 
+**⚠️ CRITICAL - After calling AskUserQuestion for approval:**
+- **END YOUR TURN IMMEDIATELY** - Do NOT make any more tool calls
+- Do NOT proceed to Step 9 yet - wait for user's response
+- You will receive the tool_result in the next turn
+
 **Handle each response:**
 
 1. **"Ready to implement"** → Proceed to Step 9 (Create Issues)
 
-2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **WAIT for their response.**
+2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **END YOUR TURN after calling AskUserQuestion.**
 
-3. **"Make changes"** → Ask what changes they want, update `$PLAN_FILE`, present the updated plan, then ask for approval again. **WAIT for their response.**
+3. **"Make changes"** → Ask what changes they want, update `$PLAN_FILE`, present the updated plan, then ask for approval again. **END YOUR TURN after calling AskUserQuestion.**
 
 4. **"Start over"** → Clear the plan document, return to Step 4 (Interview Phase)
 
@@ -929,6 +945,7 @@ Use AskUserQuestion to request approval:
 - Do NOT proceed to Step 9 without "Ready to implement" response
 - If user has questions or wants changes, you MUST address them and ask for approval AGAIN
 - Keep asking until you get "Ready to implement"
+- **ALWAYS END YOUR TURN after calling AskUserQuestion**
 
 ---
 
@@ -1122,12 +1139,14 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 
 ### Session Flow (MUST Follow This Order)
 
-1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic, wait for responses
+1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic. **END YOUR TURN after EACH question.** Continue naturally when you receive responses.
 2. **Write plan document** - Save to `$PLAN_FILE` (epic-scoped path)
 3. **Present plan** - Show summary to user
-4. **Ask for approval** - Use AskUserQuestion, wait for "Ready to implement"
+4. **Ask for approval** - Use AskUserQuestion. **END YOUR TURN.** Wait for "Ready to implement" response.
 5. **Create issues** - ONLY after approval, create epic/parent and tasks/sub-issues (using beads OR Linear based on tracker preference)
 6. **Output PLAN_COMPLETE** - Session ends
+
+**⚠️ CRITICAL**: Every time you call AskUserQuestion, your turn MUST end immediately. Do NOT continue with any other actions.
 
 ### You are NOT allowed to:
 - Skip the interview phase

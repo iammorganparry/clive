@@ -115,15 +115,6 @@ type ProcessHandle struct {
 	questionSeenThisTurn  bool                     // Prevents duplicate AskUserQuestion from buffered output
 	skipUntilToolResult   bool                     // Skip all messages after AskUserQuestion until user responds
 
-	// Kill/restart state for handling AskUserQuestion
-	// When rapid API calls cause stale tool_use_ids, we kill and restart
-	needsRestart          bool                     // Process was killed due to AskUserQuestion, needs restart
-	pendingQuestion       *QuestionData            // The question waiting for user response
-	pendingQuestionText   string                   // Full question text for context
-	restartArgs           []string                 // Original arguments to restart the process
-	restartPromptType     string                   // "plan" or "build"
-	restartOutputChan     chan<- OutputLine        // Output channel for restarted process
-
 	// Conversation logging for debugging
 	logger *ConversationLogger
 }
@@ -201,29 +192,6 @@ func (p *ProcessHandle) Interrupt() {
 	}
 }
 
-// PauseProcess sends SIGTSTP to pause the Claude process
-// This is used to prevent race conditions when AskUserQuestion is received -
-// we pause Claude so it doesn't continue generating output while waiting for user input
-func (p *ProcessHandle) PauseProcess() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cmd == nil || p.cmd.Process == nil {
-		return fmt.Errorf("process not running")
-	}
-	return p.cmd.Process.Signal(syscall.SIGTSTP)
-}
-
-// ResumeProcess sends SIGCONT to resume the Claude process
-// This is called after sending the tool_result for AskUserQuestion
-func (p *ProcessHandle) ResumeProcess() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cmd == nil || p.cmd.Process == nil {
-		return fmt.Errorf("process not running")
-	}
-	return p.cmd.Process.Signal(syscall.SIGCONT)
-}
-
 // ResetQuestionFlag resets the questionSeenThisTurn flag to allow the next question
 func (p *ProcessHandle) ResetQuestionFlag() {
 	p.mu.Lock()
@@ -232,97 +200,6 @@ func (p *ProcessHandle) ResetQuestionFlag() {
 }
 
 // NeedsRestart returns true if the process was killed and needs to be restarted
-func (p *ProcessHandle) NeedsRestart() bool {
-	p.conversationMu.Lock()
-	defer p.conversationMu.Unlock()
-	return p.needsRestart
-}
-
-// ClearPendingQuestion clears the pending question state after restart
-func (p *ProcessHandle) ClearPendingQuestion() {
-	p.conversationMu.Lock()
-	defer p.conversationMu.Unlock()
-	p.needsRestart = false
-	p.pendingQuestion = nil
-	p.pendingQuestionText = ""
-}
-
-// RestartWithAnswer restarts the process after user responded to a question
-// This is used to work around the rapid-fire API call issue that causes stale tool_use_ids
-func (p *ProcessHandle) RestartWithAnswer(userAnswer string) *ProcessHandle {
-	p.conversationMu.Lock()
-	question := p.pendingQuestion
-	questionText := p.pendingQuestionText
-	args := p.restartArgs
-	promptType := p.restartPromptType
-	outputChan := p.restartOutputChan
-	p.conversationMu.Unlock()
-
-	if outputChan == nil {
-		fmt.Fprintf(os.Stderr, "[CLIVE] Cannot restart: no output channel\n")
-		return nil
-	}
-
-	// Notify user that we're restarting
-	outputChan <- OutputLine{
-		Text: "🔄 Restarting session with your answer...\n",
-		Type: "system",
-	}
-
-	// Create continuation prompt that includes the question and answer
-	var continuationContext string
-	if question != nil && questionText != "" {
-		continuationContext = fmt.Sprintf(`
-
-IMPORTANT CONTEXT FROM PREVIOUS SESSION:
-I previously asked you this question: "%s"
-Your answer was: "%s"
-
-Please continue your work with this information in mind. Do not ask this question again.
-`, questionText, userAnswer)
-	} else {
-		continuationContext = fmt.Sprintf(`
-
-IMPORTANT CONTEXT FROM PREVIOUS SESSION:
-You provided this response: "%s"
-
-Please continue your work with this information in mind.
-`, userAnswer)
-	}
-
-	// Restart the process with modified args
-	newHandle := runScript(args, promptType, outputChan)
-
-	// Inject the continuation context into the prompt after it's sent
-	// We do this by sending an additional message via stdin
-	go func() {
-		// Wait a bit for the process to start and receive initial prompt
-		time.Sleep(2 * time.Second)
-
-		msg := map[string]interface{}{
-			"type": "user",
-			"message": map[string]string{
-				"role":    "user",
-				"content": continuationContext,
-			},
-		}
-
-		data, err := json.Marshal(msg)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[CLIVE] Failed to marshal continuation context: %v\n", err)
-			return
-		}
-
-		newHandle.mu.Lock()
-		if newHandle.stdin != nil {
-			newHandle.stdin.Write(append(data, '\n'))
-		}
-		newHandle.mu.Unlock()
-	}()
-
-	return newHandle
-}
-
 // Wait waits for the process to exit and returns the exit code
 func (p *ProcessHandle) Wait() int {
 	<-p.done
@@ -581,9 +458,6 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		stderr:            stderr,
 		done:              make(chan struct{}),
 		pendingToolUses:   make(map[string]ToolUseBlock),
-		restartArgs:       args,
-		restartPromptType: promptType,
-		restartOutputChan: outputChan,
 	}
 
 	// Initialize conversation logger for debugging
@@ -1041,13 +915,11 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				text += " " + detail
 			}
 
-			// For AskUserQuestion in streaming mode, PAUSE IMMEDIATELY to prevent Claude
-			// from continuing past the question. Defer output until content_block_stop
+			// For AskUserQuestion in streaming mode, defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
 				if handle != nil {
-					// CRITICAL: Only show ONE question per turn to prevent buffering issue
-					// where multiple questions arrive before pause takes effect
+					// Only show ONE question per turn to prevent duplicates in buffered output
 					handle.mu.Lock()
 					if handle.questionSeenThisTurn {
 						handle.mu.Unlock()
@@ -1056,10 +928,9 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					}
 					handle.questionSeenThisTurn = true
 					handle.mu.Unlock()
-
-					// CRITICAL: Pause Claude NOW before it sends more messages
-					handle.PauseProcess()
 				}
+				// NOTE: We do NOT pause the process here. The prompt instructs Claude to
+				// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
 				return nil
 			}
 
@@ -1157,7 +1028,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}
 				streamStateMu.Unlock()
 
-				// Return both the question and a debug message
+				// Return the question and debug message
 				return logAndReturn(handle, line, []OutputLine{
 					{
 						Text:      "❓ Awaiting response\n",
@@ -1317,15 +1188,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 							qd.ToolUseID = toolID
 						}
 
-						// Save question state for restart
-						handle.conversationMu.Lock()
-						handle.needsRestart = true
-						handle.pendingQuestion = qd
-						if qd != nil {
-							handle.pendingQuestionText = qd.Question
-						}
-						handle.conversationMu.Unlock()
-
 						results = append(results, OutputLine{
 							Text:      "❓ Awaiting response\n",
 							Type:      "question",
@@ -1334,7 +1196,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 							DebugInfo: debugInfo,
 						})
 
-					// Track the tool_use before killing (for test compatibility and consistency)
+					// Track the tool_use for verification when sending tool_result
 					if toolID != "" {
 						handle.conversationMu.Lock()
 						handle.pendingToolUses[toolID] = ToolUseBlock{
@@ -1344,10 +1206,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						}
 						handle.conversationMu.Unlock()
 					}
-
-						// NOTE: Process will be killed by TUI after question is displayed
-						fmt.Fprintf(os.Stderr, "[CLIVE] Question detected, needsRestart=true, TUI will kill after display AskUserQuestion (tool_id=%s) to prevent stale tool_use_ids\n", toolID)
-						// handle.Kill() - TUI will handle this
 
 						// Don't process any more content from this message
 						return logAndReturn(handle, line, results)

@@ -73,6 +73,14 @@ type configSavedMsg struct {
 	err error
 }
 
+// truncateString truncates a string to maxLen and adds "..." if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 // Spinner animation frames
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
@@ -514,19 +522,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Focus()
 			m.input.SetValue("")
 
-			// Check if we need to kill the process (kill/restart approach)
-			// Kill AFTER displaying the question so user can see it
-			if m.processHandle != nil && m.processHandle.NeedsRestart() {
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "[DEBUG] Killing process after displaying question",
-					Type: "system",
-				})
-				// Kill immediately - don't pause, we're restarting anyway
-				m.processHandle.Kill()
-			} else if m.processHandle != nil {
-				// Normal flow: Pause Claude to prevent race condition
-				m.processHandle.PauseProcess()
-			}
+			// NOTE: We do NOT pause the process. The prompt instructs Claude to
+			// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
 		}
 		// NOTE: We intentionally do NOT clear ToolUseID when other content arrives.
 		// With streaming, Claude often sends more content after AskUserQuestion in the
@@ -586,10 +583,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := len(regularLines) - 1; i >= 0; i-- {
 			line := regularLines[i]
 			if line.Type == "question" && line.Question != nil {
-				// Pause Claude to prevent race condition - it keeps generating while we wait for user input
-				if m.processHandle != nil {
-					m.processHandle.PauseProcess()
-				}
+				// NOTE: We do NOT pause the process. The prompt instructs Claude to
+				// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
 				m.pendingQuestion = line.Question
 				m.showQuestionPanel = true
 				m.selectedOption = 0
@@ -1917,78 +1912,8 @@ func (m *Model) sendQuestionResponse(response string) {
 		m.pendingQuestion.ToolUseID = ""
 	}
 
-	// Check if we need to restart the process (kill/restart approach for AskUserQuestion)
+	// Reset the questionSeenThisTurn flag so the next question can be shown
 	if m.processHandle != nil {
-		needsRestart := m.processHandle.NeedsRestart()
-
-		// DEBUG: Show restart status to user
-		m.outputLines = append(m.outputLines, process.OutputLine{
-			Text: fmt.Sprintf("[DEBUG] NeedsRestart=%v", needsRestart),
-			Type: "system",
-		})
-
-		if needsRestart {
-			// Restart the process with the user's answer as continuation context
-			// This avoids the 400 error from stale tool_use_ids
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: fmt.Sprintf("[DEBUG] Starting restart with answer: %s", response),
-				Type: "system",
-			})
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: "🔄 Restarting session with your answer...",
-				Type: "system",
-			})
-			m.viewport.SetContent(m.renderOutputContent())
-			m.viewport.GotoBottom()
-
-			newHandle := m.processHandle.RestartWithAnswer(response)
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: fmt.Sprintf("[DEBUG] Restart returned handle: %v", newHandle != nil),
-				Type: "system",
-			})
-
-			if newHandle != nil {
-				m.processHandle = newHandle
-				m.processHandle.ClearPendingQuestion()
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "[DEBUG] Restart successful, process handle updated",
-					Type: "system",
-				})
-			} else {
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "Failed to restart process",
-					Type: "stderr",
-				})
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: "[DEBUG] Restart failed - newHandle is nil",
-					Type: "system",
-				})
-			}
-
-			// Clear pending question state
-			m.pendingQuestion = nil
-			m.input.SetValue("")
-			m.showQuestionPanel = false
-			return
-		} else {
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: "[DEBUG] Not restarting - needsRestart=false",
-				Type: "system",
-			})
-		}
-	}
-
-	// Normal flow (no restart needed)
-	if m.processHandle != nil {
-
-		// Normal flow: Resume Claude BEFORE sending the response
-		// The process was paused when the question arrived - we need to resume it
-		// so it can read from stdin when we send the tool_result
-		m.processHandle.ResumeProcess()
-		// Small delay to ensure process is running and ready to read stdin
-		time.Sleep(50 * time.Millisecond)
-
-		// Reset the questionSeenThisTurn flag so the next question can be shown
 		m.processHandle.ResetQuestionFlag()
 	}
 
