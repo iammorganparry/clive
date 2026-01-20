@@ -214,6 +214,13 @@ func (p *ProcessHandle) ResumeProcess() error {
 	return p.cmd.Process.Signal(syscall.SIGCONT)
 }
 
+// ResetQuestionFlag resets the questionSeenThisTurn flag to allow the next question
+func (p *ProcessHandle) ResetQuestionFlag() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.questionSeenThisTurn = false
+}
+
 // Wait waits for the process to exit and returns the exit code
 func (p *ProcessHandle) Wait() int {
 	<-p.done

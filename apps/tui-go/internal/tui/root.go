@@ -1916,9 +1916,7 @@ func (m *Model) sendQuestionResponse(response string) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Reset the questionSeenThisTurn flag so the next question can be shown
-		m.processHandle.mu.Lock()
-		m.processHandle.questionSeenThisTurn = false
-		m.processHandle.mu.Unlock()
+		m.processHandle.ResetQuestionFlag()
 	}
 
 	// Send as tool_result if we have a toolUseID, otherwise fall back to regular message
