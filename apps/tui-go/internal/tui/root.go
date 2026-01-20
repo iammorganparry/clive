@@ -1089,6 +1089,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Build):
 			if !m.isRunning {
+				// Cache tasks BEFORE starting build
+				// This ensures error messages are visible
+				m.cacheTasksForBuild()
+
+				// Now start the build
 				execCmd := m.startBuild()
 				if execCmd != nil {
 					cmds = append(cmds, execCmd)
@@ -2080,35 +2085,6 @@ func (m *Model) startBuild() tea.Cmd {
 	scratchpadHeader := "# Build Session Scratchpad\n\nContext and notes passed between iterations.\n\n---\n\n"
 	os.WriteFile(scratchpadPath, []byte(scratchpadHeader), 0644)
 
-	// Write tasks cache for build agent to avoid re-fetching from Linear
-	if m.activeSession != nil && m.activeSession.EpicID != "" {
-		epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
-		tasksPath := filepath.Join(epicDir, "tasks.json")
-
-		// Convert tasks to JSON for the build agent
-		tasksJSON, err := json.MarshalIndent(m.tasks, "", "  ")
-		if err != nil {
-			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: fmt.Sprintf("Warning: Failed to marshal tasks cache: %v", err),
-				Type: "stderr",
-			})
-		} else {
-			err = os.WriteFile(tasksPath, tasksJSON, 0644)
-			if err != nil {
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: fmt.Sprintf("Warning: Failed to write tasks cache: %v", err),
-					Type: "stderr",
-				})
-			} else {
-				// Success - log for debugging
-				m.outputLines = append(m.outputLines, process.OutputLine{
-					Text: fmt.Sprintf("Cached %d tasks to %s", len(m.tasks), tasksPath),
-					Type: "system",
-				})
-			}
-		}
-	}
-
 	// Initialize build loop state
 	m.isRunning = true
 	m.buildLoopRunning = true
@@ -2194,6 +2170,64 @@ func (m *Model) startPlan(input string) tea.Cmd {
 
 	// Start polling and spinner (spinner will self-sustain while isRunning)
 	return tea.Batch(m.pollOutput(), spinnerTickCmd())
+}
+
+// cacheTasksForBuild writes the current task list to disk for the build agent
+// Returns true if successful, false if failed (with error output to user)
+func (m *Model) cacheTasksForBuild() bool {
+	if m.activeSession == nil || m.activeSession.EpicID == "" {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Warning: No active session - tasks not cached",
+			Type: "stderr",
+		})
+		return false
+	}
+
+	if len(m.tasks) == 0 {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "Warning: No tasks to cache",
+			Type: "stderr",
+		})
+		return false
+	}
+
+	// Create epic directory
+	epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
+	if err := os.MkdirAll(epicDir, 0755); err != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("Error: Failed to create epic directory: %v", err),
+			Type: "stderr",
+		})
+		return false
+	}
+
+	// Marshal tasks to JSON
+	tasksJSON, err := json.MarshalIndent(m.tasks, "", "  ")
+	if err != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("Error: Failed to serialize tasks: %v", err),
+			Type: "stderr",
+		})
+		return false
+	}
+
+	// Write tasks cache
+	tasksPath := filepath.Join(epicDir, "tasks.json")
+	if err := os.WriteFile(tasksPath, tasksJSON, 0644); err != nil {
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("Error: Failed to write tasks cache to %s: %v", tasksPath, err),
+			Type: "stderr",
+		})
+		return false
+	}
+
+	// Success! Show confirmation to user
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: fmt.Sprintf("✓ Cached %d tasks to %s", len(m.tasks), tasksPath),
+		Type: "system",
+	})
+
+	return true
 }
 
 // waitForOutput returns a command that blocks until output is available

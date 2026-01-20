@@ -277,8 +277,16 @@ fi
 
     # Check for cached task list (from TUI)
     CACHED_TASKS_FILE=""
-    if [ -n "$EPIC_DIR" ] && [ -f "$EPIC_DIR/tasks.json" ]; then
-        CACHED_TASKS_FILE="$EPIC_DIR/tasks.json"
+    if [ -n "$EPIC_DIR" ]; then
+        echo "[DEBUG] Looking for cached tasks at: $EPIC_DIR/tasks.json" >&2
+        if [ -f "$EPIC_DIR/tasks.json" ]; then
+            CACHED_TASKS_FILE="$EPIC_DIR/tasks.json"
+            echo "[DEBUG] Found cached tasks file with $(jq '. | length' "$CACHED_TASKS_FILE") tasks" >&2
+        else
+            echo "[DEBUG] Cached tasks file not found - Claude will fetch from Linear" >&2
+        fi
+    else
+        echo "[DEBUG] EPIC_DIR not set - cannot use cached tasks" >&2
     fi
 
     # Linear-specific task fetching instructions
