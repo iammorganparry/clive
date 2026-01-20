@@ -545,11 +545,15 @@ The interview keeps the session open until you have gathered sufficient context.
 For EACH topic below, use `AskUserQuestion` then **IMMEDIATELY END YOUR TURN**.
 
 **⚠️ CRITICAL - After calling AskUserQuestion:**
-1. **END YOUR TURN IMMEDIATELY** - Do NOT make any more tool calls (no Read, Bash, Write, etc.)
-2. Do NOT continue to the next interview topic
-3. Do NOT output any more text after the AskUserQuestion tool call
-4. Your turn MUST end after AskUserQuestion - the conversation will pause here
-5. You will receive the user's response in the next turn via tool_result and can continue naturally from where you left off
+1. **END YOUR TURN IMMEDIATELY** - The AskUserQuestion tool call MUST be the last thing in your message
+2. Do NOT make any more tool calls after AskUserQuestion (no Read, Bash, Write, etc.)
+3. Do NOT continue to the next interview topic
+4. **Do NOT output ANY text after the AskUserQuestion tool call** - No explanations, no apologies, no clarifications, NOTHING
+5. Your assistant message MUST end immediately after the tool_use block
+6. The conversation will pause at the AskUserQuestion and resume when you receive the tool_result
+7. You will receive the user's response in the next turn via tool_result and can continue naturally from where you left off
+
+**Why this matters:** The Claude API requires tool_result to immediately follow tool_use with no intervening messages. Any text you output after AskUserQuestion creates a new message that breaks this requirement and causes API errors.
 
 **When you receive the tool_result**, continue naturally from the next interview topic or next step in your process. The conversation context is preserved - you remember all previous answers.
 
@@ -927,17 +931,20 @@ Use AskUserQuestion to request approval:
 - "Start over"
 
 **⚠️ CRITICAL - After calling AskUserQuestion for approval:**
-- **END YOUR TURN IMMEDIATELY** - Do NOT make any more tool calls
+- **END YOUR TURN IMMEDIATELY** - The AskUserQuestion tool call MUST be the last thing in your message
+- **Do NOT output ANY text after AskUserQuestion** - No explanations, apologies, or clarifications
+- Do NOT make any more tool calls after AskUserQuestion
 - Do NOT proceed to Step 9 yet - wait for user's response
 - You will receive the tool_result in the next turn
+- Any text after AskUserQuestion creates a new message and causes API errors
 
 **Handle each response:**
 
 1. **"Ready to implement"** → Proceed to Step 9 (Create Issues)
 
-2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **END YOUR TURN after calling AskUserQuestion.**
+2. **"I have questions"** → Answer their questions thoroughly, then use AskUserQuestion again for approval. **END YOUR TURN immediately after AskUserQuestion - output NO text after the tool call.**
 
-3. **"Make changes"** → Ask what changes they want, update `$PLAN_FILE`, present the updated plan, then ask for approval again. **END YOUR TURN after calling AskUserQuestion.**
+3. **"Make changes"** → Ask what changes they want, update `$PLAN_FILE`, present the updated plan, then ask for approval again. **END YOUR TURN immediately after AskUserQuestion - output NO text after the tool call.**
 
 4. **"Start over"** → Clear the plan document, return to Step 4 (Interview Phase)
 
@@ -945,7 +952,7 @@ Use AskUserQuestion to request approval:
 - Do NOT proceed to Step 9 without "Ready to implement" response
 - If user has questions or wants changes, you MUST address them and ask for approval AGAIN
 - Keep asking until you get "Ready to implement"
-- **ALWAYS END YOUR TURN after calling AskUserQuestion**
+- **ALWAYS END YOUR TURN immediately after calling AskUserQuestion - output NOTHING after the tool call**
 
 ---
 
@@ -1139,14 +1146,14 @@ Use coverage as a guide to find untested user-facing behavior. If uncovered code
 
 ### Session Flow (MUST Follow This Order)
 
-1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic. **END YOUR TURN after EACH question.** Continue naturally when you receive responses.
+1. **Interview (MANDATORY)** - Use AskUserQuestion for each topic. **END YOUR TURN after EACH question - output NO text after the tool call.** Continue naturally when you receive responses.
 2. **Write plan document** - Save to `$PLAN_FILE` (epic-scoped path)
 3. **Present plan** - Show summary to user
-4. **Ask for approval** - Use AskUserQuestion. **END YOUR TURN.** Wait for "Ready to implement" response.
+4. **Ask for approval** - Use AskUserQuestion. **END YOUR TURN immediately - output NO text after the tool call.** Wait for "Ready to implement" response.
 5. **Create issues** - ONLY after approval, create epic/parent and tasks/sub-issues (using beads OR Linear based on tracker preference)
 6. **Output PLAN_COMPLETE** - Session ends
 
-**⚠️ CRITICAL**: Every time you call AskUserQuestion, your turn MUST end immediately. Do NOT continue with any other actions.
+**⚠️ CRITICAL**: Every time you call AskUserQuestion, your turn MUST end immediately with NO text output after the tool call. Any text after AskUserQuestion creates a new assistant message that breaks the API's tool_use/tool_result pairing requirement and causes 400 errors.
 
 ### You are NOT allowed to:
 - Skip the interview phase
