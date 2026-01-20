@@ -697,7 +697,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinnerTickMsg:
 		// Advance spinner animation when running or loading
-		if m.isRunning || m.loadingEpics || m.loadingTasks {
+		if m.isRunning || m.loadingEpics {
 			m.spinnerIndex = (m.spinnerIndex + 1) % len(spinnerFrames)
 			cmds = append(cmds, spinnerTickCmd())
 		}
@@ -1351,18 +1351,6 @@ func (m Model) renderSidebar(width, height int) string {
 	title := SidebarTitleStyle.Render("TASKS")
 
 	content := title + "\n\n"
-
-	// Show loading state if tasks are being fetched
-	if m.loadingTasks {
-		spinner := spinnerFrames[m.spinnerIndex%len(spinnerFrames)]
-		content += lipgloss.NewStyle().
-			Foreground(ColorYellow).
-			Render(spinner + " Loading tasks...")
-		return SidebarStyle.
-			Width(width).
-			Height(height).
-			Render(content)
-	}
 
 	// Group tasks by status
 	var pending, inProgress, complete []model.Task
@@ -2256,19 +2244,6 @@ func (m *Model) startPlan(input string) tea.Cmd {
 // cacheTasksForBuild writes the current task list to disk for the build agent
 // Returns true if successful, false if failed (with error output to user)
 func (m *Model) cacheTasksForBuild() bool {
-	// Debug: Log when cache function is called
-	epicID := "nil"
-	if m.activeSession != nil {
-		epicID = m.activeSession.EpicID
-	}
-	m.outputLines = append(m.outputLines, process.OutputLine{
-		Text: fmt.Sprintf("[CACHE] cacheTasksForBuild called - activeSession: %v, EpicID: %s, tasks: %d",
-			m.activeSession != nil,
-			epicID,
-			len(m.tasks)),
-		Type: "system",
-	})
-
 	if m.activeSession == nil || m.activeSession.EpicID == "" {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: "Warning: No active session - tasks not cached",
@@ -2287,11 +2262,6 @@ func (m *Model) cacheTasksForBuild() bool {
 
 	// Create epic directory
 	epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
-	absPath, _ := filepath.Abs(epicDir)
-	m.outputLines = append(m.outputLines, process.OutputLine{
-		Text: fmt.Sprintf("[CACHE] Writing to: %s", absPath),
-		Type: "system",
-	})
 	if err := os.MkdirAll(epicDir, 0755); err != nil {
 		m.outputLines = append(m.outputLines, process.OutputLine{
 			Text: fmt.Sprintf("Error: Failed to create epic directory: %v", err),
@@ -2319,12 +2289,6 @@ func (m *Model) cacheTasksForBuild() bool {
 		})
 		return false
 	}
-
-	// Success! Show confirmation to user
-	m.outputLines = append(m.outputLines, process.OutputLine{
-		Text: fmt.Sprintf("✓ Cached %d tasks to %s", len(m.tasks), tasksPath),
-		Type: "system",
-	})
 
 	return true
 }
