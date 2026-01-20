@@ -356,6 +356,23 @@ Check these as needed to understand context and where to write files.
 
 ---
 
+## Output Formatting for TUI
+
+You are running in a Terminal UI that cannot render Markdown.
+
+**IMPORTANT formatting rules:**
+- Output PLAIN TEXT, not Markdown
+- Do NOT use: code blocks (```), bold (**text**), italics (*text*), headers (##)
+- Do NOT use: lists with dashes (-), numbered lists (1. 2. 3.)
+- Use simple text with blank lines for spacing
+- Use CAPITAL LETTERS or [brackets] for emphasis instead of markdown
+- Example GOOD: "Checking codebase for patterns..." followed by blank line
+- Example BAD: "## Analysis" or ```bash code```
+
+Keep output concise and readable in a plain terminal.
+
+---
+
 ## Remember
 
 This is a **conversation**, not a checklist. Your goal is to:

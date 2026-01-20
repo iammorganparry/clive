@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -2078,6 +2079,18 @@ func (m *Model) startBuild() tea.Cmd {
 	}
 	scratchpadHeader := "# Build Session Scratchpad\n\nContext and notes passed between iterations.\n\n---\n\n"
 	os.WriteFile(scratchpadPath, []byte(scratchpadHeader), 0644)
+
+	// Write tasks cache for build agent to avoid re-fetching from Linear
+	if m.activeSession != nil && m.activeSession.EpicID != "" {
+		epicDir := filepath.Join(".claude", "epics", m.activeSession.EpicID)
+		tasksPath := filepath.Join(epicDir, "tasks.json")
+
+		// Convert tasks to JSON for the build agent
+		tasksJSON, err := json.MarshalIndent(m.tasks, "", "  ")
+		if err == nil {
+			os.WriteFile(tasksPath, tasksJSON, 0644)
+		}
+	}
 
 	// Initialize build loop state
 	m.isRunning = true
