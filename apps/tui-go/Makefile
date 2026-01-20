@@ -3,23 +3,30 @@
 # Binary name for local build (dev only)
 # NOTE: When installing to PATH, the binary should be named "clive" (not "clive-tui")
 # The cmd directory is named clive-tui for historical reasons, but the installed binary is "clive"
-LOCAL_BINARY := bin/clive-tui
-INSTALL_PATH := $(HOME)/bin/clive
+LOCAL_BINARY := bin/clive
+INSTALL_PATH := $(HOME)/bin/clive-tui
 
-# Build the binary (local dev)
+# Get version from git commit SHA
+VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
+LDFLAGS := -X github.com/clive/tui-go/internal/tui.Version=$(VERSION)
+
+# Build the binary (local dev) with version injection
 build:
-	go build -o $(LOCAL_BINARY) ./cmd/clive-tui
+	@echo "Building clive (version: $(VERSION))..."
+	@mkdir -p bin
+	go build -ldflags "$(LDFLAGS)" -o $(LOCAL_BINARY) ./cmd/clive-tui
+	@echo "✓ Built: $(LOCAL_BINARY) (v$(VERSION))"
 
-# Install to user's bin directory as "clive"
-# IMPORTANT: The installed binary name is "clive", not "clive-tui"
+# Install to user's bin directory as "clive-tui"
 install:
+	@echo "Installing clive-tui (version: $(VERSION))..."
 	@mkdir -p $(HOME)/bin
-	go build -o $(INSTALL_PATH) ./cmd/clive-tui
-	@echo "Installed to $(INSTALL_PATH)"
+	go build -ldflags "$(LDFLAGS)" -o $(INSTALL_PATH) ./cmd/clive-tui
+	@echo "✓ Installed to $(INSTALL_PATH) (v$(VERSION))"
 
 # Run the binary
 run: build
-	./bin/clive-tui
+	./$(LOCAL_BINARY)
 
 # Run in development mode (with hot reload using air if installed)
 dev:
