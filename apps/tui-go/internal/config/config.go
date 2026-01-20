@@ -2,23 +2,31 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
 
-// Config represents the user's configuration
-type Config struct {
-	IssueTracker   IssueTracker  `json:"issue_tracker"`
-	SetupCompleted bool          `json:"setup_completed"`
-	Linear         *LinearConfig `json:"linear,omitempty"`
+// GlobalAuthConfig holds authentication credentials that should be shared across projects
+type GlobalAuthConfig struct {
+	LinearAPIKey string `json:"linear_api_key,omitempty"`
 }
 
-// LinearConfig holds Linear-specific configuration
+// Config represents the user's configuration
+type Config struct {
+	IssueTracker   IssueTracker      `json:"issue_tracker"`
+	SetupCompleted bool              `json:"setup_completed"`
+	Linear         *LinearConfig     `json:"linear,omitempty"`
+	GlobalAuth     *GlobalAuthConfig `json:"-"` // Not serialized, loaded separately
+}
+
+// LinearConfig holds Linear-specific configuration (per-project)
 type LinearConfig struct {
 	TeamID   string `json:"team_id"`
 	TeamSlug string `json:"team_slug"` // For display (e.g., "TEAM")
 	TeamName string `json:"team_name"` // For display (e.g., "My Team")
-	APIKey   string `json:"api_key"`   // Personal API key for direct API access
+	APIKey   string `json:"api_key,omitempty"` // DEPRECATED: Kept for migration only, moved to GlobalAuth
 }
 
 // DefaultConfig returns the default configuration
@@ -76,30 +84,10 @@ func Exists() bool {
 	return err == nil
 }
 
-// Load reads the config from disk, checking project config first, then global
-func Load() (*Config, error) {
-	// Try project config first (.clive/config.json in current directory)
-	projectPath := projectConfigPath()
-	if data, err := os.ReadFile(projectPath); err == nil {
-		var cfg Config
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return nil, err
-		}
-		return &cfg, nil
-	}
-
-	// Fall back to global config (~/.clive/config.json)
-	globalPath, err := globalConfigPath()
+// loadFromPath loads config from a specific path
+func loadFromPath(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(globalPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// No config exists, return default (don't auto-create)
-			return DefaultConfig(), nil
-		}
 		return nil, err
 	}
 
@@ -111,26 +99,67 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// Save writes the config to both project and global locations
-func Save(cfg *Config) error {
-	// Save to project config (.clive/config.json)
-	if err := SaveToProject(cfg); err != nil {
-		// If project save fails (e.g., no write permission), continue to global
-		_ = err
+// Load reads the config from disk, merging project config with global auth
+func Load() (*Config, error) {
+	// Try project config first (.clive/config.json in current directory)
+	projectPath := projectConfigPath()
+	projectCfg, projectErr := loadFromPath(projectPath)
+
+	// Load global config for auth
+	globalPath, err := globalConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	globalCfg, globalErr := loadFromPath(globalPath)
+
+	// Determine base config
+	var cfg *Config
+	if projectErr == nil {
+		cfg = projectCfg
+	} else if globalErr == nil {
+		cfg = globalCfg
+	} else {
+		// No config exists, return default
+		return DefaultConfig(), nil
 	}
 
-	// Also save to global config for credentials/defaults
-	return SaveToGlobal(cfg)
+	// Initialize GlobalAuth
+	cfg.GlobalAuth = &GlobalAuthConfig{}
+
+	// Extract global auth from global config if available
+	if globalErr == nil && globalCfg.Linear != nil && globalCfg.Linear.APIKey != "" {
+		cfg.GlobalAuth.LinearAPIKey = globalCfg.Linear.APIKey
+	}
+
+	// MIGRATION: If project config has old-style APIKey, migrate it
+	if cfg.Linear != nil && cfg.Linear.APIKey != "" {
+		log.Printf("Migrating Linear API key from project to global config")
+		cfg.GlobalAuth.LinearAPIKey = cfg.Linear.APIKey
+		cfg.Linear.APIKey = ""
+		// Save immediately to persist migration
+		if err := Save(cfg); err != nil {
+			log.Printf("Warning: failed to save migrated config: %v", err)
+		}
+	}
+
+	return cfg, nil
 }
 
-// SaveToProject writes the config to the project-level location (.clive/config.json)
-func SaveToProject(cfg *Config) error {
+// saveProjectConfig saves project-specific config (team selection, tracker type)
+func saveProjectConfig(cfg *Config) error {
 	dir := ".clive"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	// Create project config with only project-specific fields
+	projectCfg := &Config{
+		IssueTracker:   cfg.IssueTracker,
+		SetupCompleted: cfg.SetupCompleted,
+		Linear:         cfg.Linear, // Team selection only (no API key)
+	}
+
+	data, err := json.MarshalIndent(projectCfg, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -138,7 +167,67 @@ func SaveToProject(cfg *Config) error {
 	return os.WriteFile(projectConfigPath(), data, 0644)
 }
 
+// saveGlobalAuth saves global authentication credentials
+func saveGlobalAuth(auth *GlobalAuthConfig) error {
+	globalPath, err := globalConfigPath()
+	if err != nil {
+		return err
+	}
+
+	// Load existing global config if it exists
+	existing := make(map[string]interface{})
+	if data, err := os.ReadFile(globalPath); err == nil {
+		json.Unmarshal(data, &existing)
+	}
+
+	// Update only the auth fields
+	if auth.LinearAPIKey != "" {
+		existing["linear_api_key"] = auth.LinearAPIKey
+	}
+
+	// Ensure directory exists
+	dir, err := globalConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(globalPath, data, 0644)
+}
+
+// Save writes the config, separating project data from global auth
+func Save(cfg *Config) error {
+	// Save project-specific data to .clive/config.json
+	if err := saveProjectConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save project config: %w", err)
+	}
+
+	// Save global auth to ~/.clive/config.json (only if present)
+	if cfg.GlobalAuth != nil && cfg.GlobalAuth.LinearAPIKey != "" {
+		if err := saveGlobalAuth(cfg.GlobalAuth); err != nil {
+			// Log warning but don't fail - project config is more important
+			log.Printf("Warning: failed to save global auth: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// SaveToProject writes the config to the project-level location (.clive/config.json)
+// Deprecated: Use Save() instead, which handles project/global separation
+func SaveToProject(cfg *Config) error {
+	return saveProjectConfig(cfg)
+}
+
 // SaveToGlobal writes the config to the global location (~/.clive/config.json)
+// Deprecated: Use Save() instead, which handles project/global separation
 func SaveToGlobal(cfg *Config) error {
 	dir, err := globalConfigDir()
 	if err != nil {

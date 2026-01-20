@@ -24,7 +24,20 @@ type IssueRef struct {
 	Title      string `json:"title"`
 }
 
-// IssueNodes wraps a list of issues (GraphQL connection pattern)
+// PageInfo contains pagination information
+type PageInfo struct {
+	HasNextPage bool   `json:"hasNextPage"`
+	EndCursor   string `json:"endCursor"`
+}
+
+// IssueConnection wraps a list of issues with pagination info (GraphQL connection pattern)
+type IssueConnection struct {
+	Nodes    []Issue  `json:"nodes"`
+	PageInfo PageInfo `json:"pageInfo"`
+}
+
+// IssueNodes wraps a list of issues (GraphQL connection pattern) - DEPRECATED
+// Use IssueConnection instead for pagination support
 type IssueNodes struct {
 	Nodes []Issue `json:"nodes"`
 }

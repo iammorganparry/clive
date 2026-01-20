@@ -13,13 +13,13 @@ const (
 
 // Task represents a beads task
 type Task struct {
-	ID       string
-	Title    string
-	Status   TaskStatus
-	Tier     int
-	Skill    string
-	Category string
-	Target   string
+	ID       string     `json:"id"`
+	Title    string     `json:"title"`
+	Status   TaskStatus `json:"status"`
+	Tier     int        `json:"tier"`
+	Skill    string     `json:"skill"`
+	Category string     `json:"category"`
+	Target   string     `json:"target"`
 }
 
 // StatusIcon returns the icon for the task status

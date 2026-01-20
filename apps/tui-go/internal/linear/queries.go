@@ -20,13 +20,14 @@ query Viewer {
 `
 
 const queryParentIssues = `
-query ParentIssues($teamId: String!) {
+query ParentIssues($teamId: String!, $after: String) {
   team(id: $teamId) {
     issues(
       filter: {
         parent: { null: true }
       }
       first: 100
+      after: $after
       orderBy: updatedAt
     ) {
       nodes {
@@ -72,6 +73,10 @@ query ParentIssues($teamId: String!) {
           displayName
           email
         }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
       }
     }
   }
@@ -79,7 +84,7 @@ query ParentIssues($teamId: String!) {
 `
 
 const queryAssignedIssues = `
-query AssignedIssues($teamId: String!) {
+query AssignedIssues($teamId: String!, $after: String) {
   team(id: $teamId) {
     issues(
       filter: {
@@ -87,6 +92,7 @@ query AssignedIssues($teamId: String!) {
         parent: { null: true }
       }
       first: 100
+      after: $after
       orderBy: updatedAt
     ) {
       nodes {
@@ -133,15 +139,19 @@ query AssignedIssues($teamId: String!) {
           email
         }
       }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
     }
   }
 }
 `
 
 const querySubIssues = `
-query SubIssues($issueId: String!) {
+query SubIssues($issueId: String!, $after: String) {
   issue(id: $issueId) {
-    children(first: 100) {
+    children(first: 100, after: $after) {
       nodes {
         id
         identifier
@@ -185,6 +195,10 @@ query SubIssues($issueId: String!) {
           displayName
           email
         }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
       }
     }
   }

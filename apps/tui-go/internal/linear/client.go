@@ -129,25 +129,42 @@ func (c *Client) GetTeams() ([]Team, error) {
 	return viewer.Teams.Nodes, nil
 }
 
-// GetParentIssues returns all parent issues (issues with sub-issues, no parent) for a team
+// GetParentIssues returns all parent issues (issues with sub-issues, no parent) for a team (with pagination)
 func (c *Client) GetParentIssues(teamID string) ([]Issue, error) {
 	var result struct {
 		Team struct {
-			Issues IssueNodes `json:"issues"`
+			Issues IssueConnection `json:"issues"`
 		} `json:"team"`
 	}
 
-	variables := map[string]interface{}{
-		"teamId": teamID,
-	}
+	allIssues := make([]Issue, 0)
+	cursor := ""
 
-	if err := c.Do(queryParentIssues, variables, &result); err != nil {
-		return nil, err
+	// Pagination loop
+	for {
+		variables := map[string]interface{}{
+			"teamId": teamID,
+		}
+		if cursor != "" {
+			variables["after"] = cursor
+		}
+
+		if err := c.Do(queryParentIssues, variables, &result); err != nil {
+			return nil, err
+		}
+
+		allIssues = append(allIssues, result.Team.Issues.Nodes...)
+
+		// Check if more pages exist
+		if !result.Team.Issues.PageInfo.HasNextPage {
+			break
+		}
+		cursor = result.Team.Issues.PageInfo.EndCursor
 	}
 
 	// Filter to only parent issues (has children, no parent)
 	var parents []Issue
-	for _, issue := range result.Team.Issues.Nodes {
+	for _, issue := range allIssues {
 		if issue.IsParentIssue() {
 			parents = append(parents, issue)
 		}
@@ -156,42 +173,76 @@ func (c *Client) GetParentIssues(teamID string) ([]Issue, error) {
 	return parents, nil
 }
 
-// GetAssignedIssues returns all issues assigned to the current user (not sub-issues)
+// GetAssignedIssues returns all issues assigned to the current user (not sub-issues) (with pagination)
 func (c *Client) GetAssignedIssues(teamID string) ([]Issue, error) {
 	var result struct {
 		Team struct {
-			Issues IssueNodes `json:"issues"`
+			Issues IssueConnection `json:"issues"`
 		} `json:"team"`
 	}
 
-	variables := map[string]interface{}{
-		"teamId": teamID,
+	allIssues := make([]Issue, 0)
+	cursor := ""
+
+	// Pagination loop
+	for {
+		variables := map[string]interface{}{
+			"teamId": teamID,
+		}
+		if cursor != "" {
+			variables["after"] = cursor
+		}
+
+		if err := c.Do(queryAssignedIssues, variables, &result); err != nil {
+			return nil, err
+		}
+
+		allIssues = append(allIssues, result.Team.Issues.Nodes...)
+
+		// Check if more pages exist
+		if !result.Team.Issues.PageInfo.HasNextPage {
+			break
+		}
+		cursor = result.Team.Issues.PageInfo.EndCursor
 	}
 
-	if err := c.Do(queryAssignedIssues, variables, &result); err != nil {
-		return nil, err
-	}
-
-	return result.Team.Issues.Nodes, nil
+	return allIssues, nil
 }
 
-// GetSubIssues returns all sub-issues of a parent issue
+// GetSubIssues returns all sub-issues of a parent issue (with pagination)
 func (c *Client) GetSubIssues(parentID string) ([]Issue, error) {
 	var result struct {
 		Issue struct {
-			Children IssueNodes `json:"children"`
+			Children IssueConnection `json:"children"`
 		} `json:"issue"`
 	}
 
-	variables := map[string]interface{}{
-		"issueId": parentID,
+	allIssues := make([]Issue, 0)
+	cursor := ""
+
+	// Pagination loop
+	for {
+		variables := map[string]interface{}{
+			"issueId": parentID,
+		}
+		if cursor != "" {
+			variables["after"] = cursor
+		}
+
+		if err := c.Do(querySubIssues, variables, &result); err != nil {
+			return nil, err
+		}
+
+		allIssues = append(allIssues, result.Issue.Children.Nodes...)
+
+		// Check if more pages exist
+		if !result.Issue.Children.PageInfo.HasNextPage {
+			break
+		}
+		cursor = result.Issue.Children.PageInfo.EndCursor
 	}
 
-	if err := c.Do(querySubIssues, variables, &result); err != nil {
-		return nil, err
-	}
-
-	return result.Issue.Children.Nodes, nil
+	return allIssues, nil
 }
 
 // GetIssue returns a single issue by ID

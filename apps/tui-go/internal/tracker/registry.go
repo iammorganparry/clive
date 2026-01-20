@@ -41,10 +41,10 @@ func newLinearProviderFromConfig(cfg *config.Config) (Provider, error) {
 		return nil, fmt.Errorf("Linear not configured - missing team ID")
 	}
 
-	// First try to use API key from config if available
+	// Try API key from GlobalAuth first
 	var token string
-	if cfg.Linear.APIKey != "" {
-		token = cfg.Linear.APIKey
+	if cfg.GlobalAuth != nil && cfg.GlobalAuth.LinearAPIKey != "" {
+		token = cfg.GlobalAuth.LinearAPIKey
 	} else {
 		// Fall back to getting token from Keychain (MCP OAuth)
 		var err error

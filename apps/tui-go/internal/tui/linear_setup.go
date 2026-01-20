@@ -410,7 +410,14 @@ func (ls LinearSetup) apiKeyView() string {
 	content.WriteString(lipgloss.NewStyle().
 		Foreground(ColorBlue).
 		Bold(true).
-		Render("Enter Linear API Key"))
+		Render("Enter Linear API Key (for this project)"))
+	content.WriteString("\n\n")
+
+	// Per-project note
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Italic(true).
+		Render("Note: Auth credentials are saved globally and reused across projects"))
 	content.WriteString("\n\n")
 
 	// Show error if any
@@ -565,6 +572,13 @@ func (ls LinearSetup) teamSelectView() string {
 
 	var content strings.Builder
 	content.WriteString(cliveLogo + subtitle)
+	content.WriteString("\n\n")
+
+	// Per-project configuration note
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(ColorFgMuted).
+		Italic(true).
+		Render("Selecting a team for this project only (won't affect other repos)"))
 	content.WriteString("\n\n")
 
 	for i, team := range ls.Teams {
