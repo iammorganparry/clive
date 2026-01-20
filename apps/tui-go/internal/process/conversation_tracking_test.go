@@ -568,3 +568,196 @@ func (m *mockWriteCloser) Write(p []byte) (n int, err error) {
 func (m *mockWriteCloser) Close() error {
 	return nil
 }
+
+func TestAskUserQuestion_SetsNeedsRestart(t *testing.T) {
+	// Test that AskUserQuestion sets needsRestart flag for kill/restart approach
+	handle := &ProcessHandle{
+		pendingToolUses: make(map[string]ToolUseBlock),
+		conversationMu:  sync.Mutex{},
+		mu:              sync.Mutex{},
+	}
+
+	// Simulate assistant message with AskUserQuestion
+	assistantMsg := map[string]interface{}{
+		"type": "assistant",
+		"message": map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id":   "toolu_restart_test",
+					"name": "AskUserQuestion",
+					"input": map[string]interface{}{
+						"questions": []interface{}{
+							map[string]interface{}{
+								"question":    "Should we restart?",
+								"header":      "RestartTest",
+								"multiSelect": false,
+								"options": []interface{}{
+									map[string]interface{}{
+										"label":       "Yes",
+										"description": "Restart the process",
+									},
+									map[string]interface{}{
+										"label":       "No",
+										"description": "Continue without restart",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	msgJSON, _ := json.Marshal(assistantMsg)
+	parseNDJSONLine(string(msgJSON), handle)
+
+	// Verify needsRestart is true
+	if !handle.NeedsRestart() {
+		t.Error("Expected needsRestart to be true after AskUserQuestion")
+	}
+
+	// Verify pendingQuestion is set
+	handle.conversationMu.Lock()
+	if handle.pendingQuestion == nil {
+		t.Error("Expected pendingQuestion to be set")
+	}
+	if handle.pendingQuestionText != "Should we restart?" {
+		t.Errorf("Expected pendingQuestionText='Should we restart?', got '%s'", handle.pendingQuestionText)
+	}
+	handle.conversationMu.Unlock()
+
+	// Verify tool_use was tracked
+	handle.conversationMu.Lock()
+	toolUse, exists := handle.pendingToolUses["toolu_restart_test"]
+	handle.conversationMu.Unlock()
+	if !exists {
+		t.Error("Expected tool_use to be tracked")
+	}
+	if toolUse.Name != "AskUserQuestion" {
+		t.Errorf("Expected tool name AskUserQuestion, got %s", toolUse.Name)
+	}
+}
+
+func TestAskUserQuestion_ClearPendingQuestion(t *testing.T) {
+	// Test that ClearPendingQuestion resets the restart state
+	handle := &ProcessHandle{
+		needsRestart:        true,
+		pendingQuestion:     &QuestionData{Question: "test"},
+		pendingQuestionText: "test question",
+		conversationMu:      sync.Mutex{},
+	}
+
+	handle.ClearPendingQuestion()
+
+	if handle.NeedsRestart() {
+		t.Error("Expected needsRestart to be false after ClearPendingQuestion")
+	}
+
+	handle.conversationMu.Lock()
+	if handle.pendingQuestion != nil {
+		t.Error("Expected pendingQuestion to be nil after ClearPendingQuestion")
+	}
+	if handle.pendingQuestionText != "" {
+		t.Error("Expected pendingQuestionText to be empty after ClearPendingQuestion")
+	}
+	handle.conversationMu.Unlock()
+}
+
+func TestAskUserQuestion_NoDuplicateRestartFlag(t *testing.T) {
+	// Test that duplicate questions don't set needsRestart multiple times
+	handle := &ProcessHandle{
+		pendingToolUses: make(map[string]ToolUseBlock),
+		conversationMu:  sync.Mutex{},
+		mu:              sync.Mutex{},
+	}
+
+	// First question
+	assistantMsg1 := map[string]interface{}{
+		"type": "assistant",
+		"message": map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id":   "toolu_first",
+					"name": "AskUserQuestion",
+					"input": map[string]interface{}{
+						"questions": []interface{}{
+							map[string]interface{}{
+								"question":    "First question?",
+								"header":      "First",
+								"multiSelect": false,
+								"options": []interface{}{
+									map[string]interface{}{
+										"label":       "Yes",
+										"description": "Yes",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	msgJSON1, _ := json.Marshal(assistantMsg1)
+	parseNDJSONLine(string(msgJSON1), handle)
+
+	// Verify first question set the flag
+	if !handle.NeedsRestart() {
+		t.Error("Expected needsRestart to be true after first question")
+	}
+
+	// Second question (duplicate/follow-up) - should be skipped
+	assistantMsg2 := map[string]interface{}{
+		"type": "assistant",
+		"message": map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id":   "toolu_second",
+					"name": "AskUserQuestion",
+					"input": map[string]interface{}{
+						"questions": []interface{}{
+							map[string]interface{}{
+								"question":    "Second question?",
+								"header":      "Second",
+								"multiSelect": false,
+								"options": []interface{}{
+									map[string]interface{}{
+										"label":       "Yes",
+										"description": "Yes",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	msgJSON2, _ := json.Marshal(assistantMsg2)
+	outputs := parseNDJSONLine(string(msgJSON2), handle)
+
+	// Verify second question was skipped (no question in outputs)
+	foundQuestion := false
+	for _, output := range outputs {
+		if output.Type == "question" {
+			foundQuestion = true
+		}
+	}
+	if foundQuestion {
+		t.Error("Expected duplicate question to be skipped, but it was emitted")
+	}
+
+	// Verify restart flag is still true (not reset by duplicate)
+	if !handle.NeedsRestart() {
+		t.Error("Expected needsRestart to remain true")
+	}
+}

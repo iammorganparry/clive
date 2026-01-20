@@ -507,16 +507,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle question type - show question panel
 		if msg.line.Type == "question" && msg.line.Question != nil {
-			// Pause Claude to prevent race condition - it keeps generating while we wait for user input
-			if m.processHandle != nil {
-				m.processHandle.PauseProcess()
-			}
 			m.pendingQuestion = msg.line.Question
 			m.showQuestionPanel = true
 			m.selectedOption = 0
 			m.inputFocused = true
 			m.input.Focus()
 			m.input.SetValue("")
+
+			// Check if we need to kill the process (kill/restart approach)
+			// Kill AFTER displaying the question so user can see it
+			if m.processHandle != nil && m.processHandle.NeedsRestart() {
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "[DEBUG] Killing process after displaying question",
+					Type: "system",
+				})
+				// Kill immediately - don't pause, we're restarting anyway
+				m.processHandle.Kill()
+			} else if m.processHandle != nil {
+				// Normal flow: Pause Claude to prevent race condition
+				m.processHandle.PauseProcess()
+			}
 		}
 		// NOTE: We intentionally do NOT clear ToolUseID when other content arrives.
 		// With streaming, Claude often sends more content after AskUserQuestion in the
@@ -1908,32 +1918,64 @@ func (m *Model) sendQuestionResponse(response string) {
 	}
 
 	// Check if we need to restart the process (kill/restart approach for AskUserQuestion)
-	if m.processHandle != nil && m.processHandle.NeedsRestart() {
-		// Restart the process with the user's answer as continuation context
-		// This avoids the 400 error from stale tool_use_ids
+	if m.processHandle != nil {
+		needsRestart := m.processHandle.NeedsRestart()
+
+		// DEBUG: Show restart status to user
 		m.outputLines = append(m.outputLines, process.OutputLine{
-			Text: "🔄 Restarting session with your answer...",
+			Text: fmt.Sprintf("[DEBUG] NeedsRestart=%v", needsRestart),
 			Type: "system",
 		})
-		m.viewport.SetContent(m.renderOutputContent())
-		m.viewport.GotoBottom()
 
-		newHandle := m.processHandle.RestartWithAnswer(response)
-		if newHandle != nil {
-			m.processHandle = newHandle
-			m.processHandle.ClearPendingQuestion()
+		if needsRestart {
+			// Restart the process with the user's answer as continuation context
+			// This avoids the 400 error from stale tool_use_ids
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: fmt.Sprintf("[DEBUG] Starting restart with answer: %s", response),
+				Type: "system",
+			})
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "🔄 Restarting session with your answer...",
+				Type: "system",
+			})
+			m.viewport.SetContent(m.renderOutputContent())
+			m.viewport.GotoBottom()
+
+			newHandle := m.processHandle.RestartWithAnswer(response)
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: fmt.Sprintf("[DEBUG] Restart returned handle: %v", newHandle != nil),
+				Type: "system",
+			})
+
+			if newHandle != nil {
+				m.processHandle = newHandle
+				m.processHandle.ClearPendingQuestion()
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "[DEBUG] Restart successful, process handle updated",
+					Type: "system",
+				})
+			} else {
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "Failed to restart process",
+					Type: "stderr",
+				})
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: "[DEBUG] Restart failed - newHandle is nil",
+					Type: "system",
+				})
+			}
+
+			// Clear pending question state
+			m.pendingQuestion = nil
+			m.input.SetValue("")
+			m.showQuestionPanel = false
+			return
 		} else {
 			m.outputLines = append(m.outputLines, process.OutputLine{
-				Text: "Failed to restart process",
-				Type: "stderr",
+				Text: "[DEBUG] Not restarting - needsRestart=false",
+				Type: "system",
 			})
 		}
-
-		// Clear pending question state
-		m.pendingQuestion = nil
-		m.input.SetValue("")
-		m.showQuestionPanel = false
-		return
 	}
 
 	// Normal flow (no restart needed)

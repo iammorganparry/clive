@@ -1345,9 +1345,9 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						handle.conversationMu.Unlock()
 					}
 
-						// CRITICAL: Kill the process immediately to prevent more API calls
-						fmt.Fprintf(os.Stderr, "[CLIVE] Killing process due to AskUserQuestion (tool_id=%s) to prevent stale tool_use_ids\n", toolID)
-						handle.Kill()
+						// NOTE: Process will be killed by TUI after question is displayed
+						fmt.Fprintf(os.Stderr, "[CLIVE] Question detected, needsRestart=true, TUI will kill after display AskUserQuestion (tool_id=%s) to prevent stale tool_use_ids\n", toolID)
+						// handle.Kill() - TUI will handle this
 
 						// Don't process any more content from this message
 						return logAndReturn(handle, line, results)
