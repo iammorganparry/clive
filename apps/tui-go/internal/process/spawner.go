@@ -167,16 +167,16 @@ type QuestionData struct {
 
 // Question represents a single question
 type Question struct {
-	Header      string
-	Question    string
-	Options     []QuestionOption
-	MultiSelect bool // Whether multiple options can be selected
+	Header      string           `json:"header"`
+	Question    string           `json:"question"`
+	Options     []QuestionOption `json:"options"`
+	MultiSelect bool             `json:"multiSelect"` // Whether multiple options can be selected
 }
 
 // QuestionOption represents a single option in a question
 type QuestionOption struct {
-	Label       string
-	Description string
+	Label       string `json:"label"`
+	Description string `json:"description"`
 }
 
 // Kill terminates the process
