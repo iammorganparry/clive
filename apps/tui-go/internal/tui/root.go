@@ -432,6 +432,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tasksLoadedMsg:
 		m.tasks = msg.tasks
 		m.loadingTasks = false
+		// Cache tasks immediately after loading for the sidebar
+		// This ensures the cache is always fresh when build starts
+		m.cacheTasksForBuild()
 
 	case configSavedMsg:
 		if msg.err != nil {
@@ -1089,11 +1092,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Build):
 			if !m.isRunning {
-				// Cache tasks BEFORE starting build
-				// This ensures error messages are visible
-				m.cacheTasksForBuild()
-
-				// Now start the build
 				execCmd := m.startBuild()
 				if execCmd != nil {
 					cmds = append(cmds, execCmd)
