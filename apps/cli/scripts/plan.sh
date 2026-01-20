@@ -156,8 +156,9 @@ if [ "$STREAMING" = true ]; then
 
     # --output-format stream-json: responses streamed as NDJSON
     # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
+    # --tools: Include WebSearch and WebFetch for research during planning
     # NOTE: We use --input-format stream-json for bidirectional streaming with TUI
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan "${CLAUDE_ARGS[@]}")
+    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan --tools "default" "${CLAUDE_ARGS[@]}")
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"
     claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"

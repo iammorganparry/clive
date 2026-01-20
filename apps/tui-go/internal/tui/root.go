@@ -147,9 +147,12 @@ type Model struct {
 	spinnerIndex    int       // Animation frame index
 
 	// Question state (for AskUserQuestion)
-	pendingQuestion   *process.QuestionData
-	selectedOption    int  // Selected option index
-	showQuestionPanel bool // Whether question panel is visible
+	pendingQuestion       *process.QuestionData
+	pendingQuestionIDs    []string          // All tool_use_ids for this question (handles retries/duplicates)
+	currentQuestionIndex  int               // Which question in the queue we're showing
+	questionAnswers       map[string]string // Collected answers (keyed by question index)
+	selectedOption        int               // Selected option index for current question
+	showQuestionPanel     bool              // Whether question panel is visible
 
 	// Key bindings
 	keys KeyMap
@@ -232,19 +235,20 @@ func NewRootModel(cfg *config.Config) Model {
 	}
 
 	return Model{
-		viewMode:        viewMode,
-		cfg:             cfg,
-		provider:        provider,
-		trackers:        config.AvailableTrackers(),
-		setupIdx:        setupIdx,
-		input:           ti,
-		linearSetup:     NewLinearSetup(),
-		epicSearchInput: epicSearch,
-		inputFocused:    false,
-		keys:            DefaultKeyMap(),
-		ready:           false,
-		selectedIndex:   0,
-		loadingEpics:    true, // Start as loading to show spinner while fetching epics
+		viewMode:         viewMode,
+		cfg:              cfg,
+		provider:         provider,
+		trackers:         config.AvailableTrackers(),
+		setupIdx:         setupIdx,
+		input:            ti,
+		linearSetup:      NewLinearSetup(),
+		epicSearchInput:  epicSearch,
+		inputFocused:     false,
+		keys:             DefaultKeyMap(),
+		ready:            false,
+		selectedIndex:    0,
+		loadingEpics:     true, // Start as loading to show spinner while fetching epics
+		questionAnswers:  make(map[string]string),
 	}
 }
 
@@ -526,13 +530,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle question type - show question panel
 		if msg.line.Type == "question" && msg.line.Question != nil {
-			m.pendingQuestion = msg.line.Question
-			m.showQuestionPanel = true
-			m.selectedOption = 0
-			m.inputFocused = true
-			m.input.Focus()
-			m.input.SetValue("")
-
+			m.handleQuestion(msg.line.Question)
 			// NOTE: We do NOT pause the process. The prompt instructs Claude to
 			// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
 		}
@@ -591,19 +589,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// With streaming, Claude often sends more content after AskUserQuestion in the
 		// same response. Clearing the ID would prevent the user from answering properly.
 
-		// Handle question type - show question panel (check last question in batch)
-		for i := len(regularLines) - 1; i >= 0; i-- {
-			line := regularLines[i]
+		// Handle question type - process each question through single handler
+		for _, line := range regularLines {
 			if line.Type == "question" && line.Question != nil {
-				// NOTE: We do NOT pause the process. The prompt instructs Claude to
-				// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
-				m.pendingQuestion = line.Question
-				m.showQuestionPanel = true
-				m.selectedOption = 0
-				m.inputFocused = true
-				m.input.Focus()
-				m.input.SetValue("")
-				break
+				m.handleQuestion(line.Question)
 			}
 		}
 
@@ -766,8 +755,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle input when focused
 		if m.inputFocused {
 			// Handle question panel navigation
-			if m.showQuestionPanel && m.pendingQuestion != nil {
-				totalOptions := len(m.pendingQuestion.Options) + 1 // +1 for "Other"
+			if m.showQuestionPanel && m.pendingQuestion != nil && len(m.pendingQuestion.Questions) > 0 {
+				currentQ := m.pendingQuestion.Questions[m.currentQuestionIndex]
+				totalOptions := len(currentQ.Options) + 1 // +1 for "Other"
 
 				switch msg.Type {
 				case tea.KeyUp:
@@ -781,35 +771,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, tea.Batch(cmds...)
 				case tea.KeyEnter:
+					var answer string
 					// If "Other" is selected and input is empty, just focus input
-					if m.selectedOption == len(m.pendingQuestion.Options) {
+					if m.selectedOption == len(currentQ.Options) {
 						inputVal := m.input.Value()
 						if inputVal == "" {
 							// Just let user type in the input
 							break
 						}
-						// Send custom input
-						m.sendQuestionResponse(inputVal)
+						answer = inputVal
 					} else {
-						// Send selected option
-						opt := m.pendingQuestion.Options[m.selectedOption]
-						m.sendQuestionResponse(opt.Label)
+						// Use selected option
+						opt := currentQ.Options[m.selectedOption]
+						answer = opt.Label
 					}
-					m.showQuestionPanel = false
-					m.pendingQuestion = nil
-					m.selectedOption = 0
-					m.input.SetValue("")
+
+					// Save answer for current question
+					questionKey := fmt.Sprintf("q%d", m.currentQuestionIndex)
+					m.questionAnswers[questionKey] = answer
+
+					// Check if there are more questions
+					if m.currentQuestionIndex < len(m.pendingQuestion.Questions)-1 {
+						// Move to next question
+						m.currentQuestionIndex++
+						m.selectedOption = 0
+						m.input.SetValue("")
+					} else {
+						// Last question answered - send all responses
+						m.sendAllQuestionResponses()
+						m.showQuestionPanel = false
+						m.pendingQuestion = nil
+						m.currentQuestionIndex = 0
+						m.questionAnswers = make(map[string]string)
+						m.selectedOption = 0
+						m.input.SetValue("")
+					}
 					return m, tea.Batch(cmds...)
 				case tea.KeyEsc:
 					m.showQuestionPanel = false
 					m.pendingQuestion = nil
+					m.currentQuestionIndex = 0
+					m.questionAnswers = make(map[string]string)
 					m.selectedOption = 0
 					m.inputFocused = false
 					m.input.Blur()
 					return m, tea.Batch(cmds...)
 				default:
 					// Allow typing for "Other" option
-					if m.selectedOption == len(m.pendingQuestion.Options) {
+					if m.selectedOption == len(currentQ.Options) {
 						var cmd tea.Cmd
 						m.input, cmd = m.input.Update(msg)
 						cmds = append(cmds, cmd)
@@ -1416,29 +1425,38 @@ func (m Model) renderSidebar(width, height int) string {
 
 // renderQuestionPanel renders the question panel for AskUserQuestion
 func (m Model) renderQuestionPanel() string {
-	if !m.showQuestionPanel || m.pendingQuestion == nil {
+	if !m.showQuestionPanel || m.pendingQuestion == nil || len(m.pendingQuestion.Questions) == 0 {
 		return ""
 	}
 
-	q := m.pendingQuestion
+	currentQ := m.pendingQuestion.Questions[m.currentQuestionIndex]
 	var content strings.Builder
+
+	// Progress indicator (if multiple questions)
+	if len(m.pendingQuestion.Questions) > 1 {
+		progress := lipgloss.NewStyle().
+			Foreground(ColorFgMuted).
+			Render(fmt.Sprintf("Question %d of %d", m.currentQuestionIndex+1, len(m.pendingQuestion.Questions)))
+		content.WriteString(progress)
+		content.WriteString("\n")
+	}
 
 	// Header
 	header := lipgloss.NewStyle().
 		Foreground(ColorBlue).
 		Bold(true).
-		Render("❓ " + q.Header)
+		Render("❓ " + currentQ.Header)
 	content.WriteString(header)
 	content.WriteString("\n\n")
 
 	// Question text
 	content.WriteString(lipgloss.NewStyle().
 		Foreground(ColorFgPrimary).
-		Render(q.Question))
+		Render(currentQ.Question))
 	content.WriteString("\n\n")
 
 	// Options
-	for i, opt := range q.Options {
+	for i, opt := range currentQ.Options {
 		var optStyle lipgloss.Style
 		prefix := "  "
 		if i == m.selectedOption {
@@ -1466,7 +1484,7 @@ func (m Model) renderQuestionPanel() string {
 	}
 
 	// Add "Other" option
-	otherIdx := len(q.Options)
+	otherIdx := len(currentQ.Options)
 	var otherStyle lipgloss.Style
 	prefix := "  "
 	if m.selectedOption == otherIdx {
@@ -1980,8 +1998,9 @@ func (m *Model) sendQuestionResponse(response string) {
 	// Capture question text before clearing (for display in chat history)
 	var questionText string
 	var toolUseID string
-	if m.pendingQuestion != nil {
-		questionText = m.pendingQuestion.Question
+	if m.pendingQuestion != nil && len(m.pendingQuestion.Questions) > 0 {
+		// Use the first question's text for backwards compatibility
+		questionText = m.pendingQuestion.Questions[0].Question
 		toolUseID = m.pendingQuestion.ToolUseID
 		// Clear the ToolUseID immediately to prevent duplicate tool_result sends
 		m.pendingQuestion.ToolUseID = ""
@@ -2028,6 +2047,154 @@ func (m *Model) sendQuestionResponse(response string) {
 	}
 
 	// Update viewport to show the message
+	m.viewport.SetContent(m.renderOutputContent())
+	m.viewport.GotoBottom()
+}
+
+// handleQuestion is the single source of truth for processing AskUserQuestion tool calls
+// It handles both new questions and duplicate/retry questions from Claude
+func (m *Model) handleQuestion(question *process.QuestionData) {
+	if question == nil || len(question.Questions) == 0 {
+		return
+	}
+
+	// Check if this is a duplicate question (Claude retrying)
+	isDuplicate := false
+	if m.pendingQuestion != nil && len(m.pendingQuestion.Questions) > 0 {
+		// Compare first question text to detect duplicates
+		if m.pendingQuestion.Questions[0].Question == question.Questions[0].Question {
+			isDuplicate = true
+			// Add this tool_use_id to the list (will be deduplicated before sending)
+			m.pendingQuestionIDs = append(m.pendingQuestionIDs, question.ToolUseID)
+		}
+	}
+
+	if !isDuplicate {
+		// New question - reset all state
+		m.pendingQuestion = question
+		m.pendingQuestionIDs = []string{question.ToolUseID}
+		m.showQuestionPanel = true
+		m.currentQuestionIndex = 0
+		m.questionAnswers = make(map[string]string)
+		m.selectedOption = 0
+		m.inputFocused = true
+		m.input.Focus()
+		m.input.SetValue("")
+	}
+}
+
+// sendAllQuestionResponses sends all collected answers for a multi-question AskUserQuestion
+// Also handles sending the same answer to duplicate questions (Claude retries)
+func (m *Model) sendAllQuestionResponses() {
+	if m.processHandle == nil || m.pendingQuestion == nil {
+		return
+	}
+
+	// Get all tool_use_ids we need to respond to (handles duplicates/retries)
+	toolUseIDs := m.pendingQuestionIDs
+	if len(toolUseIDs) == 0 {
+		// Fallback to single ID from question data
+		if m.pendingQuestion.ToolUseID != "" {
+			toolUseIDs = []string{m.pendingQuestion.ToolUseID}
+		} else {
+			return
+		}
+	}
+
+	// Deduplicate tool_use_ids to prevent sending same response multiple times
+	// This can happen when both single and batch handlers process the same question
+	uniqueIDs := make(map[string]bool)
+	deduplicatedIDs := make([]string, 0, len(toolUseIDs))
+	for _, id := range toolUseIDs {
+		if !uniqueIDs[id] {
+			uniqueIDs[id] = true
+			deduplicatedIDs = append(deduplicatedIDs, id)
+		}
+	}
+	toolUseIDs = deduplicatedIDs
+
+	// Clear state immediately to prevent duplicate sends
+	m.pendingQuestion.ToolUseID = ""
+	m.pendingQuestionIDs = nil
+
+	// Reset the questionSeenThisTurn flag
+	m.processHandle.ResetQuestionFlag()
+
+	// Build the response according to AskUserQuestion spec from Claude Agent SDK docs:
+	// - Single question: send answer as plain string
+	// - Multiple questions: send as {"questions": [...], "answers": {"question text": "answer", ...}}
+	// Keys in answers MUST be the actual question text, not indices
+	var response string
+
+	if len(m.pendingQuestion.Questions) == 1 {
+		// Single question - send plain string
+		response = m.questionAnswers["q0"]
+	} else {
+		// Multiple questions - map answers to question text (not indices)
+		answersMap := make(map[string]string)
+		for i, q := range m.pendingQuestion.Questions {
+			questionKey := fmt.Sprintf("q%d", i)
+			if answer, ok := m.questionAnswers[questionKey]; ok {
+				// Use the actual question text as the key
+				answersMap[q.Question] = answer
+			}
+		}
+
+		// Include both the original questions array AND the answers
+		responseObj := map[string]interface{}{
+			"questions": m.pendingQuestion.Questions,
+			"answers":   answersMap,
+		}
+
+		answersJSON, marshalErr := json.Marshal(responseObj)
+		if marshalErr != nil {
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "Failed to format answers: " + marshalErr.Error(),
+				Type: "stderr",
+			})
+			return
+		}
+		response = string(answersJSON)
+	}
+
+	// Send the same tool_result to ALL tool_use_ids (handles duplicates/retries)
+	var errors []string
+	for _, toolUseID := range toolUseIDs {
+		err := m.processHandle.SendToolResult(toolUseID, response)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", toolUseID, err))
+		}
+	}
+
+	// Show all questions and answers in output (for chat history)
+	for i, q := range m.pendingQuestion.Questions {
+		questionKey := fmt.Sprintf("q%d", i)
+		answer := m.questionAnswers[questionKey]
+
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: fmt.Sprintf("❓ %s: %s", q.Header, q.Question),
+			Type: "assistant",
+		})
+		m.outputLines = append(m.outputLines, process.OutputLine{
+			Text: "> " + answer,
+			Type: "user",
+		})
+	}
+
+	// Show errors if any sends failed
+	if len(errors) > 0 {
+		for _, errMsg := range errors {
+			if strings.Contains(errMsg, "not found in conversation") {
+				errMsg = fmt.Sprintf("Question no longer valid: %s", errMsg)
+			}
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: "Failed to send response: " + errMsg,
+				Type: "stderr",
+			})
+		}
+	}
+
+	// Update viewport to show the messages
 	m.viewport.SetContent(m.renderOutputContent())
 	m.viewport.GotoBottom()
 }

@@ -158,12 +158,19 @@ type OutputLine struct {
 	DebugInfo string
 }
 
-// QuestionData represents a question from Claude's AskUserQuestion tool
+// QuestionData represents questions from Claude's AskUserQuestion tool
+// Can contain multiple questions that need to be answered together
 type QuestionData struct {
-	ToolUseID string // The tool_use_id needed for responding
-	Header    string
-	Question  string
-	Options   []QuestionOption
+	ToolUseID  string     // The tool_use_id needed for responding
+	Questions  []Question // Multiple questions that need to be answered
+}
+
+// Question represents a single question
+type Question struct {
+	Header      string
+	Question    string
+	Options     []QuestionOption
+	MultiSelect bool // Whether multiple options can be selected
 }
 
 // QuestionOption represents a single option in a question
@@ -274,13 +281,7 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 	}
 	p.conversationMu.Unlock()
 
-	// Log validation result (will appear in debug panel via stderr reader)
-	shortToolUseID := toolUseID
-	if len(toolUseID) > 8 {
-		shortToolUseID = toolUseID[:8] + "..."
-	}
-	fmt.Fprintf(os.Stderr, "[TOOL_RESULT] Validating tool_use_id=%s exists=%v total_tracked=%d tracked_ids=%v\n",
-		shortToolUseID, exists, totalTracked, trackedIDs)
+	// Validation logged to conversation logger (if enabled)
 
 	if !exists {
 		return fmt.Errorf("tool_use_id %s not found in conversation (stale or invalid)", toolUseID)
@@ -330,9 +331,6 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 		p.logger.LogSentMessage("tool_result", msg, metadata)
 	}
 
-	// DEBUG: Log the exact JSON being sent to Claude CLI
-	fmt.Fprintf(os.Stderr, "[TOOL_RESULT_SEND] Sending to stdin: %s\n", string(data))
-
 	_, err = p.stdin.Write(append(data, '\n'))
 
 	// Reset flag to allow next question (note: p.mu is still held from line 296)
@@ -340,8 +338,6 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 
 	// Note: Cleanup already happened atomically during validation (before lock release)
 	// This prevents race conditions where multiple threads could send duplicate tool_results
-
-	fmt.Fprintf(os.Stderr, "[TOOL_RESULT_SEND] Write completed, err=%v\n", err)
 
 	return err
 }
@@ -730,30 +726,44 @@ func parseQuestionData(input map[string]interface{}) *QuestionData {
 		return nil
 	}
 
-	// For now, just take the first question
-	firstQ, ok := questions[0].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
 	qd := &QuestionData{
-		Header:   getString(firstQ, "header"),
-		Question: getString(firstQ, "question"),
+		Questions: make([]Question, 0, len(questions)),
 	}
 
-	// Parse options
-	opts, ok := firstQ["options"].([]interface{})
-	if ok {
-		for _, opt := range opts {
-			optMap, ok := opt.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			qd.Options = append(qd.Options, QuestionOption{
-				Label:       getString(optMap, "label"),
-				Description: getString(optMap, "description"),
-			})
+	// Extract ALL questions from the array
+	for _, q := range questions {
+		qMap, ok := q.(map[string]interface{})
+		if !ok {
+			continue
 		}
+
+		question := Question{
+			Header:      getString(qMap, "header"),
+			Question:    getString(qMap, "question"),
+			MultiSelect: getBool(qMap, "multiSelect"),
+		}
+
+		// Parse options
+		opts, ok := qMap["options"].([]interface{})
+		if ok {
+			for _, opt := range opts {
+				optMap, ok := opt.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				question.Options = append(question.Options, QuestionOption{
+					Label:       getString(optMap, "label"),
+					Description: getString(optMap, "description"),
+				})
+			}
+		}
+
+		qd.Questions = append(qd.Questions, question)
+	}
+
+	// Return nil if no valid questions were parsed
+	if len(qd.Questions) == 0 {
+		return nil
 	}
 
 	return qd
@@ -765,6 +775,14 @@ func getString(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
+}
+
+// getBool safely gets a bool value from a map
+func getBool(m map[string]interface{}, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
 }
 
 // parseNDJSONLine parses a line of NDJSON from Claude CLI
@@ -942,16 +960,15 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			// For AskUserQuestion in streaming mode, defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
-				if handle != nil {
-					// Only show ONE question per turn to prevent duplicates in buffered output
-					handle.mu.Lock()
-					if handle.questionSeenThisTurn {
-						handle.mu.Unlock()
-						fmt.Fprintf(os.Stderr, "[CLIVE] Discarding duplicate AskUserQuestion (tool_id=%s)\n", toolID)
-						return nil // Discard silently
+				if handle != nil && toolID != "" {
+					// Check if we've already handled this specific question ID
+					streamStateMu.Lock()
+					alreadyHandled := handledQuestionIDs[toolID]
+					streamStateMu.Unlock()
+
+					if alreadyHandled {
+						return nil // Discard silently - already handled
 					}
-					handle.questionSeenThisTurn = true
-					handle.mu.Unlock()
 				}
 				// NOTE: We do NOT pause the process here. The prompt instructs Claude to
 				// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
@@ -1052,14 +1069,24 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}
 				streamStateMu.Unlock()
 
+				// Set skipUntilToolResult to prevent processing further messages until user responds
+				if handle != nil {
+					handle.mu.Lock()
+					handle.skipUntilToolResult = true
+					handle.mu.Unlock()
+				}
+
 				// Return the question and debug message
+				// CRITICAL: Set CloseStdin=true to force Claude to stop streaming
+				// This prevents Claude from asking multiple questions or adding text after the question
 				return logAndReturn(handle, line, []OutputLine{
 					{
-						Text:      "❓ Awaiting response\n",
-						Type:      "question",
-						ToolName:  toolName,
-						Question:  qd,
-						DebugInfo: debugInfo,
+						Text:       "❓ Awaiting response\n",
+						Type:       "question",
+						ToolName:   toolName,
+						Question:   qd,
+						DebugInfo:  debugInfo,
+						CloseStdin: true, // Force Claude to end the turn
 					},
 					{
 						Type:      "debug",
@@ -1080,8 +1107,7 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			handle.mu.Unlock()
 
 			if shouldSkip {
-				fmt.Fprintf(os.Stderr, "[CLIVE] Skipping assistant message (waiting for user response to question)\n")
-				return nil
+				return nil // Skipping - waiting for user response
 			}
 		}
 
@@ -1094,21 +1120,23 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			return nil
 		}
 
-		// CRITICAL: Check if this message contains AskUserQuestion BEFORE processing any content
-		// If we've already seen a question this turn, skip the ENTIRE message to prevent
-		// showing question text in UI for a tool_use we'll discard
+		// CRITICAL: Check if this message contains AskUserQuestion that was already handled via streaming
+		// Use the handledQuestionIDs map to check for specific tool_use_ids, not the generic flag
 		if handle != nil {
 			for _, c := range content {
 				if block, ok := c.(map[string]interface{}); ok {
 					if block["type"] == "tool_use" && block["name"] == "AskUserQuestion" {
-						handle.mu.Lock()
-						alreadySeenQuestion := handle.questionSeenThisTurn
-						handle.mu.Unlock()
+						toolID, _ := block["id"].(string)
 
-						if alreadySeenQuestion {
-							toolID, _ := block["id"].(string)
-							fmt.Fprintf(os.Stderr, "[CLIVE] Discarding entire assistant message with duplicate AskUserQuestion (tool_id=%s)\n", toolID)
-							return nil // Skip entire message
+						// Check if THIS SPECIFIC question was already handled via streaming
+						streamStateMu.Lock()
+						alreadyHandled := (toolID != "" && handledQuestionIDs[toolID])
+						streamStateMu.Unlock()
+
+						if alreadyHandled {
+							// Don't discard entire message - just continue processing
+							// The per-block handler below will skip this specific tool_use
+							break
 						}
 						break // Found AskUserQuestion, check passed, continue processing
 					}
@@ -1212,51 +1240,43 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						continue
 					}
 
-					// CRITICAL: Kill and restart approach to prevent stale tool_use_ids
-					// Pausing doesn't work because Claude CLI has already made multiple API calls
-					// that are queued or in-flight. The only way to prevent stale IDs is to kill
-					// the process, then restart with the user's answer.
+					// Emit the question (already deduplicated via handledQuestionIDs above)
 					if handle != nil {
-						handle.mu.Lock()
-						if handle.questionSeenThisTurn {
-							handle.mu.Unlock()
-							fmt.Fprintf(os.Stderr, "[CLIVE] Discarding duplicate AskUserQuestion in assistant message (tool_id=%s)\n", toolID)
-							continue // Discard silently
-						}
-						handle.questionSeenThisTurn = true
-						handle.mu.Unlock()
-
-						// Emit the question BEFORE killing (so user sees it)
+						// Emit the question
 						qd := parseQuestionData(input)
 						if qd != nil {
 							qd.ToolUseID = toolID
 						}
 
+						// CRITICAL: Set CloseStdin=true to force Claude to end the turn
+						// This prevents Claude from asking multiple questions or continuing to stream
 						results = append(results, OutputLine{
-							Text:      "❓ Awaiting response\n",
-							Type:      "question",
-							ToolName:  name,
-							Question:  qd,
-							DebugInfo: debugInfo,
+							Text:       "❓ Awaiting response\n",
+							Type:       "question",
+							ToolName:   name,
+							Question:   qd,
+							DebugInfo:  debugInfo,
+							CloseStdin: true, // Force Claude to end the turn
 						})
 
-					// Track the tool_use for verification when sending tool_result
-					if toolID != "" {
-						handle.conversationMu.Lock()
-						handle.pendingToolUses[toolID] = ToolUseBlock{
-							ID:    toolID,
-							Name:  name,
-							Input: input,
+						// Track the tool_use for verification when sending tool_result
+						if toolID != "" {
+							handle.conversationMu.Lock()
+							handle.pendingToolUses[toolID] = ToolUseBlock{
+								ID:    toolID,
+								Name:  name,
+								Input: input,
+							}
+							handle.conversationMu.Unlock()
 						}
-						handle.conversationMu.Unlock()
+
+						// Set skipUntilToolResult to prevent processing further messages until user responds
+						handle.mu.Lock()
+						handle.skipUntilToolResult = true
+						handle.mu.Unlock()
 					}
 
-						// Don't process any more content from this message
-						return logAndReturn(handle, line, results)
-					}
-
-					// Note: Question emission and process kill moved above (inside if handle != nil)
-					// This code should not be reached for questions in non-streaming mode
+					// Question emitted - continue to next content block
 					continue
 				}
 
