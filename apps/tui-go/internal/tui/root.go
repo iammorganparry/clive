@@ -185,6 +185,7 @@ var availableCommands = []struct {
 	{"/plan", "Create a work plan"},
 	{"/build", "Execute work plan"},
 	{"/add", "Add task to epic (build mode)"},
+	{"/question", "Test AskUserQuestion tool"},
 	{"/cancel", "Cancel running process"},
 	{"/clear", "Clear output"},
 	{"/status", "Show current status"},
