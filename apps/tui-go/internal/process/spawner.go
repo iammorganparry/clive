@@ -491,6 +491,8 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		var promptPathFile string
 		if promptType == "plan" {
 			promptPathFile = filepath.Join(".claude", ".plan-prompt-path")
+		} else if promptType == "question" {
+			promptPathFile = filepath.Join(".claude", ".question-prompt-path")
 		} else {
 			promptPathFile = filepath.Join(".claude", ".build-prompt-path")
 		}

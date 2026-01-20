@@ -30,32 +30,54 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Create temp file for the prompt
+TEMP_PROMPT=$(mktemp)
+mv "$TEMP_PROMPT" "${TEMP_PROMPT}.md"
+TEMP_PROMPT="${TEMP_PROMPT}.md"
+trap "rm -f $TEMP_PROMPT" EXIT
+
+# Write test prompt to temp file
+cat > "$TEMP_PROMPT" <<'EOF'
+Please use the AskUserQuestion tool to ask me the following questions:
+
+1. First, ask a single question: "What is your favorite programming language?" with options:
+   - TypeScript
+   - Go
+   - Python
+   - Rust
+
+2. After I answer, ask two questions together:
+   - "What is your preferred database?" with options: PostgreSQL, MySQL, MongoDB
+   - "What is your preferred hosting platform?" with options: AWS, GCP, Azure, Railway
+
+Use proper AskUserQuestion tool format with headers, questions, and options.
+
+After I answer both questions, say "Test complete!" and stop.
+EOF
+
 if [ "$STREAMING" = true ]; then
     # Streaming mode for TUI
     echo "Starting AskUserQuestion test (streaming mode)..." >&2
 
+    # Ensure .claude directory exists
+    mkdir -p .claude
+
+    # Write prompt path for TUI to read and send via stdin
+    echo "$TEMP_PROMPT" > .claude/.question-prompt-path
+
     # Build Claude args for streaming
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json)
+    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --dangerously-skip-permissions)
 
-    # Create a simple prompt that asks Claude to use AskUserQuestion
-    PROMPT="Please use the AskUserQuestion tool to ask me the following questions:
-
-1. A single question asking: \"What is your favorite programming language?\" with options: TypeScript, Go, Python, Rust
-2. Then after I answer, ask a multi-question asking:
-   - \"What is your preferred database?\" with options: PostgreSQL, MySQL, MongoDB
-   - \"What is your preferred hosting platform?\" with options: AWS, GCP, Azure, Railway
-
-Use proper AskUserQuestion tool format with headers, questions, and options.
-
-After I answer both questions, say 'Test complete!' and exit."
-
-    # Run claude with the test prompt
-    claude "${CLAUDE_ARGS[@]}" "$PROMPT" 2>>"$HOME/.clive/claude-stderr.log"
+    # Run claude with streaming
+    claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
 else
     # Non-streaming mode
     echo "Starting AskUserQuestion test (non-streaming mode)..."
 
-    PROMPT="Please use the AskUserQuestion tool to ask me: \"What is your favorite programming language?\" with options: TypeScript, Go, Python, Rust. Use proper AskUserQuestion format."
-
-    claude -p "$PROMPT"
+    # Run claude with the temp prompt file
+    claude -p --add-dir "$(dirname "$TEMP_PROMPT")" --dangerously-skip-permissions \
+        "Read and execute the instructions in: $TEMP_PROMPT"
 fi
+
+echo ""
+echo "Question test complete."
