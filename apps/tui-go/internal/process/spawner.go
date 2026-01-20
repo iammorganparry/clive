@@ -1076,6 +1076,29 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		if !ok {
 			return nil
 		}
+
+		// CRITICAL: Check if this message contains AskUserQuestion BEFORE processing any content
+		// If we've already seen a question this turn, skip the ENTIRE message to prevent
+		// showing question text in UI for a tool_use we'll discard
+		if handle != nil {
+			for _, c := range content {
+				if block, ok := c.(map[string]interface{}); ok {
+					if block["type"] == "tool_use" && block["name"] == "AskUserQuestion" {
+						handle.mu.Lock()
+						alreadySeenQuestion := handle.questionSeenThisTurn
+						handle.mu.Unlock()
+
+						if alreadySeenQuestion {
+							toolID, _ := block["id"].(string)
+							fmt.Fprintf(os.Stderr, "[CLIVE] Discarding entire assistant message with duplicate AskUserQuestion (tool_id=%s)\n", toolID)
+							return nil // Skip entire message
+						}
+						break // Found AskUserQuestion, check passed, continue processing
+					}
+				}
+			}
+		}
+
 		// Return separate OutputLines for each content block
 		var results []OutputLine
 		for _, c := range content {
