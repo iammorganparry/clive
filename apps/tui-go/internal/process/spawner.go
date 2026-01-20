@@ -309,6 +309,7 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 					"type":        "tool_result",
 					"tool_use_id": toolUseID,
 					"content":     result,
+					"is_error":    false,
 				},
 			},
 		},
@@ -329,6 +330,9 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 		p.logger.LogSentMessage("tool_result", msg, metadata)
 	}
 
+	// DEBUG: Log the exact JSON being sent to Claude CLI
+	fmt.Fprintf(os.Stderr, "[TOOL_RESULT_SEND] Sending to stdin: %s\n", string(data))
+
 	_, err = p.stdin.Write(append(data, '\n'))
 
 	// Reset flag to allow next question (note: p.mu is still held from line 296)
@@ -336,6 +340,8 @@ func (p *ProcessHandle) SendToolResult(toolUseID string, result string) error {
 
 	// Note: Cleanup already happened atomically during validation (before lock release)
 	// This prevents race conditions where multiple threads could send duplicate tool_results
+
+	fmt.Fprintf(os.Stderr, "[TOOL_RESULT_SEND] Write completed, err=%v\n", err)
 
 	return err
 }
