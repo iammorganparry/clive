@@ -2087,8 +2087,25 @@ func (m *Model) startBuild() tea.Cmd {
 
 		// Convert tasks to JSON for the build agent
 		tasksJSON, err := json.MarshalIndent(m.tasks, "", "  ")
-		if err == nil {
-			os.WriteFile(tasksPath, tasksJSON, 0644)
+		if err != nil {
+			m.outputLines = append(m.outputLines, process.OutputLine{
+				Text: fmt.Sprintf("Warning: Failed to marshal tasks cache: %v", err),
+				Type: "stderr",
+			})
+		} else {
+			err = os.WriteFile(tasksPath, tasksJSON, 0644)
+			if err != nil {
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: fmt.Sprintf("Warning: Failed to write tasks cache: %v", err),
+					Type: "stderr",
+				})
+			} else {
+				// Success - log for debugging
+				m.outputLines = append(m.outputLines, process.OutputLine{
+					Text: fmt.Sprintf("Cached %d tasks to %s", len(m.tasks), tasksPath),
+					Type: "system",
+				})
+			}
 		}
 	}
 
