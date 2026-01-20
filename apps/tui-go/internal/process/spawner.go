@@ -1133,8 +1133,10 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			return nil
 		}
 
-		// Extract message ID for tracking question messages
+		// Extract message ID and stop_reason for tracking question messages
 		messageID, _ := message["id"].(string)
+		stopReason, _ := message["stop_reason"].(string)
+		messageIncomplete := (stopReason == "")
 
 		// CRITICAL: Check if this message contains AskUserQuestion that was already handled via streaming
 		// Use the handledQuestionIDs map to check for specific tool_use_ids, not the generic flag
@@ -1200,6 +1202,12 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			if block["type"] == "text" {
 				textContent, _ := block["text"].(string)
 				if textContent != "" {
+					// Skip text blocks from incomplete messages (stop_reason: null)
+					// Incomplete messages will be followed by more content, so we should wait
+					if messageIncomplete {
+						continue
+					}
+
 					// Skip text blocks if this message contains AskUserQuestion
 					// This prevents breaking the message sequence with text between tool_use and tool_result
 					if hasAskUserQuestion {
