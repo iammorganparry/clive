@@ -406,6 +406,16 @@ func RunPlan(input string, parentID string, outputChan chan<- OutputLine) *Proce
 	return runScript(args, "plan", outputChan)
 }
 
+// RunQuestion runs the question test script for testing AskUserQuestion functionality
+func RunQuestion(outputChan chan<- OutputLine) *ProcessHandle {
+	scriptsDir := findScriptsDir()
+	questionScript := filepath.Join(scriptsDir, "question.sh")
+
+	args := []string{questionScript, "--streaming"}
+
+	return runScript(args, "question", outputChan)
+}
+
 // createConversationLogger creates a conversation logger from script args and mode
 func createConversationLogger(args []string, promptType string) (*ConversationLogger, error) {
 	// Parse args to extract epic ID and iteration

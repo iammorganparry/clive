@@ -1945,6 +1945,9 @@ func (m *Model) executeCommand(cmd string) tea.Cmd {
 		input := strings.TrimSpace(strings.TrimPrefix(cmd, "/plan"))
 		return m.startPlan(input)
 
+	case cmd == "/question":
+		return m.startQuestion()
+
 	case strings.HasPrefix(cmd, "/build"):
 		return m.startBuild()
 
@@ -2405,6 +2408,30 @@ func (m *Model) startPlan(input string) tea.Cmd {
 	})
 
 	// Start polling and spinner (spinner will self-sustain while isRunning)
+	return tea.Batch(m.pollOutput(), spinnerTickCmd())
+}
+
+// startQuestion runs the question test command to test AskUserQuestion functionality
+func (m *Model) startQuestion() tea.Cmd {
+	if m.isRunning {
+		return nil
+	}
+
+	m.isRunning = true
+	m.outputChan = make(chan process.OutputLine, 100)
+
+	// Initialize streaming indicator state
+	m.streamStartTime = time.Now()
+	m.spinnerIndex = 0
+
+	m.processHandle = process.RunQuestion(m.outputChan)
+
+	m.outputLines = append(m.outputLines, process.OutputLine{
+		Text: "Starting AskUserQuestion test...",
+		Type: "system",
+	})
+
+	// Start polling and spinner
 	return tea.Batch(m.pollOutput(), spinnerTickCmd())
 }
 

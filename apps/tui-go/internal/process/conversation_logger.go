@@ -67,6 +67,12 @@ func NewConversationLogger(epicID string, iteration int, mode string) (*Conversa
 			return nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		logPath = filepath.Join(baseLogDir, fmt.Sprintf("conversation-plan-%s.ndjson", timestamp))
+	} else if mode == "question" {
+		// Question test mode: ~/.clive/logs/{project}/conversation-question-{timestamp}.ndjson
+		if err := os.MkdirAll(baseLogDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory: %w", err)
+		}
+		logPath = filepath.Join(baseLogDir, fmt.Sprintf("conversation-question-%s.ndjson", timestamp))
 	} else {
 		// Fallback for build mode without epic
 		if err := os.MkdirAll(baseLogDir, 0755); err != nil {
