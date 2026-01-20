@@ -45,15 +45,22 @@ set -- "${POSITIONAL_ARGS[@]}"
 # Export parent ID for planning agent (if provided, skip creating a new parent issue)
 export CLIVE_PARENT_ID="$PARENT_ID"
 
-# Set epic-scoped paths for plan files
+# Generate unique slug for plan file
+PLAN_SLUG=$(date +%s)-$(openssl rand -hex 4 | cut -c1-8)
+
+# Set plan file paths (native plan mode uses ~/.claude/plans/)
 if [ -n "$PARENT_ID" ]; then
-    EPIC_DIR=".claude/epics/$PARENT_ID"
-    mkdir -p "$EPIC_DIR"
-    export CLIVE_PLAN_FILE="$EPIC_DIR/current-plan.md"
-    export CLIVE_PROGRESS_FILE="$EPIC_DIR/progress.txt"
+    # Epic-scoped plan in ~/.claude/plans/epics/{PARENT_ID}/{slug}.md
+    PLAN_DIR="$HOME/.claude/plans/epics/$PARENT_ID"
+    mkdir -p "$PLAN_DIR"
+    export CLIVE_PLAN_FILE="$PLAN_DIR/$PLAN_SLUG.md"
+    export CLIVE_PROGRESS_FILE="$PLAN_DIR/progress.txt"
 else
-    export CLIVE_PLAN_FILE=".claude/current-plan.md"
-    export CLIVE_PROGRESS_FILE=".claude/progress.txt"
+    # New plan in ~/.claude/plans/{slug}.md
+    PLAN_DIR="$HOME/.claude/plans"
+    mkdir -p "$PLAN_DIR"
+    export CLIVE_PLAN_FILE="$PLAN_DIR/$PLAN_SLUG.md"
+    export CLIVE_PROGRESS_FILE="$HOME/.claude/plans/progress.txt"
 fi
 
 # Verify prompt file exists
@@ -102,8 +109,9 @@ echo "Creating work plan..."
 echo "Request: $USER_INPUT"
 echo ""
 
-# Ensure .claude directory exists for state files
+# Ensure directories exist for state files
 mkdir -p .claude
+mkdir -p "$PLAN_DIR"
 
 # Create temp file for the processed prompt (with frontmatter stripped)
 TEMP_PROMPT=$(mktemp)
@@ -146,9 +154,9 @@ if [ "$STREAMING" = true ]; then
     # Write prompt path for TUI to read and send via stdin
     echo "$TEMP_PROMPT" > .claude/.plan-prompt-path
 
-    # --input-format stream-json: prompt sent via stdin as JSON
     # --output-format stream-json: responses streamed as NDJSON
     # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
+    # NOTE: We use --input-format stream-json for bidirectional streaming with TUI
     CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan "${CLAUDE_ARGS[@]}")
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"
@@ -163,6 +171,22 @@ fi
 echo ""
 echo ""
 echo "Plan session complete."
+
+# Verify plan file was created
+if [ ! -f "$CLIVE_PLAN_FILE" ]; then
+    echo "WARNING: Plan file not created at $CLIVE_PLAN_FILE" >&2
+    echo "Claude may not be using EnterPlanMode/ExitPlanMode tools" >&2
+    echo "Check ~/.clive/claude-stderr.log for errors" >&2
+else
+    echo "✓ Plan file created: $CLIVE_PLAN_FILE"
+
+    # Verify plan has minimum expected content (basic completeness check)
+    if grep -q "## Implementation" "$CLIVE_PLAN_FILE" 2>/dev/null; then
+        echo "✓ Plan appears complete"
+    else
+        echo "WARNING: Plan file may be incomplete (missing Implementation section)" >&2
+    fi
+fi
 
 # Show what was created (tracker-specific)
 if [ "$TRACKER" = "beads" ]; then

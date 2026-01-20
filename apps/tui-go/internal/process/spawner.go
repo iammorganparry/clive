@@ -921,6 +921,24 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				text += " " + detail
 			}
 
+			// Handle EnterPlanMode - signal planning has started
+			if name == "EnterPlanMode" {
+				return logAndReturn(handle, line, []OutputLine{{
+					Text:      "📋 Entering planning mode...\n",
+					Type:      "system",
+					DebugInfo: debugInfo,
+				}})
+			}
+
+			// Handle ExitPlanMode - signal planning is complete and ready for approval
+			if name == "ExitPlanMode" {
+				return logAndReturn(handle, line, []OutputLine{{
+					Text:      "✓ Plan complete! Review the plan file to approve.\n",
+					Type:      "system",
+					DebugInfo: debugInfo,
+				}})
+			}
+
 			// For AskUserQuestion in streaming mode, defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
 			if name == "AskUserQuestion" {
@@ -1142,6 +1160,26 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				text := "● " + name
 				if detail != "" {
 					text += " " + detail
+				}
+
+				// Handle EnterPlanMode in assistant message
+				if name == "EnterPlanMode" {
+					results = append(results, OutputLine{
+						Text:      "📋 Entering planning mode...\n",
+						Type:      "system",
+						DebugInfo: debugInfo,
+					})
+					continue
+				}
+
+				// Handle ExitPlanMode in assistant message
+				if name == "ExitPlanMode" {
+					results = append(results, OutputLine{
+						Text:      "✓ Plan complete! Review the plan file to approve.\n",
+						Type:      "system",
+						DebugInfo: debugInfo,
+					})
+					continue
 				}
 
 				// Check if this tool call should trigger task refresh
