@@ -146,14 +146,10 @@ if [ "$STREAMING" = true ]; then
     # Write prompt path for TUI to read and send via stdin
     echo "$TEMP_PROMPT" > .claude/.plan-prompt-path
 
-    # --output-format stream-json: responses streamed as NDJSON for TUI display
+    # --input-format stream-json: prompt sent via stdin as JSON
+    # --output-format stream-json: responses streamed as NDJSON
     # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
-    # NOTE: We do NOT use --input-format stream-json here. This is intentional.
-    # Without it, Claude waits for stdin input before making each API call, which prevents
-    # rapid-fire API calls that cause 400 errors when responding to AskUserQuestion.
-    # The stale tool_use_id problem occurs when multiple API messages arrive between
-    # the question and the user's response, making the tool_use_id no longer in the "previous message".
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --permission-mode plan "${CLAUDE_ARGS[@]}")
+    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan "${CLAUDE_ARGS[@]}")
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"
     claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"

@@ -495,9 +495,7 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		return handle
 	}
 
-	// Send prompt via stdin after spawn
-	// Note: For plan mode, we send as stream-json message but Claude CLI doesn't use --input-format stream-json
-	// This prevents rapid-fire API calls that cause 400 errors with AskUserQuestion
+	// Send prompt via stdin after spawn (Claude CLI with --input-format stream-json expects this)
 	go func() {
 		// Determine prompt path file based on type
 		var promptPathFile string
