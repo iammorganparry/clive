@@ -1089,16 +1089,15 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}
 
 				// Return the question and debug message
-				// CRITICAL: Set CloseStdin=true to force Claude to stop streaming
-				// This prevents Claude from asking multiple questions or adding text after the question
+				// NOTE: We rely on skipUntilToolResult to prevent message sequence issues
+				// Do NOT use CloseStdin here as it would prevent the answer from being sent
 				return logAndReturn(handle, line, []OutputLine{
 					{
-						Text:       "❓ Awaiting response\n",
-						Type:       "question",
-						ToolName:   toolName,
-						Question:   qd,
-						DebugInfo:  debugInfo,
-						CloseStdin: true, // Force Claude to end the turn
+						Text:      "❓ Awaiting response\n",
+						Type:      "question",
+						ToolName:  toolName,
+						Question:  qd,
+						DebugInfo: debugInfo,
 					},
 					{
 						Type:      "debug",
@@ -1260,15 +1259,14 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 							qd.ToolUseID = toolID
 						}
 
-						// CRITICAL: Set CloseStdin=true to force Claude to end the turn
-						// This prevents Claude from asking multiple questions or continuing to stream
+						// NOTE: We rely on skipUntilToolResult to prevent message sequence issues
+						// Do NOT use CloseStdin here as it would prevent the answer from being sent
 						results = append(results, OutputLine{
-							Text:       "❓ Awaiting response\n",
-							Type:       "question",
-							ToolName:   name,
-							Question:   qd,
-							DebugInfo:  debugInfo,
-							CloseStdin: true, // Force Claude to end the turn
+							Text:      "❓ Awaiting response\n",
+							Type:      "question",
+							ToolName:  name,
+							Question:  qd,
+							DebugInfo: debugInfo,
 						})
 
 						// Track the tool_use for verification when sending tool_result
