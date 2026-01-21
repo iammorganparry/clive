@@ -2630,18 +2630,81 @@ func (m Model) renderOutputContent() string {
 			sb.WriteString("\n")
 
 		case "tool_result":
-			// Tool results - indented with muted arrow, truncated (user says truncation is fine)
-			truncatedResult := text
+			// Tool results - indented with muted arrow, with metadata if available
+			resultText := text
 			maxLen := wrapWidth - 6
 			if maxLen < 20 {
 				maxLen = 20
 			}
-			if len(truncatedResult) > maxLen {
-				truncatedResult = truncatedResult[:maxLen-3] + "..."
+
+			// If we have metadata fields, format them nicely
+			if line.Duration > 0 || line.InputTokens > 0 || line.OutputTokens > 0 {
+				var metaParts []string
+
+				if line.Duration > 0 {
+					metaParts = append(metaParts, fmt.Sprintf("⏱️  %s", line.Duration.Round(time.Millisecond)))
+				}
+
+				if line.InputTokens > 0 || line.OutputTokens > 0 {
+					metaParts = append(metaParts, fmt.Sprintf("🪙 ↓%.0f/↑%.0f", line.InputTokens, line.OutputTokens))
+				}
+
+				if line.CostUSD > 0 {
+					// Color code by cost
+					costStyle := lipgloss.NewStyle().Foreground(ColorFgMuted)
+					if line.CostUSD > 0.01 {
+						costStyle = costStyle.Foreground(ColorYellow) // Expensive
+					}
+					if line.CostUSD > 0.10 {
+						costStyle = costStyle.Foreground(ColorRed) // Very expensive
+					}
+					metaParts = append(metaParts, costStyle.Render(fmt.Sprintf("💰 $%.4f", line.CostUSD)))
+				}
+
+				if len(metaParts) > 0 {
+					metadata := " " + strings.Join(metaParts, " ")
+					resultText = resultText + lipgloss.NewStyle().Foreground(ColorFgComment).Render(metadata)
+				}
 			}
-			resultText := "↳ " + truncatedResult
-			sb.WriteString(ToolResultStyle.Width(wrapWidth).Render(resultText))
+
+			// Truncate if too long (but try to preserve metadata)
+			if len(resultText) > maxLen {
+				resultText = resultText[:maxLen-3] + "..."
+			}
+
+			sb.WriteString(ToolResultStyle.Width(wrapWidth).Render("↳ " + resultText))
 			sb.WriteString("\n")
+
+		case "file_diff":
+			// File diff - show formatted diff with colors
+			diffLines := strings.Split(text, "\n")
+			for _, diffLine := range diffLines {
+				if diffLine == "" {
+					continue
+				}
+
+				// Color code based on line content
+				var styledLine string
+				if strings.Contains(diffLine, " + ") {
+					// Added line - green
+					styledLine = lipgloss.NewStyle().Foreground(ColorGreen).Render(diffLine)
+				} else if strings.Contains(diffLine, " - ") {
+					// Removed line - red
+					styledLine = lipgloss.NewStyle().Foreground(ColorRed).Render(diffLine)
+				} else if strings.HasPrefix(diffLine, "●") {
+					// File header - bright green/bold
+					styledLine = lipgloss.NewStyle().Foreground(ColorGreen).Bold(true).Render(diffLine)
+				} else if strings.HasPrefix(diffLine, "  └─") {
+					// Summary line - muted
+					styledLine = lipgloss.NewStyle().Foreground(ColorFgMuted).Render(diffLine)
+				} else {
+					// Context line - normal
+					styledLine = lipgloss.NewStyle().Foreground(ColorFgMuted).Render(diffLine)
+				}
+
+				sb.WriteString(styledLine)
+				sb.WriteString("\n")
+			}
 
 		case "stderr":
 			// Errors - red X icon, wrapped (show full errors)

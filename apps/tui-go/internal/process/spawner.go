@@ -122,6 +122,15 @@ type ProcessHandle struct {
 
 	// Sub-agent tracing for hierarchical Task tool visualization
 	TraceParser *SubagentTraceParser
+
+	// Tool timing tracker
+	toolStartTimes map[string]time.Time // tool_use_id -> start time
+	toolTimingMu   sync.Mutex
+
+	// Token tracking for per-tool attribution
+	lastInputTokens  float64
+	lastOutputTokens float64
+	tokenTrackMu     sync.Mutex
 }
 
 // CloseStdin closes the stdin pipe to signal the process to exit
@@ -161,6 +170,15 @@ type OutputLine struct {
 	Question *QuestionData
 	// Debug info (raw event type and details for debug panel)
 	DebugInfo string
+
+	// Tool call metadata
+	ToolUseID    string        // tool_use_id for matching
+	Duration     time.Duration // Time taken to execute
+	InputTokens  float64       // Tokens in request
+	OutputTokens float64       // Tokens in response
+	Model        string        // Model used (from modelUsage key)
+	CostUSD      float64       // Estimated cost
+	StartTime    time.Time     // When tool was invoked
 }
 
 // QuestionData represents questions from Claude's AskUserQuestion tool
@@ -475,6 +493,7 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		stderr:            stderr,
 		done:              make(chan struct{}),
 		pendingToolUses:   make(map[string]ToolUseBlock),
+		toolStartTimes:    make(map[string]time.Time),
 	}
 
 	// Initialize conversation logger for debugging
@@ -985,6 +1004,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}
 			}
 
+			// Record start time for ALL tool calls (for duration tracking)
+			if handle != nil && toolID != "" {
+				handle.toolTimingMu.Lock()
+				handle.toolStartTimes[toolID] = time.Now()
+				handle.toolTimingMu.Unlock()
+			}
+
 			// Handle EnterPlanMode - signal planning has started
 			if name == "EnterPlanMode" {
 				return logAndReturn(handle, line, []OutputLine{{
@@ -1011,6 +1037,52 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				// NOTE: We do NOT pause the process here. The prompt instructs Claude to
 				// END THE TURN after calling AskUserQuestion, so no programmatic pause is needed.
 				return nil
+			}
+
+			// Handle Edit/Write tools - generate diff for display
+			if name == "Edit" || name == "Write" {
+				filePath, _ := input["file_path"].(string)
+
+				if name == "Edit" {
+					// For Edit, we have old_string and new_string
+					oldStr, _ := input["old_string"].(string)
+					newStr, _ := input["new_string"].(string)
+
+					if filePath != "" && (oldStr != "" || newStr != "") {
+						diff := GenerateFileDiff(filePath, oldStr, newStr)
+						diffText := FormatDiff(diff)
+
+						return logAndReturn(handle, line, []OutputLine{{
+							Text:      diffText,
+							Type:      "file_diff",
+							ToolName:  name,
+							DebugInfo: debugInfo,
+						}})
+					}
+				} else if name == "Write" {
+					// For Write, compare with existing file if it exists
+					newContent, _ := input["content"].(string)
+
+					if filePath != "" {
+						// Try to read existing file
+						oldContent := ""
+						if data, err := os.ReadFile(filePath); err == nil {
+							oldContent = string(data)
+						}
+
+						if oldContent != newContent {
+							diff := GenerateFileDiff(filePath, oldContent, newContent)
+							diffText := FormatDiff(diff)
+
+							return logAndReturn(handle, line, []OutputLine{{
+								Text:      diffText,
+								Type:      "file_diff",
+								ToolName:  name,
+								DebugInfo: debugInfo,
+							}})
+						}
+					}
+				}
 			}
 
 			// Check if this tool call should trigger task refresh
@@ -1489,6 +1561,35 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			}
 		}
 
+		// Extract token metadata for per-tool attribution
+		var inputTokens, outputTokens float64
+		var modelName string
+		if modelUsage, ok := data["modelUsage"].(map[string]interface{}); ok {
+			// Get the model with the highest token usage (primary model)
+			for name, usageData := range modelUsage {
+				if usage, ok := usageData.(map[string]interface{}); ok {
+					in, _ := usage["inputTokens"].(float64)
+					out, _ := usage["outputTokens"].(float64)
+					if in+out > inputTokens+outputTokens {
+						inputTokens = in
+						outputTokens = out
+						modelName = name
+					}
+				}
+			}
+		}
+
+		// Calculate delta from last result (for per-tool attribution)
+		var deltaInput, deltaOutput float64
+		if handle != nil {
+			handle.tokenTrackMu.Lock()
+			deltaInput = inputTokens - handle.lastInputTokens
+			deltaOutput = outputTokens - handle.lastOutputTokens
+			handle.lastInputTokens = inputTokens
+			handle.lastOutputTokens = outputTokens
+			handle.tokenTrackMu.Unlock()
+		}
+
 		// Check if we have a pending bd refresh (set when we saw the bd command in tool input)
 		streamStateMu.Lock()
 		needRefresh := pendingBdRefresh
@@ -1504,6 +1605,17 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		if subtype == "tool_result" {
 			toolName, _ := data["tool_name"].(string)
 			toolUseID, _ := data["tool_use_id"].(string)
+
+			// Calculate duration from tool start time
+			var duration time.Duration
+			if handle != nil && toolUseID != "" {
+				handle.toolTimingMu.Lock()
+				if startTime, ok := handle.toolStartTimes[toolUseID]; ok {
+					duration = time.Since(startTime)
+					delete(handle.toolStartTimes, toolUseID) // Clean up
+				}
+				handle.toolTimingMu.Unlock()
+			}
 
 			// Track Task tool completions for sub-agent tracing
 			if toolName == "Task" && handle != nil && handle.TraceParser != nil && toolUseID != "" {
@@ -1547,6 +1659,34 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					return logAndReturn(handle, line, []OutputLine{{Type: "system", RefreshTasks: true, DebugInfo: debugInfo}})
 				}
 			}
+
+			// Emit tool_result OutputLine with metadata (skip Task tools as they have their own subagent_complete event)
+			if toolName != "Task" {
+				// Calculate cost estimate
+				costUSD := estimateCost(modelName, deltaInput, deltaOutput)
+
+				// Get result text (truncated for display)
+				result, _ := data["result"].(string)
+				if len(result) > 100 {
+					result = result[:97] + "..."
+				}
+
+				// Format metadata string
+				metadata := formatToolMetadata(duration, deltaInput, deltaOutput, costUSD)
+
+				return logAndReturn(handle, line, []OutputLine{{
+					Type:         "tool_result",
+					ToolName:     toolName,
+					ToolUseID:    toolUseID,
+					Duration:     duration,
+					InputTokens:  deltaInput,
+					OutputTokens: deltaOutput,
+					Model:        modelName,
+					CostUSD:      costUSD,
+					Text:         result + metadata,
+					DebugInfo:    debugInfo,
+				}})
+			}
 		}
 
 	case "error":
@@ -1569,4 +1709,52 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 	}
 
 	return nil
+}
+
+// estimateCost calculates the estimated cost based on Claude pricing (as of Jan 2025)
+func estimateCost(model string, inputTokens, outputTokens float64) float64 {
+	// Pricing per 1M tokens
+	var inputCostPer1M, outputCostPer1M float64
+
+	modelLower := strings.ToLower(model)
+	switch {
+	case strings.Contains(modelLower, "opus"):
+		inputCostPer1M = 15.00  // $15/MTok input
+		outputCostPer1M = 75.00 // $75/MTok output
+	case strings.Contains(modelLower, "sonnet"):
+		inputCostPer1M = 3.00   // $3/MTok input
+		outputCostPer1M = 15.00 // $15/MTok output
+	case strings.Contains(modelLower, "haiku"):
+		inputCostPer1M = 0.25  // $0.25/MTok input
+		outputCostPer1M = 1.25 // $1.25/MTok output
+	default:
+		return 0.0 // Unknown model
+	}
+
+	inputCost := (inputTokens / 1_000_000) * inputCostPer1M
+	outputCost := (outputTokens / 1_000_000) * outputCostPer1M
+	return inputCost + outputCost
+}
+
+// formatToolMetadata creates a metadata string for tool results
+func formatToolMetadata(duration time.Duration, inputTok, outputTok, cost float64) string {
+	var parts []string
+
+	if duration > 0 {
+		parts = append(parts, fmt.Sprintf("⏱️  %s", duration.Round(time.Millisecond)))
+	}
+
+	if inputTok > 0 || outputTok > 0 {
+		parts = append(parts, fmt.Sprintf("🪙 ↓%.0f/↑%.0f", inputTok, outputTok))
+	}
+
+	if cost > 0 {
+		parts = append(parts, fmt.Sprintf("💰 $%.4f", cost))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " " + strings.Join(parts, " ")
 }
