@@ -213,14 +213,33 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
 
     // Handle slash commands
     if (cmd.startsWith('/')) {
+      // Add the slash command to output as a user message
+      send({
+        type: 'OUTPUT',
+        line: {
+          text: `> ${cmd}`,
+          type: 'system',
+        },
+      });
       handleSlashCommand(cmd);
       return;
     }
 
-    // If running, send as message
+    // If running, send as message to agent
     if (state.matches('executing')) {
+      // Add user message to output (optimistic UI)
+      send({
+        type: 'OUTPUT',
+        line: {
+          text: `> ${cmd}`,
+          type: 'assistant', // Show as regular text like assistant messages
+        },
+      });
       cliManager.current.sendMessage(cmd);
       send({ type: 'MESSAGE', content: cmd });
+    } else {
+      // Not running - show hint
+      addSystemMessage('No process running. Use /plan or /build to start.');
     }
   };
 
