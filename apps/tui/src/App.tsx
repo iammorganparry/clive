@@ -78,11 +78,15 @@ function AppContent() {
   // Track if we're in an input-focused state
   const isInputActive = viewMode === 'main' || configFlow === 'linear' || configFlow === 'github';
 
-  // Keyboard handling using React useEffect with raw stdin
-  // Only capture when NOT in an input field
+  // Keyboard handling - completely disable for input-focused views
+  // Let OpenTUI manage everything in those views
   useEffect(() => {
     // Don't capture keyboard if we're in an input-focused view
     if (isInputActive) {
+      // Make sure stdin is NOT in raw mode for OpenTUI inputs
+      if (process.stdin.isTTY && process.stdin.setRawMode) {
+        process.stdin.setRawMode(false);
+      }
       return;
     }
 
@@ -172,17 +176,18 @@ function AppContent() {
       }
     };
 
-    // Setup raw mode for stdin
+    // Setup raw mode for stdin only for navigation views
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
       process.stdin.resume();
       process.stdin.on('data', handleKeyPress);
     }
 
-    // Cleanup
+    // Cleanup - remove listener and turn off raw mode
     return () => {
       if (process.stdin.isTTY) {
         process.stdin.removeListener('data', handleKeyPress);
+        // Leave raw mode on for OpenTUI to potentially use
       }
     };
   }, [viewMode, configFlow, setupSelectedIndex, selectedEpicIndex, sessions, setupOptions, goBack, goToHelp, goToSelection, interrupt, isInputActive]);

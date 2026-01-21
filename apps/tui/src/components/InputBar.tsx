@@ -37,13 +37,14 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
       <box flexDirection="row">
         <text fg={OneDarkPro.syntax.cyan}>{'> '}</text>
         <input
-          value={input}
-          onChange={(value: string) => setInput(value)}
-          onSubmit={handleSubmit}
           placeholder={disabled ? 'Waiting for response...' : 'Enter command (or /help)'}
-          focus={!disabled}
-          width={width - 4}
-          color={OneDarkPro.foreground.primary}
+          focused={!disabled}
+          onInput={setInput}
+          onSubmit={handleSubmit}
+          style={{
+            width: width - 4,
+            fg: OneDarkPro.foreground.primary,
+          }}
         />
       </box>
     </box>
