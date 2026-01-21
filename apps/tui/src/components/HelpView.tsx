@@ -79,20 +79,75 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
           </text>
         </box>
 
-        {/* Commands */}
+        {/* Mode Commands */}
         <box marginTop={3} flexDirection="column">
           <text fg={OneDarkPro.syntax.green} bold>
-            Commands:
+            Mode Commands:
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
             <text fg={OneDarkPro.syntax.cyan}>/plan</text>
-            <text fg={OneDarkPro.foreground.secondary}>   Create a plan</text>
+            <text fg={OneDarkPro.foreground.secondary}>   Enter plan mode (blue border)</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
             <text fg={OneDarkPro.syntax.cyan}>/build</text>
-            <text fg={OneDarkPro.foreground.secondary}>  Execute a task</text>
+            <text fg={OneDarkPro.foreground.secondary}>  Enter build mode (orange border)</text>
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.syntax.cyan}>/exit</text>
+            <text fg={OneDarkPro.foreground.secondary}>   Exit current mode</text>
+          </text>
+        </box>
+
+        {/* Planning Workflow */}
+        <box marginTop={3} flexDirection="column">
+          <text fg={OneDarkPro.syntax.purple} bold>
+            Planning Workflow:
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.foreground.muted}>1. </text>
+            <text fg={OneDarkPro.foreground.secondary}>Agent asks clarifying questions</text>
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.foreground.muted}>2. </text>
+            <text fg={OneDarkPro.foreground.secondary}>Explores codebase patterns</text>
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.foreground.muted}>3. </text>
+            <text fg={OneDarkPro.foreground.secondary}>Asks technical approach questions</text>
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.foreground.muted}>4. </text>
+            <text fg={OneDarkPro.foreground.secondary}>Proposes detailed plan</text>
+          </text>
+        </box>
+
+        {/* Mode Behavior */}
+        <box marginTop={2} flexDirection="column" paddingLeft={2}>
+          <text fg={OneDarkPro.foreground.muted}>
+            • In a mode, regular messages go to the agent
+          </text>
+          <text fg={OneDarkPro.foreground.muted}>
+            • Border shows mode: blue=plan, orange=build
+          </text>
+          <text fg={OneDarkPro.foreground.muted}>
+            • Mode persists across messages until /exit
+          </text>
+          <text fg={OneDarkPro.foreground.muted}>
+            • Use multi-choice prompts to answer questions
+          </text>
+        </box>
+
+        {/* Other Commands */}
+        <box marginTop={3} flexDirection="column">
+          <text fg={OneDarkPro.syntax.green} bold>
+            Other Commands:
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
@@ -111,8 +166,24 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
           </text>
         </box>
 
+        {/* Debug info */}
+        <box marginTop={3} flexDirection="column">
+          <text fg={OneDarkPro.syntax.green} bold>
+            Troubleshooting:
+          </text>
+
+          <text fg={OneDarkPro.foreground.primary}>
+            <text fg={OneDarkPro.syntax.cyan}>clive --debug</text>
+            <text fg={OneDarkPro.foreground.secondary}> Enable debug logging</text>
+          </text>
+
+          <text fg={OneDarkPro.foreground.muted}>
+            Debug logs: ~/.clive/tui-debug.log
+          </text>
+        </box>
+
         {/* Close hint */}
-        <box marginTop={3}>
+        <box marginTop={2}>
           <text fg={OneDarkPro.foreground.muted}>
             Press ? or Esc to close
           </text>

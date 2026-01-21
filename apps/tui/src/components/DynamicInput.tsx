@@ -7,8 +7,9 @@ import { OneDarkPro } from '../styles/theme';
 
 // Available commands
 const COMMANDS: CommandSuggestion[] = [
-  { cmd: '/plan', desc: 'Create a work plan' },
-  { cmd: '/build', desc: 'Execute work plan' },
+  { cmd: '/plan', desc: 'Create a work plan (enter plan mode)' },
+  { cmd: '/build', desc: 'Execute work plan (enter build mode)' },
+  { cmd: '/exit', desc: 'Exit current mode' },
   { cmd: '/add', desc: 'Add task to epic (build mode)' },
   { cmd: '/cancel', desc: 'Cancel running process' },
   { cmd: '/clear', desc: 'Clear output' },

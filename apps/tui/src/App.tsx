@@ -20,6 +20,7 @@ import { HelpView } from './components/HelpView';
 import { QuestionPanel } from './components/QuestionPanel';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
+import { debugLog } from './utils/debug-logger';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -75,6 +76,8 @@ function AppContent() {
     outputLines,
     isRunning,
     pendingQuestion,
+    mode,
+    agentSessionActive,
     sessions,
     sessionsLoading,
     tasks,
@@ -85,6 +88,15 @@ function AppContent() {
     handleQuestionAnswer,
     interrupt,
   } = useAppState(workspaceRoot, config?.issueTracker);
+
+  // Debug: log when pendingQuestion changes
+  useEffect(() => {
+    debugLog('App', 'pendingQuestion changed', {
+      hasPendingQuestion: !!pendingQuestion,
+      toolUseID: pendingQuestion?.toolUseID,
+      questionCount: pendingQuestion?.questions.length
+    });
+  }, [pendingQuestion]);
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
@@ -344,11 +356,24 @@ function AppContent() {
   // Main view (chat interface)
   const inputHeight = 3;
   const statusHeight = 1;
-  const bodyHeight = height - inputHeight - statusHeight;
+  const isInMode = mode !== 'none';
+
+  // When border is present, it takes 2 rows (top+bottom) and 2 cols (left+right)
+  const borderAdjustment = isInMode ? 2 : 0;
+  const innerWidth = width - borderAdjustment;
+  const innerHeight = height - borderAdjustment;
+  const bodyHeight = innerHeight - inputHeight - statusHeight;
 
   // Sidebar layout
   const sidebarWidth = 30;
-  const outputWidth = width - sidebarWidth;
+  const outputWidth = innerWidth - sidebarWidth;
+
+  // Mode colors
+  const getModeColor = () => {
+    if (mode === 'plan') return '#3B82F6'; // blue-500
+    if (mode === 'build') return '#F59E0B'; // amber-500
+    return undefined;
+  };
 
   return (
     <box
@@ -356,9 +381,11 @@ function AppContent() {
       height={height}
       backgroundColor={OneDarkPro.background.primary}
       flexDirection="column"
+      borderStyle={isInMode ? 'rounded' : undefined}
+      borderColor={isInMode ? getModeColor() : undefined}
     >
       {/* Body (Sidebar + Output) */}
-      <box width={width} height={bodyHeight} flexDirection="row">
+      <box width={innerWidth} height={bodyHeight} flexDirection="row">
         {/* Sidebar */}
         <Sidebar
           width={sidebarWidth}
@@ -372,12 +399,15 @@ function AppContent() {
           width={outputWidth}
           height={bodyHeight}
           lines={outputLines}
+          isRunning={isRunning}
+          mode={mode}
+          modeColor={getModeColor()}
         />
       </box>
 
       {/* Input Bar */}
       <DynamicInput
-        width={width}
+        width={innerWidth}
         onSubmit={executeCommand}
         disabled={!!pendingQuestion}
         isRunning={isRunning}
@@ -388,7 +418,7 @@ function AppContent() {
 
       {/* Status Bar */}
       <StatusBar
-        width={width}
+        width={innerWidth}
         height={statusHeight}
         isRunning={isRunning}
         inputFocused={inputFocused}

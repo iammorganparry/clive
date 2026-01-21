@@ -15,44 +15,68 @@ interface Props {
 export function OutputLine({ line }: Props) {
   switch (line.type) {
     case 'tool_call': {
-      // For Read/Grep/Glob tools, just show the file name
-      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
-      const isBashTool = line.toolName === 'Bash';
+      const toolInput = line.toolInput || {};
 
-      if (isFileReadTool && line.text) {
-        // Extract file path from the tool call text
-        // Format is usually "● Read path/to/file" or similar
-        const match = line.text.match(/●\s+\w+\s+(.+)/);
-        if (match && match[1]) {
-          const path = match[1];
-          // Get just the filename from the path
-          const filename = path.split('/').pop() || path;
-          return (
-            <box>
-              <text fg={OneDarkPro.syntax.yellow}>
-                📄 {filename}
-              </text>
-            </box>
-          );
-        }
+      // Read tool - show file path
+      if (line.toolName === 'Read' && toolInput.file_path) {
+        const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.yellow}>
+              Read 📄 {filename}
+            </text>
+          </box>
+        );
       }
 
-      if (isBashTool && line.text) {
-        // Extract command from the tool call text
-        // Format is usually "● Bash <command>" or similar
-        const match = line.text.match(/●\s+Bash\s+(.+)/);
-        if (match && match[1]) {
-          const command = match[1];
-          return (
-            <box>
-              <text fg={OneDarkPro.syntax.cyan}>
-                $ {command}
-              </text>
-            </box>
-          );
-        }
+      // Grep tool - show pattern and path
+      if (line.toolName === 'Grep' && toolInput.pattern) {
+        const path = toolInput.path || '.';
+        const filename = path.split('/').pop() || path;
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.yellow}>
+              Grep 🔍 "{toolInput.pattern}" in {filename}
+            </text>
+          </box>
+        );
       }
 
+      // Glob tool - show pattern
+      if (line.toolName === 'Glob' && toolInput.pattern) {
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.yellow}>
+              Glob 📁 {toolInput.pattern}
+            </text>
+          </box>
+        );
+      }
+
+      // Bash tool - show command
+      if (line.toolName === 'Bash' && toolInput.command) {
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.cyan}>
+              Bash $ {toolInput.command}
+            </text>
+          </box>
+        );
+      }
+
+      // Edit/Write tools - show file path
+      if ((line.toolName === 'Edit' || line.toolName === 'Write') && toolInput.file_path) {
+        const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.yellow}>
+              {line.toolName} ✏️  {filename}
+            </text>
+          </box>
+        );
+      }
+
+      // Default: show tool name
       return (
         <box>
           <text fg={OneDarkPro.syntax.yellow}>
@@ -147,15 +171,15 @@ export function OutputLine({ line }: Props) {
 
     case 'assistant':
       return (
-        <box
-          backgroundColor={OneDarkPro.background.highlight}
-          // borderStyle causes Bun FFI crash - removed
-          // borderColor={OneDarkPro.syntax.blue}
-          padding={1}
-        >
-          <text fg={OneDarkPro.syntax.blue}>
-            {line.text}
-          </text>
+        <box flexDirection="row" backgroundColor={OneDarkPro.background.highlight}>
+          <box paddingLeft={1} paddingRight={1}>
+            <text fg={OneDarkPro.syntax.blue}>█</text>
+          </box>
+          <box padding={1} flexGrow={1}>
+            <text fg={OneDarkPro.foreground.primary}>
+              {line.text}
+            </text>
+          </box>
         </box>
       );
 
@@ -191,13 +215,18 @@ export function OutputLine({ line }: Props) {
       );
 
     case 'exit':
-      return (
-        <box>
-          <text fg={OneDarkPro.syntax.green}>
-            {line.exitCode === 0 ? '✓ Completed' : `✗ Exited with code ${line.exitCode}`}
-          </text>
-        </box>
-      );
+      // Only show exit status for non-zero exit codes (errors)
+      if (line.exitCode !== 0) {
+        return (
+          <box>
+            <text fg={OneDarkPro.syntax.red}>
+              ✗ Exited with code {line.exitCode}
+            </text>
+          </box>
+        );
+      }
+      // Don't render anything for successful completion
+      return null;
 
     case 'question':
       // Questions are handled by QuestionPanel, not inline

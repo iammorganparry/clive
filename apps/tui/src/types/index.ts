@@ -34,6 +34,7 @@ export interface OutputLine {
         'subagent_spawn' | 'subagent_complete';
   toolName?: string;
   toolUseID?: string;
+  toolInput?: any; // Tool input parameters
   refreshTasks?: boolean;
   exitCode?: number;
   closeStdin?: boolean;

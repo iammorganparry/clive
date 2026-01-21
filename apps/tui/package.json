@@ -5,9 +5,11 @@
   "module": "src/main.tsx",
   "description": "Clive TUI built with OpenTUI/React",
   "scripts": {
-    "dev": "bun run --watch src/main.tsx",
+    "dev": "bun run --watch src/main.tsx --debug",
+    "dev:no-debug": "bun run --watch src/main.tsx",
     "build": "echo 'No build step needed - noEmit: true'",
-    "start": "bun run src/main.tsx"
+    "start": "bun run src/main.tsx",
+    "start:debug": "bun run src/main.tsx --debug"
   },
   "dependencies": {
     "@clive/claude-services": "*",

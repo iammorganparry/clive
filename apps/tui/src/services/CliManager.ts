@@ -21,11 +21,13 @@ import { OutputLine, QuestionData } from '../types';
 import { DiffDetector } from './DiffDetector';
 import { SubagentTracker } from './SubagentTracker';
 import { MetadataCalculator } from './MetadataCalculator';
+import { debugLog } from '../utils/debug-logger';
 
 export interface CliManagerOptions {
   workspaceRoot: string;
   model?: string;
   systemPrompt?: string;
+  mode?: 'plan' | 'build';
 }
 
 export class CliManager extends EventEmitter {
@@ -38,6 +40,9 @@ export class CliManager extends EventEmitter {
   private toolTimings = new Map<string, Date>();
   private toolNames = new Map<string, string>();
   private toolInputs = new Map<string, any>();
+
+  // Track active agent session for persistent modes
+  private activeMode: 'plan' | 'build' | null = null;
 
   constructor() {
     super();
@@ -55,11 +60,20 @@ export class CliManager extends EventEmitter {
    * Execute a prompt via Claude CLI with enrichment
    */
   async execute(prompt: string, options: CliManagerOptions): Promise<void> {
+    debugLog('CliManager', 'Starting execution', {
+      promptLength: prompt.length,
+      model: options.model,
+      mode: options.mode,
+      workspaceRoot: options.workspaceRoot
+    });
+
     const program = Effect.gen(this.createExecutionProgram(prompt, options));
 
     try {
       await Effect.runPromise(program.pipe(Effect.provide(ClaudeCliService.Default)));
+      debugLog('CliManager', 'Execution completed successfully');
     } catch (error) {
+      debugLog('CliManager', 'Execution error', { error: String(error) });
       this.emit('output', {
         text: `Execution error: ${error}`,
         type: 'error',
@@ -85,21 +99,34 @@ export class CliManager extends EventEmitter {
       });
 
       self.currentHandle = handle;
+      self.activeMode = options.mode || null;
 
       // Stream events with enrichment
       yield* handle.stream.pipe(
         Stream.runForEach((event) => Effect.sync(() => {
           const enrichedLines = self.enrichEvent(event);
 
+          debugLog('CliManager', 'Emitting enriched lines', {
+            count: enrichedLines.length,
+            types: enrichedLines.map(l => l.type)
+          });
+
           // Emit all enriched lines
           for (const line of enrichedLines) {
+            debugLog('CliManager', 'Emitting output event', {
+              type: line.type,
+              hasQuestion: !!(line.type === 'question' && line.question)
+            });
             self.emit('output', line);
           }
         }))
       );
 
       // Execution complete
-      self.currentHandle = null;
+      // In persistent modes (plan/build), keep handle alive for follow-up messages
+      if (!self.activeMode) {
+        self.currentHandle = null;
+      }
       self.emit('complete');
     };
   }
@@ -111,6 +138,8 @@ export class CliManager extends EventEmitter {
   private enrichEvent(event: ClaudeCliEvent): OutputLine[] {
     const outputs: OutputLine[] = [];
 
+    debugLog('CliManager', 'enrichEvent called', { eventType: event.type });
+
     switch (event.type) {
       case 'tool_use': {
         // Track tool metadata
@@ -121,13 +150,26 @@ export class CliManager extends EventEmitter {
         // Check for special tool types
         if (event.name === 'AskUserQuestion') {
           // Handle question - emit question event
+          debugLog('CliManager', 'AskUserQuestion tool detected', {
+            toolId: event.id,
+            input: event.input
+          });
+
           const questionData = this.extractQuestionData(event.id, event.input);
+
+          debugLog('CliManager', 'Question data extracted', {
+            toolUseID: questionData.toolUseID,
+            questionCount: questionData.questions.length
+          });
+
           outputs.push({
             text: '',
             type: 'question',
             toolUseID: event.id,
             question: questionData,
           });
+
+          debugLog('CliManager', 'Question event pushed to outputs');
           return outputs;
         }
 
@@ -150,6 +192,7 @@ export class CliManager extends EventEmitter {
           type: 'tool_call',
           toolName: event.name,
           toolUseID: event.id,
+          toolInput: event.input,
           startTime: new Date(),
         });
 
@@ -266,12 +309,22 @@ export class CliManager extends EventEmitter {
    * Send a tool result back to the CLI via stdin
    */
   sendToolResult(toolId: string, result: string): void {
+    debugLog('CliManager', 'sendToolResult called', { toolId, resultLength: result.length });
+
     if (!this.currentHandle) {
+      debugLog('CliManager', 'ERROR: Cannot send tool result - no active handle');
       console.error('[CliManager] Cannot send tool result - no active handle');
       return;
     }
 
+    debugLog('CliManager', 'Sending tool result to handle', {
+      toolId,
+      resultPreview: result.substring(0, 200)
+    });
+
     this.currentHandle.sendToolResult(toolId, result);
+
+    debugLog('CliManager', 'Tool result sent successfully', { toolId });
   }
 
   /**
@@ -289,12 +342,48 @@ export class CliManager extends EventEmitter {
   }
 
   /**
+   * Send a message to the active agent session
+   * Used in persistent plan/build modes for follow-up messages
+   */
+  sendMessageToAgent(message: string): void {
+    if (!this.hasActiveSession()) {
+      throw new Error('No active agent session');
+    }
+
+    // TODO: Implement message sending via handle
+    // For now, use the generic sendMessage method
+    // This will need to be updated once bidirectional communication is implemented
+    console.log('[CliManager] sendMessageToAgent:', message);
+
+    // Note: User message output is handled by the caller (executeCommand)
+    // to avoid duplication and maintain consistent formatting
+
+    // Placeholder: In the future, this should send the message to the handle
+    // and trigger a new round of agent execution
+  }
+
+  /**
+   * Check if there's an active agent session
+   */
+  hasActiveSession(): boolean {
+    return !!(this.currentHandle && this.activeMode);
+  }
+
+  /**
+   * Get the current active mode
+   */
+  getActiveMode(): 'plan' | 'build' | null {
+    return this.hasActiveSession() ? this.activeMode : null;
+  }
+
+  /**
    * Kill the running CLI process
    */
   kill(): void {
     if (this.currentHandle) {
       this.currentHandle.kill();
       this.currentHandle = null;
+      this.activeMode = null;
       this.emit('killed');
     }
   }

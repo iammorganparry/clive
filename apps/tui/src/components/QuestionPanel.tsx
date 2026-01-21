@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useKeyboard } from '@opentui/react';
 import { OneDarkPro } from '../styles/theme';
 import type { QuestionData } from '../types';
+import { debugLog } from '../utils/debug-logger';
 
 interface QuestionPanelProps {
   width: number;
@@ -34,6 +35,25 @@ export function QuestionPanel({
 
   const currentQuestion = question.questions[currentIndex];
   const isLastQuestion = currentIndex === question.questions.length - 1;
+
+  // Debug log when component mounts
+  useEffect(() => {
+    debugLog('QuestionPanel', 'Component mounted', {
+      toolUseID: question.toolUseID,
+      questionCount: question.questions.length,
+      firstQuestion: currentQuestion.header
+    });
+  }, []);
+
+  // Debug log when question changes
+  useEffect(() => {
+    debugLog('QuestionPanel', 'Current question changed', {
+      index: currentIndex,
+      header: currentQuestion.header,
+      isLastQuestion,
+      multiSelect: currentQuestion.multiSelect
+    });
+  }, [currentIndex]);
 
   // Keyboard navigation
   useKeyboard((key) => {
@@ -98,8 +118,22 @@ export function QuestionPanel({
   const panelX = Math.floor((width - panelWidth) / 2);
   const panelY = Math.floor((height - panelHeight) / 2);
 
+  // Debug: log panel dimensions and position
+  useEffect(() => {
+    debugLog('QuestionPanel', 'Rendering with dimensions', {
+      width,
+      height,
+      panelWidth,
+      panelHeight,
+      panelX,
+      panelY,
+      currentQuestion: currentQuestion.header
+    });
+  }, [width, height, panelWidth, panelHeight, panelX, panelY, currentQuestion.header]);
+
   return (
     <box
+      position="absolute"
       x={panelX}
       y={panelY}
       width={panelWidth}
@@ -109,6 +143,7 @@ export function QuestionPanel({
       borderColor={OneDarkPro.syntax.blue}
       padding={2}
       flexDirection="column"
+      zIndex={1000}
     >
       {/* Progress indicator */}
       {question.questions.length > 1 && (
