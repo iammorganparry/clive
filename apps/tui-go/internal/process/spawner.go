@@ -119,6 +119,9 @@ type ProcessHandle struct {
 
 	// Conversation logging for debugging
 	logger *ConversationLogger
+
+	// Sub-agent tracing for hierarchical Task tool visualization
+	TraceParser *SubagentTraceParser
 }
 
 // CloseStdin closes the stdin pipe to signal the process to exit
@@ -480,6 +483,9 @@ func runScript(args []string, promptType string, outputChan chan<- OutputLine) *
 		handle.logger = logger
 	}
 	// Don't fail if logger creation fails - continue without logging
+
+	// Initialize sub-agent trace parser
+	handle.TraceParser = NewSubagentTraceParser()
 
 	if err := cmd.Start(); err != nil {
 		outputChan <- OutputLine{Text: "Failed to start: " + err.Error(), Type: "system"}
@@ -951,6 +957,32 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 			text := "● " + name
 			if detail != "" {
 				text += " " + detail
+			}
+
+			// Track Task tool invocations for sub-agent tracing
+			if name == "Task" && handle != nil && handle.TraceParser != nil {
+				trace := handle.TraceParser.OnTaskToolUse(toolID, input)
+				// Emit trace event for TUI visualization and log it
+				if trace != nil {
+					// Log the trace spawn
+					if handle.logger != nil {
+						handle.logger.LogSubagentTrace(trace)
+					}
+
+					return logAndReturn(handle, line, []OutputLine{
+						{
+							Text:      fmt.Sprintf("◐ %s: %s\n", trace.Type, trace.Description),
+							Type:      "subagent_spawn",
+							DebugInfo: debugInfo,
+						},
+						{
+							Text:      text + "\n",
+							Type:      "tool_call",
+							ToolName:  name,
+							DebugInfo: debugInfo,
+						},
+					})
+				}
 			}
 
 			// Handle EnterPlanMode - signal planning has started
@@ -1471,6 +1503,40 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 		subtype, _ := data["subtype"].(string)
 		if subtype == "tool_result" {
 			toolName, _ := data["tool_name"].(string)
+			toolUseID, _ := data["tool_use_id"].(string)
+
+			// Track Task tool completions for sub-agent tracing
+			if toolName == "Task" && handle != nil && handle.TraceParser != nil && toolUseID != "" {
+				// Check if the tool succeeded or failed
+				isError, _ := data["is_error"].(bool)
+				errorMsg := ""
+				if isError {
+					if errData, ok := data["error"].(map[string]interface{}); ok {
+						errorMsg, _ = errData["message"].(string)
+					}
+				}
+
+				trace := handle.TraceParser.OnTaskToolResult(toolUseID, !isError, errorMsg)
+				if trace != nil {
+					// Log the trace completion
+					if handle.logger != nil {
+						handle.logger.LogSubagentTrace(trace)
+					}
+
+					// Emit completion event
+					icon := "✓"
+					if isError {
+						icon = "✗"
+					}
+					duration := trace.Duration()
+					return logAndReturn(handle, line, []OutputLine{{
+						Text:      fmt.Sprintf("  %s %s: %s (%s)\n", icon, trace.Type, trace.Description, duration.Round(time.Millisecond)),
+						Type:      "subagent_complete",
+						DebugInfo: debugInfo,
+					}})
+				}
+			}
+
 			if toolName == "Bash" {
 				// Check the command or result for bd commands
 				result, _ := data["result"].(string)

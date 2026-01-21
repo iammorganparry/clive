@@ -160,4 +160,8 @@ var (
 	// Warning styles
 	WarningStyle = lipgloss.NewStyle().
 			Foreground(ColorYellow)
+
+	// Dimmed/info style for less important messages
+	DimStyle = lipgloss.NewStyle().
+			Foreground(ColorFgComment)
 )

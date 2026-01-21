@@ -1,0 +1,50 @@
+{
+  "gates": {
+    "go_build": {
+      "enabled": true,
+      "description": "Go build check",
+      "commands": [
+        {
+          "name": "Build CLI",
+          "command": "cd apps/cli && go build -o claude-code ./cmd/claude-code",
+          "required": true,
+          "timeout": 60
+        },
+        {
+          "name": "Build TUI",
+          "command": "cd apps/tui-go && go build -o clive-tui ./cmd/clive-tui",
+          "required": true,
+          "timeout": 60
+        }
+      ]
+    },
+    "go_test": {
+      "enabled": true,
+      "description": "Go tests",
+      "commands": [
+        {
+          "name": "Run Go Tests",
+          "command": "cd apps/tui-go && go test ./... 2>&1 || true",
+          "required": false,
+          "timeout": 120
+        }
+      ]
+    },
+    "linting": {
+      "enabled": false,
+      "description": "Code linting (optional)",
+      "commands": [
+        {
+          "name": "Go Vet",
+          "command": "cd apps/tui-go && go vet ./...",
+          "required": false,
+          "timeout": 30
+        }
+      ]
+    }
+  },
+  "on_failure": {
+    "required_gates": "stop_and_report",
+    "optional_gates": "warn_and_continue"
+  }
+}

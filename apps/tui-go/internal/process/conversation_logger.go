@@ -87,13 +87,31 @@ func NewConversationLogger(epicID string, iteration int, mode string) (*Conversa
 		return nil, fmt.Errorf("failed to create conversation log file: %w", err)
 	}
 
-	return &ConversationLogger{
+	logger := &ConversationLogger{
 		file:      file,
 		eventSeq:  0,
 		iteration: iteration,
 		epicID:    epicID,
 		startTime: time.Now(),
-	}, nil
+	}
+
+	// Write metadata header as first line for easier debugging
+	metadata := map[string]interface{}{
+		"type":       "iteration_metadata",
+		"iteration":  iteration,
+		"epic_id":    epicID,
+		"mode":       mode,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"log_path":   logPath,
+		"project":    projectName,
+	}
+	headerData, err := json.Marshal(metadata)
+	if err == nil {
+		file.Write(append(headerData, '\n'))
+		file.Sync()
+	}
+
+	return logger, nil
 }
 
 // LogNDJSONEvent logs a raw NDJSON line from Claude CLI
@@ -180,6 +198,48 @@ func (cl *ConversationLogger) LogSentMessage(msgType string, message interface{}
 		Direction: "stdin",
 		Raw:       rawData,
 		Metadata:  metadata,
+	}
+
+	// Write as NDJSON line
+	data, err := json.Marshal(event)
+	if err != nil {
+		return // Silently skip if marshal fails
+	}
+
+	cl.file.Write(append(data, '\n'))
+	cl.file.Sync() // Flush immediately for debugging
+}
+
+// LogSubagentTrace logs a sub-agent trace event for post-mortem analysis
+func (cl *ConversationLogger) LogSubagentTrace(trace *SubagentTrace) {
+	if cl == nil || trace == nil {
+		return
+	}
+
+	cl.mu.Lock()
+	defer cl.mu.Unlock()
+
+	cl.eventSeq++
+
+	// Create trace event with all relevant information
+	event := ConversationEvent{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Iteration: cl.iteration,
+		EventSeq:  cl.eventSeq,
+		EventType: "subagent_trace",
+		Direction: "internal",
+		Parsed: map[string]interface{}{
+			"trace_id":    trace.ID,
+			"parent_id":   trace.ParentID,
+			"agent_type":  trace.Type,
+			"description": trace.Description,
+			"model":       trace.Model,
+			"status":      string(trace.Status),
+			"start_time":  trace.StartTime.UTC().Format(time.RFC3339Nano),
+			"end_time":    trace.EndTime.UTC().Format(time.RFC3339Nano),
+			"duration_ms": trace.Duration().Milliseconds(),
+			"error":       trace.Error,
+		},
 	}
 
 	// Write as NDJSON line

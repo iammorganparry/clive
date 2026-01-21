@@ -173,6 +173,7 @@ LINEAR_TASK_FETCH=false
 if [ -z "$SKILL_OVERRIDE" ]; then
     if [ "$TRACKER" = "beads" ]; then
         # Beads: fetch next task via bd ready
+        # Priority-based selection: prefer in-progress tasks, then sort by priority (lower = higher)
         if [ -n "$EPIC_FILTER" ]; then
             # Use higher limit to ensure we find tasks under the epic
             NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r --arg epic "$EPIC_FILTER" '
@@ -181,10 +182,19 @@ if [ -z "$SKILL_OVERRIDE" ]; then
                  (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end) as $derived_parent |
                  ($explicit_parent // $derived_parent)) as $parent |
                 select($parent == $epic)
-              ] | .[0] // empty
+              ] | sort_by(
+                if .status == "in_progress" then 0 else 1 end,
+                .priority // 99
+              ) | .[0] // empty
             ')
         else
-            NEXT_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
+            # Priority-based selection: prefer in-progress tasks, then sort by priority (lower = higher)
+            NEXT_TASK=$(bd ready --json --limit 100 2>/dev/null | jq -r '
+              sort_by(
+                if .status == "in_progress" then 0 else 1 end,
+                .priority // 99
+              ) | .[0] // empty
+            ')
         fi
 
         if [ -n "$NEXT_TASK" ] && [ "$NEXT_TASK" != "null" ]; then
@@ -261,6 +271,17 @@ fi
         echo "$SCRATCHPAD_CONTENT"
     else
         echo "_No previous context - this is the first iteration._"
+    fi
+    echo ""
+    echo "---"
+    echo ""
+    echo "## Recent Progress (Last 5 Iterations)"
+    echo ""
+    if [ -f "$PROGRESS_FILE" ]; then
+        # Extract key outcomes from recent iterations (last 100 lines, filter for key markers)
+        tail -100 "$PROGRESS_FILE" 2>/dev/null | grep -E "(^## |^✅|^❌|^Key decisions:|^Gotchas:|^Success pattern:)" || echo "_No recent progress recorded_"
+    else
+        echo "_No progress file found - this may be the first iteration._"
     fi
     echo ""
     echo "---"

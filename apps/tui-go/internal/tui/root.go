@@ -134,6 +134,9 @@ type Model struct {
 	processHandle *process.ProcessHandle
 	outputChan    chan process.OutputLine
 
+	// Sub-agent tracing
+	activeTraces []*process.SubagentTrace
+
 	// Running state
 	isRunning bool
 
@@ -504,6 +507,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.line.Type == "exit" {
 			return m, func() tea.Msg {
 				return processFinishedMsg{exitCode: msg.line.ExitCode}
+			}
+		}
+
+		// Handle sub-agent tracing events
+		if msg.line.Type == "subagent_spawn" || msg.line.Type == "subagent_complete" {
+			// Update active traces from the process handle
+			if m.processHandle != nil && m.processHandle.TraceParser != nil {
+				m.activeTraces = m.processHandle.TraceParser.GetActiveTraces()
 			}
 		}
 
@@ -2633,9 +2644,43 @@ func (m Model) renderOutputContent() string {
 			sb.WriteString("\n")
 
 		case "stderr":
-			// Errors - red bullet, wrapped (show full errors)
+			// Errors - red X icon, wrapped (show full errors)
 			wrappedErr := wrapText(text, wrapWidth-2)
-			sb.WriteString(ErrorStyle.Width(wrapWidth).Render("● " + wrappedErr))
+			sb.WriteString(ErrorStyle.Width(wrapWidth).Render("  ✗ " + wrappedErr))
+			sb.WriteString("\n")
+
+		case "error":
+			// Explicit error type - red X icon
+			wrappedErr := wrapText(text, wrapWidth-2)
+			sb.WriteString(ErrorStyle.Width(wrapWidth).Render("  ✗ " + wrappedErr))
+			sb.WriteString("\n")
+
+		case "success":
+			// Success messages - green checkmark
+			wrappedSuccess := wrapText(text, wrapWidth-2)
+			sb.WriteString(SuccessStyle.Width(wrapWidth).Render("  ✓ " + wrappedSuccess))
+			sb.WriteString("\n")
+
+		case "info":
+			// Info messages - dimmed info icon
+			wrappedInfo := wrapText(text, wrapWidth-2)
+			sb.WriteString(DimStyle.Width(wrapWidth).Render("  ℹ " + wrappedInfo))
+			sb.WriteString("\n")
+
+		case "subagent_spawn":
+			// Sub-agent spawn - show with spinning icon
+			wrappedSpawn := wrapText(text, wrapWidth-2)
+			sb.WriteString(lipgloss.NewStyle().Foreground(ColorYellow).Width(wrapWidth).Render(wrappedSpawn))
+			sb.WriteString("\n")
+
+		case "subagent_complete":
+			// Sub-agent completion - show with checkmark or X
+			wrappedComplete := wrapText(text, wrapWidth-2)
+			if strings.Contains(text, "✓") {
+				sb.WriteString(SuccessStyle.Width(wrapWidth).Render(wrappedComplete))
+			} else {
+				sb.WriteString(ErrorStyle.Width(wrapWidth).Render(wrappedComplete))
+			}
 			sb.WriteString("\n")
 
 		case "question":
