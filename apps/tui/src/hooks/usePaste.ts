@@ -1,6 +1,6 @@
 /**
  * usePaste Hook
- * Subscribe to clipboard paste events from OpenTUI's KeyHandler
+ * Subscribe to clipboard paste events from OpenTUI's renderer.keyInput
  */
 
 import { useEffect } from 'react';
@@ -11,17 +11,18 @@ export function usePaste(handler: (pasteEvent: PasteEvent) => void) {
   const renderer = useRenderer();
 
   useEffect(() => {
-    if (!renderer?.keyHandler) return;
+    if (!renderer?.keyInput) return;
 
     const pasteHandler = (event: PasteEvent) => {
       handler(event);
     };
 
-    // Listen to paste events from the key handler
-    renderer.keyHandler.on('paste', pasteHandler);
+    // Listen to paste events from renderer.keyInput (not keyHandler)
+    // As documented: renderer.keyInput emits "keypress" and "paste" events
+    renderer.keyInput.on('paste', pasteHandler);
 
     return () => {
-      renderer.keyHandler.off('paste', pasteHandler);
+      renderer.keyInput.off('paste', pasteHandler);
     };
   }, [renderer, handler]);
 }
