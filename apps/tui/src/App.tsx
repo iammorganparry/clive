@@ -75,14 +75,21 @@ function AppContent() {
     interrupt,
   } = useAppState(workspaceRoot);
 
+  // Track if we're in an input-focused state
+  const isInputActive = viewMode === 'main' || configFlow === 'linear' || configFlow === 'github';
+
   // Keyboard handling using React useEffect with raw stdin
-  // Note: useKeyboard from OpenTUI was causing handler loss, using direct stdin instead
+  // Only capture when NOT in an input field
   useEffect(() => {
+    // Don't capture keyboard if we're in an input-focused view
+    if (isInputActive) {
+      return;
+    }
+
     const handleKeyPress = (data: Buffer) => {
       const key = data.toString();
-      const firstChar = key[0];
 
-      // Global shortcuts
+      // Global shortcuts (only when not in input)
       if (key === 'q') {
         process.exit(0);
       }
@@ -178,7 +185,7 @@ function AppContent() {
         process.stdin.removeListener('data', handleKeyPress);
       }
     };
-  }, [viewMode, configFlow, setupSelectedIndex, selectedEpicIndex, sessions, setupOptions, goBack, goToHelp, goToSelection, interrupt]);
+  }, [viewMode, configFlow, setupSelectedIndex, selectedEpicIndex, sessions, setupOptions, goBack, goToHelp, goToSelection, interrupt, isInputActive]);
 
   // Handler for epic selection
   const handleEpicSelect = (session: typeof sessions[0]) => {
