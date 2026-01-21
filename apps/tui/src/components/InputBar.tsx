@@ -44,6 +44,8 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
           style={{
             width: width - 4,
             fg: OneDarkPro.foreground.primary,
+            backgroundColor: OneDarkPro.background.secondary,
+            focusedBackgroundColor: OneDarkPro.background.secondary,
           }}
         />
       </box>

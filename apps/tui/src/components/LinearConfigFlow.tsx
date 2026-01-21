@@ -96,8 +96,6 @@ export function LinearConfigFlow({
 
             <box
               marginTop={2}
-              padding={1}
-              backgroundColor={OneDarkPro.background.secondary}
               width={50}
             >
               <input
@@ -107,6 +105,8 @@ export function LinearConfigFlow({
                 onSubmit={handleSubmit}
                 style={{
                   fg: OneDarkPro.foreground.primary,
+                  backgroundColor: OneDarkPro.background.secondary,
+                  focusedBackgroundColor: OneDarkPro.background.secondary,
                 }}
               />
             </box>
@@ -139,8 +139,6 @@ export function LinearConfigFlow({
 
             <box
               marginTop={2}
-              padding={1}
-              backgroundColor={OneDarkPro.background.secondary}
               width={50}
             >
               <input
@@ -150,6 +148,8 @@ export function LinearConfigFlow({
                 onSubmit={handleSubmit}
                 style={{
                   fg: OneDarkPro.foreground.primary,
+                  backgroundColor: OneDarkPro.background.secondary,
+                  focusedBackgroundColor: OneDarkPro.background.secondary,
                 }}
               />
             </box>
