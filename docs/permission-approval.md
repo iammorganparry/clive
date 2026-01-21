@@ -167,11 +167,19 @@ PERMISSION REQUEST detected: Answer questions? (tool_use_id=toolu_xxx), sent app
 
 ### CI/CD Integration
 
-TODO: Add automated regression test to CI pipeline that:
-1. Runs `/question` command
-2. Verifies all questions complete
-3. Checks logs for successful permission approvals
-4. Fails if any permission denial errors occur
+✅ **COMPLETED**: Automated regression tests added to CI pipeline (`.github/workflows/ci.yml`):
+
+1. **Go Test Job**: Runs all Go tests in `apps/tui-go`
+2. **Permission Approval Tests**: Specifically runs `TestPermissionApproval*` tests
+3. **Regression Detection**: Fails build if any permission approval tests fail
+4. **Clear Feedback**: Provides explicit error messages if regression detected
+
+The CI pipeline runs on:
+- All pull requests
+- Pushes to main branch
+- Merge group events
+
+This ensures no future changes can break the permission approval feature without being caught in PR reviews.
 
 ## Known Limitations
 
