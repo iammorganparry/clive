@@ -30,7 +30,7 @@ export interface Session {
 export interface OutputLine {
   text: string;
   type: 'stdout' | 'stderr' | 'tool_call' | 'tool_result' | 'assistant' |
-        'system' | 'question' | 'exit' | 'debug' | 'file_diff' |
+        'system' | 'user' | 'question' | 'exit' | 'debug' | 'file_diff' |
         'subagent_spawn' | 'subagent_complete';
   toolName?: string;
   toolUseID?: string;

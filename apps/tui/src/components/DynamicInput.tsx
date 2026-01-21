@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
+import { useKeyboard } from '@opentui/react';
 import { SuggestionsPanel, type CommandSuggestion } from './SuggestionsPanel';
 import { useCommandHistory } from '../hooks/useCommandHistory';
-import { useInputKeyboard } from '../hooks/useInputKeyboard';
 import { usePaste } from '../hooks/usePaste';
 import { OneDarkPro } from '../styles/theme';
 
@@ -75,27 +75,73 @@ export function DynamicInput({
     }
   });
 
-  // Set up keyboard handling
-  useInputKeyboard({
-    inputRef,
-    value,
-    setValue,
-    showSuggestions,
-    setShowSuggestions,
-    selectedSuggestion,
-    setSelectedSuggestion,
-    filteredSuggestions,
-    getPreviousCommand: commandHistory.getPrevious,
-    getNextCommand: commandHistory.getNext,
-    resetHistoryIndex: commandHistory.reset,
-    onSubmit,
-    inputFocused,
-    setInputFocused: (focused) => {
-      if (onFocusChange) {
-        onFocusChange(focused);
+  // Handle keyboard navigation for suggestions and command history
+  // Regular character input is handled by the native input's onInput callback
+  useKeyboard((event) => {
+    // Only handle when input is focused
+    if (!inputFocused) return;
+
+    // Handle suggestion navigation when showing suggestions
+    if (showSuggestions && filteredSuggestions.length > 0) {
+      // Arrow up - previous suggestion
+      if (event.name === 'up') {
+        setSelectedSuggestion(Math.max(0, selectedSuggestion - 1));
+        return;
       }
-    },
-    isRunning,
+
+      // Arrow down - next suggestion
+      if (event.name === 'down') {
+        setSelectedSuggestion(
+          Math.min(filteredSuggestions.length - 1, selectedSuggestion + 1)
+        );
+        return;
+      }
+
+      // Tab or Enter to accept suggestion when suggestions are showing
+      if (event.name === 'tab' || event.name === 'return') {
+        event.preventDefault?.(); // Prevent default behavior
+        const suggestion = filteredSuggestions[selectedSuggestion];
+        if (suggestion) {
+          setValue(suggestion.cmd + ' ');
+          setShowSuggestions(false);
+          setSelectedSuggestion(0);
+          commandHistory.reset();
+        }
+        return;
+      }
+    }
+
+    // Handle command history navigation when NOT showing suggestions
+    if (!showSuggestions) {
+      // Arrow up - previous command in history
+      if (event.name === 'up') {
+        const prev = commandHistory.getPrevious();
+        if (prev !== null) {
+          setValue(prev);
+        }
+        return;
+      }
+
+      // Arrow down - next command in history
+      if (event.name === 'down') {
+        const next = commandHistory.getNext();
+        if (next !== null) {
+          setValue(next);
+        }
+        return;
+      }
+    }
+
+    // Ctrl+C - cancel running process
+    if (event.ctrl && event.name === 'c') {
+      if (isRunning) {
+        onSubmit('/cancel');
+      }
+      return;
+    }
+
+    // Note: Regular character input (typing) is NOT handled here
+    // It's handled by the native input component's onInput callback
   });
 
   const handleSubmit = (submittedValue: string) => {

@@ -14,7 +14,45 @@ interface Props {
 
 export function OutputLine({ line }: Props) {
   switch (line.type) {
-    case 'tool_call':
+    case 'tool_call': {
+      // For Read/Grep/Glob tools, just show the file name
+      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
+      const isBashTool = line.toolName === 'Bash';
+
+      if (isFileReadTool && line.text) {
+        // Extract file path from the tool call text
+        // Format is usually "● Read path/to/file" or similar
+        const match = line.text.match(/●\s+\w+\s+(.+)/);
+        if (match && match[1]) {
+          const path = match[1];
+          // Get just the filename from the path
+          const filename = path.split('/').pop() || path;
+          return (
+            <box>
+              <text fg={OneDarkPro.syntax.yellow}>
+                📄 {filename}
+              </text>
+            </box>
+          );
+        }
+      }
+
+      if (isBashTool && line.text) {
+        // Extract command from the tool call text
+        // Format is usually "● Bash <command>" or similar
+        const match = line.text.match(/●\s+Bash\s+(.+)/);
+        if (match && match[1]) {
+          const command = match[1];
+          return (
+            <box>
+              <text fg={OneDarkPro.syntax.cyan}>
+                $ {command}
+              </text>
+            </box>
+          );
+        }
+      }
+
       return (
         <box>
           <text fg={OneDarkPro.syntax.yellow}>
@@ -22,8 +60,16 @@ export function OutputLine({ line }: Props) {
           </text>
         </box>
       );
+    }
 
     case 'tool_result': {
+      // Skip rendering tool results for Read/Grep/Glob/Bash tools
+      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
+      const isBashTool = line.toolName === 'Bash';
+      if (isFileReadTool || isBashTool) {
+        return null;
+      }
+
       // Build metadata display
       const metadata: string[] = [];
 
@@ -108,6 +154,18 @@ export function OutputLine({ line }: Props) {
           padding={1}
         >
           <text fg={OneDarkPro.syntax.blue}>
+            {line.text}
+          </text>
+        </box>
+      );
+
+    case 'user':
+      return (
+        <box
+          backgroundColor={OneDarkPro.background.secondary}
+          padding={1}
+        >
+          <text fg={OneDarkPro.syntax.green}>
             {line.text}
           </text>
         </box>

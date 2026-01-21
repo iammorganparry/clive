@@ -73,6 +73,9 @@ const tuiMachine = setup({
         CLEAR: {
           actions: 'clearOutput',
         },
+        OUTPUT: {
+          actions: 'addOutput',
+        },
       },
     },
     executing: {
@@ -134,7 +137,7 @@ export interface AppState {
   setActiveSession: (session: Session | null) => void;
 }
 
-export function useAppState(workspaceRoot: string): AppState {
+export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'beads' | null): AppState {
   // Use XState machine
   const [state, send] = useMachine(tuiMachine, {
     context: {
@@ -217,10 +220,21 @@ export function useAppState(workspaceRoot: string): AppState {
       return;
     }
 
-    // If running, send as message
-    if (state.matches('executing')) {
+    // If running, send as message to agent
+    if (state.matches('executing') || state.matches('waiting_for_answer')) {
+      // Add user message to output (optimistic UI)
+      send({
+        type: 'OUTPUT',
+        line: {
+          text: `> ${cmd}`,
+          type: 'user',
+        },
+      });
       cliManager.current.sendMessage(cmd);
       send({ type: 'MESSAGE', content: cmd });
+    } else {
+      // Not running - show hint
+      addSystemMessage('No process running. Use /plan or /build to start.');
     }
   };
 
@@ -234,11 +248,11 @@ export function useAppState(workspaceRoot: string): AppState {
 
     switch (command) {
       case '/plan':
-        startExecution(args || 'Create a plan for the current task', 'plan');
+        startExecution(args || 'Create a plan for the current task', 'plan', cmd);
         break;
 
       case '/build':
-        startExecution(args || 'Execute the plan', 'build');
+        startExecution(args || 'Execute the plan', 'build', cmd);
         break;
 
       case '/clear':
@@ -262,20 +276,40 @@ export function useAppState(workspaceRoot: string): AppState {
   /**
    * Start CLI execution with a prompt
    */
-  const startExecution = (prompt: string, mode: 'plan' | 'build') => {
+  const startExecution = (prompt: string, mode: 'plan' | 'build', fullCommand?: string) => {
     if (!cliManager.current || state.matches('executing')) return;
 
     send({ type: 'CLEAR' });
+
+    // Show user's command if provided
+    if (fullCommand) {
+      send({
+        type: 'OUTPUT',
+        line: {
+          text: `> ${fullCommand}`,
+          type: 'user',
+        },
+      });
+    }
+
     addSystemMessage(`Starting ${mode} mode...`);
     send({ type: 'EXECUTE', prompt, mode });
+
+    // Build system prompt with issue tracker context
+    let systemPrompt: string | undefined;
+    if (mode === 'plan') {
+      const issueTrackerContext = issueTracker
+        ? `\n\nIMPORTANT: This project uses ${issueTracker === 'linear' ? 'Linear' : 'Beads'} for issue tracking. When creating tasks or issues in your plan, use the ${issueTracker} CLI commands and tools.`
+        : '';
+
+      systemPrompt = `You are a planning assistant. Create a detailed plan.${issueTrackerContext}`;
+    }
 
     // Execute via CLI Manager
     cliManager.current.execute(prompt, {
       workspaceRoot,
       model: 'sonnet',
-      systemPrompt: mode === 'plan'
-        ? 'You are a planning assistant. Create a detailed plan.'
-        : undefined,
+      systemPrompt,
     }).catch(error => {
       addSystemMessage(`Execution error: ${error}`);
       send({ type: 'COMPLETE' });
