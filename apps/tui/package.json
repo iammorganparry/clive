@@ -2,17 +2,17 @@
   "name": "@clive/tui",
   "version": "0.1.0",
   "type": "module",
+  "module": "src/main.tsx",
   "description": "Clive TUI built with OpenTUI/React",
-  "main": "./src/main.tsx",
   "scripts": {
-    "dev": "tsx watch src/main.tsx",
-    "build": "tsc",
-    "start": "tsx src/main.tsx"
+    "dev": "bun run --watch src/main.tsx",
+    "build": "echo 'No build step needed - noEmit: true'",
+    "start": "bun run src/main.tsx"
   },
   "dependencies": {
     "@clive/claude-services": "*",
-    "@opentui/core": "^0.1.0",
-    "@opentui/react": "^0.1.0",
+    "@opentui/core": "^0.1.74",
+    "@opentui/react": "^0.1.74",
     "@tanstack/react-query": "^5.90.12",
     "@xstate/react": "^6.0.0",
     "effect": "^3.19.9",
@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
+    "react-devtools-core": "7",
     "tsx": "^4.7.0",
     "typescript": "^5.9.3"
   }

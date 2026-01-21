@@ -3,7 +3,7 @@
  * Coordinates BeadsService and LinearService based on config
  */
 
-import { Effect, Context, Layer, Runtime } from 'effect';
+import { Effect, Context, Layer, Runtime, Data } from 'effect';
 import {
   BeadsService,
   BeadsServiceLive,
@@ -16,10 +16,9 @@ import {
 import { Task, Session, Config } from '../types';
 
 // Error types
-export class TaskServiceConfigError {
-  readonly _tag = 'TaskServiceConfigError';
-  constructor(readonly message: string) {}
-}
+export class TaskServiceConfigError extends Data.TaggedError('TaskServiceConfigError')<{
+  readonly message: string;
+}> {}
 
 // Service interface
 export interface TaskService {
@@ -70,10 +69,11 @@ export class TaskServiceImpl implements TaskService {
 
   constructor(config: Config) {
     this.config = config;
-
-    // Build Effect runtime with appropriate layers
-    const layers = this.buildLayers(config);
-    this.runtime = Runtime.defaultRuntime.pipe(Runtime.provide(layers)) as any;
+    const layer = this.buildLayers(config);
+    // Create runtime with the services pre-provided
+    this.runtime = Runtime.defaultRuntime.pipe(
+      Runtime.provide(layer)
+    ) as Runtime.Runtime<BeadsService | LinearService>;
   }
 
   private buildLayers(config: Config) {
@@ -87,55 +87,55 @@ export class TaskServiceImpl implements TaskService {
 
   getConfig = Effect.succeed(this.config);
 
-  loadSessions = Effect.gen(function* (this: TaskServiceImpl) {
-    const config = yield* this.getConfig;
+  loadSessions = (() => {
+    const config = this.config;
+    return Effect.gen(function* () {
+      if (config.issueTracker === 'linear' && config.linear) {
+        // Load Linear epics
+        const linearService = yield* LinearService;
+        const epics = yield* linearService.listIssues({
+          teamId: config.linear.teamID,
+        });
 
-    if (config.issueTracker === 'linear' && config.linear) {
-      // Load Linear epics
-      const linearService = yield* LinearService;
-      const epics = yield* linearService.listIssues({
-        teamId: config.linear.teamID,
-      });
+        // Filter for epics (if Linear supports epic type) or projects
+        return epics.map(
+          (epic): Session => ({
+            id: epic.id,
+            name: epic.title,
+            description: epic.description,
+            createdAt: epic.createdAt,
+            source: 'linear',
+            linearData: epic,
+          })
+        );
+      } else {
+        // Load Beads epics
+        const beadsService = yield* BeadsService;
+        const epics = yield* beadsService.list({ type: 'epic' });
 
-      // Filter for epics (if Linear supports epic type) or projects
-      return epics.map(
-        (epic): Session => ({
-          id: epic.id,
-          name: epic.title,
-          description: epic.description,
-          createdAt: epic.createdAt,
-          source: 'linear',
-          linearData: epic,
-        })
-      );
-    } else {
-      // Load Beads epics
-      const beadsService = yield* BeadsService;
-      const epics = yield* beadsService.list({ type: 'epic' });
-
-      return epics.map(
-        (epic): Session => ({
-          id: epic.id,
-          name: epic.title,
-          description: epic.description,
-          createdAt: epic.createdAt,
-          source: 'beads',
-          beadsData: epic,
-        })
-      );
-    }
-  }.bind(this)).pipe(
-    Effect.catchAll((error) =>
-      Effect.fail(
-        new TaskServiceConfigError(`Failed to load sessions: ${error}`)
+        return epics.map(
+          (epic): Session => ({
+            id: epic.id,
+            name: epic.title,
+            description: epic.description,
+            createdAt: epic.createdAt,
+            source: 'beads',
+            beadsData: epic,
+          })
+        );
+      }
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.fail(
+          new TaskServiceConfigError({ message: `Failed to load sessions: ${error}` })
+        )
       )
-    )
-  );
+    );
+  })();
 
-  loadTasks = (sessionId: string) =>
-    Effect.gen(function* (this: TaskServiceImpl) {
-      const config = yield* this.getConfig;
-
+  loadTasks = (sessionId: string) => {
+    const config = this.config;
+    return Effect.gen(function* () {
       if (config.issueTracker === 'linear' && config.linear) {
         // Load Linear issues for project
         const linearService = yield* LinearService;
@@ -154,48 +154,49 @@ export class TaskServiceImpl implements TaskService {
         // For now, return all non-epic issues
         return issues.filter((issue) => issue.type !== 'epic') as Task[];
       }
-    }.bind(this)).pipe(
+    }).pipe(
       Effect.catchAll((error) =>
         Effect.fail(
-          new TaskServiceConfigError(`Failed to load tasks: ${error}`)
+          new TaskServiceConfigError({ message: `Failed to load tasks: ${error}` })
         )
       )
     );
+  };
 
-  loadReadyTasks = Effect.gen(function* (this: TaskServiceImpl) {
-    const config = yield* this.getConfig;
+  loadReadyTasks = (() => {
+    const config = this.config;
+    return Effect.gen(function* () {
+      if (config.issueTracker === 'linear' && config.linear) {
+        // Load Linear issues with 'started' state
+        const linearService = yield* LinearService;
+        const issues = yield* linearService.listIssues({
+          teamId: config.linear.teamID,
+          stateType: 'started',
+        });
 
-    if (config.issueTracker === 'linear' && config.linear) {
-      // Load Linear issues with 'started' state
-      const linearService = yield* LinearService;
-      const issues = yield* linearService.listIssues({
-        teamId: config.linear.teamID,
-        stateType: 'started',
-      });
+        return issues as Task[];
+      } else {
+        // Load ready beads issues
+        const beadsService = yield* BeadsService;
+        const issues = yield* beadsService.ready;
 
-      return issues as Task[];
-    } else {
-      // Load ready beads issues
-      const beadsService = yield* BeadsService;
-      const issues = yield* beadsService.ready;
-
-      return issues as Task[];
-    }
-  }.bind(this)).pipe(
-    Effect.catchAll((error) =>
-      Effect.fail(
-        new TaskServiceConfigError(`Failed to load ready tasks: ${error}`)
+        return issues as Task[];
+      }
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.fail(
+          new TaskServiceConfigError({ message: `Failed to load ready tasks: ${error}` })
+        )
       )
-    )
-  );
+    );
+  })();
 
   updateTaskStatus = (
     taskId: string,
     status: 'open' | 'in_progress' | 'completed' | 'blocked'
-  ) =>
-    Effect.gen(function* (this: TaskServiceImpl) {
-      const config = yield* this.getConfig;
-
+  ) => {
+    const config = this.config;
+    return Effect.gen(function* () {
       if (config.issueTracker === 'linear' && config.linear) {
         // Update Linear issue state
         const linearService = yield* LinearService;
@@ -218,24 +219,25 @@ export class TaskServiceImpl implements TaskService {
       } else {
         // Update Beads issue
         const beadsService = yield* BeadsService;
-        yield* beadsService.update(taskId, { status });
+        const linearStatus = status === 'completed' ? 'closed' : status;
+        yield* beadsService.update(taskId, { status: linearStatus });
       }
-    }.bind(this)).pipe(
+    }).pipe(
       Effect.catchAll((error) =>
         Effect.fail(
-          new TaskServiceConfigError(`Failed to update task status: ${error}`)
+          new TaskServiceConfigError({ message: `Failed to update task status: ${error}` })
         )
       )
     );
+  };
 
   createTask = (
     sessionId: string,
     title: string,
     type: 'task' | 'bug' | 'feature'
-  ) =>
-    Effect.gen(function* (this: TaskServiceImpl) {
-      const config = yield* this.getConfig;
-
+  ) => {
+    const config = this.config;
+    return Effect.gen(function* () {
       if (config.issueTracker === 'linear' && config.linear) {
         // Create Linear issue
         const linearService = yield* LinearService;
@@ -257,13 +259,14 @@ export class TaskServiceImpl implements TaskService {
 
         return issue as Task;
       }
-    }.bind(this)).pipe(
+    }).pipe(
       Effect.catchAll((error) =>
         Effect.fail(
-          new TaskServiceConfigError(`Failed to create task: ${error}`)
+          new TaskServiceConfigError({ message: `Failed to create task: ${error}` })
         )
       )
     );
+  };
 }
 
 // Factory function to create TaskService layer

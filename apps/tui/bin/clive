@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clive TUI launcher
-# Runs the TypeScript TUI using bun
+# Runs the TypeScript TUI using Bun
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +9,7 @@ WORKSPACE_ROOT="$(cd "$TUI_DIR/../.." && pwd)"
 
 # Check if bun is available
 if ! command -v bun &> /dev/null; then
-    echo "Error: bun not found. Please install it from https://bun.sh"
+    echo "Error: bun not found. Please install from https://bun.sh"
     exit 1
 fi
 
@@ -20,4 +20,5 @@ if [ ! -d "$WORKSPACE_ROOT/node_modules" ]; then
 fi
 
 # Run the TUI with bun from workspace
+# WARNING: May crash with FFI segmentation fault - this is a known Bun + OpenTUI issue
 cd "$WORKSPACE_ROOT" && exec bun run "$TUI_DIR/src/main.tsx" "$@"

@@ -602,7 +602,10 @@ function executeGraphQL<T>(
         );
       }
 
-      const json = await response.json();
+      const json = await response.json() as {
+        data?: T;
+        errors?: Array<{ message: string; [key: string]: unknown }>;
+      };
 
       if (json.errors) {
         throw new LinearApiError(

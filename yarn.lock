@@ -2179,7 +2179,7 @@
   resolved "https://registry.yarnpkg.com/@opentui/core-win32-x64/-/core-win32-x64-0.1.74.tgz#529c46435f6ad5b2e20f4a0ab94ba8b7f96a4ab8"
   integrity sha512-3wfWXaAKOIlDQz6ZZIESf2M+YGZ7uFHijjTEM8w/STRlLw8Y6+QyGYi1myHSM4d6RSO+/s2EMDxvjDf899W9vQ==
 
-"@opentui/core@0.1.74", "@opentui/core@^0.1.0":
+"@opentui/core@0.1.74", "@opentui/core@^0.1.74":
   version "0.1.74"
   resolved "https://registry.yarnpkg.com/@opentui/core/-/core-0.1.74.tgz#cb8bb700e7ca7fe31b7842e30d9033cc68f8e38b"
   integrity sha512-g4W16ymv12JdgZ+9B4t7mpIICvzWy2+eHERfmDf80ALduOQCUedKQdULcBFhVCYUXIkDRtIy6CID5thMAah3FA==
@@ -2200,7 +2200,7 @@
     planck "^1.4.2"
     three "0.177.0"
 
-"@opentui/react@^0.1.0":
+"@opentui/react@^0.1.74":
   version "0.1.74"
   resolved "https://registry.yarnpkg.com/@opentui/react/-/react-0.1.74.tgz#2b3cb48f501ca8ba2906d4293d5026a1d756384f"
   integrity sha512-2wiTVtBcbjNuWJjVDaSNdfVM9x9Cs7U+wCRPMmzVrYYCbWGjYQcA0Ump+XSKJpN+swzZRDBYHIw9xBlgUUnoLw==
@@ -10709,6 +10709,14 @@ rc@^1.0.1, rc@^1.1.6, rc@^1.2.7:
     minimist "^1.2.0"
     strip-json-comments "~2.0.1"
 
+react-devtools-core@7:
+  version "7.0.1"
+  resolved "https://registry.yarnpkg.com/react-devtools-core/-/react-devtools-core-7.0.1.tgz#9bc83ac5317b34d0445f765eb17279d62a23f6ee"
+  integrity sha512-C3yNvRHaizlpiASzy7b9vbnBGLrhvdhl1CbdU6EnZgxPNbai60szdLtl+VL76UNOt5bOoVTOz5rNWZxgGt+Gsw==
+  dependencies:
+    shell-quote "^1.6.1"
+    ws "^7"
+
 react-dom@^19.2.0:
   version "19.2.3"
   resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-19.2.3.tgz#f0b61d7e5c4a86773889fcc1853af3ed5f215b17"
@@ -13055,6 +13063,11 @@ write-file-atomic@^7.0.0:
   dependencies:
     imurmurhash "^0.1.4"
     signal-exit "^4.0.1"
+
+ws@^7:
+  version "7.5.10"
+  resolved "https://registry.yarnpkg.com/ws/-/ws-7.5.10.tgz#58b5c20dc281633f6c19113f39b349bd8bd558d9"
+  integrity sha512-+dbF1tHwZpXcbOJdVOkzLDxZP1ailvSxM6ZweXTegylPny803bFhA+vqBYw4s31NSAk4S2Qz+AKXK9a4wkdjcQ==
 
 ws@^8.18.2, ws@^8.18.3:
   version "8.18.3"
