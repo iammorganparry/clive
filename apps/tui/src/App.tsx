@@ -104,11 +104,11 @@ function AppContent() {
     }
 
     // Global shortcuts
-    if (event.key === 'q' && viewMode !== 'main') {
+    if (event.sequence === 'q' && viewMode !== 'main') {
       process.exit(0);
     }
 
-    if (event.key === '?') {
+    if (event.sequence === '?') {
       if (viewMode === 'help') {
         goBack();
       } else {
@@ -123,15 +123,15 @@ function AppContent() {
         process.exit(0);
       }
       // Arrow key navigation for setup options
-      if (event.name === 'up' || event.key === 'k') {
+      if (event.name === 'up' || event.sequence === 'k') {
         setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
       }
-      if (event.name === 'down' || event.key === 'j') {
+      if (event.name === 'down' || event.sequence === 'j') {
         setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
       }
       // Number key selection (1, 2, etc.)
-      if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
+      if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence) - 1;
         if (index < setupOptions.length) {
           const selectedOption = setupOptions[index];
           if (selectedOption === 'linear') {
@@ -201,13 +201,13 @@ function AppContent() {
       }
 
       // Arrow key navigation for epic selection
-      if (event.name === 'up' || event.key === 'k') {
+      if (event.name === 'up' || event.sequence === 'k') {
         const filteredSessions = filterSessions(epicSearchQuery);
         const maxIndex = Math.min(filteredSessions.length, 10) - 1;
         setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
         return;
       }
-      if (event.name === 'down' || event.key === 'j') {
+      if (event.name === 'down' || event.sequence === 'j') {
         const filteredSessions = filterSessions(epicSearchQuery);
         const maxIndex = Math.min(filteredSessions.length, 10) - 1;
         setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
@@ -228,17 +228,17 @@ function AppContent() {
       if (event.name === 'escape') {
         goToSelection();
       }
-      if (event.ctrl && event.key === 'c') {
+      if (event.ctrl && event.name === 'c') {
         interrupt();
       }
       // Input focus shortcuts
-      if (event.key === '/') {
+      if (event.sequence === '/') {
         setInputFocused(true);
         setPreFillValue('/');
       }
-      if (event.key === 'i' || event.key === ':') {
+      if (event.sequence === 'i' || event.sequence === ':') {
         setInputFocused(true);
-        setPreFillValue(event.key === ':' ? ':' : undefined);
+        setPreFillValue(event.sequence === ':' ? ':' : undefined);
       }
     } else if (viewMode === 'help') {
       if (event.name === 'escape') {
