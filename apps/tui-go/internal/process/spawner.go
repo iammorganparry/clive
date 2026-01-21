@@ -1137,7 +1137,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				if block["type"] == "tool_result" {
 					toolUseID, _ := block["tool_use_id"].(string)
 					isError, _ := block["is_error"].(bool)
-					promptText, _ := block["content"].(string)
 
 					if isError && toolUseID != "" && handle != nil {
 						// Permission request detected - auto-approve it
@@ -1159,13 +1158,23 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 						approvalJSON, err := json.Marshal(approval)
 						if err == nil && handle.stdin != nil {
-							handle.stdin.Write(append(approvalJSON, '\n'))
+							written, writeErr := handle.stdin.Write(append(approvalJSON, '\n'))
+
+							// Log the stdin write for debugging
+							if handle.logger != nil {
+								stdinLog := OutputLine{
+									Type:      "debug",
+									DebugInfo: fmt.Sprintf("STDIN WRITE: Sent approval for %s (bytes=%d, err=%v): %s", toolUseID, written, writeErr, string(approvalJSON)),
+								}
+								handle.logger.LogNDJSONEvent(string(approvalJSON), &stdinLog)
+							}
 						}
 
-						return logAndReturn(handle, line, []OutputLine{{
-							Type:      "debug",
-							DebugInfo: fmt.Sprintf("PERMISSION REQUEST detected: %s (tool_use_id=%s), sent approval via stdin", promptText, toolUseID),
-						}})
+						// CRITICAL: Return nil to prevent this permission denial from being logged
+						// to the conversation. If we log it, claude-code will include it in future
+						// API calls causing "unexpected tool_use_id" errors.
+						// We've already sent the approval, so we can safely ignore this event.
+						return nil
 					}
 				}
 			}
@@ -1422,29 +1431,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 	case "result":
 		// Tool execution result from Claude CLI
-
-		// Check if ExitPlanMode was detected - if so, kill the process after result
-		streamStateMu.Lock()
-		shouldTerminate := exitPlanModeDetected
-		streamStateMu.Unlock()
-
-		if shouldTerminate && handle != nil && handle.cmd != nil {
-			// ExitPlanMode completed - terminate to prevent further API calls
-			// This prevents accumulated permission denials from causing 400 errors
-			go func() {
-				// Small delay to allow result to be processed
-				time.Sleep(100 * time.Millisecond)
-				if handle.cmd.Process != nil {
-					handle.cmd.Process.Kill()
-				}
-			}()
-			return logAndReturn(handle, line, []OutputLine{{
-				Type:      "system",
-				Text:      "✓ Planning complete. Terminating session.\n",
-				DebugInfo: "ExitPlanMode completed - killed process to prevent API errors",
-			}})
-		}
-
 		// Check for token usage warnings (context window monitoring)
 		if modelUsage, ok := data["modelUsage"].(map[string]interface{}); ok {
 			// Iterate through each model's usage stats
