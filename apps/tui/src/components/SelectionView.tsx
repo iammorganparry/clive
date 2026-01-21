@@ -80,23 +80,24 @@ export function SelectionView({
 
         {/* Session list */}
         {!sessionsLoading && sessions.length > 0 && (
-          <box marginTop={3} flexDirection="column" width={50}>
+          <box marginTop={2} flexDirection="column" width={60}>
             {/* Search box */}
             <box
               backgroundColor={searchQuery ? OneDarkPro.background.highlight : OneDarkPro.background.secondary}
               borderStyle="single"
               borderColor={searchQuery ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
-              padding={1}
-              marginBottom={2}
+              paddingLeft={1}
+              paddingRight={1}
+              marginBottom={1}
             >
               <text fg={OneDarkPro.syntax.green}>🔍 </text>
               <text fg={searchQuery ? OneDarkPro.foreground.primary : OneDarkPro.foreground.muted}>
-                {searchQuery || 'Type to search epics...'}
+                {searchQuery || 'Type to search...'}
               </text>
             </box>
 
             {/* Count */}
-            <text fg={OneDarkPro.foreground.muted} marginBottom={1}>
+            <text fg={OneDarkPro.foreground.muted}>
               {displaySessions.length} of {filteredSessions.length}
               {searchQuery ? ` (${sessions.length} total)` : ' epics'}
             </text>
@@ -113,7 +114,7 @@ export function SelectionView({
                 // Get identifier from linearData if available
                 const identifier = session.linearData?.identifier || '';
                 const prefix = identifier ? `${identifier} ` : '';
-                const maxNameLength = identifier ? 20 : 25;
+                const maxNameLength = identifier ? 30 : 35;
 
                 const name = session.name.length > maxNameLength
                   ? session.name.substring(0, maxNameLength - 1) + '…'
@@ -127,8 +128,8 @@ export function SelectionView({
                         ? OneDarkPro.background.highlight
                         : 'transparent'
                     }
-                    padding={1}
-                    marginBottom={1}
+                    paddingLeft={1}
+                    paddingRight={1}
                   >
                     <text
                       fg={
