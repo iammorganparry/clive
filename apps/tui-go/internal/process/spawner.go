@@ -73,7 +73,6 @@ var (
 	currentToolID         string                // Current tool_use_id for responding to tool calls
 	currentToolInput      strings.Builder       // Accumulates tool input JSON
 	pendingBdRefresh      bool                  // True when a bd command was seen and we need to refresh after execution
-	exitPlanModeDetected  bool                  // True when ExitPlanMode was called - we should terminate soon
 	handledQuestionIDs    = make(map[string]bool) // Track all tool_use_ids already emitted via streaming (for dedup)
 	questionMessageIDs    = make(map[string]bool) // Track message IDs that contain AskUserQuestion (to skip text from those messages)
 	streamStateMu         sync.Mutex
@@ -90,7 +89,6 @@ func ResetStreamingState() {
 	currentToolID = ""
 	currentToolInput.Reset()
 	pendingBdRefresh = false
-	exitPlanModeDetected = false
 	handledQuestionIDs = make(map[string]bool) // Clear the map
 	questionMessageIDs = make(map[string]bool) // Clear the map
 }
@@ -964,19 +962,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				}})
 			}
 
-			// Handle ExitPlanMode - signal planning is complete and ready for approval
-			if name == "ExitPlanMode" {
-				// Set flag to terminate process after this completes
-				streamStateMu.Lock()
-				exitPlanModeDetected = true
-				streamStateMu.Unlock()
-
-				return logAndReturn(handle, line, []OutputLine{{
-					Text:      "✓ Plan complete! Review the plan file to approve.\n",
-					Type:      "system",
-					DebugInfo: debugInfo,
-				}})
-			}
 
 			// For AskUserQuestion in streaming mode, defer output until content_block_stop
 			// when we have the full input JSON. Don't emit a placeholder to avoid duplicates.
@@ -1322,31 +1307,6 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				text := "● " + name
 				if detail != "" {
 					text += " " + detail
-				}
-
-				// Handle EnterPlanMode in assistant message
-				if name == "EnterPlanMode" {
-					results = append(results, OutputLine{
-						Text:      "📋 Entering planning mode...\n",
-						Type:      "system",
-						DebugInfo: debugInfo,
-					})
-					continue
-				}
-
-				// Handle ExitPlanMode in assistant message
-				if name == "ExitPlanMode" {
-					// Set flag to terminate process after this completes
-					streamStateMu.Lock()
-					exitPlanModeDetected = true
-					streamStateMu.Unlock()
-
-					results = append(results, OutputLine{
-						Text:      "✓ Plan complete! Review the plan file to approve.\n",
-						Type:      "system",
-						DebugInfo: debugInfo,
-					})
-					continue
 				}
 
 				// Check if this tool call should trigger task refresh

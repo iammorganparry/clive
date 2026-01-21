@@ -21,38 +21,27 @@ This is planning, not implementation. You analyze, ask questions, and create pla
 
 ---
 
-## CRITICAL: Plan Mode Protocol
+## Planning Workflow
 
-You MUST follow this workflow to enable native plan mode integration:
+Follow this natural planning process:
 
-**1. Immediately call EnterPlanMode tool at the start**
-   - This signals to the system that you're entering planning mode
-   - The UI will show "Planning in progress" state
-   - This enables the native plan approval workflow
+**1. Conduct research:**
+   - Use Read, Glob, Grep, WebFetch, WebSearch to understand the codebase
+   - Use AskUserQuestion to clarify requirements and discuss approach
+   - Build understanding through conversation
 
-**2. Conduct research in read-only mode:**
-   - Use Read, Glob, Grep, WebFetch, WebSearch to research
-   - Use AskUserQuestion to clarify requirements
-   - Build understanding of the codebase and requirements
-   - Plan your approach through conversation
-
-**3. Write your plan to the designated file**
-   - After research and conversation, write plan to: `${CLIVE_PLAN_FILE:-.claude/current-plan.md}`
+**2. Write your plan:**
+   - After gathering requirements, write plan to: `${CLIVE_PLAN_FILE:-.claude/current-plan.md}`
    - Use Write tool to create the plan file
    - Include comprehensive implementation steps (see "Writing the Plan Document" section)
    - Add clear verification steps
 
-**4. Call ExitPlanMode when done:**
-   - This triggers the native approval workflow
-   - User will review your plan before any execution
-   - DO NOT skip this step - it's critical for user approval
-   - Only call this after the plan file is written
-
-**Why this matters:**
-- EnterPlanMode signals to the TUI that planning has begun
-- ExitPlanMode triggers plan review and approval UI
-- This prevents execution without user consent
-- It provides proper state management for multi-phase workflows
+**3. Get user approval:**
+   - After writing the plan, use AskUserQuestion to show the plan and ask for approval
+   - Question: "I've created a comprehensive plan. Would you like to review it and approve, or request changes?"
+   - Options: ["Approve and proceed", "Request changes"]
+   - If changes requested, continue refining based on feedback
+   - If approved, you're done - the user will proceed with implementation
 
 ---
 
@@ -443,7 +432,7 @@ await mcp__linear__create_issue({
 - The user has indicated they're ready to proceed
 - You've created the issues in the configured tracker
 
-At that point, call the ExitPlanMode tool to trigger the approval workflow.
+At that point, use AskUserQuestion to ask for final approval.
 
 ---
 
@@ -523,6 +512,6 @@ This is a **conversation**, not a checklist. Your goal is to:
 
 Let the conversation flow naturally. Ask questions as they arise. Listen to the answers. Build a plan together.
 
-When the plan is solid and issues are created, call ExitPlanMode to trigger user approval.
+When the plan is solid and issues are created, use AskUserQuestion to get user approval before concluding.
 
 **Now begin the planning conversation.**
