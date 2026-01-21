@@ -1,0 +1,25 @@
+{
+  "name": "@clive/claude-services",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared services for Claude CLI integration",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "effect": "^3.19.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
