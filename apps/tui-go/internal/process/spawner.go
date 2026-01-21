@@ -1155,8 +1155,15 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 						}
 
 						approvalJSON, err := json.Marshal(approval)
-						if err == nil && handle.stdin != nil {
-							written, writeErr := handle.stdin.Write(append(approvalJSON, '\n'))
+						if err == nil {
+							// Acquire mutex before writing to stdin to prevent concurrent writes
+							handle.mu.Lock()
+							var written int
+							var writeErr error
+							if handle.stdin != nil && !handle.killed {
+								written, writeErr = handle.stdin.Write(append(approvalJSON, '\n'))
+							}
+							handle.mu.Unlock()
 
 							// Log the stdin write for debugging
 							if handle.logger != nil {
