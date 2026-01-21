@@ -143,26 +143,72 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
+      // Escape - clear search or go back
       if (event.name === 'escape') {
-        goBack();
+        if (epicSearchQuery) {
+          setEpicSearchQuery('');
+          setSelectedEpicIndex(0);
+        } else {
+          goBack();
+        }
+        return;
       }
+
+      // Backspace - remove last character from search
+      if (event.name === 'backspace') {
+        if (epicSearchQuery) {
+          setEpicSearchQuery(epicSearchQuery.slice(0, -1));
+          setSelectedEpicIndex(0);
+        }
+        return;
+      }
+
+      // Printable characters - add to search query
+      if (event.key && event.key.length === 1 && !event.ctrl && !event.meta) {
+        setEpicSearchQuery(epicSearchQuery + event.key);
+        setSelectedEpicIndex(0);
+        return;
+      }
+
       // Arrow key navigation for epic selection
       if (event.name === 'up' || event.key === 'k') {
-        setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, sessions.length - 1)));
+        // Filter sessions first to get accurate count
+        const filteredCount = epicSearchQuery
+          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase())).length
+          : sessions.length;
+        const maxIndex = Math.min(filteredCount, 10) - 1;
+        setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
       }
       if (event.name === 'down' || event.key === 'j') {
-        setSelectedEpicIndex((prev) => (prev < Math.max(0, sessions.length - 1) ? prev + 1 : 0));
+        // Filter sessions first to get accurate count
+        const filteredCount = epicSearchQuery
+          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase())).length
+          : sessions.length;
+        const maxIndex = Math.min(filteredCount, 10) - 1;
+        setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
       }
+
       // Number key selection (1-9)
       if (/^[1-9]$/.test(event.key)) {
         const index = parseInt(event.key) - 1;
-        if (index < sessions.length) {
-          handleEpicSelect(sessions[index]);
+        const filteredSessions = epicSearchQuery
+          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase()))
+          : sessions;
+        const displaySessions = filteredSessions.slice(0, 10);
+
+        if (index < displaySessions.length) {
+          handleEpicSelect(displaySessions[index]);
         }
       }
+
       if (event.name === 'return') {
-        if (sessions[selectedEpicIndex]) {
-          handleEpicSelect(sessions[selectedEpicIndex]);
+        const filteredSessions = epicSearchQuery
+          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase()))
+          : sessions;
+        const displaySessions = filteredSessions.slice(0, 10);
+
+        if (displaySessions[selectedEpicIndex]) {
+          handleEpicSelect(displaySessions[selectedEpicIndex]);
         }
       }
     } else if (viewMode === 'main') {

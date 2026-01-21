@@ -81,27 +81,30 @@ export function SelectionView({
         {/* Session list */}
         {!sessionsLoading && sessions.length > 0 && (
           <box marginTop={3} flexDirection="column" width={50}>
-            {/* Search box placeholder */}
+            {/* Search box */}
             <box
-              backgroundColor={OneDarkPro.background.secondary}
+              backgroundColor={searchQuery ? OneDarkPro.background.highlight : OneDarkPro.background.secondary}
+              borderStyle="single"
+              borderColor={searchQuery ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
               padding={1}
               marginBottom={2}
             >
-              <text fg={OneDarkPro.foreground.muted}>
-                {searchQuery || '🔍 Search epics... (type to filter)'}
+              <text fg={OneDarkPro.syntax.green}>🔍 </text>
+              <text fg={searchQuery ? OneDarkPro.foreground.primary : OneDarkPro.foreground.muted}>
+                {searchQuery || 'Type to search epics...'}
               </text>
             </box>
 
             {/* Count */}
             <text fg={OneDarkPro.foreground.muted} marginBottom={1}>
-              Showing {displaySessions.length} of {sessions.length}
-              {searchQuery ? ' matches' : ''}
+              {displaySessions.length} of {filteredSessions.length}
+              {searchQuery ? ` (${sessions.length} total)` : ' epics'}
             </text>
 
             {/* Session items */}
             {displaySessions.length === 0 ? (
               <text fg={OneDarkPro.foreground.muted}>
-                No matching epics found.
+                No matching epics. Try a different search.
               </text>
             ) : (
               displaySessions.map((session, i) => {
@@ -109,8 +112,8 @@ export function SelectionView({
 
                 // Get identifier from linearData if available
                 const identifier = session.linearData?.identifier || '';
-                const prefix = identifier ? `[${identifier}] ` : '';
-                const maxNameLength = identifier ? 35 : 40;
+                const prefix = identifier ? `${identifier} ` : '';
+                const maxNameLength = identifier ? 20 : 25;
 
                 const name = session.name.length > maxNameLength
                   ? session.name.substring(0, maxNameLength - 1) + '…'
@@ -148,7 +151,7 @@ export function SelectionView({
         {/* Keyboard hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.muted}>
-            1-9 Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Back  •  q Quit
+            Type to search  •  1-9/↑↓ Select  •  Enter Confirm  •  Esc {searchQuery ? 'Clear' : 'Back'}  •  q Quit
           </text>
         </box>
       </box>
