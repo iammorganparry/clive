@@ -128,12 +128,9 @@ export function createTaskService(config: Config) {
       provide(
         Effect.gen(function* () {
           if (config.issueTracker === 'linear' && config.linear) {
-            // Load Linear issues for project
+            // Load Linear sub-issues (children) of the epic/parent issue
             const linearService = yield* LinearService;
-            const issues = yield* linearService.listIssues({
-              projectId: sessionId,
-              teamId: config.linear.teamID,
-            });
+            const issues = yield* linearService.getSubIssues(sessionId);
 
             return issues as Task[];
           } else {
