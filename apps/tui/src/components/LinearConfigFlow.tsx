@@ -30,21 +30,10 @@ export function LinearConfigFlow({
   const [error, setError] = useState('');
   const [inputValue, setInputValue] = useState('');
 
-  // Handle keyboard input
+  // Handle escape key only
   useKeyboard((event) => {
     if (event.name === 'escape') {
       onCancel();
-      return;
-    }
-
-    if (step === 'api_key' || step === 'team_id') {
-      if (event.name === 'return') {
-        handleSubmit();
-      } else if (event.name === 'backspace') {
-        setInputValue((prev) => prev.slice(0, -1));
-      } else if (event.key.length === 1) {
-        setInputValue((prev) => prev + event.key);
-      }
     }
   });
 
@@ -111,9 +100,15 @@ export function LinearConfigFlow({
               backgroundColor={OneDarkPro.background.secondary}
               width={50}
             >
-              <text fg={OneDarkPro.foreground.primary}>
-                {inputValue || '_'}
-              </text>
+              <input
+                placeholder="lin_api_..."
+                focused={true}
+                onInput={setInputValue}
+                onSubmit={handleSubmit}
+                style={{
+                  fg: OneDarkPro.foreground.primary,
+                }}
+              />
             </box>
 
             {error && (
@@ -148,9 +143,15 @@ export function LinearConfigFlow({
               backgroundColor={OneDarkPro.background.secondary}
               width={50}
             >
-              <text fg={OneDarkPro.foreground.primary}>
-                {inputValue || '_'}
-              </text>
+              <input
+                placeholder="TEAM"
+                focused={true}
+                onInput={setInputValue}
+                onSubmit={handleSubmit}
+                style={{
+                  fg: OneDarkPro.foreground.primary,
+                }}
+              />
             </box>
 
             {error && (

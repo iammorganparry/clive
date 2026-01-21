@@ -75,122 +75,96 @@ function AppContent() {
     interrupt,
   } = useAppState(workspaceRoot);
 
-  // Track if we're in an input-focused state
-  const isInputActive = viewMode === 'main' || configFlow === 'linear' || configFlow === 'github';
+  // Keyboard handling using OpenTUI's useKeyboard hook
+  // This properly integrates with OpenTUI's stdin management
+  useKeyboard((event) => {
+    // Skip keyboard handling in input-focused views
+    if (configFlow === 'linear' || configFlow === 'github') {
+      return;
+    }
 
-  // Keyboard handling - completely disable for input-focused views
-  // Let OpenTUI manage everything in those views
-  useEffect(() => {
-    // Don't capture keyboard if we're in an input-focused view
-    if (isInputActive) {
-      // Make sure stdin is NOT in raw mode for OpenTUI inputs
-      if (process.stdin.isTTY && process.stdin.setRawMode) {
-        process.stdin.setRawMode(false);
+    // Global shortcuts
+    if (event.key === 'q' && viewMode !== 'main') {
+      process.exit(0);
+    }
+
+    if (event.key === '?') {
+      if (viewMode === 'help') {
+        goBack();
+      } else {
+        goToHelp();
       }
       return;
     }
 
-    const handleKeyPress = (data: Buffer) => {
-      const key = data.toString();
-
-      // Global shortcuts (only when not in input)
-      if (key === 'q') {
+    // View-specific shortcuts
+    if (viewMode === 'setup' && !configFlow) {
+      if (event.name === 'escape') {
         process.exit(0);
       }
-
-      if (key === '?') {
-        if (viewMode === 'help') {
-          goBack();
-        } else {
-          goToHelp();
-        }
-        return;
+      // Arrow key navigation for setup options
+      if (event.name === 'up' || event.key === 'k') {
+        setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
       }
-
-      // View-specific shortcuts
-      if (viewMode === 'setup' && !configFlow) {
-        if (key === '\x1b') { // Escape
-          process.exit(0);
-        }
-        // Arrow key navigation for setup options
-        if (key === '\x1b[A' || key === 'k') { // Up
-          setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
-        }
-        if (key === '\x1b[B' || key === 'j') { // Down
-          setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
-        }
-        // Number key selection (1, 2, etc.)
-        if (/^[1-9]$/.test(key)) {
-          const index = parseInt(key) - 1;
-          if (index < setupOptions.length) {
-            const selectedOption = setupOptions[index];
-            if (selectedOption === 'linear') {
-              setConfigFlow('linear');
-            } else if (selectedOption === 'beads') {
-              setConfigFlow('beads');
-            }
-          }
-        }
-        if (key === '\r') { // Enter
-          const selectedOption = setupOptions[setupSelectedIndex];
+      if (event.name === 'down' || event.key === 'j') {
+        setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
+      }
+      // Number key selection (1, 2, etc.)
+      if (/^[1-9]$/.test(event.key)) {
+        const index = parseInt(event.key) - 1;
+        if (index < setupOptions.length) {
+          const selectedOption = setupOptions[index];
           if (selectedOption === 'linear') {
             setConfigFlow('linear');
           } else if (selectedOption === 'beads') {
             setConfigFlow('beads');
           }
         }
-      } else if (viewMode === 'selection') {
-        if (key === '\x1b') { // Escape
-          goBack();
-        }
-        // Arrow key navigation for epic selection
-        if (key === '\x1b[A' || key === 'k') { // Up
-          setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, sessions.length - 1)));
-        }
-        if (key === '\x1b[B' || key === 'j') { // Down
-          setSelectedEpicIndex((prev) => (prev < Math.max(0, sessions.length - 1) ? prev + 1 : 0));
-        }
-        // Number key selection (1-9)
-        if (/^[1-9]$/.test(key)) {
-          const index = parseInt(key) - 1;
-          if (index < sessions.length) {
-            handleEpicSelect(sessions[index]);
-          }
-        }
-        if (key === '\r') { // Enter
-          if (sessions[selectedEpicIndex]) {
-            handleEpicSelect(sessions[selectedEpicIndex]);
-          }
-        }
-      } else if (viewMode === 'main') {
-        if (key === '\x1b') { // Escape
-          goToSelection();
-        }
-        if (key === '\x03') { // Ctrl+C
-          interrupt();
-        }
-      } else if (viewMode === 'help') {
-        if (key === '\x1b') { // Escape
-          goBack();
+      }
+      if (event.name === 'return') {
+        const selectedOption = setupOptions[setupSelectedIndex];
+        if (selectedOption === 'linear') {
+          setConfigFlow('linear');
+        } else if (selectedOption === 'beads') {
+          setConfigFlow('beads');
         }
       }
-    };
-
-    // Setup raw mode for stdin only for navigation views
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      process.stdin.on('data', handleKeyPress);
+    } else if (viewMode === 'selection') {
+      if (event.name === 'escape') {
+        goBack();
+      }
+      // Arrow key navigation for epic selection
+      if (event.name === 'up' || event.key === 'k') {
+        setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, sessions.length - 1)));
+      }
+      if (event.name === 'down' || event.key === 'j') {
+        setSelectedEpicIndex((prev) => (prev < Math.max(0, sessions.length - 1) ? prev + 1 : 0));
+      }
+      // Number key selection (1-9)
+      if (/^[1-9]$/.test(event.key)) {
+        const index = parseInt(event.key) - 1;
+        if (index < sessions.length) {
+          handleEpicSelect(sessions[index]);
+        }
+      }
+      if (event.name === 'return') {
+        if (sessions[selectedEpicIndex]) {
+          handleEpicSelect(sessions[selectedEpicIndex]);
+        }
+      }
+    } else if (viewMode === 'main') {
+      if (event.name === 'escape') {
+        goToSelection();
+      }
+      if (event.ctrl && event.key === 'c') {
+        interrupt();
+      }
+    } else if (viewMode === 'help') {
+      if (event.name === 'escape') {
+        goBack();
+      }
     }
-
-    // Cleanup - remove listener and turn off raw mode
-    return () => {
-      if (process.stdin.isTTY) {
-        process.stdin.removeListener('data', handleKeyPress);
-        // Leave raw mode on for OpenTUI to potentially use
-      }
-    };
-  }, [viewMode, configFlow, setupSelectedIndex, selectedEpicIndex, sessions, setupOptions, goBack, goToHelp, goToSelection, interrupt, isInputActive]);
+  });
 
   // Handler for epic selection
   const handleEpicSelect = (session: typeof sessions[0]) => {
