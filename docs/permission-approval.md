@@ -36,7 +36,7 @@ The TUI's `spawner.go` automatically detects permission requests from claude-cod
 
 ### How It Works
 
-The solution is **generic** - it detects and approves permission denials from ANY tool, not just specific ones.
+The solution detects and approves permission denials from tools, with a special exception for `AskUserQuestion`.
 
 1. **Detection**: When claude-code sends a permission request, it appears as a `user` event with `is_error: true`:
    ```json
@@ -70,7 +70,27 @@ The solution is **generic** - it detects and approves permission denials from AN
    }
    ```
 
-3. **Continuation**: After approval, the user can provide their actual answer through the TUI's question panel.
+3. **Continuation**: After approval, claude-code continues execution.
+
+### AskUserQuestion Exception
+
+**Important**: `AskUserQuestion` is NOT auto-approved. When a permission denial is detected for AskUserQuestion:
+
+1. We check if the `tool_use_id` is in our `handledQuestionIDs` map (populated when we detect AskUserQuestion calls)
+2. If it's an AskUserQuestion, we skip auto-approval and return nil
+3. The TUI's question panel collects the user's actual answer
+4. The user's answer is sent as the tool_result (not our empty approval)
+
+This prevents the following error:
+```
+API Error: 400 unexpected `tool_use_id` found in `tool_result` blocks
+```
+
+Which occurred when:
+1. AskUserQuestion permission denied
+2. We auto-approved with empty tool_result
+3. User answered via TUI, sending another tool_result
+4. API error: two tool_results for one tool_use
 
 ## Implementation
 
@@ -88,10 +108,19 @@ case "user":
     if block["type"] == "tool_result" {
         toolUseID := block["tool_use_id"]
         isError := block["is_error"]
-        promptText := block["content"]
 
         if isError && toolUseID != "" {
-            // Send approval via stdin
+            // Check if this is AskUserQuestion - if so, don't auto-approve
+            streamStateMu.Lock()
+            isAskUserQuestion := handledQuestionIDs[toolUseID]
+            streamStateMu.Unlock()
+
+            if isAskUserQuestion {
+                // Skip auto-approval for AskUserQuestion
+                return nil
+            }
+
+            // Send approval via stdin for other tools
             approval := map[string]interface{}{
                 "type": "user",
                 "message": map[string]interface{}{
