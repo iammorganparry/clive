@@ -262,30 +262,12 @@ export function useAppState(workspaceRoot: string): AppState {
   /**
    * Start CLI execution with a prompt
    */
-  const startExecution = async (prompt: string, mode: 'plan' | 'build') => {
+  const startExecution = (prompt: string, mode: 'plan' | 'build') => {
     if (!cliManager.current || state.matches('executing')) return;
 
     send({ type: 'CLEAR' });
     addSystemMessage(`Starting ${mode} mode...`);
     send({ type: 'EXECUTE', prompt, mode });
-
-    // Cache tasks before starting build
-    if (mode === 'build' && activeSession && tasks.length > 0) {
-      try {
-        const fs = await import('fs/promises');
-        const path = await import('path');
-        const os = await import('os');
-
-        const epicDir = path.join(os.homedir(), '.claude', 'epics', activeSession.id);
-        await fs.mkdir(epicDir, { recursive: true });
-
-        const tasksFile = path.join(epicDir, 'tasks.json');
-        await fs.writeFile(tasksFile, JSON.stringify(tasks, null, 2));
-      } catch (error) {
-        console.error('Failed to cache tasks:', error);
-        addSystemMessage('Warning: Failed to cache tasks for build script');
-      }
-    }
 
     // Execute via CLI Manager
     cliManager.current.execute(prompt, {

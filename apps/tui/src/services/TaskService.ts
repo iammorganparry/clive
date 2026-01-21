@@ -127,20 +127,45 @@ export function createTaskService(config: Config) {
     loadTasks: (sessionId: string) =>
       provide(
         Effect.gen(function* () {
+          let tasks: Task[];
+
           if (config.issueTracker === 'linear' && config.linear) {
             // Load Linear sub-issues (children) of the epic/parent issue
             const linearService = yield* LinearService;
             const issues = yield* linearService.getSubIssues(sessionId);
-
-            return issues as Task[];
+            tasks = issues as Task[];
           } else {
             // Load Beads issues
             const beadsService = yield* BeadsService;
             const issues = yield* beadsService.list();
 
             // Filter by parent epic
-            return issues.filter((issue) => issue.type !== 'epic') as Task[];
+            tasks = issues.filter((issue) => issue.type !== 'epic') as Task[];
           }
+
+          // Cache tasks to filesystem for build script
+          yield* Effect.tryPromise({
+            try: async () => {
+              const fs = await import('fs/promises');
+              const path = await import('path');
+              const os = await import('os');
+
+              const epicDir = path.join(os.homedir(), '.claude', 'epics', sessionId);
+              await fs.mkdir(epicDir, { recursive: true });
+
+              const tasksFile = path.join(epicDir, 'tasks.json');
+              await fs.writeFile(tasksFile, JSON.stringify(tasks, null, 2));
+            },
+            catch: (error) => {
+              // Log but don't fail the entire operation if caching fails
+              console.error('Failed to cache tasks to filesystem:', error);
+              return error;
+            },
+          }).pipe(
+            Effect.catchAll(() => Effect.succeed(undefined)) // Ignore cache failures
+          );
+
+          return tasks;
         }).pipe(
           Effect.catchAll((error) =>
             Effect.fail(
