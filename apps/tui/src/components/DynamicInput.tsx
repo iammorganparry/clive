@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useKeyboard } from '@opentui/react';
 import { SuggestionsPanel, type CommandSuggestion } from './SuggestionsPanel';
 import { useCommandHistory } from '../hooks/useCommandHistory';
 import { usePaste } from '../hooks/usePaste';
@@ -72,6 +73,74 @@ export function DynamicInput({
       // Use insertText method as per OpenTUI docs
       inputRef.current.insertText(text);
     }
+  });
+
+  // Handle keyboard navigation for suggestions and command history
+  // Regular character input is handled by the native input's onInput callback
+  useKeyboard((event) => {
+    // Only handle when input is focused
+    if (!inputFocused) return;
+
+    // Handle suggestion navigation when showing suggestions
+    if (showSuggestions && filteredSuggestions.length > 0) {
+      // Arrow up - previous suggestion
+      if (event.name === 'up') {
+        setSelectedSuggestion(Math.max(0, selectedSuggestion - 1));
+        return;
+      }
+
+      // Arrow down - next suggestion
+      if (event.name === 'down') {
+        setSelectedSuggestion(
+          Math.min(filteredSuggestions.length - 1, selectedSuggestion + 1)
+        );
+        return;
+      }
+
+      // Tab to accept suggestion (don't use Enter as it should submit)
+      if (event.name === 'tab') {
+        const suggestion = filteredSuggestions[selectedSuggestion];
+        if (suggestion) {
+          setValue(suggestion.cmd + ' ');
+          setShowSuggestions(false);
+          setSelectedSuggestion(0);
+          commandHistory.reset();
+        }
+        return;
+      }
+    }
+
+    // Handle command history navigation when NOT showing suggestions
+    if (!showSuggestions) {
+      // Arrow up - previous command in history
+      if (event.name === 'up') {
+        const prev = commandHistory.getPrevious();
+        if (prev !== null) {
+          setValue(prev);
+        }
+        return;
+      }
+
+      // Arrow down - next command in history
+      if (event.name === 'down') {
+        const next = commandHistory.getNext();
+        if (next !== null) {
+          setValue(next);
+        }
+        return;
+      }
+    }
+
+    // Ctrl+C - cancel running process
+    if (event.ctrl && event.name === 'c') {
+      if (isRunning) {
+        onSubmit('/cancel');
+      }
+      return;
+    }
+
+    // Note: Regular character input (typing) is NOT handled here
+    // It's handled by the native input component's onInput callback
   });
 
   const handleSubmit = (submittedValue: string) => {
