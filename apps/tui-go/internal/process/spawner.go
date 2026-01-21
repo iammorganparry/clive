@@ -1410,6 +1410,45 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 	case "result":
 		// Tool execution result from Claude CLI
+		// Check for token usage warnings (context window monitoring)
+		if modelUsage, ok := data["modelUsage"].(map[string]interface{}); ok {
+			// Iterate through each model's usage stats
+			for modelName, usageData := range modelUsage {
+				if usage, ok := usageData.(map[string]interface{}); ok {
+					contextWindow, _ := usage["contextWindow"].(float64)
+					inputTokens, _ := usage["inputTokens"].(float64)
+					outputTokens, _ := usage["outputTokens"].(float64)
+
+					if contextWindow > 0 {
+						totalTokens := inputTokens + outputTokens
+						percentUsed := (totalTokens / contextWindow) * 100
+
+						// Warn at 75% usage
+						if percentUsed >= 75 && percentUsed < 90 {
+							warningMsg := fmt.Sprintf("⚠️  Context usage: %.0f%% (%.0f/%.0f tokens) - approaching limit\n",
+								percentUsed, totalTokens, contextWindow)
+							return logAndReturn(handle, line, []OutputLine{{
+								Text:      warningMsg,
+								Type:      "stderr",
+								DebugInfo: fmt.Sprintf("Context warning for %s: %.0f%%", modelName, percentUsed),
+							}})
+						}
+
+						// Critical warning at 90% usage
+						if percentUsed >= 90 {
+							criticalMsg := fmt.Sprintf("🚨 Context usage: %.0f%% (%.0f/%.0f tokens) - CRITICAL! Session may fail soon.\n",
+								percentUsed, totalTokens, contextWindow)
+							return logAndReturn(handle, line, []OutputLine{{
+								Text:      criticalMsg,
+								Type:      "stderr",
+								DebugInfo: fmt.Sprintf("Context CRITICAL for %s: %.0f%%", modelName, percentUsed),
+							}})
+						}
+					}
+				}
+			}
+		}
+
 		// Check if we have a pending bd refresh (set when we saw the bd command in tool input)
 		streamStateMu.Lock()
 		needRefresh := pendingBdRefresh

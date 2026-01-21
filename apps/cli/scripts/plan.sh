@@ -158,8 +158,15 @@ if [ "$STREAMING" = true ]; then
     # --input-format stream-json: enables bidirectional communication (TUI sends prompt via stdin)
     # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
     # --allow-dangerously-skip-permissions --dangerously-skip-permissions: Bypass permission prompts
+    # --model haiku: Use Haiku for planning (200k context window, fast, cost-effective)
     # --tools: Include WebSearch and WebFetch for research during planning
     # -p: persistent session (maintains context across tool uses)
+    #
+    # CONTEXT WINDOW MANAGEMENT:
+    # - Haiku has a 200k token context window (input + output combined)
+    # - Planning should stay well under this limit by focusing on high-level architecture
+    # - If context is exceeded, claude-code will return an error and planning will fail
+    # - To reduce context: limit file reads, use targeted Grep instead of full reads
     #
     # PERMISSION HANDLING:
     # - Due to claude-code bugs, some tools (AskUserQuestion, ExitPlanMode) send permission denials
@@ -169,7 +176,7 @@ if [ "$STREAMING" = true ]; then
     # - This prevents API 400 errors from duplicate tool_results accumulating in conversation state
     # - See apps/tui-go/internal/process/spawner.go lines 1114-1165 for implementation
     #
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan --allow-dangerously-skip-permissions --dangerously-skip-permissions --tools "default" "${CLAUDE_ARGS[@]}")
+    CLAUDE_ARGS=(-p --verbose --model haiku --output-format stream-json --input-format stream-json --permission-mode plan --allow-dangerously-skip-permissions --dangerously-skip-permissions --tools "default" "${CLAUDE_ARGS[@]}")
 
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"

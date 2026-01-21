@@ -1,6 +1,6 @@
 ---
 description: Collaborate with user to understand their work and create a comprehensive plan
-model: opus
+model: haiku
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__linear__create_issue, mcp__linear__update_issue, mcp__linear__list_issue_labels
 ---
 
@@ -70,6 +70,41 @@ You MUST follow this workflow to enable native plan mode integration:
 - Ask the user questions when you need clarity
 - Write to planning files (.claude/*.md, .claude/*.json)
 - Create issues in the configured tracker (beads or Linear) after approval
+
+---
+
+## Context Window Management (CRITICAL)
+
+**You have a 200k token context window (input + output combined).** You MUST stay under this limit.
+
+**Efficient Research Strategy:**
+
+1. **Start with targeted searches, not full file reads**
+   - Use `Grep` to search for specific patterns first
+   - Use `Glob` to find relevant files
+   - Only `Read` files after you've identified them as relevant
+
+2. **Read files strategically**
+   - Use `offset` and `limit` parameters to read only relevant sections
+   - Don't read entire large files unless necessary
+   - Example: `Read --offset 100 --limit 50` to read lines 100-150
+
+3. **Avoid redundant reads**
+   - Don't re-read files you've already seen
+   - Keep mental notes of what you've learned
+   - Reference previous findings instead of re-searching
+
+4. **Prioritize high-level understanding**
+   - Focus on architecture, patterns, and key decisions
+   - Don't need to read every implementation detail
+   - Understand interfaces and contracts, not every line
+
+5. **If approaching limits:**
+   - Summarize your findings and write the plan with what you have
+   - Ask targeted questions instead of reading more files
+   - The plan doesn't need to be exhaustive - it needs to be clear
+
+**Remember:** Planning is about high-level architecture and approach, not memorizing every implementation detail. Be strategic about what you read.
 
 ---
 
