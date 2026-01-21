@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Clive TUI implements automatic permission approval to work around known bugs in claude-code CLI where certain tools (`AskUserQuestion`, `ExitPlanMode`, etc.) send permission denials even when configured to bypass all permissions.
+The Clive TUI implements automatic permission approval to work around known bugs in claude-code CLI where certain tools (`AskUserQuestion`, etc.) send permission denials even when configured to bypass all permissions.
 
 ## The Problem
 
@@ -15,8 +15,9 @@ When claude-code encounters certain tool uses, it sends permission requests even
 
 **Affected Tools:**
 - `AskUserQuestion` - Interactive questions
-- `ExitPlanMode` - Plan completion signal
 - Potentially other tools that trigger permission checks
+
+**Note:** We previously had issues with `EnterPlanMode`/`ExitPlanMode` tools, but these have been removed in favor of letting claude-code's native plan mode handle workflow transitions.
 
 **Root Cause:**
 If permission denials accumulate in the conversation state without being properly handled, subsequent API calls fail with 400 errors:
