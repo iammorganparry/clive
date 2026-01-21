@@ -310,7 +310,10 @@ fi
             echo "4. Use task Title for display and commit messages"
             echo ""
             echo "After completing a task:"
-            echo "- Update status: mcp__linear__update_issue (id: [task-id], state: 'Done')"
+            echo "- Check if task has sub-issues (children array):"
+            echo "  - If it has sub-issues (it's an epic): mcp__linear__update_issue (id: [task-id], state: 'In Review')"
+            echo "  - If it has NO sub-issues (it's a sub-task): mcp__linear__update_issue (id: [task-id], state: 'Done')"
+            echo "- NEVER mark epics as 'Done' - only 'In Review'"
             echo "- Move to next pending task from JSON above"
             echo "- Do NOT fetch tasks again"
             echo ""
@@ -407,14 +410,18 @@ fi
     echo ""
     echo "STATUS UPDATES (Critical):"
     echo "- Mark 'In Progress' at the START of work"
-    echo "- Mark 'Done' at COMPLETION after verification"
+    echo "- At COMPLETION after verification:"
+    echo "  - If task has sub-issues (epic): Mark as 'In Review'"
+    echo "  - If task has NO sub-issues (sub-task): Mark as 'Done'"
 
     if [ "$TRACKER" = "beads" ]; then
         echo "  Start: bd update $TASK_ID --status in_progress"
         echo "  Complete: bd close $TASK_ID"
     else
         echo "  Start: mcp__linear__update_issue (id: [task-id], state: 'In Progress')"
-        echo "  Complete: mcp__linear__update_issue (id: [task-id], state: 'Done')"
+        echo "  Complete (Epic): mcp__linear__update_issue (id: [task-id], state: 'In Review')"
+        echo "  Complete (Sub-task): mcp__linear__update_issue (id: [task-id], state: 'Done')"
+        echo "  NEVER mark epics as 'Done' - only 'In Review'"
         echo "  VERIFY these calls succeed - if they fail, debug before proceeding"
     fi
 
