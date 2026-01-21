@@ -3,8 +3,9 @@
  * Command input field at bottom of screen
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { OneDarkPro } from '../styles/theme';
+import { usePaste } from '../hooks/usePaste';
 
 interface InputBarProps {
   width: number;
@@ -17,59 +18,12 @@ interface InputBarProps {
 export function InputBar({ width, height, y, onSubmit, disabled = false }: InputBarProps) {
   const [input, setInput] = useState('');
 
-  // Enable bracketed paste mode for copy/paste support
-  useEffect(() => {
-    if (!process.stdout.isTTY) return;
-
-    // Enable bracketed paste mode
-    process.stdout.write('\x1b[?2004h');
-
-    return () => {
-      if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[?2004l');
-      }
-    };
-  }, []);
-
   // Handle paste events
-  useEffect(() => {
-    if (disabled) return;
-
-    let pasteBuffer = '';
-    let inPasteMode = false;
-
-    const handleData = (data: Buffer) => {
-      const str = data.toString();
-
-      // Detect bracketed paste start
-      if (str.includes('\x1b[200~')) {
-        inPasteMode = true;
-        pasteBuffer = '';
-        return;
-      }
-
-      // Detect bracketed paste end
-      if (str.includes('\x1b[201~')) {
-        inPasteMode = false;
-        if (pasteBuffer) {
-          setInput((prev) => prev + pasteBuffer);
-        }
-        pasteBuffer = '';
-        return;
-      }
-
-      // Accumulate paste buffer
-      if (inPasteMode) {
-        pasteBuffer += str;
-      }
-    };
-
-    process.stdin.on('data', handleData);
-
-    return () => {
-      process.stdin.removeListener('data', handleData);
-    };
-  }, [disabled]);
+  usePaste((event) => {
+    if (!disabled) {
+      setInput((prev) => prev + event.text);
+    }
+  });
 
   const handleSubmit = () => {
     if (input.trim() && !disabled) {

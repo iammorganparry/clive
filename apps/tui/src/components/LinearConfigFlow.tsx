@@ -4,10 +4,11 @@
  * Collects API key and team ID, validates, and saves to config
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useKeyboard } from '@opentui/react';
 import { OneDarkPro } from '../styles/theme';
 import { LoadingSpinner } from './LoadingSpinner';
+import { usePaste } from '../hooks/usePaste';
 
 interface LinearConfigFlowProps {
   width: number;
@@ -30,64 +31,17 @@ export function LinearConfigFlow({
   const [error, setError] = useState('');
   const [inputValue, setInputValue] = useState('');
 
-  // Enable bracketed paste mode for copy/paste support
-  useEffect(() => {
-    if (!process.stdout.isTTY) return;
-
-    // Enable bracketed paste mode
-    process.stdout.write('\x1b[?2004h');
-
-    return () => {
-      if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[?2004l');
-      }
-    };
-  }, []);
-
-  // Handle paste events
-  useEffect(() => {
-    if (step !== 'api_key' && step !== 'team_id') return;
-
-    let pasteBuffer = '';
-    let inPasteMode = false;
-
-    const handleData = (data: Buffer) => {
-      const str = data.toString();
-
-      // Detect bracketed paste start
-      if (str.includes('\x1b[200~')) {
-        inPasteMode = true;
-        pasteBuffer = '';
-        return;
-      }
-
-      // Detect bracketed paste end
-      if (str.includes('\x1b[201~')) {
-        inPasteMode = false;
-        if (pasteBuffer) {
-          setInputValue((prev) => prev + pasteBuffer);
-        }
-        pasteBuffer = '';
-        return;
-      }
-
-      // Accumulate paste buffer
-      if (inPasteMode) {
-        pasteBuffer += str;
-      }
-    };
-
-    process.stdin.on('data', handleData);
-
-    return () => {
-      process.stdin.removeListener('data', handleData);
-    };
-  }, [step]);
-
-  // Handle escape key only
+  // Handle keyboard events
   useKeyboard((event) => {
     if (event.name === 'escape') {
       onCancel();
+    }
+  });
+
+  // Handle paste events
+  usePaste((event) => {
+    if (step === 'api_key' || step === 'team_id') {
+      setInputValue((prev) => prev + event.text);
     }
   });
 
