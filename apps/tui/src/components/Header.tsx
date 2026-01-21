@@ -20,8 +20,8 @@ export function Header({ width, height, isRunning }: HeaderProps) {
       width={width}
       height={height}
       backgroundColor={OneDarkPro.background.secondary}
-      borderStyle="round"
-      borderColor={OneDarkPro.ui.border}
+      // borderStyle causes Bun FFI crash - removed
+      // borderColor={OneDarkPro.ui.border}
       flexDirection="row"
       justifyContent="space-between"
       padding={1}

@@ -103,8 +103,8 @@ export function OutputLine({ line }: Props) {
       return (
         <box
           backgroundColor={OneDarkPro.background.highlight}
-          borderStyle="round"
-          borderColor={OneDarkPro.syntax.blue}
+          // borderStyle causes Bun FFI crash - removed
+          // borderColor={OneDarkPro.syntax.blue}
           padding={1}
         >
           <text color={OneDarkPro.syntax.blue}>

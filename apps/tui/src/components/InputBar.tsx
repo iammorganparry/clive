@@ -30,8 +30,8 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
       width={width}
       height={height}
       backgroundColor={OneDarkPro.background.secondary}
-      borderStyle="round"
-      borderColor={OneDarkPro.ui.border}
+      // borderStyle causes Bun FFI crash - removed
+      // borderColor={OneDarkPro.ui.border}
       padding={1}
     >
       <box flexDirection="row">
