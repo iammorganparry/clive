@@ -469,7 +469,7 @@ echo "$TEMP_PROMPT" > .claude/.build-prompt-path
 
 # Build claude args
 # Full permissions for build agents - they need to run bd commands, git, etc.
-CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
+CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --allow-dangerously-skip-permissions --dangerously-skip-permissions)
 
 # Find and include MCP config if present (for Linear integration)
 # Search from current directory upward for .mcp.json
@@ -492,6 +492,15 @@ if [ "$STREAMING" = true ]; then
     # Streaming mode for TUI - bidirectional communication via stdin/stdout
     # --input-format stream-json: prompt and user messages sent via stdin as JSON
     # --output-format stream-json: responses streamed as NDJSON
+    #
+    # PERMISSION HANDLING:
+    # - Due to claude-code bugs, some tools (AskUserQuestion, ExitPlanMode) send permission denials
+    #   even with --dangerously-skip-permissions enabled
+    # - The TUI's spawner.go automatically approves by detecting permission denials
+    #   (type="user" with is_error=true) and sending approvals via stdin
+    # - This prevents API 400 errors from duplicate tool_results accumulating in conversation state
+    # - See apps/tui-go/internal/process/spawner.go lines 1114-1165 for implementation
+    #
     CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json "${CLAUDE_ARGS[@]}")
 
     # Run Claude - TUI will send prompt via stdin

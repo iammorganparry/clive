@@ -1,17 +1,29 @@
-# Automatic Permission Approval for AskUserQuestion
+# Automatic Permission Approval
 
 ## Overview
 
-The Clive TUI implements automatic permission approval for the `AskUserQuestion` tool to work around a known bug in claude-code CLI where AskUserQuestion cannot be auto-approved through any declarative permission configuration.
+The Clive TUI implements automatic permission approval to work around known bugs in claude-code CLI where certain tools (`AskUserQuestion`, `ExitPlanMode`, etc.) send permission denials even when configured to bypass all permissions.
 
 ## The Problem
 
-When claude-code encounters an `AskUserQuestion` tool use, it sends a permission request even with permission bypass modes enabled:
+When claude-code encounters certain tool uses, it sends permission requests even with permission bypass modes enabled:
 
-- `--dangerously-skip-permissions` → Still prompts
+- `--dangerously-skip-permissions` → Still prompts for some tools
 - `--permission-mode bypassPermissions` → Still prompts
 - `--permission-mode dontAsk` → Auto-denies all permissions
-- `--allowedTools "AskUserQuestion"` → Ignored, still prompts
+- `--allowedTools "ToolName"` → Ignored, still prompts
+
+**Affected Tools:**
+- `AskUserQuestion` - Interactive questions
+- `ExitPlanMode` - Plan completion signal
+- Potentially other tools that trigger permission checks
+
+**Root Cause:**
+If permission denials accumulate in the conversation state without being properly handled, subsequent API calls fail with 400 errors:
+```
+API Error: 400 {"type":"error","error":{"type":"invalid_request_error",
+"message":"messages.X.content.0: unexpected `tool_use_id` found in `tool_result` blocks"}}
+```
 
 **Affected GitHub Issues:**
 - [#10400](https://github.com/anthropics/claude-code/issues/10400): AskUserQuestion returns empty response with bypass permissions
@@ -22,6 +34,8 @@ When claude-code encounters an `AskUserQuestion` tool use, it sends a permission
 The TUI's `spawner.go` automatically detects permission requests from claude-code and sends approval responses programmatically via stdin.
 
 ### How It Works
+
+The solution is **generic** - it detects and approves permission denials from ANY tool, not just specific ones.
 
 1. **Detection**: When claude-code sends a permission request, it appears as a `user` event with `is_error: true`:
    ```json
@@ -100,19 +114,23 @@ case "user":
 
 ### Scripts Using This Feature
 
-All streaming scripts benefit from automatic permission approval:
+All streaming scripts use `--allow-dangerously-skip-permissions --dangerously-skip-permissions` and benefit from automatic permission approval:
 
 1. **question.sh** - Test script for AskUserQuestion
-   - Uses `--allow-dangerously-skip-permissions --dangerously-skip-permissions`
+   - Tests the permission approval system
    - Sends prompt via stdin using `--input-format stream-json`
 
 2. **plan.sh** - Planning agent
-   - Uses `--permission-mode plan` (read-only)
-   - Can ask clarifying questions during planning via AskUserQuestion
+   - Uses `--permission-mode plan` (read-only) + `--dangerously-skip-permissions`
+   - Auto-approves AskUserQuestion and ExitPlanMode permission denials
 
 3. **build.sh** - Build loop agent
-   - Uses `--dangerously-skip-permissions` for full access
-   - Can ask for clarification during implementation
+   - Full permissions with `--dangerously-skip-permissions`
+   - Auto-approves any tool permission denials during implementation
+
+4. **build-iteration.sh** - Single build iteration
+   - Full permissions with `--dangerously-skip-permissions`
+   - Uses `--input-format stream-json` for bidirectional communication
 
 ## Testing
 

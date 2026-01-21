@@ -314,10 +314,12 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         # Using stdin for prompts breaks loops since stdin closes after first iteration
         #
         # PERMISSION HANDLING:
-        # - If Claude uses AskUserQuestion during build, claude-code sends permission requests
+        # - Due to claude-code bugs, some tools (AskUserQuestion, ExitPlanMode) send permission denials
+        #   even with --dangerously-skip-permissions enabled
         # - The TUI's spawner.go automatically approves by detecting permission denials
         #   (type="user" with is_error=true) and sending approvals via stdin
-        # - This works even though prompts come via CLI args - stdin is still open for responses
+        # - This prevents API 400 errors from duplicate tool_results accumulating in conversation state
+        # - Works even though prompts come via CLI args - stdin is still open for bidirectional communication
         # - See apps/tui-go/internal/process/spawner.go lines 1114-1165 for implementation
         #
         CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
