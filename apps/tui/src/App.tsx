@@ -143,6 +143,17 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
+      // Helper function to filter sessions by search query (checks both identifier and title)
+      const filterSessions = (query: string) => {
+        if (!query) return sessions;
+        const lowerQuery = query.toLowerCase();
+        return sessions.filter(s => {
+          const identifier = s.linearData?.identifier?.toLowerCase() || '';
+          const title = s.name.toLowerCase();
+          return identifier.includes(lowerQuery) || title.includes(lowerQuery);
+        });
+      };
+
       // Escape - clear search or go back
       if (event.name === 'escape') {
         if (epicSearchQuery) {
@@ -182,29 +193,21 @@ function AppContent() {
 
       // Arrow key navigation for epic selection
       if (event.name === 'up' || event.key === 'k') {
-        // Filter sessions first to get accurate count
-        const filteredCount = epicSearchQuery
-          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase())).length
-          : sessions.length;
-        const maxIndex = Math.min(filteredCount, 10) - 1;
+        const filteredSessions = filterSessions(epicSearchQuery);
+        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
         setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
         return;
       }
       if (event.name === 'down' || event.key === 'j') {
-        // Filter sessions first to get accurate count
-        const filteredCount = epicSearchQuery
-          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase())).length
-          : sessions.length;
-        const maxIndex = Math.min(filteredCount, 10) - 1;
+        const filteredSessions = filterSessions(epicSearchQuery);
+        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
         setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
         return;
       }
 
       // Enter to select
       if (event.name === 'return') {
-        const filteredSessions = epicSearchQuery
-          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase()))
-          : sessions;
+        const filteredSessions = filterSessions(epicSearchQuery);
         const displaySessions = filteredSessions.slice(0, 10);
 
         if (displaySessions[selectedEpicIndex]) {

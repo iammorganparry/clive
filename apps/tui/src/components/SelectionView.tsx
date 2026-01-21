@@ -29,11 +29,14 @@ export function SelectionView({
   onSelect,
   onBack,
 }: SelectionViewProps) {
-  // Filter sessions by search query
+  // Filter sessions by search query (search both identifier and title)
   const filteredSessions = searchQuery
-    ? sessions.filter(s =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? sessions.filter(s => {
+        const query = searchQuery.toLowerCase();
+        const identifier = s.linearData?.identifier?.toLowerCase() || '';
+        const title = s.name.toLowerCase();
+        return identifier.includes(query) || title.includes(query);
+      })
     : sessions;
 
   // Limit to first 10
