@@ -51,6 +51,9 @@ export interface LinearIssue {
     name: string;
     color: string;
   }>;
+  children?: {
+    nodes: Array<{ id: string }>;
+  };
   createdAt: Date;
   updatedAt: Date;
   url: string;
@@ -109,6 +112,10 @@ export interface LinearListIssuesOptions {
   assigneeId?: string;
   stateType?: "backlog" | "unstarted" | "started" | "completed" | "canceled";
   limit?: number;
+  filter?: {
+    parent?: { null: boolean };
+    search?: string;
+  };
 }
 
 export interface LinearConfig {
@@ -117,11 +124,22 @@ export interface LinearConfig {
 }
 
 // Service interface
+export interface LinearUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface LinearService {
   /**
    * Check if Linear is configured
    */
   readonly checkConfigured: Effect.Effect<boolean, never>;
+
+  /**
+   * Get current authenticated user
+   */
+  readonly getCurrentUser: Effect.Effect<LinearUser, LinearApiError>;
 
   /**
    * List teams in workspace
@@ -189,6 +207,24 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
     LinearService,
     LinearService.of({
       checkConfigured: Effect.succeed(!!config.apiKey),
+
+      getCurrentUser: Effect.gen(function* () {
+        const query = `
+          query {
+            viewer {
+              id
+              name
+              email
+            }
+          }
+        `;
+
+        const response = yield* executeGraphQL<{
+          viewer: LinearUser;
+        }>(config.apiKey, query);
+
+        return response.viewer;
+      }),
 
       listTeams: Effect.gen(function* () {
         const query = `
@@ -322,6 +358,13 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
             filters.push('state: { type: { eq: $stateType } }');
             variables.stateType = options.stateType;
           }
+          if (options?.filter?.parent?.null !== undefined) {
+            filters.push(`parent: { null: ${options.filter.parent.null} }`);
+          }
+          if (options?.filter?.search) {
+            filters.push('title: { containsIgnoreCase: $search }');
+            variables.search = options.filter.search;
+          }
 
           const filterString =
             filters.length > 0 ? `filter: { ${filters.join(', ')} }` : '';
@@ -329,7 +372,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
 
           const query = `
             query${Object.keys(variables).length > 0 ? `(${Object.keys(variables).map(k => `$${k}: String!`).join(', ')})` : ''} {
-              issues(${filterString} first: ${limit}) {
+              issues(${filterString} first: ${limit} orderBy: updatedAt) {
                 nodes {
                   id
                   identifier
@@ -360,6 +403,11 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
                       id
                       name
                       color
+                    }
+                  }
+                  children {
+                    nodes {
+                      id
                     }
                   }
                   createdAt

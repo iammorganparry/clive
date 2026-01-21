@@ -91,23 +91,62 @@ export class TaskServiceImpl implements TaskService {
     const config = this.config;
     return Effect.gen(function* () {
       if (config.issueTracker === 'linear' && config.linear) {
-        // Load Linear epics
+        // Match Go TUI logic: fetch parent issues + assigned issues
         const linearService = yield* LinearService;
-        const epics = yield* linearService.listIssues({
+
+        // Get current user ID first
+        const viewer = yield* linearService.getCurrentUser();
+
+        // Fetch parent issues (top-level issues with no parent)
+        const parentIssues = yield* linearService.listIssues({
           teamId: config.linear.teamID,
+          filter: {
+            parent: { null: true },
+          },
         });
 
-        // Filter for epics (if Linear supports epic type) or projects
-        return epics.map(
-          (epic): Session => ({
-            id: epic.id,
-            name: epic.title,
-            description: epic.description,
-            createdAt: epic.createdAt,
+        // Fetch issues assigned to current user (top-level only)
+        const assignedIssues = yield* linearService.listIssues({
+          teamId: config.linear.teamID,
+          assigneeId: viewer.id,
+          filter: {
+            parent: { null: true },
+          },
+        });
+
+        // Merge and deduplicate by ID
+        const issueMap = new Map<string, LinearIssue>();
+
+        // Add parent issues (prefer issues with children)
+        for (const issue of parentIssues) {
+          if (issue.children && issue.children.nodes.length > 0) {
+            issueMap.set(issue.id, issue);
+          }
+        }
+
+        // Add assigned issues (may override, that's fine - same issue)
+        for (const issue of assignedIssues) {
+          issueMap.set(issue.id, issue);
+        }
+
+        // Convert to sessions
+        const sessions = Array.from(issueMap.values()).map(
+          (issue): Session => ({
+            id: issue.id,
+            name: issue.title,
+            description: issue.description,
+            createdAt: issue.createdAt,
             source: 'linear',
-            linearData: epic,
+            linearData: issue,
           })
         );
+
+        // Sort by updated date (most recent first)
+        return sessions.sort((a, b) => {
+          const aUpdated = a.linearData?.updatedAt || a.createdAt;
+          const bUpdated = b.linearData?.updatedAt || b.createdAt;
+          return new Date(bUpdated).getTime() - new Date(aUpdated).getTime();
+        });
       } else {
         // Load Beads epics
         const beadsService = yield* BeadsService;
