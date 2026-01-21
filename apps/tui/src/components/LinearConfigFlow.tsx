@@ -4,11 +4,12 @@
  * Collects API key and team ID, validates, and saves to config
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useKeyboard } from '@opentui/react';
 import { OneDarkPro } from '../styles/theme';
 import { LoadingSpinner } from './LoadingSpinner';
 import { usePaste } from '../hooks/usePaste';
+import type { InputRenderable } from '@opentui/core';
 
 interface LinearConfigFlowProps {
   width: number;
@@ -30,6 +31,7 @@ export function LinearConfigFlow({
   const [teamID, setTeamID] = useState('');
   const [error, setError] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const inputRef = useRef<InputRenderable>(null);
 
   // Handle keyboard events
   useKeyboard((event) => {
@@ -40,8 +42,18 @@ export function LinearConfigFlow({
 
   // Handle paste events
   usePaste((event) => {
-    if (step === 'api_key' || step === 'team_id') {
-      setInputValue((prev) => prev + event.text);
+    if ((step === 'api_key' || step === 'team_id') && inputRef.current) {
+      // Debug: log the paste event
+      console.log('Paste event received:', event);
+      console.log('Paste text:', event.text);
+      console.log('Paste text length:', event.text?.length);
+
+      // Use InputRenderable's insertText method directly
+      if (event.text) {
+        inputRef.current.insertText(event.text);
+        // Update our state to match
+        setInputValue(inputRef.current.value);
+      }
     }
   });
 
@@ -109,6 +121,7 @@ export function LinearConfigFlow({
               backgroundColor={OneDarkPro.background.secondary}
             >
               <input
+                ref={inputRef}
                 placeholder="lin_api_..."
                 focused={true}
                 onInput={setInputValue}
@@ -155,6 +168,7 @@ export function LinearConfigFlow({
               backgroundColor={OneDarkPro.background.secondary}
             >
               <input
+                ref={inputRef}
                 placeholder="TEAM"
                 focused={true}
                 onInput={setInputValue}

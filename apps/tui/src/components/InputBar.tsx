@@ -3,9 +3,10 @@
  * Command input field at bottom of screen
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { OneDarkPro } from '../styles/theme';
 import { usePaste } from '../hooks/usePaste';
+import type { InputRenderable } from '@opentui/core';
 
 interface InputBarProps {
   width: number;
@@ -17,11 +18,20 @@ interface InputBarProps {
 
 export function InputBar({ width, height, y, onSubmit, disabled = false }: InputBarProps) {
   const [input, setInput] = useState('');
+  const inputRef = useRef<InputRenderable>(null);
 
   // Handle paste events
   usePaste((event) => {
-    if (!disabled) {
-      setInput((prev) => prev + event.text);
+    if (!disabled && inputRef.current && event.text) {
+      // Debug: log the paste event
+      console.log('InputBar paste event:', event);
+      console.log('InputBar paste text:', event.text);
+      console.log('InputBar paste text length:', event.text.length);
+
+      // Use InputRenderable's insertText method directly
+      inputRef.current.insertText(event.text);
+      // Update our state to match
+      setInput(inputRef.current.value);
     }
   });
 
@@ -48,6 +58,7 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
       <box flexDirection="row">
         <text fg={OneDarkPro.syntax.cyan}>{'> '}</text>
         <input
+          ref={inputRef}
           placeholder={disabled ? 'Waiting for response...' : 'Enter command (or /help)'}
           focused={!disabled}
           onInput={setInput}
