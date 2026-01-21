@@ -35,7 +35,7 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
       padding={1}
     >
       <box flexDirection="row">
-        <text color={OneDarkPro.syntax.cyan}>{'> '}</text>
+        <text fg={OneDarkPro.syntax.cyan}>{'> '}</text>
         <input
           value={input}
           onChange={(value: string) => setInput(value)}

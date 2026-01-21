@@ -44,7 +44,7 @@ export function OutputPanel({ x, y = 0, width, height, lines }: OutputPanelProps
       >
         {lines.length === 0 ? (
           <box padding={2}>
-            <text color={OneDarkPro.foreground.muted}>
+            <text fg={OneDarkPro.foreground.muted}>
               No output yet. Waiting for execution...
             </text>
           </box>

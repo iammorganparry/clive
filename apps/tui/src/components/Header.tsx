@@ -4,41 +4,42 @@
  */
 
 import { OneDarkPro } from '../styles/theme';
+import { Session } from '../types';
 
 interface HeaderProps {
   width: number;
   height: number;
   isRunning: boolean;
+  activeSession?: Session | null;
 }
 
-export function Header({ width, height, isRunning }: HeaderProps) {
-  const statusText = isRunning ? ' RUNNING' : ' IDLE';
-  const statusColor = isRunning ? OneDarkPro.syntax.yellow : OneDarkPro.syntax.green;
-
+export function Header({ width, height, isRunning, activeSession }: HeaderProps) {
   return (
     <box
       width={width}
       height={height}
-      backgroundColor={OneDarkPro.background.secondary}
-      // borderStyle causes Bun FFI crash - removed
-      // borderColor={OneDarkPro.ui.border}
-      flexDirection="row"
-      justifyContent="space-between"
-      padding={1}
+      backgroundColor={OneDarkPro.background.primary}
+      paddingLeft={1}
+      paddingTop={0}
+      flexDirection="column"
     >
       <box flexDirection="row">
-        <text color={OneDarkPro.syntax.blue} bold>
-          Clive TUI
+        <text fg={OneDarkPro.syntax.red} bold>
+          CLIVE
         </text>
-        <text color={OneDarkPro.foreground.muted}> | </text>
-        <text color={statusColor}>
-          {statusText}
+        <text fg={OneDarkPro.foreground.muted}>
+          {'  '}AI-Powered Work Execution
         </text>
+        {activeSession && (
+          <>
+            <text fg={OneDarkPro.foreground.secondary}>
+              {' · '}
+              {activeSession.name.substring(0, 30)}
+              {activeSession.name.length > 30 ? '...' : ''}
+            </text>
+          </>
+        )}
       </box>
-
-      <text color={OneDarkPro.foreground.muted}>
-        Press ? for help | q to quit
-      </text>
     </box>
   );
 }

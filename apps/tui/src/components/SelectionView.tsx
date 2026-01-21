@@ -6,6 +6,7 @@
 
 import { OneDarkPro } from '../styles/theme';
 import { Session } from '../types';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface SelectionViewProps {
   width: number;
@@ -50,10 +51,10 @@ export function SelectionView({
       <box flexDirection="column" alignItems="center" width={50}>
         {/* Header */}
         <box flexDirection="row">
-          <text color={OneDarkPro.syntax.red} bold>
+          <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
           </text>
-          <text color={OneDarkPro.foreground.muted}>
+          <text fg={OneDarkPro.foreground.muted}>
             {' · Select Epic'}
           </text>
         </box>
@@ -61,19 +62,17 @@ export function SelectionView({
         {/* Loading state */}
         {sessionsLoading && (
           <box marginTop={3}>
-            <text color={OneDarkPro.syntax.yellow}>
-              ⏳ Loading epics...
-            </text>
+            <LoadingSpinner text="Loading epics..." color={OneDarkPro.syntax.yellow} />
           </box>
         )}
 
         {/* Empty state */}
         {!sessionsLoading && sessions.length === 0 && (
           <box marginTop={3} flexDirection="column" alignItems="center">
-            <text color={OneDarkPro.foreground.muted}>
+            <text fg={OneDarkPro.foreground.muted}>
               No epics found.
             </text>
-            <text color={OneDarkPro.foreground.muted} marginTop={1}>
+            <text fg={OneDarkPro.foreground.muted} marginTop={1}>
               Press 'n' to create a new session.
             </text>
           </box>
@@ -88,20 +87,20 @@ export function SelectionView({
               padding={1}
               marginBottom={2}
             >
-              <text color={OneDarkPro.foreground.muted}>
+              <text fg={OneDarkPro.foreground.muted}>
                 {searchQuery || '🔍 Search epics... (type to filter)'}
               </text>
             </box>
 
             {/* Count */}
-            <text color={OneDarkPro.foreground.muted} marginBottom={1}>
+            <text fg={OneDarkPro.foreground.muted} marginBottom={1}>
               Showing {displaySessions.length} of {sessions.length}
               {searchQuery && ' matches'}
             </text>
 
             {/* Session items */}
             {displaySessions.length === 0 ? (
-              <text color={OneDarkPro.foreground.muted}>
+              <text fg={OneDarkPro.foreground.muted}>
                 No matching epics found.
               </text>
             ) : (
@@ -142,18 +141,8 @@ export function SelectionView({
 
         {/* Keyboard hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
-          <text color={OneDarkPro.foreground.muted}>
-            ↑/↓ Navigate  •  Enter Select  •  q Quit
-          </text>
-          <text color={OneDarkPro.foreground.muted}>
-            s Skip to chat-only mode
-          </text>
-        </box>
-
-        {/* Under construction notice */}
-        <box marginTop={3}>
-          <text color={OneDarkPro.syntax.yellow}>
-            [Selection UI under construction - keyboard nav coming soon]
+          <text fg={OneDarkPro.foreground.muted}>
+            1-9 Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Back  •  q Quit
           </text>
         </box>
       </box>

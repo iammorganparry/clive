@@ -6,15 +6,22 @@
 
 import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { OutputPanel } from './components/OutputPanel';
 import { InputBar } from './components/InputBar';
+import { StatusBar } from './components/StatusBar';
+import { VersionFooter } from './components/VersionFooter';
 import { SetupView } from './components/SetupView';
 import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
+import { QuestionPanel } from './components/QuestionPanel';
+import { LinearConfigFlow } from './components/LinearConfigFlow';
+import { GitHubConfigFlow } from './components/GitHubConfigFlow';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -27,9 +34,8 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  // Terminal dimensions (will be dynamic in real OpenTUI)
-  const width = 120;
-  const height = 40;
+  // Terminal dimensions (responsive to terminal size)
+  const { width, height } = useTerminalDimensions();
 
   // View mode management
   const {
@@ -47,6 +53,11 @@ function AppContent() {
   const [selectedEpicIndex, setSelectedEpicIndex] = useState(0);
   const [epicSearchQuery, setEpicSearchQuery] = useState('');
 
+  // Setup view state
+  const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
+  const setupOptions = ['linear', 'beads'];
+  const [configFlow, setConfigFlow] = useState<'linear' | 'beads' | null>(null);
+
   // State management
   const workspaceRoot = process.cwd();
   const {
@@ -55,15 +66,22 @@ function AppContent() {
     pendingQuestion,
     sessions,
     sessionsLoading,
+    tasks,
+    tasksLoading,
     activeSession,
     setActiveSession,
     executeCommand,
+    handleQuestionAnswer,
     interrupt,
   } = useAppState(workspaceRoot);
 
-  // Keyboard handling
+  // Keyboard handling using React useEffect with raw stdin
+  // Note: useKeyboard from OpenTUI was causing handler loss, using direct stdin instead
   useEffect(() => {
-    const handleKeyPress = (key: string) => {
+    const handleKeyPress = (data: Buffer) => {
+      const key = data.toString();
+      const firstChar = key[0];
+
       // Global shortcuts
       if (key === 'q') {
         process.exit(0);
@@ -79,53 +97,88 @@ function AppContent() {
       }
 
       // View-specific shortcuts
-      if (viewMode === 'setup') {
-        if (key === 's') {
-          // Skip setup, go to chat-only mode
-          goToMain();
-        }
-        if (key === '\u001b') { // Escape
+      if (viewMode === 'setup' && !configFlow) {
+        if (key === '\x1b') { // Escape
           process.exit(0);
         }
-      } else if (viewMode === 'selection') {
-        if (key === 's') {
-          // Skip to chat mode
-          goToMain();
+        // Arrow key navigation for setup options
+        if (key === '\x1b[A' || key === 'k') { // Up
+          setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
         }
-        if (key === '\u001b') { // Escape
+        if (key === '\x1b[B' || key === 'j') { // Down
+          setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
+        }
+        // Number key selection (1, 2, etc.)
+        if (/^[1-9]$/.test(key)) {
+          const index = parseInt(key) - 1;
+          if (index < setupOptions.length) {
+            const selectedOption = setupOptions[index];
+            if (selectedOption === 'linear') {
+              setConfigFlow('linear');
+            } else if (selectedOption === 'beads') {
+              setConfigFlow('beads');
+            }
+          }
+        }
+        if (key === '\r') { // Enter
+          const selectedOption = setupOptions[setupSelectedIndex];
+          if (selectedOption === 'linear') {
+            setConfigFlow('linear');
+          } else if (selectedOption === 'beads') {
+            setConfigFlow('beads');
+          }
+        }
+      } else if (viewMode === 'selection') {
+        if (key === '\x1b') { // Escape
           goBack();
         }
-        // TODO: Arrow key navigation for epic selection
+        // Arrow key navigation for epic selection
+        if (key === '\x1b[A' || key === 'k') { // Up
+          setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, sessions.length - 1)));
+        }
+        if (key === '\x1b[B' || key === 'j') { // Down
+          setSelectedEpicIndex((prev) => (prev < Math.max(0, sessions.length - 1) ? prev + 1 : 0));
+        }
+        // Number key selection (1-9)
+        if (/^[1-9]$/.test(key)) {
+          const index = parseInt(key) - 1;
+          if (index < sessions.length) {
+            handleEpicSelect(sessions[index]);
+          }
+        }
+        if (key === '\r') { // Enter
+          if (sessions[selectedEpicIndex]) {
+            handleEpicSelect(sessions[selectedEpicIndex]);
+          }
+        }
       } else if (viewMode === 'main') {
-        if (key === '\u001b') { // Escape
+        if (key === '\x1b') { // Escape
           goToSelection();
         }
-        if (key === '\u0003') { // Ctrl+C
+        if (key === '\x03') { // Ctrl+C
           interrupt();
         }
       } else if (viewMode === 'help') {
-        if (key === '\u001b') { // Escape
+        if (key === '\x1b') { // Escape
           goBack();
         }
       }
     };
 
-    // Setup keyboard listener
-    if (typeof process !== 'undefined' && process.stdin) {
-      process.stdin.setRawMode?.(true);
-      process.stdin.on('data', (data) => {
-        const key = data.toString();
-        handleKeyPress(key);
-      });
+    // Setup raw mode for stdin
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.on('data', handleKeyPress);
     }
 
     // Cleanup
     return () => {
-      if (typeof process !== 'undefined' && process.stdin) {
-        process.stdin.setRawMode?.(false);
+      if (process.stdin.isTTY) {
+        process.stdin.removeListener('data', handleKeyPress);
       }
     };
-  }, [viewMode, goBack, goToHelp, goToMain, goToSelection, interrupt]);
+  }, [viewMode, configFlow, setupSelectedIndex, selectedEpicIndex, sessions, setupOptions, goBack, goToHelp, goToSelection, interrupt]);
 
   // Handler for epic selection
   const handleEpicSelect = (session: typeof sessions[0]) => {
@@ -133,14 +186,47 @@ function AppContent() {
     goToMain();
   };
 
+
+  // Handler for config flow completion
+  const handleConfigComplete = (config: any) => {
+    updateConfig({
+      issueTracker: configFlow as 'linear' | 'github',
+      ...config,
+    });
+    setConfigFlow(null);
+    goToSelection();
+  };
+
   // Render appropriate view based on viewMode
   if (viewMode === 'setup') {
+    // Show config flow if a tracker was selected
+    if (configFlow === 'linear') {
+      return (
+        <LinearConfigFlow
+          width={width}
+          height={height}
+          onComplete={handleConfigComplete}
+          onCancel={() => setConfigFlow(null)}
+        />
+      );
+    }
+
+    if (configFlow === 'beads') {
+      // Beads doesn't need configuration, just verify it's installed
+      // and .beads directory exists
+      handleConfigComplete({ issueTracker: 'beads' });
+      return null; // Will transition to selection view immediately
+    }
+
+    // Show setup view
     return (
       <SetupView
         width={width}
         height={height}
         onComplete={updateConfig}
         onCancel={() => process.exit(0)}
+        selectedIndex={setupSelectedIndex}
+        onNavigate={setSetupSelectedIndex}
       />
     );
   }
@@ -171,9 +257,15 @@ function AppContent() {
   }
 
   // Main view (chat interface)
-  const headerHeight = 3;
+  const headerHeight = 2;
   const inputHeight = 3;
-  const outputHeight = height - headerHeight - inputHeight;
+  const statusHeight = 1;
+  const versionHeight = 1;
+  const bodyHeight = height - headerHeight - inputHeight - statusHeight - versionHeight;
+
+  // Sidebar layout
+  const sidebarWidth = 30;
+  const outputWidth = width - sidebarWidth;
 
   return (
     <box
@@ -187,25 +279,60 @@ function AppContent() {
         width={width}
         height={headerHeight}
         isRunning={isRunning}
+        activeSession={activeSession}
       />
 
-      {/* Output Panel */}
-      <OutputPanel
-        x={0}
-        y={headerHeight}
-        width={width}
-        height={outputHeight}
-        lines={outputLines}
-      />
+      {/* Body (Sidebar + Output) */}
+      <box width={width} height={bodyHeight} flexDirection="row">
+        {/* Sidebar */}
+        <Sidebar
+          width={sidebarWidth}
+          height={bodyHeight}
+          tasks={tasks}
+        />
+
+        {/* Output Panel */}
+        <OutputPanel
+          x={sidebarWidth}
+          y={0}
+          width={outputWidth}
+          height={bodyHeight}
+          lines={outputLines}
+        />
+      </box>
 
       {/* Input Bar */}
       <InputBar
         width={width}
         height={inputHeight}
-        y={height - inputHeight}
+        y={height - inputHeight - statusHeight - versionHeight}
         onSubmit={executeCommand}
         disabled={!!pendingQuestion}
       />
+
+      {/* Status Bar */}
+      <StatusBar
+        width={width}
+        height={statusHeight}
+        isRunning={isRunning}
+      />
+
+      {/* Version Footer */}
+      <VersionFooter
+        width={width}
+        height={versionHeight}
+      />
+
+      {/* Question Panel Overlay */}
+      {pendingQuestion && (
+        <QuestionPanel
+          width={width}
+          height={height}
+          question={pendingQuestion}
+          onAnswer={handleQuestionAnswer}
+          onCancel={() => interrupt()}
+        />
+      )}
     </box>
   );
 }

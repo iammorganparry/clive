@@ -17,7 +17,7 @@ export function OutputLine({ line }: Props) {
     case 'tool_call':
       return (
         <box>
-          <text color={OneDarkPro.syntax.yellow}>
+          <text fg={OneDarkPro.syntax.yellow}>
             ● {line.toolName}
           </text>
         </box>
@@ -46,7 +46,7 @@ export function OutputLine({ line }: Props) {
 
       return (
         <box>
-          <text color={OneDarkPro.foreground.muted}>
+          <text fg={OneDarkPro.foreground.muted}>
             ↳ {line.text}
             {metadata.length > 0 && ` ${metadata.join(' ')}`}
           </text>
@@ -84,7 +84,7 @@ export function OutputLine({ line }: Props) {
     case 'subagent_spawn':
       return (
         <box>
-          <text color={OneDarkPro.syntax.magenta}>
+          <text fg={OneDarkPro.syntax.magenta}>
             ⚡ {line.text}
           </text>
         </box>
@@ -93,7 +93,7 @@ export function OutputLine({ line }: Props) {
     case 'subagent_complete':
       return (
         <box>
-          <text color={OneDarkPro.syntax.cyan}>
+          <text fg={OneDarkPro.syntax.cyan}>
             ✓ {line.text}
           </text>
         </box>
@@ -107,7 +107,7 @@ export function OutputLine({ line }: Props) {
           // borderColor={OneDarkPro.syntax.blue}
           padding={1}
         >
-          <text color={OneDarkPro.syntax.blue}>
+          <text fg={OneDarkPro.syntax.blue}>
             {line.text}
           </text>
         </box>
@@ -116,7 +116,7 @@ export function OutputLine({ line }: Props) {
     case 'system':
       return (
         <box>
-          <text color={OneDarkPro.foreground.comment} dimColor>
+          <text fg={OneDarkPro.foreground.comment} dimColor>
             💭 {line.text}
           </text>
         </box>
@@ -126,7 +126,7 @@ export function OutputLine({ line }: Props) {
     case 'stderr':
       return (
         <box>
-          <text color={OneDarkPro.syntax.red} bold>
+          <text fg={OneDarkPro.syntax.red} bold>
             ✗ {line.text}
           </text>
         </box>
@@ -135,7 +135,7 @@ export function OutputLine({ line }: Props) {
     case 'exit':
       return (
         <box>
-          <text color={OneDarkPro.syntax.green}>
+          <text fg={OneDarkPro.syntax.green}>
             {line.exitCode === 0 ? '✓ Completed' : `✗ Exited with code ${line.exitCode}`}
           </text>
         </box>
@@ -148,7 +148,7 @@ export function OutputLine({ line }: Props) {
     case 'debug':
       return (
         <box>
-          <text color={OneDarkPro.foreground.comment}>
+          <text fg={OneDarkPro.foreground.comment}>
             [DEBUG] {line.debugInfo || line.text}
           </text>
         </box>
@@ -158,7 +158,7 @@ export function OutputLine({ line }: Props) {
     default:
       return (
         <box>
-          <text color={OneDarkPro.foreground.primary}>
+          <text fg={OneDarkPro.foreground.primary}>
             {line.text}
           </text>
         </box>

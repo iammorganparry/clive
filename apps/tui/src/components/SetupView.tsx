@@ -4,6 +4,7 @@
  * Flow: Tracker Selection -> Configuration -> Save
  */
 
+import { useState } from 'react';
 import { OneDarkPro } from '../styles/theme';
 import { IssueTrackerConfig } from '../types/views';
 
@@ -12,11 +13,22 @@ interface SetupViewProps {
   height: number;
   onComplete: (config: IssueTrackerConfig) => void;
   onCancel: () => void;
+  selectedIndex: number;
+  onNavigate: (index: number) => void;
 }
 
-export function SetupView({ width, height, onComplete, onCancel }: SetupViewProps) {
-  // For now, show a simple message
-  // TODO: Implement full setup flow with forms
+export function SetupView({
+  width,
+  height,
+  onComplete,
+  onCancel,
+  selectedIndex,
+  onNavigate,
+}: SetupViewProps) {
+  const options = [
+    { id: 'linear', name: 'Linear', description: '(Recommended for teams)', color: OneDarkPro.syntax.blue },
+    { id: 'beads', name: 'Beads', description: '(Local issue tracking)', color: OneDarkPro.syntax.green },
+  ];
 
   return (
     <box
@@ -28,47 +40,66 @@ export function SetupView({ width, height, onComplete, onCancel }: SetupViewProp
       flexDirection="column"
     >
       <box flexDirection="column" alignItems="center">
-        <text color={OneDarkPro.syntax.blue} bold>
-          🚀 Welcome to Clive TUI
+        {/* Logo */}
+        <box flexDirection="row" marginBottom={2}>
+          <text fg={OneDarkPro.syntax.red} bold>
+            CLIVE
+          </text>
+          <text fg={OneDarkPro.foreground.muted}>
+            {' · Issue Tracker Setup'}
+          </text>
+        </box>
+
+        <text fg={OneDarkPro.foreground.secondary} marginTop={1}>
+          Configure your issue tracker integration
         </text>
 
-        <text color={OneDarkPro.foreground.secondary} marginTop={2}>
-          First-time setup required
-        </text>
-
-        <box marginTop={3} flexDirection="column">
-          <text color={OneDarkPro.foreground.primary}>
+        {/* Options */}
+        <box marginTop={4} flexDirection="column" width={60}>
+          <text fg={OneDarkPro.foreground.primary} marginBottom={2}>
             Select your issue tracker:
           </text>
-          <text color={OneDarkPro.foreground.muted} marginTop={1}>
-            1. Linear (requires API key)
-          </text>
-          <text color={OneDarkPro.foreground.muted}>
-            2. GitHub (requires token)
-          </text>
-          <text color={OneDarkPro.foreground.muted} marginTop={1}>
-            3. Skip setup (chat mode only)
-          </text>
+
+          {options.map((option, i) => {
+            const isSelected = i === selectedIndex;
+            return (
+              <box
+                key={option.id}
+                backgroundColor={
+                  isSelected
+                    ? OneDarkPro.background.highlight
+                    : OneDarkPro.background.secondary
+                }
+                padding={1}
+                marginBottom={1}
+              >
+                <text fg={option.color} bold={isSelected}>
+                  {isSelected ? '▸ ' : '  '}
+                  {option.name}
+                </text>
+                <text fg={OneDarkPro.foreground.muted}>
+                  {'  '}
+                  {option.description}
+                </text>
+              </box>
+            );
+          })}
         </box>
 
+        {/* Instructions */}
         <box marginTop={4} flexDirection="column" alignItems="center">
-          <text color={OneDarkPro.syntax.yellow}>
-            ⚠️  Setup UI under construction
+          <text fg={OneDarkPro.foreground.muted}>
+            Linear: Cloud-based team issue tracking
           </text>
-          <text color={OneDarkPro.foreground.secondary} marginTop={1}>
-            For now, manually configure ~/.clive/config.json
-          </text>
-          <text color={OneDarkPro.foreground.muted} marginTop={2}>
-            Press 's' to skip and use chat-only mode
-          </text>
-          <text color={OneDarkPro.foreground.muted}>
-            Press 'q' to quit
+          <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+            Beads: Local git-based issue tracking
           </text>
         </box>
 
-        <box marginTop={4}>
-          <text color={OneDarkPro.syntax.magenta}>
-            [Coming Soon: Interactive Setup Flow]
+        {/* Shortcuts */}
+        <box marginTop={4} flexDirection="column" alignItems="center">
+          <text fg={OneDarkPro.foreground.secondary}>
+            1-{options.length} Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Quit
           </text>
         </box>
       </box>
