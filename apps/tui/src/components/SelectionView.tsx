@@ -16,7 +16,6 @@ interface SelectionViewProps {
   selectedIndex: number;
   searchQuery: string;
   onSelect: (session: Session) => void;
-  onCreateNew: () => void;
   onBack: () => void;
 }
 
@@ -28,17 +27,13 @@ export function SelectionView({
   selectedIndex,
   searchQuery,
   onSelect,
-  onCreateNew,
   onBack,
 }: SelectionViewProps) {
-  // Filter sessions by search query (search both identifier and title)
+  // Filter sessions by search query
   const filteredSessions = searchQuery
-    ? sessions.filter(s => {
-        const query = searchQuery.toLowerCase();
-        const identifier = s.linearData?.identifier?.toLowerCase() || '';
-        const title = s.name.toLowerCase();
-        return identifier.includes(query) || title.includes(query);
-      })
+    ? sessions.filter(s =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
     : sessions;
 
   // Limit to first 10
@@ -78,77 +73,44 @@ export function SelectionView({
               No epics found.
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-              Use ↑↓ to select "Create New Epic" and press Enter.
+              Press 'n' to create a new session.
             </text>
           </box>
         )}
 
         {/* Session list */}
         {!sessionsLoading && sessions.length > 0 && (
-          <box marginTop={2} flexDirection="column" width={60}>
-            {/* Search box */}
+          <box marginTop={3} flexDirection="column" width={50}>
+            {/* Search box placeholder */}
             <box
-              backgroundColor={searchQuery ? OneDarkPro.background.highlight : OneDarkPro.background.secondary}
-              borderStyle="single"
-              borderColor={searchQuery ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
-              paddingLeft={1}
-              paddingRight={1}
-              marginBottom={1}
-              flexDirection="row"
+              backgroundColor={OneDarkPro.background.secondary}
+              padding={1}
+              marginBottom={2}
             >
-              <text fg={OneDarkPro.syntax.green}>🔍 </text>
-              <text fg={searchQuery ? OneDarkPro.foreground.primary : OneDarkPro.foreground.muted}>
-                {searchQuery || 'Type to search...'}
+              <text fg={OneDarkPro.foreground.muted}>
+                {searchQuery || '🔍 Search epics... (type to filter)'}
               </text>
             </box>
 
             {/* Count */}
-            <text fg={OneDarkPro.foreground.muted}>
-              {displaySessions.length} of {filteredSessions.length}
-              {searchQuery ? ` (${sessions.length} total)` : ' epics'}
+            <text fg={OneDarkPro.foreground.muted} marginBottom={1}>
+              Showing {displaySessions.length} of {sessions.length}
+              {searchQuery ? ' matches' : ''}
             </text>
 
             {/* Session items */}
-            {displaySessions.length === 0 && searchQuery ? (
+            {displaySessions.length === 0 ? (
               <text fg={OneDarkPro.foreground.muted}>
-                No matching epics. Try a different search.
+                No matching epics found.
               </text>
             ) : (
-              <>
-                {/* Create New option (only show when not searching) */}
-                {!searchQuery && (
-                  <box
-                    key="create-new"
-                    backgroundColor={
-                      selectedIndex === -1
-                        ? OneDarkPro.background.highlight
-                        : 'transparent'
-                    }
-                    paddingLeft={1}
-                    paddingRight={1}
-                    marginBottom={1}
-                  >
-                    <text
-                      fg={
-                        selectedIndex === -1
-                          ? OneDarkPro.syntax.green
-                          : OneDarkPro.syntax.cyan
-                      }
-                    >
-                      {selectedIndex === -1 ? '▸ ' : '  '}
-                      ✨ Create New Epic
-                    </text>
-                  </box>
-                )}
-
-                {/* Existing sessions */}
-                {displaySessions.map((session, i) => {
-                  const isSelected = i === selectedIndex;
+              displaySessions.map((session, i) => {
+                const isSelected = i === selectedIndex;
 
                 // Get identifier from linearData if available
                 const identifier = session.linearData?.identifier || '';
-                const prefix = identifier ? `${identifier} ` : '';
-                const maxNameLength = identifier ? 30 : 35;
+                const prefix = identifier ? `[${identifier}] ` : '';
+                const maxNameLength = identifier ? 35 : 40;
 
                 const name = session.name.length > maxNameLength
                   ? session.name.substring(0, maxNameLength - 1) + '…'
@@ -162,8 +124,8 @@ export function SelectionView({
                         ? OneDarkPro.background.highlight
                         : 'transparent'
                     }
-                    paddingLeft={1}
-                    paddingRight={1}
+                    padding={1}
+                    marginBottom={1}
                   >
                     <text
                       fg={
@@ -178,8 +140,7 @@ export function SelectionView({
                     </text>
                   </box>
                 );
-              })}
-              </>
+              })
             )}
           </box>
         )}
@@ -187,7 +148,7 @@ export function SelectionView({
         {/* Keyboard hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.muted}>
-            Type to search  •  1-9/↑↓ Select  •  Enter Confirm  •  Esc {searchQuery ? 'Clear' : 'Back'}  •  q Quit
+            1-9 Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Back  •  q Quit
           </text>
         </box>
       </box>

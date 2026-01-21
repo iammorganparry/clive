@@ -14,28 +14,7 @@ interface Props {
 
 export function OutputLine({ line }: Props) {
   switch (line.type) {
-    case 'tool_call': {
-      // For Read/Grep/Glob tools, just show the file name
-      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
-
-      if (isFileReadTool && line.text) {
-        // Extract file path from the tool call text
-        // Format is usually "● Read path/to/file" or similar
-        const match = line.text.match(/●\s+\w+\s+(.+)/);
-        if (match && match[1]) {
-          const path = match[1];
-          // Get just the filename from the path
-          const filename = path.split('/').pop() || path;
-          return (
-            <box>
-              <text fg={OneDarkPro.syntax.yellow}>
-                📄 {filename}
-              </text>
-            </box>
-          );
-        }
-      }
-
+    case 'tool_call':
       return (
         <box>
           <text fg={OneDarkPro.syntax.yellow}>
@@ -43,15 +22,8 @@ export function OutputLine({ line }: Props) {
           </text>
         </box>
       );
-    }
 
     case 'tool_result': {
-      // Skip rendering tool results for Read/Grep/Glob tools
-      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
-      if (isFileReadTool) {
-        return null;
-      }
-
       // Build metadata display
       const metadata: string[] = [];
 
