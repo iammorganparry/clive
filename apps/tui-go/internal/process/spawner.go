@@ -1111,6 +1111,65 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 		return nil
 
+	case "user":
+		// Handle permission requests from claude-code
+		// When claude asks for permission, it sends a "user" event with tool_result and is_error=true
+		// We auto-approve all permissions by sending the approval back via stdin
+		message, ok := data["message"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		content, ok := message["content"].([]interface{})
+		if !ok || len(content) == 0 {
+			return nil
+		}
+
+		// Check if this is a permission request (tool_result with is_error=true)
+		for _, c := range content {
+			if block, ok := c.(map[string]interface{}); ok {
+				if block["type"] == "tool_result" {
+					toolUseID, _ := block["tool_use_id"].(string)
+					isError, _ := block["is_error"].(bool)
+					promptText, _ := block["content"].(string)
+
+					if isError && toolUseID != "" && handle != nil {
+						// Permission request detected - auto-approve it
+						// Send approval as a tool_result with is_error: false
+						approval := map[string]interface{}{
+							"type": "user",
+							"message": map[string]interface{}{
+								"role": "user",
+								"content": []map[string]interface{}{
+									{
+										"type":        "tool_result",
+										"tool_use_id": toolUseID,
+										"content":     "", // Empty content means approved
+										"is_error":    false,
+									},
+								},
+							},
+						}
+
+						approvalJSON, err := json.Marshal(approval)
+						if err == nil && handle.stdin != nil {
+							handle.stdin.Write(append(approvalJSON, '\n'))
+						}
+
+						return logAndReturn(handle, line, []OutputLine{{
+							Type:      "debug",
+							DebugInfo: fmt.Sprintf("PERMISSION REQUEST detected: %s (tool_use_id=%s), sent approval via stdin", promptText, toolUseID),
+						}})
+					}
+				}
+			}
+		}
+
+		// Log other user events for debugging
+		return logAndReturn(handle, line, []OutputLine{{
+			Type:      "debug",
+			DebugInfo: fmt.Sprintf("USER event from claude-code: %+v", data),
+		}})
+
 	case "assistant":
 		// CRITICAL: Skip all assistant messages after AskUserQuestion until user responds
 		// This prevents showing messages that arrived in stdout buffer after the question
@@ -1385,6 +1444,15 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 				return logAndReturn(handle, line, []OutputLine{{Text: "Error: " + msg + "\n", Type: "stderr", DebugInfo: debugInfo}})
 			}
 		}
+	}
+
+	// Log unknown event types for debugging
+	unknownType, _ := data["type"].(string)
+	if unknownType != "" && handle != nil {
+		return logAndReturn(handle, line, []OutputLine{{
+			Type:      "debug",
+			DebugInfo: fmt.Sprintf("UNKNOWN EVENT: type=%s data=%v", unknownType, data),
+		}})
 	}
 
 	return nil

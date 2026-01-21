@@ -66,16 +66,21 @@ if [ "$STREAMING" = true ]; then
     echo "$TEMP_PROMPT" > .claude/.question-prompt-path
 
     # Build Claude args for streaming
-    CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --dangerously-skip-permissions)
+    # Use dangerously-skip-permissions to bypass all permission checks including AskUserQuestion
+    CLAUDE_ARGS=(--verbose --output-format stream-json --input-format stream-json --add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --allow-dangerously-skip-permissions --dangerously-skip-permissions)
 
-    # Run claude with streaming
-    claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
+    # Create JSON message for stdin using jq with file input (handles newlines correctly)
+    # Use -c for compact output (single line) as required by stream-json format
+    USER_MESSAGE=$(jq -Rsc '{type: "user", message: {role: "user", content: .}}' "$TEMP_PROMPT")
+
+    # Run claude with streaming, sending prompt via stdin
+    echo "$USER_MESSAGE" | claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
 else
     # Non-streaming mode
     echo "Starting AskUserQuestion test (non-streaming mode)..."
 
     # Run claude with the temp prompt file
-    claude -p --add-dir "$(dirname "$TEMP_PROMPT")" --dangerously-skip-permissions \
+    claude --add-dir "$(dirname "$TEMP_PROMPT")" --allow-dangerously-skip-permissions --dangerously-skip-permissions \
         "Read and execute the instructions in: $TEMP_PROMPT"
 fi
 
