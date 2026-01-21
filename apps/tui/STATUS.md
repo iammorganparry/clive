@@ -1,12 +1,18 @@
 # TypeScript TUI Status
 
-## Current State: BLOCKED on Bun FFI Issue
+## Current State: ✅ WORKING (Crash Fixed!)
+
+### 🎉 Root Cause Identified and Fixed
+
+**The Problem**: `borderStyle` prop in OpenTUI triggers Bun FFI segmentation fault
+**The Solution**: Remove all `borderStyle` and `borderColor` props from components
 
 ### ✅ Working
 
 - **OpenTUI/React Setup**: Basic OpenTUI apps work perfectly with Bun
   - Test: `bun run src/test-minimal.tsx` ✅
   - Test: `bun run src/test-app-import.tsx` ✅
+  - Test: `bun run src/test-border.tsx` (demonstrates the fix) ✅
 - **Effect-TS Service Layer**: Properly configured with correct patterns
   - BeadsService, LinearService, TaskService use proper Effect patterns
   - Fixed Data.TaggedError for error types
@@ -16,43 +22,68 @@
 - **Package Configuration**: No build step needed (noEmit: true)
 - **React Query Integration**: Configured for TUI data fetching
 - **XState v5**: State machine properly configured
+- **Full TUI App**: Now renders successfully!
+  - Header displays "Clive TUI | IDLE"
+  - Output panel shows placeholder
+  - InputBar ready for commands
+  - No crashes, clean rendering
 
-###  ❌ Blocked
+### ✅ Fixed (Previously Blocked)
 
-**Main App Crashes** (`src/main.tsx` + `src/App.tsx`):
-- **Error**: Bun FFI Segmentation fault at address 0x10
-- **Root Cause**: Unknown - something in the full app imports causes Bun FFI crash
-- **Evidence**: Simple OpenTUI apps work, but full app with hooks/components crashes
-- **Bun Versions Tested**:
-  - 1.1.18: ❌ Crashes
-  - 1.3.6: ❌ Crashes
+**Main App** (`src/main.tsx` + `src/App.tsx`):
+- **Previous Error**: Bun FFI Segmentation fault at address 0x10
+- **Root Cause**: `borderStyle="round"` prop in OpenTUI components
+- **Isolation Process**:
+  1. ✅ React + hooks: Works
+  2. ✅ Theme import: Works
+  3. ✅ React Query: Works
+  4. ✅ XState: Works
+  5. ❌ Components with `borderStyle`: CRASHES
+  6. ✅ Components without `borderStyle`: Works!
+- **Fix Applied**: Removed `borderStyle` and `borderColor` from:
+  - Header.tsx
+  - InputBar.tsx
+  - OutputLine.tsx
 
-### 🔍 Investigation Needed
+### 🔍 Crash Isolation Steps (For Reference)
 
-Likely culprits causing FFI crash:
-1. **XState import** - Large state machine library
-2. **React Query** - QueryClient initialization
-3. **Deep component tree** - Something in Header/OutputPanel/InputBar
-4. **Effect Runtime** - TaskService runtime initialization
-5. **File system operations** - Config loading in hooks
+The systematic debugging approach that identified the issue:
+```bash
+# Step 1: React only → ✅ Works
+# Step 2: + Theme → ✅ Works
+# Step 3: + React Query → ✅ Works
+# Step 4: + XState → ✅ Works
+# Step 5: + Components → ❌ CRASH
+# Step 5a: Header component only → ❌ CRASH
+# Step 5b: Inline header without border → ✅ Works
+# Step 5c: Test borderStyle in isolation → ❌ CRASH (smoking gun!)
+```
 
-### Next Steps
+### ⚠️ Known Limitations
 
-**Option 1: Isolate the Crash**
-1. Start with test-app-import.tsx (works)
-2. Gradually add imports from App.tsx until crash occurs
-3. Identify the specific module causing FFI issues
-4. Find workaround or alternative
+**OpenTUI Limitations**:
+- ❌ `borderStyle` prop causes FFI crash (FIXED by removing)
+- ❌ `borderColor` prop should be avoided (related to borderStyle)
+- ✅ All other OpenTUI props work correctly
 
-**Option 2: Alternative Runtime**
-- Node.js with `tsx`: Blocked by .scm file extension error
-- Deno: Untested
-- Native Node ESM: Untested
+**Workarounds**:
+- Use background colors and spacing for visual separation
+- Use Unicode box-drawing characters if borders are critical
+- Wait for OpenTUI fix (issue should be reported upstream)
 
-**Option 3: Alternative TUI Framework**
-- Ink (React for CLIs) - More mature, widely used
-- Blessed/neo-blessed - Lower level but stable
-- Pastel (Ink + Ink components) - Modern alternative
+### Next Steps (Now Unblocked!)
+
+1. **Complete Phase 6-7**: State management & keyboard handling
+   - useAppState hook integration ✅ (already working)
+   - Keyboard shortcuts (q, ?, Ctrl+C, etc.)
+2. **Complete Phase 8**: Integration & testing
+   - Test /plan, /build, /add commands
+   - Test AskUserQuestion handling
+   - Verify tool metadata display
+3. **Complete Phase 9**: Deployment
+   - Binary swap to TypeScript TUI
+   - Deprecate Go TUI
+   - Production rollout
 
 ## Architecture Reference
 
