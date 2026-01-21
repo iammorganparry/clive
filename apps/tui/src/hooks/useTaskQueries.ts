@@ -56,12 +56,34 @@ export function useSessions() {
   return useQuery({
     queryKey: taskQueryKeys.sessions(),
     queryFn: async (): Promise<Session[]> => {
-      if (!config) return [];
+      const fs = await import('fs');
+      const logToFile = (msg: string) => {
+        fs.appendFileSync('/tmp/tui-debug.log', `${new Date().toISOString()} ${msg}\n`);
+      };
 
-      const taskService = createTaskService(config);
-      const runtime = Runtime.defaultRuntime;
+      logToFile(`[useSessions] Config: ${JSON.stringify(config)}`);
 
-      return await Runtime.runPromise(runtime)(taskService.loadSessions);
+      if (!config) {
+        logToFile('[useSessions] No config, returning empty array');
+        return [];
+      }
+
+      logToFile(`[useSessions] Creating task service with config: ${JSON.stringify(config)}`);
+
+      try {
+        const taskService = createTaskService(config);
+        const runtime = Runtime.defaultRuntime;
+
+        logToFile('[useSessions] Running loadSessions...');
+        const sessions = await Runtime.runPromise(runtime)(taskService.loadSessions);
+        logToFile(`[useSessions] Sessions loaded: ${sessions.length} sessions`);
+        logToFile(`[useSessions] Sessions data: ${JSON.stringify(sessions.map(s => ({ id: s.id, name: s.name })))}`);
+
+        return sessions;
+      } catch (error) {
+        logToFile(`[useSessions] Error: ${error}`);
+        throw error;
+      }
     },
     enabled: !!config,
     staleTime: 2 * 60 * 1000, // 2 minutes

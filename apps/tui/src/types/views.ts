@@ -9,7 +9,7 @@ export type ViewMode = 'setup' | 'selection' | 'main' | 'help';
  * Config interface for issue tracker setup
  */
 export interface IssueTrackerConfig {
-  tracker: 'linear' | 'github' | null;
+  issueTracker: 'linear' | 'github' | null;
   linear?: {
     apiKey: string;
     teamID: string;

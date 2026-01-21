@@ -9,11 +9,22 @@ interface StatusBarProps {
   width: number;
   height: number;
   isRunning: boolean;
+  inputFocused?: boolean;
 }
 
-export function StatusBar({ width, height, isRunning }: StatusBarProps) {
+export function StatusBar({ width, height, isRunning, inputFocused = false }: StatusBarProps) {
   const statusText = isRunning ? '⏳ Executing...' : '✓ Ready';
   const statusColor = isRunning ? OneDarkPro.syntax.yellow : OneDarkPro.syntax.green;
+
+  // Context-sensitive help hints
+  let helpHint = '';
+  if (inputFocused) {
+    helpHint = 'Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit';
+  } else if (isRunning) {
+    helpHint = 'i message  •  /add task  •  c cancel  •  Ctrl+C quit';
+  } else {
+    helpHint = '/ input  •  ? help  •  Esc back  •  Ctrl+C quit';
+  }
 
   return (
     <box
@@ -29,7 +40,7 @@ export function StatusBar({ width, height, isRunning }: StatusBarProps) {
         {statusText}
       </text>
       <text fg={OneDarkPro.foreground.muted} paddingRight={1}>
-        ? Help  •  q Quit
+        {helpHint}
       </text>
     </box>
   );

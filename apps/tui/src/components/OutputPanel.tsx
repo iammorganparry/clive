@@ -10,14 +10,12 @@ import { OutputLine } from './OutputLine';
 import { OneDarkPro } from '../styles/theme';
 
 interface OutputPanelProps {
-  x: number;
-  y?: number;
   width: number;
   height: number;
   lines: OutputLineType[];
 }
 
-export function OutputPanel({ x, y = 0, width, height, lines }: OutputPanelProps) {
+export function OutputPanel({ width, height, lines }: OutputPanelProps) {
   const scrollRef = useRef<any>(null);
 
   // Auto-scroll to bottom when new lines are added
@@ -29,8 +27,6 @@ export function OutputPanel({ x, y = 0, width, height, lines }: OutputPanelProps
 
   return (
     <box
-      x={x}
-      y={y}
       width={width}
       height={height}
       backgroundColor={OneDarkPro.background.primary}

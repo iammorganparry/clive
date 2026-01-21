@@ -13,7 +13,7 @@ import { useViewMode } from './hooks/useViewMode';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { OutputPanel } from './components/OutputPanel';
-import { InputBar } from './components/InputBar';
+import { DynamicInput } from './components/DynamicInput';
 import { StatusBar } from './components/StatusBar';
 import { VersionFooter } from './components/VersionFooter';
 import { SetupView } from './components/SetupView';
@@ -58,6 +58,19 @@ function AppContent() {
   const setupOptions = ['linear', 'beads'];
   const [configFlow, setConfigFlow] = useState<'linear' | 'beads' | null>(null);
 
+  // Input focus state
+  const [inputFocused, setInputFocused] = useState(false);
+  const [preFillValue, setPreFillValue] = useState<string | undefined>(undefined);
+
+  // Clear preFillValue after it's been used
+  useEffect(() => {
+    if (preFillValue && inputFocused) {
+      // Clear it on next tick so DynamicInput can read it
+      const timer = setTimeout(() => setPreFillValue(undefined), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [preFillValue, inputFocused]);
+
   // State management
   const workspaceRoot = process.cwd();
   const {
@@ -79,7 +92,7 @@ function AppContent() {
   // This properly integrates with OpenTUI's stdin management
   useKeyboard((event) => {
     // Skip keyboard handling in input-focused views
-    if (configFlow === 'linear' || configFlow === 'github') {
+    if (configFlow === 'linear' || configFlow === 'github' || inputFocused) {
       return;
     }
 
@@ -159,6 +172,15 @@ function AppContent() {
       if (event.ctrl && event.key === 'c') {
         interrupt();
       }
+      // Input focus shortcuts
+      if (event.key === '/') {
+        setInputFocused(true);
+        setPreFillValue('/');
+      }
+      if (event.key === 'i' || event.key === ':') {
+        setInputFocused(true);
+        setPreFillValue(event.key === ':' ? ':' : undefined);
+      }
     } else if (viewMode === 'help') {
       if (event.name === 'escape') {
         goBack();
@@ -174,10 +196,10 @@ function AppContent() {
 
 
   // Handler for config flow completion
-  const handleConfigComplete = (config: any) => {
+  const handleConfigComplete = (config: { apiKey: string; teamID: string }) => {
     updateConfig({
       issueTracker: configFlow as 'linear' | 'github',
-      ...config,
+      [configFlow as string]: config,
     });
     setConfigFlow(null);
     goToSelection();
@@ -279,8 +301,6 @@ function AppContent() {
 
         {/* Output Panel */}
         <OutputPanel
-          x={sidebarWidth}
-          y={0}
           width={outputWidth}
           height={bodyHeight}
           lines={outputLines}
@@ -288,12 +308,14 @@ function AppContent() {
       </box>
 
       {/* Input Bar */}
-      <InputBar
+      <DynamicInput
         width={width}
-        height={inputHeight}
-        y={height - inputHeight - statusHeight - versionHeight}
         onSubmit={executeCommand}
         disabled={!!pendingQuestion}
+        isRunning={isRunning}
+        inputFocused={inputFocused}
+        onFocusChange={setInputFocused}
+        preFillValue={preFillValue}
       />
 
       {/* Status Bar */}
@@ -301,6 +323,7 @@ function AppContent() {
         width={width}
         height={statusHeight}
         isRunning={isRunning}
+        inputFocused={inputFocused}
       />
 
       {/* Version Footer */}

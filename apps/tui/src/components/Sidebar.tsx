@@ -38,7 +38,7 @@ export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
       flexDirection="column"
     >
       {/* Title */}
-      <text fg={OneDarkPro.syntax.blue} bold marginBottom={1}>
+      <text fg={OneDarkPro.syntax.blue} marginBottom={1}>
         TASKS
       </text>
 
@@ -54,11 +54,11 @@ export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
       {/* In Progress */}
       {inProgress.length > 0 && (
         <box flexDirection="column" marginTop={1}>
-          <text fg={OneDarkPro.syntax.yellow} bold>
+          <text fg={OneDarkPro.syntax.yellow}>
             In Progress
           </text>
           {inProgress.slice(0, maxDisplay).map((task, i) => (
-            <text key={i} color={OneDarkPro.syntax.yellow}>
+            <text key={i} fg={OneDarkPro.syntax.yellow}>
               {'  ● '}
               {truncate(task.title, width - 6)}
             </text>
@@ -75,11 +75,11 @@ export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
       {/* Pending */}
       {pending.length > 0 && (
         <box flexDirection="column" marginTop={1}>
-          <text fg={OneDarkPro.foreground.muted} bold>
+          <text fg={OneDarkPro.foreground.muted}>
             Pending
           </text>
           {pending.slice(0, maxDisplay).map((task, i) => (
-            <text key={i} color={OneDarkPro.foreground.muted}>
+            <text key={i} fg={OneDarkPro.foreground.muted}>
               {'  ○ '}
               {truncate(task.title, width - 6)}
             </text>
@@ -96,11 +96,11 @@ export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
       {/* Complete */}
       {completed.length > 0 && (
         <box flexDirection="column" marginTop={1}>
-          <text fg={OneDarkPro.syntax.green} bold>
+          <text fg={OneDarkPro.syntax.green}>
             Complete
           </text>
           {completed.slice(0, maxDisplay).map((task, i) => (
-            <text key={i} color={OneDarkPro.syntax.green}>
+            <text key={i} fg={OneDarkPro.syntax.green}>
               {'  ✓ '}
               {truncate(task.title, width - 6)}
             </text>

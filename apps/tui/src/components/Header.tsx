@@ -24,21 +24,10 @@ export function Header({ width, height, isRunning, activeSession }: HeaderProps)
       flexDirection="column"
     >
       <box flexDirection="row">
-        <text fg={OneDarkPro.syntax.red} bold>
-          CLIVE
+        <text fg={OneDarkPro.syntax.red}>
+          CLIVE  AI-Powered Work Execution
+          {activeSession && ` · ${activeSession.name.substring(0, 30)}${activeSession.name.length > 30 ? '...' : ''}`}
         </text>
-        <text fg={OneDarkPro.foreground.muted}>
-          {'  '}AI-Powered Work Execution
-        </text>
-        {activeSession && (
-          <>
-            <text fg={OneDarkPro.foreground.secondary}>
-              {' · '}
-              {activeSession.name.substring(0, 30)}
-              {activeSession.name.length > 30 ? '...' : ''}
-            </text>
-          </>
-        )}
       </box>
     </box>
   );

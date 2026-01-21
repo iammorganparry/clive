@@ -106,8 +106,14 @@ export function SelectionView({
             ) : (
               displaySessions.map((session, i) => {
                 const isSelected = i === selectedIndex;
-                const name = session.name.length > 40
-                  ? session.name.substring(0, 39) + '…'
+
+                // Get identifier from linearData if available
+                const identifier = session.linearData?.identifier || '';
+                const prefix = identifier ? `[${identifier}] ` : '';
+                const maxNameLength = identifier ? 35 : 40;
+
+                const name = session.name.length > maxNameLength
+                  ? session.name.substring(0, maxNameLength - 1) + '…'
                   : session.name;
 
                 return (
@@ -130,6 +136,9 @@ export function SelectionView({
                       bold={isSelected}
                     >
                       {isSelected ? '▸ ' : '  '}
+                      {identifier && (
+                        <text color={OneDarkPro.syntax.cyan}>{prefix}</text>
+                      )}
                       {name}
                     </text>
                   </box>

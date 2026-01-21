@@ -153,7 +153,6 @@ export interface ViewModeState {
 export function useViewMode(): ViewModeState {
   // Load config and determine initial state
   const loadedConfig = loadConfig();
-  const initialState = !loadedConfig || !loadedConfig.tracker ? 'setup' : 'selection';
 
   const [state, send] = useMachine(viewModeMachine, {
     context: {
@@ -161,6 +160,13 @@ export function useViewMode(): ViewModeState {
       previousView: null,
     },
   });
+
+  // Navigate to selection if config exists
+  useEffect(() => {
+    if (loadedConfig && loadedConfig.issueTracker && state.value === 'setup') {
+      send({ type: 'GO_TO_SELECTION' });
+    }
+  }, []); // Only run once on mount
 
   // Determine current view mode from state
   const viewMode = state.value as ViewMode;
