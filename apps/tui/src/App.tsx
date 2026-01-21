@@ -10,7 +10,6 @@ import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
-import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { OutputPanel } from './components/OutputPanel';
 import { DynamicInput } from './components/DynamicInput';
@@ -325,10 +324,9 @@ function AppContent() {
   }
 
   // Main view (chat interface)
-  const headerHeight = 2;
   const inputHeight = 3;
   const statusHeight = 1;
-  const bodyHeight = height - headerHeight - inputHeight - statusHeight;
+  const bodyHeight = height - inputHeight - statusHeight;
 
   // Sidebar layout
   const sidebarWidth = 30;
@@ -341,14 +339,6 @@ function AppContent() {
       backgroundColor={OneDarkPro.background.primary}
       flexDirection="column"
     >
-      {/* Header */}
-      <Header
-        width={width}
-        height={headerHeight}
-        isRunning={isRunning}
-        activeSession={activeSession}
-      />
-
       {/* Body (Sidebar + Output) */}
       <box width={width} height={bodyHeight} flexDirection="row">
         {/* Sidebar */}
@@ -356,6 +346,7 @@ function AppContent() {
           width={sidebarWidth}
           height={bodyHeight}
           tasks={tasks}
+          activeSession={activeSession}
         />
 
         {/* Output Panel */}

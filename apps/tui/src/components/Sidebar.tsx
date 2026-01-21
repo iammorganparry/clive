@@ -4,18 +4,19 @@
  */
 
 import { OneDarkPro } from '../styles/theme';
-import { Task } from '../types';
+import type { Task, Session } from '../types';
 import { getTaskStatus } from '../utils/taskHelpers';
 
 interface SidebarProps {
   width: number;
   height: number;
   tasks: Task[];
+  activeSession?: Session | null;
   x?: number;
   y?: number;
 }
 
-export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
+export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: SidebarProps) {
   // Group tasks by status
   const inProgress = tasks.filter(t => getTaskStatus(t) === 'in_progress');
   const pending = tasks.filter(t => getTaskStatus(t) === 'pending');
@@ -45,10 +46,24 @@ export function Sidebar({ width, height, tasks, x = 0, y = 0 }: SidebarProps) {
       paddingRight={1}
       flexDirection="column"
     >
-      {/* Header with emoji */}
-      <box flexDirection="row" alignItems="center" marginBottom={1}>
-        <text fg={OneDarkPro.syntax.purple}>📋 </text>
-        <text fg={OneDarkPro.syntax.blue}>Tasks</text>
+      {/* Header with logo and epic name */}
+      <box flexDirection="column" marginBottom={1}>
+        <box flexDirection="row" alignItems="center">
+          <text fg={OneDarkPro.syntax.purple}>🎯 </text>
+          <text fg={OneDarkPro.syntax.cyan}>Clive</text>
+        </box>
+        {activeSession && (
+          <box flexDirection="column" marginTop={0}>
+            <text fg={OneDarkPro.foreground.muted}>
+              {truncate(activeSession.name, width - 2)}
+            </text>
+          </box>
+        )}
+      </box>
+
+      {/* Tasks Header */}
+      <box flexDirection="row" alignItems="center" marginBottom={0} marginTop={1}>
+        <text fg={OneDarkPro.syntax.blue}>📋 Tasks</text>
       </box>
 
       {/* Progress bar */}
