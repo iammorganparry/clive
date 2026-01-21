@@ -1,15 +1,20 @@
 /**
  * Root App component for Clive TUI
  * Integrates state management, components, and keyboard handling
+ * View flow: Setup -> Selection -> Main <-> Help
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
+import { useViewMode } from './hooks/useViewMode';
 import { Header } from './components/Header';
 import { OutputPanel } from './components/OutputPanel';
 import { InputBar } from './components/InputBar';
+import { SetupView } from './components/SetupView';
+import { SelectionView } from './components/SelectionView';
+import { HelpView } from './components/HelpView';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -26,12 +31,32 @@ function AppContent() {
   const width = 120;
   const height = 40;
 
+  // View mode management
+  const {
+    viewMode,
+    config,
+    goToSetup,
+    goToSelection,
+    goToMain,
+    goToHelp,
+    goBack,
+    updateConfig,
+  } = useViewMode();
+
+  // Selection state (for SelectionView)
+  const [selectedEpicIndex, setSelectedEpicIndex] = useState(0);
+  const [epicSearchQuery, setEpicSearchQuery] = useState('');
+
   // State management
   const workspaceRoot = process.cwd();
   const {
     outputLines,
     isRunning,
     pendingQuestion,
+    sessions,
+    sessionsLoading,
+    activeSession,
+    setActiveSession,
     executeCommand,
     interrupt,
   } = useAppState(workspaceRoot);
@@ -39,16 +64,49 @@ function AppContent() {
   // Keyboard handling
   useEffect(() => {
     const handleKeyPress = (key: string) => {
-      if (key === 'q' || key === '\u001b') { // q or Escape
+      // Global shortcuts
+      if (key === 'q') {
         process.exit(0);
       }
 
-      if (key === '\u0003') { // Ctrl+C
-        interrupt();
+      if (key === '?') {
+        if (viewMode === 'help') {
+          goBack();
+        } else {
+          goToHelp();
+        }
+        return;
       }
 
-      if (key === '?') {
-        executeCommand('/help');
+      // View-specific shortcuts
+      if (viewMode === 'setup') {
+        if (key === 's') {
+          // Skip setup, go to chat-only mode
+          goToMain();
+        }
+        if (key === '\u001b') { // Escape
+          process.exit(0);
+        }
+      } else if (viewMode === 'selection') {
+        if (key === 's') {
+          // Skip to chat mode
+          goToMain();
+        }
+        if (key === '\u001b') { // Escape
+          goBack();
+        }
+        // TODO: Arrow key navigation for epic selection
+      } else if (viewMode === 'main') {
+        if (key === '\u001b') { // Escape
+          goToSelection();
+        }
+        if (key === '\u0003') { // Ctrl+C
+          interrupt();
+        }
+      } else if (viewMode === 'help') {
+        if (key === '\u001b') { // Escape
+          goBack();
+        }
       }
     };
 
@@ -67,9 +125,52 @@ function AppContent() {
         process.stdin.setRawMode?.(false);
       }
     };
-  }, [interrupt, executeCommand]);
+  }, [viewMode, goBack, goToHelp, goToMain, goToSelection, interrupt]);
 
-  // Layout dimensions
+  // Handler for epic selection
+  const handleEpicSelect = (session: typeof sessions[0]) => {
+    setActiveSession(session);
+    goToMain();
+  };
+
+  // Render appropriate view based on viewMode
+  if (viewMode === 'setup') {
+    return (
+      <SetupView
+        width={width}
+        height={height}
+        onComplete={updateConfig}
+        onCancel={() => process.exit(0)}
+      />
+    );
+  }
+
+  if (viewMode === 'selection') {
+    return (
+      <SelectionView
+        width={width}
+        height={height}
+        sessions={sessions}
+        sessionsLoading={sessionsLoading}
+        selectedIndex={selectedEpicIndex}
+        searchQuery={epicSearchQuery}
+        onSelect={handleEpicSelect}
+        onBack={goBack}
+      />
+    );
+  }
+
+  if (viewMode === 'help') {
+    return (
+      <HelpView
+        width={width}
+        height={height}
+        onClose={goBack}
+      />
+    );
+  }
+
+  // Main view (chat interface)
   const headerHeight = 3;
   const inputHeight = 3;
   const outputHeight = height - headerHeight - inputHeight;
