@@ -10,12 +10,10 @@ import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
-import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { OutputPanel } from './components/OutputPanel';
 import { DynamicInput } from './components/DynamicInput';
 import { StatusBar } from './components/StatusBar';
-import { VersionFooter } from './components/VersionFooter';
 import { SetupView } from './components/SetupView';
 import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
@@ -86,22 +84,31 @@ function AppContent() {
     executeCommand,
     handleQuestionAnswer,
     interrupt,
-  } = useAppState(workspaceRoot);
+  } = useAppState(workspaceRoot, config?.issueTracker);
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
   useKeyboard((event) => {
-    // Skip keyboard handling in input-focused views
-    if (configFlow === 'linear' || configFlow === 'github' || inputFocused) {
+    // Skip ALL keyboard handling when input is focused - let input handle everything
+    if (inputFocused) {
+      // ONLY handle unfocus events
+      if (event.name === 'escape') {
+        setInputFocused(false);
+      }
+      return; // Exit early, don't process any other keys
+    }
+
+    // Skip keyboard handling in config flows
+    if (configFlow === 'linear' || configFlow === 'github') {
       return;
     }
 
     // Global shortcuts
-    if (event.key === 'q' && viewMode !== 'main') {
+    if (event.sequence === 'q' && viewMode !== 'main') {
       process.exit(0);
     }
 
-    if (event.key === '?') {
+    if (event.sequence === '?') {
       if (viewMode === 'help') {
         goBack();
       } else {
@@ -116,15 +123,15 @@ function AppContent() {
         process.exit(0);
       }
       // Arrow key navigation for setup options
-      if (event.name === 'up' || event.key === 'k') {
+      if (event.name === 'up' || event.sequence === 'k') {
         setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
       }
-      if (event.name === 'down' || event.key === 'j') {
+      if (event.name === 'down' || event.sequence === 'j') {
         setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
       }
       // Number key selection (1, 2, etc.)
-      if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
+      if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence) - 1;
         if (index < setupOptions.length) {
           const selectedOption = setupOptions[index];
           if (selectedOption === 'linear') {
@@ -143,43 +150,108 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
+      // Helper function to filter sessions by search query (checks both identifier and title)
+      const filterSessions = (query: string) => {
+        if (!query) return sessions;
+        const lowerQuery = query.toLowerCase();
+        return sessions.filter(s => {
+          const identifier = s.linearData?.identifier?.toLowerCase() || '';
+          const title = s.name.toLowerCase();
+          return identifier.includes(lowerQuery) || title.includes(lowerQuery);
+        });
+      };
+
+      // Escape - clear search or go back
       if (event.name === 'escape') {
-        goBack();
+        if (epicSearchQuery) {
+          setEpicSearchQuery('');
+          setSelectedEpicIndex(0);
+        } else {
+          goBack();
+        }
+        return;
       }
+
+      // Backspace - remove last character from search
+      if (event.name === 'backspace') {
+        if (epicSearchQuery) {
+          setEpicSearchQuery(epicSearchQuery.slice(0, -1));
+          setSelectedEpicIndex(0);
+        }
+        return;
+      }
+
+      // Printable characters - add to search query
+      // Exclude special keys and shortcuts
+      if (
+        event.sequence &&
+        event.sequence.length === 1 &&
+        !event.ctrl &&
+        !event.meta &&
+        event.name !== 'up' &&
+        event.name !== 'down' &&
+        event.name !== 'return' &&
+        event.name !== 'enter' &&
+        event.name !== 'escape' &&
+        event.name !== 'backspace'
+      ) {
+        setEpicSearchQuery(epicSearchQuery + event.sequence);
+        setSelectedEpicIndex(0);
+        return;
+      }
+
       // Arrow key navigation for epic selection
-      if (event.name === 'up' || event.key === 'k') {
-        setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, sessions.length - 1)));
+      if (event.name === 'up' || event.sequence === 'k') {
+        const filteredSessions = filterSessions(epicSearchQuery);
+        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
+        // Allow -1 for "Create New" option when not searching
+        const minIndex = epicSearchQuery ? 0 : -1;
+        setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
+        return;
       }
-      if (event.name === 'down' || event.key === 'j') {
-        setSelectedEpicIndex((prev) => (prev < Math.max(0, sessions.length - 1) ? prev + 1 : 0));
+      if (event.name === 'down' || event.sequence === 'j') {
+        const filteredSessions = filterSessions(epicSearchQuery);
+        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
+        // Allow -1 for "Create New" option when not searching
+        const minIndex = epicSearchQuery ? 0 : -1;
+        setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
+        return;
       }
-      // Number key selection (1-9)
-      if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
-        if (index < sessions.length) {
-          handleEpicSelect(sessions[index]);
+
+      // Enter to select
+      if (event.name === 'return' || event.name === 'enter') {
+        // Check if "Create New" is selected
+        if (selectedEpicIndex === -1) {
+          // Go to main view with /plan pre-filled
+          goToMain();
+          setInputFocused(true);
+          setPreFillValue('/plan');
+          return;
         }
-      }
-      if (event.name === 'return') {
-        if (sessions[selectedEpicIndex]) {
-          handleEpicSelect(sessions[selectedEpicIndex]);
+
+        const filteredSessions = filterSessions(epicSearchQuery);
+        const displaySessions = filteredSessions.slice(0, 10);
+
+        if (displaySessions.length > 0 && displaySessions[selectedEpicIndex]) {
+          handleEpicSelect(displaySessions[selectedEpicIndex]);
         }
+        return;
       }
     } else if (viewMode === 'main') {
       if (event.name === 'escape') {
         goToSelection();
       }
-      if (event.ctrl && event.key === 'c') {
+      if (event.ctrl && event.name === 'c') {
         interrupt();
       }
       // Input focus shortcuts
-      if (event.key === '/') {
+      if (event.sequence === '/') {
         setInputFocused(true);
         setPreFillValue('/');
       }
-      if (event.key === 'i' || event.key === ':') {
+      if (event.sequence === 'i' || event.sequence === ':') {
         setInputFocused(true);
-        setPreFillValue(event.key === ':' ? ':' : undefined);
+        setPreFillValue(event.sequence === ':' ? ':' : undefined);
       }
     } else if (viewMode === 'help') {
       if (event.name === 'escape') {
@@ -249,6 +321,11 @@ function AppContent() {
         selectedIndex={selectedEpicIndex}
         searchQuery={epicSearchQuery}
         onSelect={handleEpicSelect}
+        onCreateNew={() => {
+          goToMain();
+          setInputFocused(true);
+          setPreFillValue('/plan');
+        }}
         onBack={goBack}
       />
     );
@@ -265,11 +342,9 @@ function AppContent() {
   }
 
   // Main view (chat interface)
-  const headerHeight = 2;
   const inputHeight = 3;
   const statusHeight = 1;
-  const versionHeight = 1;
-  const bodyHeight = height - headerHeight - inputHeight - statusHeight - versionHeight;
+  const bodyHeight = height - inputHeight - statusHeight;
 
   // Sidebar layout
   const sidebarWidth = 30;
@@ -282,14 +357,6 @@ function AppContent() {
       backgroundColor={OneDarkPro.background.primary}
       flexDirection="column"
     >
-      {/* Header */}
-      <Header
-        width={width}
-        height={headerHeight}
-        isRunning={isRunning}
-        activeSession={activeSession}
-      />
-
       {/* Body (Sidebar + Output) */}
       <box width={width} height={bodyHeight} flexDirection="row">
         {/* Sidebar */}
@@ -297,6 +364,7 @@ function AppContent() {
           width={sidebarWidth}
           height={bodyHeight}
           tasks={tasks}
+          activeSession={activeSession}
         />
 
         {/* Output Panel */}
@@ -324,12 +392,6 @@ function AppContent() {
         height={statusHeight}
         isRunning={isRunning}
         inputFocused={inputFocused}
-      />
-
-      {/* Version Footer */}
-      <VersionFooter
-        width={width}
-        height={versionHeight}
       />
 
       {/* Question Panel Overlay */}
