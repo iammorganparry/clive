@@ -4,11 +4,12 @@
  * Manages CLI execution, output lines, and user interactions
  */
 
-import { useEffect, useRef } from 'react';
-import { setup, assign, fromCallback } from 'xstate';
+import { useEffect, useRef, useState } from 'react';
+import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { CliManager } from '../services/CliManager';
-import { OutputLine, QuestionData } from '../types';
+import { OutputLine, QuestionData, Session, Task } from '../types';
+import { useSessions, useSessionTasks } from './useTaskQueries';
 
 /**
  * TUI State Machine
@@ -117,12 +118,20 @@ export interface AppState {
   // Question state
   pendingQuestion: QuestionData | null;
 
+  // Task/Session state
+  sessions: Session[];
+  tasks: Task[];
+  activeSession: Session | null;
+  sessionsLoading: boolean;
+  tasksLoading: boolean;
+
   // Actions
   executeCommand: (cmd: string) => void;
   sendMessage: (msg: string) => void;
   handleQuestionAnswer: (answers: Record<string, string>) => void;
   clearOutput: () => void;
   interrupt: () => void;
+  setActiveSession: (session: Session | null) => void;
 }
 
 export function useAppState(workspaceRoot: string): AppState {
@@ -138,6 +147,20 @@ export function useAppState(workspaceRoot: string): AppState {
 
   // CLI Manager instance
   const cliManager = useRef<CliManager | null>(null);
+
+  // Active session tracking
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+
+  // React Query hooks for task/session data
+  const {
+    data: sessions = [],
+    isLoading: sessionsLoading,
+  } = useSessions();
+
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+  } = useSessionTasks(activeSession?.id ?? null);
 
   // Initialize CLI Manager
   useEffect(() => {
@@ -337,13 +360,24 @@ export function useAppState(workspaceRoot: string): AppState {
   };
 
   return {
+    // Output state
     outputLines: state.context.outputLines,
     isRunning: state.matches('executing') || state.matches('waiting_for_answer'),
     pendingQuestion: state.context.pendingQuestion,
+
+    // Task/Session state
+    sessions,
+    tasks,
+    activeSession,
+    sessionsLoading,
+    tasksLoading,
+
+    // Actions
     executeCommand,
     sendMessage,
     handleQuestionAnswer,
     clearOutput,
     interrupt,
+    setActiveSession,
   };
 }

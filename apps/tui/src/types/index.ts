@@ -3,20 +3,28 @@
  * Ported from apps/tui-go/internal/model/
  */
 
+import type { BeadsIssue, LinearIssue } from '@clive/claude-services';
+
+// Re-export service types
+export type { BeadsIssue, LinearIssue } from '@clive/claude-services';
+
+/**
+ * Unified task representation that can come from either Beads or Linear
+ */
+export type Task = BeadsIssue | LinearIssue;
+
+/**
+ * Session represents a working context (Linear epic or Beads epic)
+ */
 export interface Session {
   id: string;
   name: string;
-  epicID: string;
   description?: string;
   createdAt: Date;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
-  sessionID: string;
-  createdAt: Date;
+  source: 'beads' | 'linear';
+  // Source-specific data
+  beadsData?: BeadsIssue;
+  linearData?: LinearIssue;
 }
 
 export interface OutputLine {

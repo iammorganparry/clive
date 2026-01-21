@@ -13,6 +13,7 @@
     "@clive/claude-services": "*",
     "@opentui/core": "^0.1.0",
     "@opentui/react": "^0.1.0",
+    "@tanstack/react-query": "^5.90.12",
     "@xstate/react": "^6.0.0",
     "effect": "^3.19.9",
     "react": "^19.2.0",

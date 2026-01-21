@@ -4,13 +4,24 @@
  */
 
 import { useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { Header } from './components/Header';
 import { OutputPanel } from './components/OutputPanel';
 import { InputBar } from './components/InputBar';
 
-function App() {
+// Create QueryClient instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+function AppContent() {
   // Terminal dimensions (will be dynamic in real OpenTUI)
   const width = 120;
   const height = 40;
@@ -95,6 +106,15 @@ function App() {
         disabled={!!pendingQuestion}
       />
     </box>
+  );
+}
+
+// Main App with QueryClient provider
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+    </QueryClientProvider>
   );
 }
 
