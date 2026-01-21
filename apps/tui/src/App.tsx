@@ -184,7 +184,9 @@ function AppContent() {
         event.name !== 'up' &&
         event.name !== 'down' &&
         event.name !== 'return' &&
-        event.name !== 'escape'
+        event.name !== 'enter' &&
+        event.name !== 'escape' &&
+        event.name !== 'backspace'
       ) {
         setEpicSearchQuery(epicSearchQuery + event.sequence);
         setSelectedEpicIndex(0);
@@ -206,11 +208,11 @@ function AppContent() {
       }
 
       // Enter to select
-      if (event.name === 'return') {
+      if (event.name === 'return' || event.name === 'enter') {
         const filteredSessions = filterSessions(epicSearchQuery);
         const displaySessions = filteredSessions.slice(0, 10);
 
-        if (displaySessions[selectedEpicIndex]) {
+        if (displaySessions.length > 0 && displaySessions[selectedEpicIndex]) {
           handleEpicSelect(displaySessions[selectedEpicIndex]);
         }
         return;
