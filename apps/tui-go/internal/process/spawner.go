@@ -73,6 +73,7 @@ var (
 	currentToolID         string                // Current tool_use_id for responding to tool calls
 	currentToolInput      strings.Builder       // Accumulates tool input JSON
 	pendingBdRefresh      bool                  // True when a bd command was seen and we need to refresh after execution
+	exitPlanModeDetected  bool                  // True when ExitPlanMode was called - we should terminate soon
 	handledQuestionIDs    = make(map[string]bool) // Track all tool_use_ids already emitted via streaming (for dedup)
 	questionMessageIDs    = make(map[string]bool) // Track message IDs that contain AskUserQuestion (to skip text from those messages)
 	streamStateMu         sync.Mutex
@@ -89,6 +90,7 @@ func ResetStreamingState() {
 	currentToolID = ""
 	currentToolInput.Reset()
 	pendingBdRefresh = false
+	exitPlanModeDetected = false
 	handledQuestionIDs = make(map[string]bool) // Clear the map
 	questionMessageIDs = make(map[string]bool) // Clear the map
 }
@@ -964,6 +966,11 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 			// Handle ExitPlanMode - signal planning is complete and ready for approval
 			if name == "ExitPlanMode" {
+				// Set flag to terminate process after this completes
+				streamStateMu.Lock()
+				exitPlanModeDetected = true
+				streamStateMu.Unlock()
+
 				return logAndReturn(handle, line, []OutputLine{{
 					Text:      "✓ Plan complete! Review the plan file to approve.\n",
 					Type:      "system",
@@ -1320,6 +1327,11 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 				// Handle ExitPlanMode in assistant message
 				if name == "ExitPlanMode" {
+					// Set flag to terminate process after this completes
+					streamStateMu.Lock()
+					exitPlanModeDetected = true
+					streamStateMu.Unlock()
+
 					results = append(results, OutputLine{
 						Text:      "✓ Plan complete! Review the plan file to approve.\n",
 						Type:      "system",
@@ -1410,6 +1422,29 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 
 	case "result":
 		// Tool execution result from Claude CLI
+
+		// Check if ExitPlanMode was detected - if so, kill the process after result
+		streamStateMu.Lock()
+		shouldTerminate := exitPlanModeDetected
+		streamStateMu.Unlock()
+
+		if shouldTerminate && handle != nil && handle.cmd != nil {
+			// ExitPlanMode completed - terminate to prevent further API calls
+			// This prevents accumulated permission denials from causing 400 errors
+			go func() {
+				// Small delay to allow result to be processed
+				time.Sleep(100 * time.Millisecond)
+				if handle.cmd.Process != nil {
+					handle.cmd.Process.Kill()
+				}
+			}()
+			return logAndReturn(handle, line, []OutputLine{{
+				Type:      "system",
+				Text:      "✓ Planning complete. Terminating session.\n",
+				DebugInfo: "ExitPlanMode completed - killed process to prevent API errors",
+			}})
+		}
+
 		// Check for token usage warnings (context window monitoring)
 		if modelUsage, ok := data["modelUsage"].(map[string]interface{}); ok {
 			// Iterate through each model's usage stats
