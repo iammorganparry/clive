@@ -308,8 +308,18 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     if [ "$STREAMING" = true ]; then
         # Streaming mode for TUI - NDJSON output for parsing
         # --output-format stream-json: responses streamed as NDJSON
-        # Note: prompt is passed as file argument (not stdin) to allow build loop to continue
-        # Using stdin for prompts breaks multi-iteration loops since stdin closes after first use
+        # -p: persistent session (maintains context across iterations)
+        #
+        # Note: prompt is passed as CLI argument (not stdin) to allow multi-iteration loops
+        # Using stdin for prompts breaks loops since stdin closes after first iteration
+        #
+        # PERMISSION HANDLING:
+        # - If Claude uses AskUserQuestion during build, claude-code sends permission requests
+        # - The TUI's spawner.go automatically approves by detecting permission denials
+        #   (type="user" with is_error=true) and sending approvals via stdin
+        # - This works even though prompts come via CLI args - stdin is still open for responses
+        # - See apps/tui-go/internal/process/spawner.go lines 1114-1165 for implementation
+        #
         CLAUDE_ARGS=(-p --verbose --output-format stream-json "${CLAUDE_ARGS[@]}")
     elif [ "$INTERACTIVE" = false ]; then
         # Non-interactive, non-streaming mode (e.g., with tspin)

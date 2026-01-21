@@ -45,8 +45,8 @@ func TestSimpleStreaming_Debug(t *testing.T) {
 	fmt.Printf("Outputs from line 3: %d outputs\n", len(outputs3))
 	for i, out := range outputs3 {
 		fmt.Printf("  Output %d: Type=%s\n", i, out.Type)
-		if out.Question != nil {
-			fmt.Printf("    Question: ToolUseID=%s, Header=%s\n", out.Question.ToolUseID, out.Question.Header)
+		if out.Question != nil && len(out.Question.Questions) > 0 {
+			fmt.Printf("    Question: ToolUseID=%s, Header=%s\n", out.Question.ToolUseID, out.Question.Questions[0].Header)
 		}
 	}
 

@@ -155,10 +155,20 @@ if [ "$STREAMING" = true ]; then
     echo "$TEMP_PROMPT" > .claude/.plan-prompt-path
 
     # --output-format stream-json: responses streamed as NDJSON
+    # --input-format stream-json: enables bidirectional communication (TUI sends prompt via stdin)
     # --permission-mode plan: Enforce plan mode - Claude can only read/analyze, not write/edit
     # --tools: Include WebSearch and WebFetch for research during planning
-    # NOTE: We use --input-format stream-json for bidirectional streaming with TUI
+    # -p: persistent session (maintains context across tool uses)
+    #
+    # PERMISSION HANDLING:
+    # - If Claude uses AskUserQuestion during planning, claude-code will send permission requests
+    # - The TUI's spawner.go automatically approves these by detecting permission denial events
+    #   (type="user" with is_error=true) and sending approval responses via stdin
+    # - This allows interactive questions during planning without manual permission prompts
+    # - See apps/tui-go/internal/process/spawner.go lines 1114-1165 for implementation
+    #
     CLAUDE_ARGS=(-p --verbose --output-format stream-json --input-format stream-json --permission-mode plan --tools "default" "${CLAUDE_ARGS[@]}")
+
     # Redirect stderr to log file to prevent UI flickering from build tool output
     mkdir -p "$HOME/.clive"
     claude "${CLAUDE_ARGS[@]}" 2>>"$HOME/.clive/claude-stderr.log"
