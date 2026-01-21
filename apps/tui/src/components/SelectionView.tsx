@@ -89,6 +89,7 @@ export function SelectionView({
               paddingLeft={1}
               paddingRight={1}
               marginBottom={1}
+              flexDirection="row"
             >
               <text fg={OneDarkPro.syntax.green}>🔍 </text>
               <text fg={searchQuery ? OneDarkPro.foreground.primary : OneDarkPro.foreground.muted}>

@@ -164,8 +164,18 @@ function AppContent() {
       }
 
       // Printable characters - add to search query
-      if (event.key && event.key.length === 1 && !event.ctrl && !event.meta) {
-        setEpicSearchQuery(epicSearchQuery + event.key);
+      // Exclude special keys and shortcuts
+      if (
+        event.sequence &&
+        event.sequence.length === 1 &&
+        !event.ctrl &&
+        !event.meta &&
+        event.name !== 'up' &&
+        event.name !== 'down' &&
+        event.name !== 'return' &&
+        event.name !== 'escape'
+      ) {
+        setEpicSearchQuery(epicSearchQuery + event.sequence);
         setSelectedEpicIndex(0);
         return;
       }
@@ -178,6 +188,7 @@ function AppContent() {
           : sessions.length;
         const maxIndex = Math.min(filteredCount, 10) - 1;
         setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
+        return;
       }
       if (event.name === 'down' || event.key === 'j') {
         // Filter sessions first to get accurate count
@@ -186,21 +197,10 @@ function AppContent() {
           : sessions.length;
         const maxIndex = Math.min(filteredCount, 10) - 1;
         setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
+        return;
       }
 
-      // Number key selection (1-9)
-      if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
-        const filteredSessions = epicSearchQuery
-          ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase()))
-          : sessions;
-        const displaySessions = filteredSessions.slice(0, 10);
-
-        if (index < displaySessions.length) {
-          handleEpicSelect(displaySessions[index]);
-        }
-      }
-
+      // Enter to select
       if (event.name === 'return') {
         const filteredSessions = epicSearchQuery
           ? sessions.filter(s => s.name.toLowerCase().includes(epicSearchQuery.toLowerCase()))
@@ -210,6 +210,7 @@ function AppContent() {
         if (displaySessions[selectedEpicIndex]) {
           handleEpicSelect(displaySessions[selectedEpicIndex]);
         }
+        return;
       }
     } else if (viewMode === 'main') {
       if (event.name === 'escape') {
