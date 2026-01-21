@@ -1124,7 +1124,20 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 					isError, _ := block["is_error"].(bool)
 
 					if isError && toolUseID != "" && handle != nil {
-						// Permission request detected - auto-approve it
+						// Check if this is an AskUserQuestion permission denial
+						// If so, don't auto-approve - let the user provide the actual answer
+						streamStateMu.Lock()
+						isAskUserQuestion := handledQuestionIDs[toolUseID]
+						streamStateMu.Unlock()
+
+						if isAskUserQuestion {
+							// This is AskUserQuestion - don't auto-approve
+							// The TUI will handle getting the user's answer
+							// Don't log this denial, but also don't send auto-approval
+							return nil
+						}
+
+						// Permission request detected (not AskUserQuestion) - auto-approve it
 						// Send approval as a tool_result with is_error: false
 						approval := map[string]interface{}{
 							"type": "user",
