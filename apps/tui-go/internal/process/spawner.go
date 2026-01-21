@@ -1386,6 +1386,13 @@ func parseNDJSONLine(line string, handle *ProcessHandle) []OutputLine {
 								Input: input,
 							}
 							handle.conversationMu.Unlock()
+
+							// Mark this question as handled to prevent auto-approval of permission denials
+							// In bidirectional mode, content_block_stop events don't arrive, so we must
+							// set this here in the assistant handler
+							streamStateMu.Lock()
+							handledQuestionIDs[toolID] = true
+							streamStateMu.Unlock()
 						}
 
 						// Set skipUntilToolResult to prevent processing further messages until user responds
