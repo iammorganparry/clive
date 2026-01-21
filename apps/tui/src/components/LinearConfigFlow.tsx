@@ -4,7 +4,7 @@
  * Collects API key and team ID, validates, and saves to config
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useKeyboard } from '@opentui/react';
 import { OneDarkPro } from '../styles/theme';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -29,6 +29,60 @@ export function LinearConfigFlow({
   const [teamID, setTeamID] = useState('');
   const [error, setError] = useState('');
   const [inputValue, setInputValue] = useState('');
+
+  // Enable bracketed paste mode for copy/paste support
+  useEffect(() => {
+    if (!process.stdout.isTTY) return;
+
+    // Enable bracketed paste mode
+    process.stdout.write('\x1b[?2004h');
+
+    return () => {
+      if (process.stdout.isTTY) {
+        process.stdout.write('\x1b[?2004l');
+      }
+    };
+  }, []);
+
+  // Handle paste events
+  useEffect(() => {
+    if (step !== 'api_key' && step !== 'team_id') return;
+
+    let pasteBuffer = '';
+    let inPasteMode = false;
+
+    const handleData = (data: Buffer) => {
+      const str = data.toString();
+
+      // Detect bracketed paste start
+      if (str.includes('\x1b[200~')) {
+        inPasteMode = true;
+        pasteBuffer = '';
+        return;
+      }
+
+      // Detect bracketed paste end
+      if (str.includes('\x1b[201~')) {
+        inPasteMode = false;
+        if (pasteBuffer) {
+          setInputValue((prev) => prev + pasteBuffer);
+        }
+        pasteBuffer = '';
+        return;
+      }
+
+      // Accumulate paste buffer
+      if (inPasteMode) {
+        pasteBuffer += str;
+      }
+    };
+
+    process.stdin.on('data', handleData);
+
+    return () => {
+      process.stdin.removeListener('data', handleData);
+    };
+  }, [step]);
 
   // Handle escape key only
   useKeyboard((event) => {
@@ -97,12 +151,15 @@ export function LinearConfigFlow({
             <box
               marginTop={2}
               width={50}
+              padding={1}
+              backgroundColor={OneDarkPro.background.secondary}
             >
               <input
                 placeholder="lin_api_..."
                 focused={true}
                 onInput={setInputValue}
                 onSubmit={handleSubmit}
+                value={inputValue}
                 style={{
                   fg: OneDarkPro.foreground.primary,
                   backgroundColor: OneDarkPro.background.secondary,
@@ -140,12 +197,15 @@ export function LinearConfigFlow({
             <box
               marginTop={2}
               width={50}
+              padding={1}
+              backgroundColor={OneDarkPro.background.secondary}
             >
               <input
                 placeholder="TEAM"
                 focused={true}
                 onInput={setInputValue}
                 onSubmit={handleSubmit}
+                value={inputValue}
                 style={{
                   fg: OneDarkPro.foreground.primary,
                   backgroundColor: OneDarkPro.background.secondary,
