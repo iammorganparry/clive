@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Clive TUI launcher
+# Runs the TypeScript TUI using bun
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TUI_DIR="$(dirname "$SCRIPT_DIR")"
+WORKSPACE_ROOT="$(cd "$TUI_DIR/../.." && pwd)"
+
+# Check if bun is available
+if ! command -v bun &> /dev/null; then
+    echo "Error: bun not found. Please install it from https://bun.sh"
+    exit 1
+fi
+
+# Check if workspace node_modules exists
+if [ ! -d "$WORKSPACE_ROOT/node_modules" ]; then
+    echo "Error: Workspace dependencies not installed. Please run 'yarn install' in $WORKSPACE_ROOT"
+    exit 1
+fi
+
+# Run the TUI with bun from workspace
+cd "$WORKSPACE_ROOT" && exec bun run "$TUI_DIR/src/main.tsx" "$@"
