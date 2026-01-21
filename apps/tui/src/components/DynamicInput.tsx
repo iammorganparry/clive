@@ -97,8 +97,9 @@ export function DynamicInput({
         return;
       }
 
-      // Tab to accept suggestion (don't use Enter as it should submit)
-      if (event.name === 'tab') {
+      // Tab or Enter to accept suggestion when suggestions are showing
+      if (event.name === 'tab' || event.name === 'return') {
+        event.preventDefault?.(); // Prevent default behavior
         const suggestion = filteredSuggestions[selectedSuggestion];
         if (suggestion) {
           setValue(suggestion.cmd + ' ');
