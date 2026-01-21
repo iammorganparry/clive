@@ -15,7 +15,6 @@ import { Sidebar } from './components/Sidebar';
 import { OutputPanel } from './components/OutputPanel';
 import { DynamicInput } from './components/DynamicInput';
 import { StatusBar } from './components/StatusBar';
-import { VersionFooter } from './components/VersionFooter';
 import { SetupView } from './components/SetupView';
 import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
@@ -91,8 +90,17 @@ function AppContent() {
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
   useKeyboard((event) => {
-    // Skip keyboard handling in input-focused views
-    if (configFlow === 'linear' || configFlow === 'github' || inputFocused) {
+    // Skip ALL keyboard handling when input is focused - let input handle everything
+    if (inputFocused) {
+      // ONLY handle unfocus events
+      if (event.name === 'escape') {
+        setInputFocused(false);
+      }
+      return; // Exit early, don't process any other keys
+    }
+
+    // Skip keyboard handling in config flows
+    if (configFlow === 'linear' || configFlow === 'github') {
       return;
     }
 
@@ -320,8 +328,7 @@ function AppContent() {
   const headerHeight = 2;
   const inputHeight = 3;
   const statusHeight = 1;
-  const versionHeight = 1;
-  const bodyHeight = height - headerHeight - inputHeight - statusHeight - versionHeight;
+  const bodyHeight = height - headerHeight - inputHeight - statusHeight;
 
   // Sidebar layout
   const sidebarWidth = 30;
@@ -376,12 +383,6 @@ function AppContent() {
         height={statusHeight}
         isRunning={isRunning}
         inputFocused={inputFocused}
-      />
-
-      {/* Version Footer */}
-      <VersionFooter
-        width={width}
-        height={versionHeight}
       />
 
       {/* Question Panel Overlay */}
