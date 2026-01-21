@@ -16,6 +16,7 @@ interface SelectionViewProps {
   selectedIndex: number;
   searchQuery: string;
   onSelect: (session: Session) => void;
+  onCreateNew: () => void;
   onBack: () => void;
 }
 
@@ -27,6 +28,7 @@ export function SelectionView({
   selectedIndex,
   searchQuery,
   onSelect,
+  onCreateNew,
   onBack,
 }: SelectionViewProps) {
   // Filter sessions by search query (search both identifier and title)
@@ -76,7 +78,7 @@ export function SelectionView({
               No epics found.
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-              Press 'n' to create a new session.
+              Use ↑↓ to select "Create New Epic" and press Enter.
             </text>
           </box>
         )}
@@ -107,13 +109,41 @@ export function SelectionView({
             </text>
 
             {/* Session items */}
-            {displaySessions.length === 0 ? (
+            {displaySessions.length === 0 && searchQuery ? (
               <text fg={OneDarkPro.foreground.muted}>
                 No matching epics. Try a different search.
               </text>
             ) : (
-              displaySessions.map((session, i) => {
-                const isSelected = i === selectedIndex;
+              <>
+                {/* Create New option (only show when not searching) */}
+                {!searchQuery && (
+                  <box
+                    key="create-new"
+                    backgroundColor={
+                      selectedIndex === -1
+                        ? OneDarkPro.background.highlight
+                        : 'transparent'
+                    }
+                    paddingLeft={1}
+                    paddingRight={1}
+                    marginBottom={1}
+                  >
+                    <text
+                      fg={
+                        selectedIndex === -1
+                          ? OneDarkPro.syntax.green
+                          : OneDarkPro.syntax.cyan
+                      }
+                    >
+                      {selectedIndex === -1 ? '▸ ' : '  '}
+                      ✨ Create New Epic
+                    </text>
+                  </box>
+                )}
+
+                {/* Existing sessions */}
+                {displaySessions.map((session, i) => {
+                  const isSelected = i === selectedIndex;
 
                 // Get identifier from linearData if available
                 const identifier = session.linearData?.identifier || '';
@@ -148,7 +178,8 @@ export function SelectionView({
                     </text>
                   </box>
                 );
-              })
+              })}
+              </>
             )}
           </box>
         )}

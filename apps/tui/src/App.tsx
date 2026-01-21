@@ -204,18 +204,31 @@ function AppContent() {
       if (event.name === 'up' || event.sequence === 'k') {
         const filteredSessions = filterSessions(epicSearchQuery);
         const maxIndex = Math.min(filteredSessions.length, 10) - 1;
-        setSelectedEpicIndex((prev) => (prev > 0 ? prev - 1 : maxIndex));
+        // Allow -1 for "Create New" option when not searching
+        const minIndex = epicSearchQuery ? 0 : -1;
+        setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
         return;
       }
       if (event.name === 'down' || event.sequence === 'j') {
         const filteredSessions = filterSessions(epicSearchQuery);
         const maxIndex = Math.min(filteredSessions.length, 10) - 1;
-        setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : 0));
+        // Allow -1 for "Create New" option when not searching
+        const minIndex = epicSearchQuery ? 0 : -1;
+        setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
         return;
       }
 
       // Enter to select
       if (event.name === 'return' || event.name === 'enter') {
+        // Check if "Create New" is selected
+        if (selectedEpicIndex === -1) {
+          // Go to main view with /plan pre-filled
+          goToMain();
+          setInputFocused(true);
+          setPreFillValue('/plan');
+          return;
+        }
+
         const filteredSessions = filterSessions(epicSearchQuery);
         const displaySessions = filteredSessions.slice(0, 10);
 
@@ -308,6 +321,11 @@ function AppContent() {
         selectedIndex={selectedEpicIndex}
         searchQuery={epicSearchQuery}
         onSelect={handleEpicSelect}
+        onCreateNew={() => {
+          goToMain();
+          setInputFocused(true);
+          setPreFillValue('/plan');
+        }}
         onBack={goBack}
       />
     );
