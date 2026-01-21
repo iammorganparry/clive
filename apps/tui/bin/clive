@@ -2,14 +2,8 @@
 # Clive TUI launcher
 # Runs the TypeScript TUI using Bun
 
-# Get the directory where this script is located (follow symlinks)
-SOURCE="${BASH_SOURCE[0]}"
-while [ -L "$SOURCE" ]; do
-    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-    SOURCE="$(readlink "$SOURCE")"
-    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUI_DIR="$(dirname "$SCRIPT_DIR")"
 WORKSPACE_ROOT="$(cd "$TUI_DIR/../.." && pwd)"
 
