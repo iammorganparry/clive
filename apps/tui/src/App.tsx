@@ -84,7 +84,7 @@ function AppContent() {
     executeCommand,
     handleQuestionAnswer,
     interrupt,
-  } = useAppState(workspaceRoot);
+  } = useAppState(workspaceRoot, config?.issueTracker);
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management

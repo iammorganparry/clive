@@ -134,7 +134,7 @@ export interface AppState {
   setActiveSession: (session: Session | null) => void;
 }
 
-export function useAppState(workspaceRoot: string): AppState {
+export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'beads' | null): AppState {
   // Use XState machine
   const [state, send] = useMachine(tuiMachine, {
     context: {
@@ -269,13 +269,21 @@ export function useAppState(workspaceRoot: string): AppState {
     addSystemMessage(`Starting ${mode} mode...`);
     send({ type: 'EXECUTE', prompt, mode });
 
+    // Build system prompt with issue tracker context
+    let systemPrompt: string | undefined;
+    if (mode === 'plan') {
+      const issueTrackerContext = issueTracker
+        ? `\n\nIMPORTANT: This project uses ${issueTracker === 'linear' ? 'Linear' : 'Beads'} for issue tracking. When creating tasks or issues in your plan, use the ${issueTracker} CLI commands and tools.`
+        : '';
+
+      systemPrompt = `You are a planning assistant. Create a detailed plan.${issueTrackerContext}`;
+    }
+
     // Execute via CLI Manager
     cliManager.current.execute(prompt, {
       workspaceRoot,
       model: 'sonnet',
-      systemPrompt: mode === 'plan'
-        ? 'You are a planning assistant. Create a detailed plan.'
-        : undefined,
+      systemPrompt,
     }).catch(error => {
       addSystemMessage(`Execution error: ${error}`);
       send({ type: 'COMPLETE' });
