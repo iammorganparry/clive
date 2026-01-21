@@ -187,13 +187,6 @@ export interface LinearService {
   ) => Effect.Effect<LinearIssue, LinearApiError | LinearNotConfiguredError>;
 
   /**
-   * Get sub-issues (children) of a parent issue
-   */
-  readonly getSubIssues: (
-    parentId: string
-  ) => Effect.Effect<LinearIssue[], LinearApiError>;
-
-  /**
    * Create a new issue
    */
   readonly createIssue: (
@@ -519,99 +512,6 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           );
 
           return parseLinearIssue(response.issue);
-        }),
-
-      getSubIssues: (parentId) =>
-        Effect.gen(function* () {
-          const query = `
-            query($issueId: String!, $after: String) {
-              issue(id: $issueId) {
-                children(first: 100, after: $after) {
-                  nodes {
-                    id
-                    identifier
-                    title
-                    description
-                    priority
-                    state {
-                      id
-                      name
-                      type
-                    }
-                    assignee {
-                      id
-                      name
-                      email
-                    }
-                    team {
-                      id
-                      name
-                      key
-                    }
-                    project {
-                      id
-                      name
-                    }
-                    labels {
-                      nodes {
-                        id
-                        name
-                        color
-                      }
-                    }
-                    parent {
-                      id
-                      identifier
-                      title
-                    }
-                    children {
-                      nodes {
-                        id
-                      }
-                    }
-                    createdAt
-                    updatedAt
-                    url
-                  }
-                  pageInfo {
-                    hasNextPage
-                    endCursor
-                  }
-                }
-              }
-            }
-          `;
-
-          const allIssues: LinearIssue[] = [];
-          let cursor: string | undefined = undefined;
-
-          // Pagination loop
-          while (true) {
-            const variables: Record<string, string> = { issueId: parentId };
-            if (cursor) {
-              variables.after = cursor;
-            }
-
-            const response = yield* executeGraphQL<{
-              issue: {
-                children: {
-                  nodes: Array<unknown>;
-                  pageInfo: { hasNextPage: boolean; endCursor: string };
-                };
-              };
-            }>(config.apiKey, query, variables);
-
-            const issues = response.issue.children.nodes.map(parseLinearIssue);
-            allIssues.push(...issues);
-
-            if (!response.issue.children.pageInfo.hasNextPage) {
-              break;
-            }
-
-            cursor = response.issue.children.pageInfo.endCursor;
-          }
-
-          return allIssues;
         }),
 
       createIssue: (options) =>

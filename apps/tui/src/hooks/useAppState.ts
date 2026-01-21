@@ -73,9 +73,6 @@ const tuiMachine = setup({
         CLEAR: {
           actions: 'clearOutput',
         },
-        OUTPUT: {
-          actions: 'addOutput',
-        },
       },
     },
     executing: {
@@ -137,7 +134,7 @@ export interface AppState {
   setActiveSession: (session: Session | null) => void;
 }
 
-export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'beads' | null): AppState {
+export function useAppState(workspaceRoot: string): AppState {
   // Use XState machine
   const [state, send] = useMachine(tuiMachine, {
     context: {
@@ -216,33 +213,14 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
 
     // Handle slash commands
     if (cmd.startsWith('/')) {
-      // Add the slash command to output as a user message
-      send({
-        type: 'OUTPUT',
-        line: {
-          text: `> ${cmd}`,
-          type: 'system',
-        },
-      });
       handleSlashCommand(cmd);
       return;
     }
 
-    // If running, send as message to agent
+    // If running, send as message
     if (state.matches('executing')) {
-      // Add user message to output (optimistic UI)
-      send({
-        type: 'OUTPUT',
-        line: {
-          text: `> ${cmd}`,
-          type: 'assistant', // Show as regular text like assistant messages
-        },
-      });
       cliManager.current.sendMessage(cmd);
       send({ type: 'MESSAGE', content: cmd });
-    } else {
-      // Not running - show hint
-      addSystemMessage('No process running. Use /plan or /build to start.');
     }
   };
 
@@ -291,21 +269,13 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     addSystemMessage(`Starting ${mode} mode...`);
     send({ type: 'EXECUTE', prompt, mode });
 
-    // Build system prompt with issue tracker context
-    let systemPrompt: string | undefined;
-    if (mode === 'plan') {
-      const issueTrackerContext = issueTracker
-        ? `\n\nIMPORTANT: This project uses ${issueTracker === 'linear' ? 'Linear' : 'Beads'} for issue tracking. When creating tasks or issues in your plan, use the ${issueTracker} CLI commands and tools.`
-        : '';
-
-      systemPrompt = `You are a planning assistant. Create a detailed plan.${issueTrackerContext}`;
-    }
-
     // Execute via CLI Manager
     cliManager.current.execute(prompt, {
       workspaceRoot,
       model: 'sonnet',
-      systemPrompt,
+      systemPrompt: mode === 'plan'
+        ? 'You are a planning assistant. Create a detailed plan.'
+        : undefined,
     }).catch(error => {
       addSystemMessage(`Execution error: ${error}`);
       send({ type: 'COMPLETE' });
