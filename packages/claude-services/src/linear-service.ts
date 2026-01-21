@@ -51,6 +51,11 @@ export interface LinearIssue {
     name: string;
     color: string;
   }>;
+  parent?: {
+    id: string;
+    identifier: string;
+    title: string;
+  };
   children?: {
     nodes: Array<{ id: string }>;
   };
@@ -370,9 +375,22 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
             filters.length > 0 ? `filter: { ${filters.join(', ')} }` : '';
           const limit = options?.limit ?? 50;
 
+          // Determine correct GraphQL types for variables
+          const variableTypes: Record<string, string> = {
+            teamId: 'ID',
+            projectId: 'ID',
+            assigneeId: 'ID',
+            stateType: 'String',
+            search: 'String',
+          };
+
+          const variableDeclarations = Object.keys(variables).length > 0
+            ? `(${Object.keys(variables).map(k => `$${k}: ${variableTypes[k] || 'String'}!`).join(', ')})`
+            : '';
+
           const query = `
-            query${Object.keys(variables).length > 0 ? `(${Object.keys(variables).map(k => `$${k}: String!`).join(', ')})` : ''} {
-              issues(${filterString} first: ${limit} orderBy: updatedAt) {
+            query${variableDeclarations} {
+              issues(${filterString}${filterString ? ', ' : ''}first: ${limit}, orderBy: updatedAt) {
                 nodes {
                   id
                   identifier
@@ -404,6 +422,11 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
                       name
                       color
                     }
+                  }
+                  parent {
+                    id
+                    identifier
+                    title
                   }
                   children {
                     nodes {
@@ -463,6 +486,16 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
                     id
                     name
                     color
+                  }
+                }
+                parent {
+                  id
+                  identifier
+                  title
+                }
+                children {
+                  nodes {
+                    id
                   }
                 }
                 createdAt
@@ -643,17 +676,18 @@ function executeGraphQL<T>(
         body: JSON.stringify({ query, variables }),
       });
 
-      if (!response.ok) {
-        throw new LinearApiError(
-          `Linear API request failed: ${response.statusText}`,
-          response.status
-        );
-      }
-
       const json = await response.json() as {
         data?: T;
         errors?: Array<{ message: string; [key: string]: unknown }>;
       };
+
+      if (!response.ok) {
+        throw new LinearApiError(
+          `Linear API request failed: ${response.statusText}${json.errors ? `\nErrors: ${JSON.stringify(json.errors)}` : ''}`,
+          response.status,
+          json.errors
+        );
+      }
 
       if (json.errors) {
         throw new LinearApiError(
@@ -714,6 +748,18 @@ function parseLinearIssue(raw: any): LinearIssue {
       name: label.name,
       color: label.color,
     })),
+    parent: raw.parent
+      ? {
+          id: raw.parent.id,
+          identifier: raw.parent.identifier,
+          title: raw.parent.title,
+        }
+      : undefined,
+    children: raw.children
+      ? {
+          nodes: raw.children.nodes ?? [],
+        }
+      : undefined,
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
     url: raw.url,

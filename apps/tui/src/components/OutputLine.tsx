@@ -48,7 +48,7 @@ export function OutputLine({ line }: Props) {
         <box>
           <text fg={OneDarkPro.foreground.muted}>
             ↳ {line.text}
-            {metadata.length > 0 && ` ${metadata.join(' ')}`}
+            {metadata.length > 0 ? ` ${metadata.join(' ')}` : ''}
           </text>
         </box>
       );
@@ -72,7 +72,7 @@ export function OutputLine({ line }: Props) {
             }
 
             return (
-              <text key={i} color={color}>
+              <text key={i} fg={color}>
                 {diffLine}
               </text>
             );
@@ -116,7 +116,7 @@ export function OutputLine({ line }: Props) {
     case 'system':
       return (
         <box>
-          <text fg={OneDarkPro.foreground.comment} dimColor>
+          <text fg={OneDarkPro.foreground.comment}>
             💭 {line.text}
           </text>
         </box>
@@ -126,7 +126,7 @@ export function OutputLine({ line }: Props) {
     case 'stderr':
       return (
         <box>
-          <text fg={OneDarkPro.syntax.red} bold>
+          <text fg={OneDarkPro.syntax.red}>
             ✗ {line.text}
           </text>
         </box>

@@ -95,7 +95,7 @@ export function SelectionView({
             {/* Count */}
             <text fg={OneDarkPro.foreground.muted} marginBottom={1}>
               Showing {displaySessions.length} of {sessions.length}
-              {searchQuery && ' matches'}
+              {searchQuery ? ' matches' : ''}
             </text>
 
             {/* Session items */}
@@ -128,17 +128,14 @@ export function SelectionView({
                     marginBottom={1}
                   >
                     <text
-                      color={
+                      fg={
                         isSelected
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      bold={isSelected}
                     >
                       {isSelected ? '▸ ' : '  '}
-                      {identifier && (
-                        <text color={OneDarkPro.syntax.cyan}>{prefix}</text>
-                      )}
+                      {identifier ? prefix : ''}
                       {name}
                     </text>
                   </box>

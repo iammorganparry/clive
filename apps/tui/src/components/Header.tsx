@@ -26,7 +26,7 @@ export function Header({ width, height, isRunning, activeSession }: HeaderProps)
       <box flexDirection="row">
         <text fg={OneDarkPro.syntax.red}>
           CLIVE  AI-Powered Work Execution
-          {activeSession && ` · ${activeSession.name.substring(0, 30)}${activeSession.name.length > 30 ? '...' : ''}`}
+          {activeSession ? ` · ${activeSession.name.substring(0, 30)}${activeSession.name.length > 30 ? '...' : ''}` : ''}
         </text>
       </box>
     </box>
