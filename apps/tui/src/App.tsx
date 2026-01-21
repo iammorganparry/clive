@@ -1,36 +1,99 @@
 /**
  * Root App component for Clive TUI
- * Hello world implementation to verify OpenTUI/React setup
+ * Integrates state management, components, and keyboard handling
  */
 
+import { useEffect } from 'react';
 import { OneDarkPro } from './styles/theme';
+import { useAppState } from './hooks/useAppState';
+import { Header } from './components/Header';
+import { OutputPanel } from './components/OutputPanel';
+import { InputBar } from './components/InputBar';
 
 function App() {
-  // Note: OpenTUI hooks will be imported when available
-  // For now, this is a simple hello world
-  const width = 80;
-  const height = 24;
+  // Terminal dimensions (will be dynamic in real OpenTUI)
+  const width = 120;
+  const height = 40;
 
-  const handleKeyPress = (key: string) => {
-    if (key === 'q' || key === 'Escape') {
-      process.exit(0);
+  // State management
+  const workspaceRoot = process.cwd();
+  const {
+    outputLines,
+    isRunning,
+    pendingQuestion,
+    executeCommand,
+    interrupt,
+  } = useAppState(workspaceRoot);
+
+  // Keyboard handling
+  useEffect(() => {
+    const handleKeyPress = (key: string) => {
+      if (key === 'q' || key === '\u001b') { // q or Escape
+        process.exit(0);
+      }
+
+      if (key === '\u0003') { // Ctrl+C
+        interrupt();
+      }
+
+      if (key === '?') {
+        executeCommand('/help');
+      }
+    };
+
+    // Setup keyboard listener
+    if (typeof process !== 'undefined' && process.stdin) {
+      process.stdin.setRawMode?.(true);
+      process.stdin.on('data', (data) => {
+        const key = data.toString();
+        handleKeyPress(key);
+      });
     }
-  };
 
-  // Simulate keyboard listener (will be replaced with OpenTUI useKeyboard hook)
-  if (typeof process !== 'undefined') {
-    process.stdin.setRawMode?.(true);
-    process.stdin.on('data', (data) => {
-      const key = data.toString();
-      handleKeyPress(key);
-    });
-  }
+    // Cleanup
+    return () => {
+      if (typeof process !== 'undefined' && process.stdin) {
+        process.stdin.setRawMode?.(false);
+      }
+    };
+  }, [interrupt, executeCommand]);
+
+  // Layout dimensions
+  const headerHeight = 3;
+  const inputHeight = 3;
+  const outputHeight = height - headerHeight - inputHeight;
 
   return (
-    <box width={width} height={height} backgroundColor={OneDarkPro.background.primary}>
-      <text color={OneDarkPro.syntax.blue}>
-        Clive TUI - Press 'q' to exit.
-      </text>
+    <box
+      width={width}
+      height={height}
+      backgroundColor={OneDarkPro.background.primary}
+      flexDirection="column"
+    >
+      {/* Header */}
+      <Header
+        width={width}
+        height={headerHeight}
+        isRunning={isRunning}
+      />
+
+      {/* Output Panel */}
+      <OutputPanel
+        x={0}
+        y={headerHeight}
+        width={width}
+        height={outputHeight}
+        lines={outputLines}
+      />
+
+      {/* Input Bar */}
+      <InputBar
+        width={width}
+        height={inputHeight}
+        y={height - inputHeight}
+        onSubmit={executeCommand}
+        disabled={!!pendingQuestion}
+      />
     </box>
   );
 }

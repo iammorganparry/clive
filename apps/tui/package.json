@@ -13,8 +13,10 @@
     "@clive/claude-services": "*",
     "@opentui/core": "^0.1.0",
     "@opentui/react": "^0.1.0",
+    "@xstate/react": "^6.0.0",
     "effect": "^3.19.9",
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "xstate": "^5.25.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

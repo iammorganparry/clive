@@ -6356,14 +6356,6 @@ ee-first@1.1.1:
   resolved "https://registry.yarnpkg.com/ee-first/-/ee-first-1.1.1.tgz#590c61156b0ae2f4f0255732a158b266bc56b21d"
   integrity sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==
 
-effect@^3.13.4:
-  version "3.19.14"
-  resolved "https://registry.yarnpkg.com/effect/-/effect-3.19.14.tgz#a11ef0ce0feddbddafa55155b21fd8827ae8037e"
-  integrity sha512-3vwdq0zlvQOxXzXNKRIPKTqZNMyGCdaFUBfMPqpsyzZDre67kgC1EEHDV4EoQTovJ4w5fmJW756f86kkuz7WFA==
-  dependencies:
-    "@standard-schema/spec" "^1.0.0"
-    fast-check "^3.23.1"
-
 effect@^3.19.9:
   version "3.19.9"
   resolved "https://registry.yarnpkg.com/effect/-/effect-3.19.9.tgz#d558510da745bd7057b75009fbc5d0e678e0bd78"
@@ -12514,7 +12506,7 @@ typescript-event-target@^1.1.1:
   resolved "https://registry.yarnpkg.com/typescript-event-target/-/typescript-event-target-1.1.1.tgz#20a6d491b77d2e37dc432c5394ab74c0d7065539"
   integrity sha512-dFSOFBKV6uwaloBCCUhxlD3Pr/P1a/tJdcmPrTXCHlEFD3faj0mztjcGn6VBAhQ0/Bdy8K3VWrrqwbt/ffsYsg==
 
-typescript@^5.3.3, typescript@^5.9.3:
+typescript@^5.9.3:
   version "5.9.3"
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.9.3.tgz#5b4f59e15310ab17a216f5d6cf53ee476ede670f"
   integrity sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==
