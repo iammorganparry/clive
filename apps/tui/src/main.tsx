@@ -7,6 +7,7 @@ import { createRoot } from '@opentui/react';
 import { createCliRenderer } from '@opentui/core';
 import App from './App';
 
-const renderer = createCliRenderer();
+// createCliRenderer is async - must await it
+const renderer = await createCliRenderer();
 const root = createRoot(renderer);
 root.render(<App />);
