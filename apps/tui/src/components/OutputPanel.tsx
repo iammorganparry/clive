@@ -37,14 +37,9 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
   // Use setImmediate to ensure scroll happens after render
   useEffect(() => {
     if (scrollBoxRef.current) {
-      // Scroll to bottom immediately
       setImmediate(() => {
-        if (scrollBoxRef.current?.scrollToBottom) {
-          scrollBoxRef.current.scrollToBottom();
-        }
-        // Also set scroll position directly as fallback
-        if (scrollBoxRef.current?.setScrollPerc) {
-          scrollBoxRef.current.setScrollPerc(100);
+        if (scrollBoxRef.current?.scrollHeight !== undefined) {
+          scrollBoxRef.current.scrollTop = scrollBoxRef.current.scrollHeight;
         }
       });
     }
@@ -53,11 +48,8 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
   // Expose scroll to bottom method to parent
   useImperativeHandle(ref, () => ({
     scrollToBottom: () => {
-      if (scrollBoxRef.current?.scrollToBottom) {
-        scrollBoxRef.current.scrollToBottom();
-      }
-      if (scrollBoxRef.current?.setScrollPerc) {
-        scrollBoxRef.current.setScrollPerc(100);
+      if (scrollBoxRef.current?.scrollHeight !== undefined) {
+        scrollBoxRef.current.scrollTop = scrollBoxRef.current.scrollHeight;
       }
     }
   }));
@@ -83,26 +75,12 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
         </box>
       )}
 
-      <box
+      <scrollbox
         ref={scrollBoxRef}
         width={width}
         height={terminalHeight}
-        scrollable={true}
-        alwaysScroll={true}
-        mouse={true}
-        keys={true}
-        vi={true}
-        scrollSpeed={5}
-        baseLimit={10000}
-        scrollbar={{
-          ch: ' ',
-          track: {
-            bg: OneDarkPro.background.tertiary
-          },
-          style: {
-            inverse: true
-          }
-        }}
+        scrollY={true}
+        stickyScroll={false}
       >
         {!ansiOutput ? (
           <box padding={2}>
@@ -117,7 +95,7 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
             rows={terminalRows}
           />
         )}
-      </box>
+      </scrollbox>
     </box>
   );
 });
