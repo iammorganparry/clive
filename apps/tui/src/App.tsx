@@ -93,6 +93,24 @@ function AppContent() {
     isLoading: conversationsLoading,
   } = useConversations(workspaceRoot, 20);
 
+  const {
+    outputLines,
+    isRunning,
+    pendingQuestion,
+    mode,
+    agentSessionActive,
+    sessions,
+    sessionsLoading,
+    tasks,
+    tasksLoading,
+    activeSession,
+    setActiveSession,
+    executeCommand,
+    handleQuestionAnswer,
+    interrupt,
+    cleanup,
+  } = useAppState(workspaceRoot, config?.issueTracker);
+
   // Auto-skip selection view if 0-1 conversations
   useEffect(() => {
     // Only auto-skip when in selection view and conversations are loaded
@@ -117,24 +135,6 @@ function AppContent() {
 
     // Otherwise, show the selection view (2+ conversations or has sessions)
   }, [viewMode, conversations.length, sessions.length, conversationsLoading, sessionsLoading]);
-
-  const {
-    outputLines,
-    isRunning,
-    pendingQuestion,
-    mode,
-    agentSessionActive,
-    sessions,
-    sessionsLoading,
-    tasks,
-    tasksLoading,
-    activeSession,
-    setActiveSession,
-    executeCommand,
-    handleQuestionAnswer,
-    interrupt,
-    cleanup,
-  } = useAppState(workspaceRoot, config?.issueTracker);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
   useEffect(() => {
