@@ -211,6 +211,34 @@ export class CliManager extends EventEmitter {
             input: event.input
           });
 
+          // CRITICAL: Check if we've already answered a question this turn
+          // If yes, immediately block this duplicate question and mark it as sent
+          // This prevents it from reaching the UI and being answered
+          if (this.hasAnsweredQuestionThisTurn) {
+            debugLog('CliManager', 'WARNING: Duplicate question detected - blocking before UI', {
+              toolId: event.id,
+              reason: 'Already answered question this turn - blocking at source'
+            });
+
+            // Mark as sent to prevent any future answer attempts
+            this.sentToolResults.add(event.id);
+
+            // Log the block
+            this.conversationLogger.log({
+              timestamp: new Date().toISOString(),
+              type: 'tool_result_blocked',
+              toolId: event.id,
+              result: '(blocked before UI - duplicate question)',
+              reason: 'Duplicate question in same turn - blocked at tool_use level',
+            });
+
+            // Do NOT emit this question to the UI
+            // Do NOT track it as pending
+            // Return empty outputs to skip it completely
+            debugLog('CliManager', 'Duplicate question blocked - not emitting to UI');
+            return outputs;
+          }
+
           // Track this question as part of current turn
           this.currentTurnQuestionIds.add(event.id);
           debugLog('CliManager', 'Added question to current turn', {
