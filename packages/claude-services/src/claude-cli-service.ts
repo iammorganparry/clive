@@ -609,6 +609,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             logToOutput(`[ClaudeCliService] Process spawned with PID: ${child.pid}`);
             logToOutput(`[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`);
 
+            // Track tool_result messages sent to stdin to prevent duplicates (upstream CLI bug workaround)
+            // See: https://github.com/anthropics/claude-code/issues/14110
+            const sentToolResultMessages = new Set<string>();
+
             // Listen for spawn event to confirm process started and send prompt
             child.on("spawn", () => {
               logToOutput(`[ClaudeCliService] Process spawn event fired`);
@@ -697,6 +701,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
               child.on("close", (code) => {
                 logToOutput(`[ClaudeCliService] Process closed with code: ${code}`);
+
+                // Clear sent tool results for next execution
+                sentToolResultMessages.clear();
+
                 // Process any remaining buffer
                 if (buffer.trim()) {
                   // No permission handling needed for final buffer processing
@@ -736,6 +744,25 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                * The CLI expects a 'user' message containing tool_result content blocks
                */
               sendToolResult: (toolCallId: string, result: string) => {
+                // Create unique key for this tool_result (tool_use_id + result preview)
+                // This prevents the upstream CLI bug where duplicate tool_results cause 400 errors
+                const resultKey = `${toolCallId}:${result.substring(0, 100)}`;
+
+                // Check if we've already sent this exact tool_result
+                if (sentToolResultMessages.has(resultKey)) {
+                  logToOutput(
+                    `[ClaudeCliService] WARNING: Duplicate tool_result detected and blocked - already sent to stdin`,
+                  );
+                  logToOutput(`  tool_use_id: ${toolCallId}`);
+                  logToOutput(`  result preview: ${result.substring(0, 100)}`);
+
+                  // DO NOT write to stdin - this would cause 400 error
+                  return;
+                }
+
+                // Mark this tool_result as sent
+                sentToolResultMessages.add(resultKey);
+
                 if (!child.stdin?.writable) {
                   console.error(
                     "[ClaudeCliService] Cannot send tool result - stdin not writable",
@@ -758,8 +785,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                   },
                 });
 
-                logToOutput(`[ClaudeCliService] Sending tool result for ${toolCallId}`);
+                logToOutput(`[ClaudeCliService] Sending tool_result to stdin`);
+                logToOutput(`  tool_use_id: ${toolCallId}`);
+                logToOutput(`  result preview: ${result.substring(0, 100)}`);
+
                 child.stdin.write(`${message}\n`);
+                logToOutput(`[ClaudeCliService] Successfully wrote tool_result to stdin`);
 
                 // Clean up tracked question IDs after sending result
                 if (pendingQuestionIds.has(toolCallId)) {
