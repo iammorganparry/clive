@@ -207,11 +207,24 @@ export function QuestionPanel({
               }
               flexDirection="column"
             >
-              {/* Option label with selection indicator */}
-              <box flexDirection="row">
-                <text fg={isSelected ? OneDarkPro.syntax.green : OneDarkPro.foreground.muted}>
-                  {isSelected ? '▸ ' : '  '}
+              {/* Option label with number shortcut and selection indicator */}
+              <box flexDirection="row" alignItems="center">
+                {/* Number shortcut badge */}
+                <text
+                  bg={isSelected ? OneDarkPro.syntax.blue : OneDarkPro.background.secondary}
+                  fg={isSelected ? OneDarkPro.background.primary : OneDarkPro.foreground.muted}
+                >
+                  {` ${i + 1} `}
                 </text>
+                {/* Spacing */}
+                <text> </text>
+                {/* Selection indicator */}
+                <text fg={isSelected ? OneDarkPro.syntax.green : 'transparent'}>
+                  {isSelected ? '▸' : ' '}
+                </text>
+                {/* Spacing */}
+                <text> </text>
+                {/* Option label */}
                 <text fg={isSelected ? OneDarkPro.foreground.primary : OneDarkPro.foreground.secondary}>
                   {option.label}
                 </text>
