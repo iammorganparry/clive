@@ -21,6 +21,7 @@ import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
 import { type Conversation } from './services/ConversationService';
 import { useConversations } from './hooks/useConversations';
+import { useSelectionState } from './hooks/useSelectionState';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -47,11 +48,6 @@ function AppContent() {
     goBack,
     updateConfig,
   } = useViewMode();
-
-  // Selection state (for SelectionView)
-  const [selectedEpicIndex, setSelectedEpicIndex] = useState(0);
-  const [epicSearchQuery, setEpicSearchQuery] = useState('');
-  const [selectedIssue, setSelectedIssue] = useState<typeof sessions[0] | null>(null);
 
   // Setup view state
   const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
@@ -111,6 +107,9 @@ function AppContent() {
     interrupt,
     cleanup,
   } = useAppState(workspaceRoot, config?.issueTracker);
+
+  // Selection state using XState machine
+  const selectionState = useSelectionState(sessions, conversations);
 
   // Auto-resume if exactly 1 conversation
   useEffect(() => {
@@ -217,20 +216,14 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
-      // Two-level selection: Level 1 (issues) or Level 2 (conversations for issue)
-      const isLevel1 = !selectedIssue;
-      const isLevel2 = !!selectedIssue;
-
       // Escape - clear search, go back to level 1, or go back
       if (event.name === 'escape') {
-        if (epicSearchQuery) {
+        if (selectionState.searchQuery) {
           // Clear search
-          setEpicSearchQuery('');
-          setSelectedEpicIndex(0);
-        } else if (isLevel2) {
+          selectionState.clearSearch();
+        } else if (selectionState.isLevel2) {
           // Go back to level 1 (issues)
-          setSelectedIssue(null);
-          setSelectedEpicIndex(0);
+          selectionState.goBack();
         } else {
           // Go back to previous view
           goBack();
@@ -240,9 +233,8 @@ function AppContent() {
 
       // Backspace - remove last character from search
       if (event.name === 'backspace') {
-        if (epicSearchQuery) {
-          setEpicSearchQuery(epicSearchQuery.slice(0, -1));
-          setSelectedEpicIndex(0);
+        if (selectionState.searchQuery) {
+          selectionState.search(selectionState.searchQuery.slice(0, -1));
         }
         return;
       }
@@ -260,78 +252,33 @@ function AppContent() {
         event.name !== 'escape' &&
         event.name !== 'backspace'
       ) {
-        setEpicSearchQuery(epicSearchQuery + event.sequence);
-        setSelectedEpicIndex(0);
+        selectionState.search(selectionState.searchQuery + event.sequence);
         return;
       }
 
-      // Arrow key navigation - depends on level
-      if (isLevel1) {
-        // Level 1: Navigate issues
-        const filteredSessions = epicSearchQuery
-          ? sessions.filter(s => {
-              const query = epicSearchQuery.toLowerCase();
-              const identifier = s.linearData?.identifier?.toLowerCase() || '';
-              const title = s.name.toLowerCase();
-              return identifier.includes(query) || title.includes(query);
-            })
-          : sessions;
-
-        const displayIssues = filteredSessions.slice(0, 10);
-        const maxIndex = displayIssues.length - 1;
-        const minIndex = epicSearchQuery ? 0 : -1; // Allow -1 for "Create New"
-
-        if (event.name === 'up' || event.sequence === 'k') {
-          setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
-          return;
-        }
-        if (event.name === 'down' || event.sequence === 'j') {
-          setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
-          return;
-        }
-      } else if (isLevel2) {
-        // Level 2: Navigate conversations for selected issue
-        const issueLinearId = selectedIssue.linearData?.id;
-        const conversationsForIssue = conversations.filter(c =>
-          c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
-        );
-
-        const filteredConversations = epicSearchQuery
-          ? conversationsForIssue.filter(c => {
-              const query = epicSearchQuery.toLowerCase();
-              const display = c.display.toLowerCase();
-              const slug = c.slug?.toLowerCase() || '';
-              return display.includes(query) || slug.includes(query);
-            })
-          : conversationsForIssue;
-
-        const displayConversations = filteredConversations.slice(0, 10);
-        const maxIndex = displayConversations.length - 1;
-        const minIndex = epicSearchQuery ? 0 : -1; // Allow -1 for "Create New"
-
-        if (event.name === 'up' || event.sequence === 'k') {
-          setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
-          return;
-        }
-        if (event.name === 'down' || event.sequence === 'j') {
-          setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
-          return;
-        }
+      // Arrow key navigation
+      if (event.name === 'up' || event.sequence === 'k') {
+        selectionState.navigateUp();
+        return;
+      }
+      if (event.name === 'down' || event.sequence === 'j') {
+        selectionState.navigateDown();
+        return;
       }
 
       // Enter to select
       if (event.name === 'return' || event.name === 'enter') {
-        if (isLevel1) {
+        if (selectionState.isLevel1) {
           // Level 1: Selecting an issue
-          if (selectedEpicIndex === -1) {
+          if (selectionState.selectedIndex === -1) {
             // Create new session without issue
             handleCreateNewWithoutIssue();
             return;
           }
 
-          const filteredSessions = epicSearchQuery
+          const filteredSessions = selectionState.searchQuery
             ? sessions.filter(s => {
-                const query = epicSearchQuery.toLowerCase();
+                const query = selectionState.searchQuery.toLowerCase();
                 const identifier = s.linearData?.identifier?.toLowerCase() || '';
                 const title = s.name.toLowerCase();
                 return identifier.includes(query) || title.includes(query);
@@ -339,29 +286,31 @@ function AppContent() {
             : sessions;
 
           const displayIssues = filteredSessions.slice(0, 10);
-          const issue = displayIssues[selectedEpicIndex];
+          const issue = displayIssues[selectionState.selectedIndex];
           if (issue) {
             // Go to Level 2 - show conversations for this issue
-            setSelectedIssue(issue);
-            setSelectedEpicIndex(-1); // Reset to "Create New" position for level 2
-            setEpicSearchQuery(''); // Clear search
+            selectionState.selectIssue(issue);
           }
-        } else if (isLevel2) {
+        } else if (selectionState.isLevel2) {
           // Level 2: Selecting a conversation for the issue
-          if (selectedEpicIndex === -1) {
+          if (selectionState.selectedIndex === -1) {
             // Create new session for this issue
-            handleCreateNewForIssue(selectedIssue);
+            if (selectionState.selectedIssue) {
+              handleCreateNewForIssue(selectionState.selectedIssue);
+            }
             return;
           }
 
-          const issueLinearId = selectedIssue.linearData?.id;
+          if (!selectionState.selectedIssue) return;
+
+          const issueLinearId = selectionState.selectedIssue.linearData?.id;
           const conversationsForIssue = conversations.filter(c =>
             c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
           );
 
-          const filteredConversations = epicSearchQuery
+          const filteredConversations = selectionState.searchQuery
             ? conversationsForIssue.filter(c => {
-                const query = epicSearchQuery.toLowerCase();
+                const query = selectionState.searchQuery.toLowerCase();
                 const display = c.display.toLowerCase();
                 const slug = c.slug?.toLowerCase() || '';
                 return display.includes(query) || slug.includes(query);
@@ -369,7 +318,7 @@ function AppContent() {
             : conversationsForIssue;
 
           const displayConversations = filteredConversations.slice(0, 10);
-          const conversation = displayConversations[selectedEpicIndex];
+          const conversation = displayConversations[selectionState.selectedIndex];
           if (conversation) {
             handleConversationResume(conversation);
           }
@@ -497,13 +446,11 @@ function AppContent() {
         conversations={conversations}
         sessionsLoading={sessionsLoading}
         conversationsLoading={conversationsLoading}
-        selectedIndex={selectedEpicIndex}
-        searchQuery={epicSearchQuery}
-        selectedIssue={selectedIssue}
+        selectedIndex={selectionState.selectedIndex}
+        searchQuery={selectionState.searchQuery}
+        selectedIssue={selectionState.selectedIssue}
         onSelectIssue={(issue) => {
-          setSelectedIssue(issue);
-          setSelectedEpicIndex(-1); // Reset to "Create New" position
-          setEpicSearchQuery(''); // Clear search
+          selectionState.selectIssue(issue);
         }}
         onResumeConversation={handleConversationResume}
         onCreateNew={(issue) => {
@@ -514,11 +461,9 @@ function AppContent() {
           }
         }}
         onBack={() => {
-          if (selectedIssue) {
+          if (selectionState.isLevel2) {
             // Go back to Level 1
-            setSelectedIssue(null);
-            setSelectedEpicIndex(0);
-            setEpicSearchQuery('');
+            selectionState.goBack();
           } else {
             // Go back to previous view
             goBack();
