@@ -338,30 +338,54 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   const handleSlashCommand = (cmd: string) => {
     const parts = cmd.split(' ');
     const command = parts[0].toLowerCase();
-    const args = parts.slice(1).join(' ');
+    const args = parts.slice(1).join(' ').trim();
 
     switch (command) {
       case '/plan': {
         const currentMode = state.context.mode;
+        const inActiveSession = state.context.agentSessionActive;
 
+        // If already in plan mode and has active session, continue the conversation
+        if (currentMode === 'plan' && inActiveSession && args) {
+          // Re-execute with new prompt but don't clear output
+          const prompt = args;
+          startExecution(prompt, 'plan', `> ${args}`, true); // true = continuingSession
+          break;
+        }
+
+        // If in build mode, need to exit first
         if (currentMode === 'build') {
           addSystemMessage('Already in build mode. Use /exit to exit current mode first.');
           break;
         }
 
-        startExecution(args || 'Create a plan for the current task', 'plan', cmd);
+        // Start new plan session
+        const prompt = args || 'Create a plan for the current task';
+        startExecution(prompt, 'plan', args ? `> ${args}` : undefined, false);
         break;
       }
 
       case '/build': {
         const currentMode = state.context.mode;
+        const inActiveSession = state.context.agentSessionActive;
 
+        // If already in build mode and has active session, continue the conversation
+        if (currentMode === 'build' && inActiveSession && args) {
+          // Re-execute with new prompt but don't clear output
+          const prompt = args;
+          startExecution(prompt, 'build', `> ${args}`, true); // true = continuingSession
+          break;
+        }
+
+        // If in plan mode, need to exit first
         if (currentMode === 'plan') {
           addSystemMessage('Already in plan mode. Use /exit to exit current mode first.');
           break;
         }
 
-        startExecution(args || 'Execute the plan', 'build', cmd);
+        // Start new build session
+        const prompt = args || 'Execute the plan';
+        startExecution(prompt, 'build', args ? `> ${args}` : undefined, false);
         break;
       }
 
@@ -369,6 +393,9 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
         if (state.context.mode !== 'none') {
           // Kill active agent process
           cliManager.current?.kill();
+
+          // Clear conversation history
+          cliManager.current?.clear();
 
           // Send EXIT_MODE event
           send({ type: 'EXIT_MODE' });
@@ -401,17 +428,21 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   /**
    * Start CLI execution with a prompt
    */
-  const startExecution = (prompt: string, mode: 'plan' | 'build', fullCommand?: string) => {
+  const startExecution = (prompt: string, mode: 'plan' | 'build', userMessage?: string, continuingSession: boolean = false) => {
     if (!cliManager.current || state.matches('executing')) return;
 
-    send({ type: 'CLEAR' });
+    // Only clear output and history if starting a fresh session
+    if (!continuingSession) {
+      send({ type: 'CLEAR' });
+      cliManager.current.clear(); // Clear conversation history
+    }
 
-    // Show user's command if provided
-    if (fullCommand) {
+    // Show user's message if provided (without the slash command)
+    if (userMessage) {
       send({
         type: 'OUTPUT',
         line: {
-          text: `> ${fullCommand}`,
+          text: userMessage,
           type: 'user',
         },
       });
@@ -429,6 +460,11 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     // Build system prompt with issue tracker context
     let systemPrompt: string | undefined;
     const terminalFormatting = `\n\nIMPORTANT OUTPUT FORMATTING: You are outputting to a terminal interface. DO NOT use markdown formatting (no **, __, \`\`\`, ##, etc.). Use only plain text with:\n- Line breaks for structure\n- Indentation with spaces\n- Simple ASCII characters (-, *, •) for lists\n- UPPERCASE or "Quotes" for emphasis\nNever use markdown syntax as it will be displayed literally in the terminal.`;
+
+    // Get conversation context if continuing a session
+    const conversationContext = continuingSession && cliManager.current
+      ? cliManager.current.getConversationContext()
+      : '';
 
     if (mode === 'plan') {
       const issueTrackerContext = issueTracker
@@ -631,11 +667,12 @@ Before asking questions, explore the codebase to understand existing patterns:
 ${workspaceContext}
 ${issueTrackerContext}
 ${terminalFormatting}
+${conversationContext}
 
 Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposing solutions. Take the time to ask good questions and explore thoroughly.`;
     } else if (mode === 'build') {
       const workspaceContext = `\n\nWORKSPACE CONTEXT: You are working in the directory: ${workspaceRoot}\nAll file paths and operations should be relative to this workspace root.`;
-      systemPrompt = `You are a task execution assistant. Execute tasks and provide clear updates.${workspaceContext}${terminalFormatting}`;
+      systemPrompt = `You are a task execution assistant. Execute tasks and provide clear updates.${workspaceContext}${terminalFormatting}${conversationContext}`;
     }
 
     // Execute via CLI Manager

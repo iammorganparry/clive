@@ -44,6 +44,9 @@ export class CliManager extends EventEmitter {
   // Track active agent session for persistent modes
   private activeMode: 'plan' | 'build' | null = null;
 
+  // Track conversation history for continuous sessions
+  private conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [];
+
   constructor() {
     super();
 
@@ -59,13 +62,20 @@ export class CliManager extends EventEmitter {
   /**
    * Execute a prompt via Claude CLI with enrichment
    */
-  async execute(prompt: string, options: CliManagerOptions): Promise<void> {
+  async execute(prompt: string, options: CliManagerOptions, appendToHistory: boolean = false): Promise<void> {
     debugLog('CliManager', 'Starting execution', {
       promptLength: prompt.length,
       model: options.model,
       mode: options.mode,
-      workspaceRoot: options.workspaceRoot
+      workspaceRoot: options.workspaceRoot,
+      appendToHistory,
+      historyLength: this.conversationHistory.length
     });
+
+    // Add user message to history if not already there
+    if (appendToHistory || this.conversationHistory.length === 0) {
+      this.conversationHistory.push({ role: 'user', content: prompt });
+    }
 
     const program = Effect.gen(this.createExecutionProgram(prompt, options));
 
@@ -253,6 +263,17 @@ export class CliManager extends EventEmitter {
           text: event.content,
           type: 'assistant',
         });
+
+        // Track assistant response in conversation history
+        const lastMessage = this.conversationHistory[this.conversationHistory.length - 1];
+        if (!lastMessage || lastMessage.role !== 'assistant') {
+          // Start new assistant message
+          this.conversationHistory.push({ role: 'assistant', content: event.content });
+        } else {
+          // Append to existing assistant message
+          lastMessage.content += event.content;
+        }
+
         break;
       }
 
@@ -344,22 +365,41 @@ export class CliManager extends EventEmitter {
   /**
    * Send a message to the active agent session
    * Used in persistent plan/build modes for follow-up messages
+   *
+   * NOTE: This currently just returns the conversation history context.
+   * The actual re-execution is handled by the caller which will pass
+   * this context to execute(). This is a workaround until the CLI
+   * supports proper bidirectional chat mode.
+   *
+   * TODO: Implement proper chat mode when Claude CLI supports it
    */
-  sendMessageToAgent(message: string): void {
+  getConversationContext(): string {
+    if (this.conversationHistory.length === 0) {
+      return '';
+    }
+
+    const historyContext = this.conversationHistory
+      .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+      .join('\n\n');
+
+    return `\n\nPREVIOUS CONVERSATION:\n${historyContext}\n\nContinue the conversation with context from above.`;
+  }
+
+  /**
+   * Simplified sendMessageToAgent - just marks that we're continuing a conversation
+   */
+  async sendMessageToAgent(message: string): Promise<void> {
     if (!this.hasActiveSession()) {
       throw new Error('No active agent session');
     }
 
-    // TODO: Implement message sending via handle
-    // For now, use the generic sendMessage method
-    // This will need to be updated once bidirectional communication is implemented
-    console.log('[CliManager] sendMessageToAgent:', message);
+    // Add message to history
+    this.conversationHistory.push({ role: 'user', content: message });
 
-    // Note: User message output is handled by the caller (executeCommand)
-    // to avoid duplication and maintain consistent formatting
-
-    // Placeholder: In the future, this should send the message to the handle
-    // and trigger a new round of agent execution
+    debugLog('CliManager', 'Message added to conversation history', {
+      message: message.substring(0, 100),
+      historyLength: this.conversationHistory.length
+    });
   }
 
   /**
@@ -404,6 +444,7 @@ export class CliManager extends EventEmitter {
     this.toolInputs.clear();
     this.diffDetector.clear();
     this.subagentTracker.clear();
+    this.conversationHistory = [];
   }
 
   /**
