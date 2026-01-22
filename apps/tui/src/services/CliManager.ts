@@ -21,6 +21,7 @@ import type { OutputLine, QuestionData } from '../types';
 import { DiffDetector } from './DiffDetector';
 import { SubagentTracker } from './SubagentTracker';
 import { MetadataCalculator } from './MetadataCalculator';
+import { ConversationLogger } from './ConversationLogger';
 import { debugLog } from '../utils/debug-logger';
 
 export interface CliManagerOptions {
@@ -36,6 +37,7 @@ export class CliManager extends EventEmitter {
   private currentHandle: CliExecutionHandle | null = null;
   private diffDetector = new DiffDetector();
   private subagentTracker = new SubagentTracker();
+  private conversationLogger = new ConversationLogger();
 
   // Track tool metadata for enrichment
   private toolTimings = new Map<string, Date>();
@@ -47,6 +49,15 @@ export class CliManager extends EventEmitter {
 
   // Track pending question to keep handle alive
   private pendingQuestionId: string | null = null;
+
+  // Track all question IDs from current turn
+  private currentTurnQuestionIds = new Set<string>();
+
+  // Track which tool results have already been sent to prevent duplicates
+  private sentToolResults = new Set<string>();
+
+  // Track if we've already sent a tool_result this turn (only ONE per turn to prevent 400 errors)
+  private hasAnsweredQuestionThisTurn = false;
 
   // Track conversation history for continuous sessions
   private conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [];
@@ -76,6 +87,14 @@ export class CliManager extends EventEmitter {
       historyLength: this.conversationHistory.length
     });
 
+    // Start conversation logging if mode is set
+    if (options.mode) {
+      this.conversationLogger.start(options.workspaceRoot, options.mode);
+      debugLog('CliManager', 'Started conversation logging', {
+        logFile: this.conversationLogger.getLogFile()
+      });
+    }
+
     // Add user message to history if not already there
     if (appendToHistory || this.conversationHistory.length === 0) {
       this.conversationHistory.push({ role: 'user', content: prompt });
@@ -92,6 +111,10 @@ export class CliManager extends EventEmitter {
         text: `Execution error: ${error}`,
         type: 'stderr',
       } as OutputLine);
+    } finally {
+      // Stop conversation logging
+      this.conversationLogger.stop();
+      debugLog('CliManager', 'Stopped conversation logging');
     }
   }
 
@@ -126,6 +149,15 @@ export class CliManager extends EventEmitter {
             types: enrichedLines.map(l => l.type)
           });
 
+          // Log enriched output lines
+          for (const line of enrichedLines) {
+            self.conversationLogger.log({
+              timestamp: new Date().toISOString(),
+              type: 'enriched_output',
+              line,
+            });
+          }
+
           // Emit all enriched lines
           for (const line of enrichedLines) {
             debugLog('CliManager', 'Emitting output event', {
@@ -157,6 +189,13 @@ export class CliManager extends EventEmitter {
 
     debugLog('CliManager', 'enrichEvent called', { eventType: event.type });
 
+    // Log raw event to conversation log
+    this.conversationLogger.log({
+      timestamp: new Date().toISOString(),
+      type: 'raw_event',
+      event,
+    });
+
     switch (event.type) {
       case 'tool_use': {
         // Track tool metadata
@@ -170,6 +209,13 @@ export class CliManager extends EventEmitter {
           debugLog('CliManager', 'AskUserQuestion tool detected', {
             toolId: event.id,
             input: event.input
+          });
+
+          // Track this question as part of current turn
+          this.currentTurnQuestionIds.add(event.id);
+          debugLog('CliManager', 'Added question to current turn', {
+            toolId: event.id,
+            currentTurnQuestions: Array.from(this.currentTurnQuestionIds)
           });
 
           // Track pending question to keep CLI handle alive
@@ -305,6 +351,21 @@ export class CliManager extends EventEmitter {
       }
 
       case 'done': {
+        // Clear current turn questions - any answers sent after this are invalid
+        if (this.currentTurnQuestionIds.size > 0) {
+          debugLog('CliManager', 'Turn ended with unanswered questions - clearing', {
+            questionIds: Array.from(this.currentTurnQuestionIds)
+          });
+          this.currentTurnQuestionIds.clear();
+
+          // Clear pending question to unblock UI
+          this.pendingQuestionId = null;
+        }
+
+        // Reset turn flag - allow answering questions in next turn
+        this.hasAnsweredQuestionThisTurn = false;
+        debugLog('CliManager', 'Turn ended - reset question answer flag');
+
         outputs.push({
           text: '',
           type: 'exit',
@@ -349,14 +410,77 @@ export class CliManager extends EventEmitter {
       return;
     }
 
+    // CRITICAL: Only allow ONE tool_result per turn to prevent Claude CLI replay bug
+    // When Claude calls AskUserQuestion multiple times, only answer the FIRST one
+    // Answering multiple questions causes the last tool_result to be replayed in subsequent requests
+    if (this.hasAnsweredQuestionThisTurn) {
+      debugLog('CliManager', 'WARNING: Already answered question this turn - ignoring to prevent 400 error', {
+        toolId,
+        reason: 'Only one tool_result allowed per turn'
+      });
+
+      // Log to conversation log
+      this.conversationLogger.log({
+        timestamp: new Date().toISOString(),
+        type: 'tool_result_blocked',
+        toolId,
+        result,
+        reason: 'Already answered question this turn (only one per turn allowed)',
+      });
+
+      return;
+    }
+
+    // Check if this tool result has already been sent (prevent duplicates)
+    if (this.sentToolResults.has(toolId)) {
+      debugLog('CliManager', 'WARNING: Tool result already sent - ignoring duplicate', {
+        toolId,
+        alreadySent: Array.from(this.sentToolResults)
+      });
+
+      // Log to conversation log
+      this.conversationLogger.log({
+        timestamp: new Date().toISOString(),
+        type: 'tool_result_duplicate',
+        toolId,
+        result,
+        reason: 'Already sent',
+      });
+
+      return;
+    }
+
     debugLog('CliManager', 'Sending tool result to handle', {
       toolId,
-      resultPreview: result.substring(0, 200)
+      resultPreview: result.substring(0, 200),
+      currentPendingQuestionId: this.pendingQuestionId
+    });
+
+    // Log tool result being sent
+    this.conversationLogger.log({
+      timestamp: new Date().toISOString(),
+      type: 'tool_result_sent',
+      toolId,
+      result,
     });
 
     this.currentHandle.sendToolResult(toolId, result);
 
-    // Clear pending question if this was the answer
+    // Mark that we've answered a question this turn
+    this.hasAnsweredQuestionThisTurn = true;
+    debugLog('CliManager', 'Set hasAnsweredQuestionThisTurn = true');
+
+    // Mark this tool result as sent
+    this.sentToolResults.add(toolId);
+
+    // Remove this question from current turn set
+    this.currentTurnQuestionIds.delete(toolId);
+    debugLog('CliManager', 'Removed question from current turn', {
+      toolId,
+      remainingQuestions: Array.from(this.currentTurnQuestionIds)
+    });
+
+    // Clear pending question ID if this was the tracked question
     if (this.pendingQuestionId === toolId) {
       debugLog('CliManager', 'Clearing pendingQuestionId', { toolId });
       this.pendingQuestionId = null;
@@ -464,6 +588,9 @@ export class CliManager extends EventEmitter {
     this.subagentTracker.clear();
     this.conversationHistory = [];
     this.pendingQuestionId = null;
+    this.currentTurnQuestionIds.clear();
+    this.sentToolResults.clear();
+    this.hasAnsweredQuestionThisTurn = false;
   }
 
   /**

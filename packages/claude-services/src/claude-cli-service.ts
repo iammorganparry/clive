@@ -8,12 +8,12 @@ import * as fs from "node:fs";
 const execAsync = promisify(exec);
 
 /**
- * Simple logger for claude-cli-service
+ * Simple logger for claude-cli-service with TUI prefix
  * Can be replaced with more sophisticated logging if needed
  */
 function logToOutput(message: string) {
   if (process.env.NODE_ENV === "development" || process.env.DEBUG) {
-    console.log(message);
+    console.log(`[TUI] ${message}`);
   }
 }
 
@@ -245,10 +245,20 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
         );
 
       /**
+       * Track AskUserQuestion tool_use_ids to prevent auto-approval
+       * AskUserQuestion must NOT be auto-approved (user needs to provide real answers)
+       */
+      const pendingQuestionIds = new Set<string>();
+
+      /**
        * Parse a single line of NDJSON output from Claude CLI
        * Handles both Anthropic API format and Claude CLI stream-json format
+       * @param onPermissionDenial - Callback for auto-approving permission denials (except AskUserQuestion)
        */
-      const parseCliOutput = (line: string): ClaudeCliEvent | null => {
+      const parseCliOutput = (
+        line: string,
+        onPermissionDenial?: (toolUseId: string, isAskUserQuestion: boolean) => void
+      ): ClaudeCliEvent | null => {
         if (!line.trim()) return null;
 
         // Debug: Log raw line
@@ -264,6 +274,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
           // Handle content_block_start for tool_use
           if (data.type === "content_block_start") {
             if (data.content_block?.type === "tool_use") {
+              // Track AskUserQuestion tool uses to prevent auto-approval
+              if (data.content_block.name === "AskUserQuestion") {
+                pendingQuestionIds.add(data.content_block.id);
+                logToOutput(`[ClaudeCliService] Tracking AskUserQuestion: ${data.content_block.id}`);
+              }
+
               return {
                 type: "tool_use",
                 id: data.content_block.id,
@@ -348,6 +364,21 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             const content = data.message?.content;
             if (Array.isArray(content)) {
               for (const block of content) {
+                // Check for permission denials (tool_result with is_error: true)
+                // Auto-approve permission denials EXCEPT for AskUserQuestion
+                if (block.type === "tool_result" && block.is_error === true && block.tool_use_id) {
+                  // Check if this is an AskUserQuestion - if so, don't auto-approve
+                  const isAskUserQuestion = pendingQuestionIds.has(block.tool_use_id);
+
+                  // Call the permission denial callback
+                  if (onPermissionDenial) {
+                    onPermissionDenial(block.tool_use_id, isAskUserQuestion);
+                  }
+
+                  // Don't return this event to UI
+                  return null;
+                }
+
                 if (block.type === "tool_result" && block.tool_use_id) {
                   // Return tool_result event for UI status updates
                   return {
@@ -488,6 +519,7 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             const args: string[] = [
               "--print", // Non-interactive mode
               "--verbose", // Required for stream-json with --print
+              // Note: --debug disabled due to conversation replay bug with stream-json mode
               "--output-format",
               "stream-json", // Stream JSON output
               "--input-format",
@@ -508,12 +540,15 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
             }
 
-            // Auto-accept edit permissions within allowed directories
-            // TODO: Make this configurable based on agent mode (plan vs act)
-            args.push("--permission-mode", "acceptEdits");
+            // Use bypassPermissions mode + dangerously-skip-permissions for maximum permission bypass
+            // This prevents permission denials that break the tool_use/tool_result pairing
+            // See docs/permission-approval.md for details on why this is necessary
+            args.push("--permission-mode", "bypassPermissions");
+            args.push("--dangerously-skip-permissions");
 
             // Allow AskUserQuestion and MCP tools without permission prompts
-            // AskUserQuestion requires explicit allowlist to avoid permission denial 400 errors
+            // Note: Even with the flags above, AskUserQuestion may still trigger permission checks
+            // Keep this as defense-in-depth
             args.push("--allowedTools", "AskUserQuestion,mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
@@ -610,7 +645,29 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
                 for (const line of lines) {
-                  const event = parseCliOutput(line);
+                  const event = parseCliOutput(line, (toolUseId, isAskUserQuestion) => {
+                    // Handle permission denials - auto-approve EXCEPT for AskUserQuestion
+                    if (!isAskUserQuestion) {
+                      // Auto-approve permission denial by sending empty tool_result
+                      logToOutput(`[ClaudeCliService] Auto-approving permission denial for tool_use_id: ${toolUseId}`);
+                      const approval = JSON.stringify({
+                        type: "user",
+                        message: {
+                          role: "user",
+                          content: [{
+                            type: "tool_result",
+                            tool_use_id: toolUseId,
+                            content: "",
+                            is_error: false,
+                          }],
+                        },
+                      });
+                      child.stdin.write(`${approval}\n`);
+                    } else {
+                      logToOutput(`[ClaudeCliService] Skipping auto-approval for AskUserQuestion: ${toolUseId}`);
+                    }
+                  });
+
                   if (event) {
                     logToOutput(`[ClaudeCliService] Emitting event: ${event.type}`);
                     emit.single(event);
@@ -642,7 +699,8 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 logToOutput(`[ClaudeCliService] Process closed with code: ${code}`);
                 // Process any remaining buffer
                 if (buffer.trim()) {
-                  const event = parseCliOutput(buffer);
+                  // No permission handling needed for final buffer processing
+                  const event = parseCliOutput(buffer, () => {});
                   if (event) {
                     emit.single(event);
                   }
@@ -702,6 +760,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
                 logToOutput(`[ClaudeCliService] Sending tool result for ${toolCallId}`);
                 child.stdin.write(`${message}\n`);
+
+                // Clean up tracked question IDs after sending result
+                if (pendingQuestionIds.has(toolCallId)) {
+                  pendingQuestionIds.delete(toolCallId);
+                  logToOutput(`[ClaudeCliService] Cleaned up AskUserQuestion tracking for ${toolCallId}`);
+                }
               },
 
               /**

@@ -25,6 +25,7 @@ const tuiMachine = setup({
     context: {} as {
       outputLines: OutputLine[];
       pendingQuestion: QuestionData | null;
+      questionQueue: QuestionData[]; // Queue for multiple questions
       workspaceRoot: string;
       cliManager: CliManager | null;
       mode: 'none' | 'plan' | 'build';
@@ -49,17 +50,58 @@ const tuiMachine = setup({
       },
     }),
     setQuestion: assign({
-      pendingQuestion: ({ event }) => {
-        if (event.type !== 'QUESTION') return null;
+      pendingQuestion: ({ context, event }) => {
+        if (event.type !== 'QUESTION') return context.pendingQuestion;
+
         debugLog('useAppState', 'State machine: setQuestion action called', {
           toolUseID: event.question.toolUseID,
-          questionCount: event.question.questions.length
+          questionCount: event.question.questions.length,
+          hasPendingQuestion: !!context.pendingQuestion,
+          queueLength: context.questionQueue.length
         });
-        return event.question;
+
+        // If there's already a pending question, this will be added to queue by queueQuestion action
+        // Otherwise, show immediately
+        return context.pendingQuestion || event.question;
+      },
+      questionQueue: ({ context, event }) => {
+        if (event.type !== 'QUESTION') return context.questionQueue;
+
+        // If there's already a pending question, add new question to queue
+        if (context.pendingQuestion) {
+          debugLog('useAppState', 'Adding question to queue', {
+            toolUseID: event.question.toolUseID,
+            newQueueLength: context.questionQueue.length + 1
+          });
+          return [...context.questionQueue, event.question];
+        }
+
+        // Otherwise, don't add to queue (it's being shown immediately)
+        return context.questionQueue;
       },
     }),
     clearQuestion: assign({
-      pendingQuestion: null,
+      pendingQuestion: ({ context }) => {
+        // If there are queued questions, show the next one
+        if (context.questionQueue.length > 0) {
+          const nextQuestion = context.questionQueue[0];
+          debugLog('useAppState', 'Processing next queued question', {
+            toolUseID: nextQuestion.toolUseID,
+            remainingInQueue: context.questionQueue.length - 1
+          });
+          return nextQuestion;
+        }
+
+        debugLog('useAppState', 'No more queued questions');
+        return null;
+      },
+      questionQueue: ({ context }) => {
+        // Remove the first question from queue (it's now being shown)
+        if (context.questionQueue.length > 0) {
+          return context.questionQueue.slice(1);
+        }
+        return [];
+      },
     }),
     clearOutput: assign({
       outputLines: [],
@@ -75,6 +117,10 @@ const tuiMachine = setup({
       mode: 'none',
       agentSessionActive: false,
     }),
+    clearQuestionQueue: assign({
+      pendingQuestion: null,
+      questionQueue: [],
+    }),
   },
 }).createMachine({
   id: 'tui',
@@ -82,6 +128,7 @@ const tuiMachine = setup({
   context: {
     outputLines: [],
     pendingQuestion: null,
+    questionQueue: [],
     workspaceRoot: process.cwd(),
     cliManager: null,
     mode: 'none',
@@ -120,15 +167,16 @@ const tuiMachine = setup({
         },
         COMPLETE: {
           target: 'idle',
+          actions: 'clearQuestionQueue',
           // Don't clear mode - keep it active for follow-up messages
         },
         INTERRUPT: {
           target: 'idle',
-          actions: 'clearMode',
+          actions: ['clearMode', 'clearQuestionQueue'],
         },
         EXIT_MODE: {
           target: 'idle',
-          actions: 'clearMode',
+          actions: ['clearMode', 'clearQuestionQueue'],
         },
         MESSAGE: {
           // Handle in-execution messages
@@ -137,17 +185,35 @@ const tuiMachine = setup({
     },
     waiting_for_answer: {
       on: {
-        ANSWER: {
-          target: 'executing',
-          actions: 'clearQuestion',
+        QUESTION: {
+          // When a new question arrives while already waiting, add to queue
+          actions: 'setQuestion',
+        },
+        ANSWER: [
+          {
+            // Stay in waiting_for_answer if there are more queued questions
+            target: 'waiting_for_answer',
+            guard: ({ context }) => context.questionQueue.length > 0,
+            actions: 'clearQuestion',
+          },
+          {
+            // Otherwise return to executing
+            target: 'executing',
+            actions: 'clearQuestion',
+          },
+        ],
+        COMPLETE: {
+          // Execution ended while waiting for answer - clear questions and go to idle
+          target: 'idle',
+          actions: 'clearQuestionQueue',
         },
         INTERRUPT: {
           target: 'idle',
-          actions: ['clearQuestion', 'clearMode'],
+          actions: ['clearQuestionQueue', 'clearMode'],
         },
         EXIT_MODE: {
           target: 'idle',
-          actions: ['clearQuestion', 'clearMode'],
+          actions: ['clearQuestionQueue', 'clearMode'],
         },
       },
     },
@@ -640,7 +706,8 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     });
 
     // Send tool result back to CLI
-    const answersJSON = JSON.stringify({ answers });
+    // AskUserQuestion expects answers as a flat object: { "question text": "answer" }
+    const answersJSON = JSON.stringify(answers);
     debugLog('useAppState', 'Sending answers JSON', { answersJSON });
 
     cliManager.current.sendToolResult(state.context.pendingQuestion.toolUseID, answersJSON);

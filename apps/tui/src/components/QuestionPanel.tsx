@@ -86,7 +86,7 @@ export function QuestionPanel({
             const selectedOption = currentQuestion.options[index];
             const newAnswers = {
               ...answers,
-              [currentQuestion.header]: selectedOption.label,
+              [currentQuestion.question]: selectedOption.label,
             };
             setAnswers(newAnswers);
 
@@ -131,7 +131,7 @@ export function QuestionPanel({
 
     const newAnswers = {
       ...answers,
-      [currentQuestion.header]: customInput.trim(),
+      [currentQuestion.question]: customInput.trim(),
     };
     setAnswers(newAnswers);
     setShowCustomInput(false);

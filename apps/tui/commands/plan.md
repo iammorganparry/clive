@@ -79,13 +79,37 @@ Conduct structured interview to understand requirements. Ask ONE question at a t
 - Don't ask "should I continue?" - just continue naturally
 - Don't list "Question 1, 2, 3, 4" - ask one, wait, continue
 
-**⚠️ CRITICAL - After calling AskUserQuestion:**
-1. **END YOUR TURN IMMEDIATELY** - The AskUserQuestion tool call MUST be the last thing in your message
-2. Do NOT make any more tool calls after AskUserQuestion (no Read, Bash, Write, etc.)
-3. **Do NOT output ANY text after the AskUserQuestion tool call** - No explanations, no apologies, no clarifications, NOTHING
-4. The conversation will pause at the AskUserQuestion and resume when you receive the tool_result
+**⚠️ CRITICAL - AskUserQuestion MUST BE THE ABSOLUTE LAST THING:**
 
-**Why this matters:** The Claude API requires tool_result to immediately follow tool_use with no intervening messages. Any text you output after AskUserQuestion creates a new message that breaks this requirement and causes 400 API errors with "unexpected tool_use_id found in tool_result blocks".
+**STOP IMMEDIATELY AFTER CALLING AskUserQuestion - NO EXCEPTIONS**
+
+1. Call AskUserQuestion with ONE question
+2. **STOP YOUR MESSAGE IMMEDIATELY** - Do not write another word
+3. Do NOT call AskUserQuestion multiple times in one message
+4. Do NOT output ANY text after AskUserQuestion (not even "." or whitespace)
+5. Do NOT make any other tool calls after AskUserQuestion
+6. The system will automatically wait for the user's answer
+
+**Why this is CRITICAL:**
+- The Claude API requires tool_result to IMMEDIATELY follow tool_use in the SAME message
+- If you output text or make more tool calls after AskUserQuestion, you create a NEW message
+- This breaks the API requirement and causes 400 errors: "unexpected tool_use_id found in tool_result blocks"
+- The conversation will FAIL and need to be restarted
+
+**Example of CORRECT usage:**
+```
+<thinking>I need to ask about the problem</thinking>
+<tool_use>AskUserQuestion with options</tool_use>
+[MESSAGE ENDS HERE - NOTHING AFTER THE TOOL CALL]
+```
+
+**Example of INCORRECT usage (DO NOT DO THIS):**
+```
+<tool_use>AskUserQuestion</tool_use>
+Let me know if you need clarification.  ← WRONG - causes 400 error
+```
+
+**If you need to ask multiple questions:** Ask ONE question, wait for the answer, then ask the next question in your NEXT message after receiving the tool_result.
 
 ### Phase 2: Codebase Research (MANDATORY - DO NOT SKIP)
 
