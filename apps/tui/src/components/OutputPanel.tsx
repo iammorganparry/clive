@@ -83,7 +83,7 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
         </box>
       )}
 
-      <scrollbox
+      <box
         ref={scrollBoxRef}
         width={width}
         height={terminalHeight}
@@ -114,10 +114,9 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
           <ghostty-terminal
             ansi={ansiOutput}
             cols={terminalCols}
-            rows={terminalRows}
           />
         )}
-      </scrollbox>
+      </box>
     </box>
   );
 });
