@@ -3,7 +3,7 @@
  * XState machine for managing two-level selection flow (Issues -> Conversations)
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
 import type { Session } from '../types';
@@ -236,10 +236,22 @@ const selectionMachine = setup({
 export function useSelectionState(sessions: Session[], conversations: Conversation[]) {
   const [state, send] = useMachine(selectionMachine);
 
-  // Update data when props change
+  // Track previous lengths to avoid infinite loops
+  const prevLengthsRef = useRef({ sessions: 0, conversations: 0 });
+
+  // Update data when props change (only on length change to avoid infinite loops)
   useEffect(() => {
-    send({ type: 'UPDATE_DATA', sessions, conversations });
-  }, [sessions, conversations, send]);
+    const sessionsLength = sessions.length;
+    const conversationsLength = conversations.length;
+
+    if (
+      prevLengthsRef.current.sessions !== sessionsLength ||
+      prevLengthsRef.current.conversations !== conversationsLength
+    ) {
+      prevLengthsRef.current = { sessions: sessionsLength, conversations: conversationsLength };
+      send({ type: 'UPDATE_DATA', sessions, conversations });
+    }
+  }, [sessions, conversations]);
 
   return {
     // State
