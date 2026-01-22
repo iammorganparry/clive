@@ -1,7 +1,7 @@
 ---
 description: Collaborate with user as an Agile Project Manager to create user story-based plans with acceptance criteria and create issues in Linear
 model: opus
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__linear__create_issue, mcp__linear__update_issue, mcp__linear__list_issue_labels, mcp__linear__get_team, mcp__linear__list_teams
+allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__linear__create_issue, mcp__linear__update_issue, mcp__linear__list_issue_labels, mcp__linear__get_team, mcp__linear__list_teams, mcp__linear__create_project, mcp__linear__list_projects, mcp__linear__get_project, mcp__linear__update_project
 denied-tools: TodoWrite, Edit, Write, Task, EnterPlanMode, ExitPlanMode
 ---
 
@@ -210,6 +210,42 @@ Include custom skills in Technical Notes:
 
 ---
 
+## Project Creation Decision Criteria (Linear Only)
+
+When using Linear as the issue tracker, you may optionally create a project to organize issues under a unified initiative.
+
+### When to Suggest Creating a Linear Project
+
+Consider creating a project when work meets **2 or more** of these criteria:
+
+1. **Multiple Epics** - Plan includes 3+ epics
+2. **Long Timeline** - Work spans multiple weeks/sprints
+3. **Cross-Team** - Involves multiple teams or significant coordination
+4. **Initiative-Level** - Major feature, product launch, or strategic initiative
+5. **External Visibility** - Stakeholders need high-level progress tracking
+6. **Dedicated Resources** - Full-time allocation of team members
+
+### When NOT to Create a Project
+
+- Single epic with a few tasks
+- Small bug fixes or refactors
+- One-off experiments or spikes
+- Work already contained within existing project
+- Simple enhancements or maintenance work
+
+### User Confirmation Required
+
+**ALWAYS ask user for confirmation before creating a project.** Present it as a recommendation, not a requirement.
+
+Use AskUserQuestion to explain:
+- Why a project is recommended (which criteria are met)
+- Benefits of creating a project (organization, visibility, tracking)
+- Alternative (create issues directly under team)
+
+The user always has final say on whether to create a project.
+
+---
+
 ### Phase 3: Write Plan Document (MANDATORY)
 
 After completing interview and codebase research, write the plan to `${CLIVE_PLAN_FILE}`.
@@ -249,18 +285,152 @@ cat ~/.clive/config.json
 
 Look for `"issueTracker": "linear"` or `"issueTracker": "beads"`.
 
-**Step 2: Create issues**
+**Step 2: Decide if project is needed (Linear only)**
 
-**For Linear:**
+If using Linear, evaluate the scope against Project Decision Criteria (see above section).
+
+If 2+ criteria are met, suggesting a project:
+1. Use AskUserQuestion to propose project creation
+2. Explain which criteria are met and why a project is recommended
+3. Present benefits: centralized tracking, progress visibility, better organization
+4. Wait for user confirmation
+5. If approved, proceed to Step 3a (create project + issues)
+6. If declined, proceed to Step 3b (create issues without project)
+
+If fewer than 2 criteria are met, skip directly to Step 3b (no project needed).
+
+**Step 3a: Create Linear Project + Issues (if approved)**
+
+```typescript
+// 1. Get team ID
+const team = await mcp__linear__get_team({ query: LINEAR_TEAM_ID })
+
+// 2. Create the project
+const project = await mcp__linear__create_project({
+  team: team.id,
+  name: "[Project Name]",
+  description: `
+[Executive Summary - what problem this solves]
+
+Scope:
+- [In scope item 1]
+- [In scope item 2]
+
+Success Criteria:
+- [Criterion 1]
+- [Criterion 2]
+`,
+  priority: 2, // 0=None, 1=Urgent, 2=High, 3=Normal, 4=Low
+  state: "planned", // or "started", "paused", "completed", "canceled"
+  targetDate: "2024-12-31" // ISO format (optional)
+})
+
+// 3. Create epic(s) under the project
+const epic = await mcp__linear__create_issue({
+  team: team.id,
+  project: project.id, // Assign to project
+  title: "Epic: [Title]",
+  description: `
+Epic User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Criterion]
+2. [Criterion]
+`,
+  priority: 2
+})
+
+// 4. Create tasks under the epic
+await mcp__linear__create_issue({
+  team: team.id,
+  project: project.id, // Also assign to project
+  parentId: epic.id,
+  title: "Task: [User Capability]",
+  description: `
+User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Testable criterion]
+2. [Testable criterion]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Tests written and passing
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+Technical Notes:
+[Summary of implementation details from plan]
+`,
+  priority: 2,
+  labels: ["skill:feature"]
+})
+```
+
+**Step 3b: Create Linear Issues (without project)**
+
 Use the MCP tools to create a parent issue and sub-issues:
 
-```
-1. Use mcp__linear__get_team to get the team ID
-2. Use mcp__linear__create_issue to create the parent epic
-3. Use mcp__linear__create_issue with parentId to create each task as a sub-issue
+```typescript
+// 1. Get team ID
+const team = await mcp__linear__get_team({ query: LINEAR_TEAM_ID })
+
+// 2. Create the parent epic
+const epic = await mcp__linear__create_issue({
+  team: team.id,
+  title: "Epic: [Title]",
+  description: `
+Epic User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Criterion]
+2. [Criterion]
+`,
+  priority: 2
+})
+
+// 3. Create each task as a sub-issue
+await mcp__linear__create_issue({
+  team: team.id,
+  parentId: epic.id,
+  title: "Task: [User Capability]",
+  description: `
+User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Testable criterion]
+2. [Testable criterion]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Tests written and passing
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+Technical Notes:
+[Summary of implementation details from plan]
+`,
+  priority: 2,
+  labels: ["skill:feature"]
+})
 ```
 
-**For Beads:**
+**Step 3c: Create Beads Issues**
+
 Use bash commands:
 
 ```bash
@@ -271,7 +441,7 @@ EPIC_ID=$(bd create --title="Epic: [Title]" --type=epic --priority=2 | grep -oP 
 bd create --parent=$EPIC_ID --title="Task: [User Story Title]" --type=task --priority=2
 ```
 
-**Step 3: Confirm completion**
+**Step 4: Confirm completion**
 
 After creating all issues, output a summary:
 ```
@@ -677,16 +847,109 @@ bd update [task-id] --skill=[feature|bugfix|refactor|docs]
 
 ### For Linear Tracker
 
-Use MCP tools to create parent and sub-issues:
+Use MCP tools to create issues and optionally organize them under a project.
 
 ```bash
 # Get team ID from config
 LINEAR_TEAM_ID=$(jq -r '.linear.team_id' "$CLIVE_CONFIG")
 ```
 
-Create parent issue:
+**Option A: Create Project with Epics**
+
+When scope warrants a project (see Project Decision Criteria above):
+
 ```typescript
+// Step 1: Create project
+const project = await mcp__linear__create_project({
+  team: LINEAR_TEAM_ID,
+  name: "User Authentication System",
+  description: `
+Implement comprehensive authentication system with OAuth, 2FA, and session management.
+
+Scope:
+- Google/GitHub OAuth integration
+- Two-factor authentication
+- Session management
+- Password reset flow
+
+Success Criteria:
+- Users can log in with OAuth
+- 2FA enabled for all accounts
+- Session timeout after 24h
+- Zero-downtime deployment
+`,
+  priority: 2,
+  state: "started",
+  targetDate: "2024-03-15"
+})
+
+// Step 2: Create epic under project
+const epic = await mcp__linear__create_issue({
+  team: LINEAR_TEAM_ID,
+  project: project.id, // Assign to project
+  title: "Epic: OAuth Integration",
+  description: `
+Epic User Story:
+As a user
+I want to authenticate using OAuth providers
+So that I can log in securely without managing passwords
+
+Acceptance Criteria:
+1. Google OAuth integration works
+2. GitHub OAuth integration works
+3. User profile populated from OAuth data
+4. Session created after successful OAuth
+
+Success Metrics:
+- 80% of users use OAuth for login
+- Zero OAuth-related security incidents
+`,
+  priority: 2
+})
+
+// Step 3: Create tasks under epic
 await mcp__linear__create_issue({
+  team: LINEAR_TEAM_ID,
+  project: project.id, // Also assign to project
+  parentId: epic.id,
+  title: "Task: User can authenticate with Google OAuth",
+  description: `
+User Story:
+As a user
+I want to log in using my Google account
+So that I don't need to remember another password
+
+Acceptance Criteria:
+1. "Sign in with Google" button appears on login page
+2. Clicking button redirects to Google OAuth flow
+3. After successful auth, user is logged into system
+4. Error message shows if OAuth fails
+5. User profile populated from Google data
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Unit tests for OAuth token validation
+- [ ] Integration test for full OAuth flow
+- [ ] Error handling tested
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+Technical Notes:
+[Summary of implementation details from plan]
+`,
+  priority: 2,
+  labels: ["skill:feature"]
+})
+```
+
+**Option B: Create Issues Directly (no project)**
+
+For smaller scope work:
+
+```typescript
+// Create parent epic
+const epic = await mcp__linear__create_issue({
   team: LINEAR_TEAM_ID,
   title: "Epic: [Title]",
   description: `
@@ -704,10 +967,8 @@ Success Metrics:
 `,
   priority: 2  // 0=None, 1=Urgent, 2=High, 3=Normal, 4=Low
 })
-```
 
-Create sub-issues with user stories:
-```typescript
+// Create sub-issues with user stories
 await mcp__linear__create_issue({
   team: LINEAR_TEAM_ID,
   title: "Task: [User Capability]",
@@ -731,7 +992,7 @@ Definition of Done:
 Technical Notes:
 [Summary of technical implementation details]
 `,
-  parentId: "[parent-issue-id]",
+  parentId: epic.id,
   priority: 2,
   labels: ["skill:feature", "category:feature"]
 })
@@ -904,11 +1165,31 @@ This is a **conversation** with **5 MANDATORY PHASES**. Your goal is to:
 - Exit gracefully
 
 **Your output after creating issues should be:**
+
+If a Linear project was created:
+```
+Planning complete! Created Linear project and [N] issues:
+
+Project: [Project Name] ([Project ID])
+URL: https://linear.app/[workspace]/project/[project-id]
+
+- [Epic 1 title] ([ID])
+  - [Task 1 title] ([ID])
+  - [Task 2 title] ([ID])
+- [Epic 2 title] ([ID])
+  - [Task 3 title] ([ID])
+
+The plan has been saved to [plan-file-path].
+
+To start implementation, use: /build
+```
+
+If no project was created (issues only):
 ```
 Planning complete! Created [N] issues in [Linear/Beads]:
-- [Issue 1 title and ID]
-- [Issue 2 title and ID]
-- ...
+- [Epic title] ([ID])
+  - [Task 1 title] ([ID])
+  - [Task 2 title] ([ID])
 
 The plan has been saved to [plan-file-path].
 
