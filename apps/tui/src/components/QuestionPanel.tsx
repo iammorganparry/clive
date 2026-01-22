@@ -208,7 +208,7 @@ export function QuestionPanel({
               flexDirection="column"
             >
               {/* Option label with number shortcut and selection indicator */}
-              <box flexDirection="row" alignItems="center">
+              <box flexDirection="row" alignItems="center" marginBottom={option.description ? 1 : 0}>
                 {/* Number shortcut badge */}
                 <text
                   bg={isSelected ? OneDarkPro.syntax.blue : OneDarkPro.background.secondary}
@@ -230,10 +230,10 @@ export function QuestionPanel({
                 </text>
               </box>
 
-              {/* Option description on separate line */}
+              {/* Option description on separate line with more indentation */}
               {option.description && (
-                <box paddingLeft={3}>
-                  <text fg={OneDarkPro.foreground.muted}>
+                <box paddingLeft={6}>
+                  <text fg={OneDarkPro.foreground.comment}>
                     {option.description}
                   </text>
                 </box>
