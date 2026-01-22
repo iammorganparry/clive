@@ -79,6 +79,14 @@ Conduct structured interview to understand requirements. Ask ONE question at a t
 - Don't ask "should I continue?" - just continue naturally
 - Don't list "Question 1, 2, 3, 4" - ask one, wait, continue
 
+**⚠️ CRITICAL - After calling AskUserQuestion:**
+1. **END YOUR TURN IMMEDIATELY** - The AskUserQuestion tool call MUST be the last thing in your message
+2. Do NOT make any more tool calls after AskUserQuestion (no Read, Bash, Write, etc.)
+3. **Do NOT output ANY text after the AskUserQuestion tool call** - No explanations, no apologies, no clarifications, NOTHING
+4. The conversation will pause at the AskUserQuestion and resume when you receive the tool_result
+
+**Why this matters:** The Claude API requires tool_result to immediately follow tool_use with no intervening messages. Any text you output after AskUserQuestion creates a new message that breaks this requirement and causes 400 API errors with "unexpected tool_use_id found in tool_result blocks".
+
 ### Phase 2: Codebase Research (MANDATORY - DO NOT SKIP)
 
 **CRITICAL:** Before writing ANY plan, you MUST explore the codebase to understand existing patterns.
@@ -145,6 +153,7 @@ Every task MUST include:
 After writing plan, use AskUserQuestion:
 - Question: "I've created a comprehensive plan with user stories and acceptance criteria. Would you like to review it and approve, or request changes?"
 - Options: ["Approve and proceed", "Request changes"]
+- **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
 - If changes requested, refine based on feedback
 - If approved, create issues in configured tracker
 
@@ -240,6 +249,7 @@ Consider creating a project when work meets **2 or more** of these criteria:
 Use AskUserQuestion to explain:
 - Why a project is recommended (which criteria are met)
 - Benefits of creating a project (organization, visibility, tracking)
+- **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
 - Alternative (create issues directly under team)
 
 The user always has final say on whether to create a project.
@@ -268,6 +278,8 @@ Present the plan to the user and get explicit approval before creating issues.
 
 Use AskUserQuestion to ask: "I've created a plan with [N] user stories. Would you like me to create these issues in [Linear/Beads] now?"
 
+**CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call.
+
 Wait for user approval before proceeding to Phase 5.
 
 ---
@@ -293,6 +305,7 @@ If 2+ criteria are met, suggesting a project:
 1. Use AskUserQuestion to propose project creation
 2. Explain which criteria are met and why a project is recommended
 3. Present benefits: centralized tracking, progress visibility, better organization
+4. **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
 4. Wait for user confirmation
 5. If approved, proceed to Step 3a (create project + issues)
 6. If declined, proceed to Step 3b (create issues without project)
