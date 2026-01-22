@@ -114,6 +114,7 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
           <ghostty-terminal
             ansi={ansiOutput}
             cols={terminalCols}
+            rows={terminalRows}
           />
         )}
       </box>
