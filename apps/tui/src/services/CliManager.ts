@@ -233,6 +233,30 @@ export class CliManager extends EventEmitter {
               reason: 'Duplicate question in same turn - blocked at tool_use level',
             });
 
+            // CRITICAL: Send an automatic tool_result for the blocked question
+            // Claude expects a tool_result for every tool_use. If we don't send one,
+            // Claude thinks the tool failed and will ask again in text.
+            // Send a message indicating we already have this information.
+            if (this.currentHandle) {
+              const autoResponse = JSON.stringify({
+                "response": "Question already answered - continuing conversation"
+              });
+
+              debugLog('CliManager', 'Sending automatic tool_result for blocked duplicate question', {
+                toolId: event.id
+              });
+
+              this.currentHandle.sendToolResult(event.id, autoResponse);
+
+              this.conversationLogger.log({
+                timestamp: new Date().toISOString(),
+                type: 'tool_result_auto_sent',
+                toolId: event.id,
+                result: autoResponse,
+                reason: 'Auto-response for blocked duplicate question',
+              });
+            }
+
             // Do NOT emit this question to the UI
             // Do NOT track it as pending
             // Return empty outputs to skip it completely
