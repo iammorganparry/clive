@@ -4,7 +4,7 @@
  * Renders ANSI output from PTY-based Claude CLI
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { OneDarkPro } from '../styles/theme';
 import type { PtyDimensions } from '../services/PtyCliManager';
 
@@ -18,7 +18,12 @@ interface OutputPanelProps {
   ptyDimensions?: PtyDimensions | null;
 }
 
-export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode = 'none', modeColor, ptyDimensions }: OutputPanelProps) {
+export interface OutputPanelRef {
+  scrollToBottom: () => void;
+}
+
+export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
+  ({ width, height, ansiOutput, isRunning = false, mode = 'none', modeColor, ptyDimensions }, ref) => {
   const scrollBoxRef = useRef<any>(null);
   const isInMode = mode !== 'none';
   const modeHeaderHeight = isInMode ? 1 : 0;
@@ -26,8 +31,7 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
 
   // Use PTY dimensions if available (calculated based on available space), otherwise use full available space
   const terminalCols = ptyDimensions?.cols || width;
-  // Don't constrain terminal rows - let it grow to full content height for proper scrolling
-  // The parent scrollable box will handle the viewport
+  const terminalRows = ptyDimensions?.rows || terminalHeight;
 
   // Auto-scroll to bottom when output changes
   // Use setImmediate to ensure scroll happens after render
@@ -45,6 +49,18 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
       });
     }
   }, [ansiOutput]);
+
+  // Expose scroll to bottom method to parent
+  useImperativeHandle(ref, () => ({
+    scrollToBottom: () => {
+      if (scrollBoxRef.current?.scrollToBottom) {
+        scrollBoxRef.current.scrollToBottom();
+      }
+      if (scrollBoxRef.current?.setScrollPerc) {
+        scrollBoxRef.current.setScrollPerc(100);
+      }
+    }
+  }));
 
   return (
     <box
@@ -67,7 +83,7 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
         </box>
       )}
 
-      <box
+      <scrollbox
         ref={scrollBoxRef}
         width={width}
         height={terminalHeight}
@@ -98,9 +114,10 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
           <ghostty-terminal
             ansi={ansiOutput}
             cols={terminalCols}
+            rows={terminalRows}
           />
         )}
-      </box>
+      </scrollbox>
     </box>
   );
-}
+});

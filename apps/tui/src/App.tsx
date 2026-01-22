@@ -12,7 +12,7 @@ import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
 import { Sidebar } from './components/Sidebar';
-import { OutputPanel } from './components/OutputPanel';
+import { OutputPanel, type OutputPanelRef } from './components/OutputPanel';
 import { DynamicInput } from './components/DynamicInput';
 import { StatusBar } from './components/StatusBar';
 import { SetupView } from './components/SetupView';
@@ -62,6 +62,9 @@ function AppContent() {
   // Input focus state
   const [inputFocused, setInputFocused] = useState(false);
   const [preFillValue, setPreFillValue] = useState<string | undefined>(undefined);
+
+  // Output panel ref for scroll control
+  const outputPanelRef = useRef<OutputPanelRef>(null);
 
   // Clear preFillValue after it's been used
   useEffect(() => {
@@ -163,6 +166,14 @@ function AppContent() {
         goBack();
       } else {
         goToHelp();
+      }
+      return;
+    }
+
+    // Scroll to bottom (Ctrl+B or End key)
+    if ((event.ctrl && event.sequence === 'b') || event.name === 'end') {
+      if (outputPanelRef.current) {
+        outputPanelRef.current.scrollToBottom();
       }
       return;
     }
@@ -444,6 +455,7 @@ function AppContent() {
 
         {/* Output Panel */}
         <OutputPanel
+          ref={outputPanelRef}
           width={outputWidth}
           height={bodyHeight}
           ansiOutput={ansiOutput}
