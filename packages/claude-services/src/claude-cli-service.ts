@@ -545,15 +545,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             //   logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
             // }
 
-            // Use bypassPermissions mode + dangerously-skip-permissions for maximum permission bypass
-            // This prevents permission denials that break the tool_use/tool_result pairing
-            // See docs/permission-approval.md for details on why this is necessary
+            // Use bypassPermissions mode to prevent permission prompts
+            // REMOVED --dangerously-skip-permissions because it causes the CLI to not wait for tool_results
+            // properly, resulting in turns ending before the user can answer AskUserQuestion
             args.push("--permission-mode", "bypassPermissions");
-            args.push("--dangerously-skip-permissions");
 
-            // Allow AskUserQuestion and MCP tools without permission prompts
-            // Note: Even with the flags above, AskUserQuestion may still trigger permission checks
-            // Keep this as defense-in-depth
+            // Allow AskUserQuestion explicitly so the CLI waits for tool_results
             args.push("--allowedTools", "AskUserQuestion,mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
