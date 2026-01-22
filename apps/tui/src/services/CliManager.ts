@@ -511,11 +511,11 @@ export class CliManager extends EventEmitter {
     // Mark this tool result as sent
     this.sentToolResults.add(toolId);
 
-    // Remove this question from current turn set
-    this.currentTurnQuestionIds.delete(toolId);
-    debugLog('CliManager', 'Removed question from current turn', {
+    // DO NOT remove from currentTurnQuestionIds - keep it to block subsequent questions!
+    // The set will be cleared when the turn ends
+    debugLog('CliManager', 'Question answered but keeping in currentTurnQuestionIds to block duplicates', {
       toolId,
-      remainingQuestions: Array.from(this.currentTurnQuestionIds)
+      currentTurnQuestions: Array.from(this.currentTurnQuestionIds)
     });
 
     // Clear pending question ID if this was the tracked question
