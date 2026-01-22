@@ -158,7 +158,7 @@ function AppContent() {
     }
 
     // Skip keyboard handling in config flows
-    if (configFlow === 'linear' || configFlow === 'github') {
+    if (configFlow === 'linear' || configFlow === 'beads') {
       return;
     }
 
@@ -397,7 +397,7 @@ function AppContent() {
   // Handler for config flow completion
   const handleConfigComplete = (config: { apiKey: string; teamID: string }) => {
     updateConfig({
-      issueTracker: configFlow as 'linear' | 'github',
+      issueTracker: configFlow as 'linear' | 'beads',
       [configFlow as string]: config,
     });
     setConfigFlow(null);
@@ -419,10 +419,14 @@ function AppContent() {
     }
 
     if (configFlow === 'beads') {
-      // Beads doesn't need configuration, just verify it's installed
-      // and .beads directory exists
-      handleConfigComplete({ issueTracker: 'beads' });
-      return null; // Will transition to selection view immediately
+      // Beads doesn't need configuration, just update config and go to selection
+      updateConfig({
+        issueTracker: 'beads',
+        beads: {},
+      });
+      setConfigFlow(null);
+      goToSelection();
+      return null;
     }
 
     // Show setup view

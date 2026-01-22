@@ -68,9 +68,13 @@ export interface QuestionOption {
 }
 
 export interface Config {
-  issueTracker?: 'linear' | 'github';
+  issueTracker?: 'linear' | 'beads';
   linear?: {
     apiKey: string;
     teamID: string;
+  };
+  beads?: {
+    // Beads uses local git-based issue tracking
+    // No additional config needed
   };
 }

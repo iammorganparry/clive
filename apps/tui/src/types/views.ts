@@ -9,14 +9,13 @@ export type ViewMode = 'setup' | 'selection' | 'main' | 'help';
  * Config interface for issue tracker setup
  */
 export interface IssueTrackerConfig {
-  issueTracker: 'linear' | 'github' | null;
+  issueTracker: 'linear' | 'beads' | null;
   linear?: {
     apiKey: string;
     teamID: string;
   };
-  github?: {
-    token: string;
-    owner: string;
-    repo: string;
+  beads?: {
+    // Beads uses local git-based issue tracking
+    // No additional config needed
   };
 }
