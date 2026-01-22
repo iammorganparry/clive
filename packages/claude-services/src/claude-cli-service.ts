@@ -97,6 +97,8 @@ export interface CliExecutionHandle {
   stream: Stream.Stream<ClaudeCliEvent, ClaudeCliExecutionError>;
   /** Send a tool result back to the CLI via stdin */
   sendToolResult: (toolCallId: string, result: string) => void;
+  /** Send a user message to continue the conversation */
+  sendMessage: (message: string) => void;
   /** Close stdin to signal completion */
   close: () => void;
   /** Kill the CLI process */
@@ -788,6 +790,34 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                   pendingQuestionIds.delete(toolCallId);
                   logToOutput(`[ClaudeCliService] Cleaned up AskUserQuestion tracking for ${toolCallId}`);
                 }
+              },
+
+              /**
+               * Send a user message to continue the conversation
+               * The CLI expects a 'user' message containing the text content
+               */
+              sendMessage: (message: string) => {
+                if (!child.stdin?.writable) {
+                  console.error(
+                    "[ClaudeCliService] Cannot send message - stdin not writable",
+                  );
+                  return;
+                }
+
+                // User messages are sent in stream-json format
+                const userMessage = JSON.stringify({
+                  type: "user",
+                  message: {
+                    role: "user",
+                    content: message,
+                  },
+                });
+
+                logToOutput(`[ClaudeCliService] Sending user message to stdin`);
+                logToOutput(`  message preview: ${message.substring(0, 100)}`);
+
+                child.stdin.write(`${userMessage}\n`);
+                logToOutput(`[ClaudeCliService] Successfully wrote user message to stdin`);
               },
 
               /**

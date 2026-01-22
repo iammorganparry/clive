@@ -560,20 +560,37 @@ export class CliManager extends EventEmitter {
   }
 
   /**
-   * Simplified sendMessageToAgent - just marks that we're continuing a conversation
+   * Send a message to the active agent session
+   * This continues the conversation by sending a user message via stdin
    */
   async sendMessageToAgent(message: string): Promise<void> {
     if (!this.hasActiveSession()) {
       throw new Error('No active agent session');
     }
 
+    if (!this.currentHandle) {
+      throw new Error('No active CLI handle');
+    }
+
     // Add message to history
     this.conversationHistory.push({ role: 'user', content: message });
 
-    debugLog('CliManager', 'Message added to conversation history', {
+    debugLog('CliManager', 'Sending message to agent via stdin', {
       message: message.substring(0, 100),
       historyLength: this.conversationHistory.length
     });
+
+    // Send the user message to CLI via stdin using the handle's sendMessage method
+    this.currentHandle.sendMessage(message);
+
+    // Log the message to conversation log
+    this.conversationLogger.log({
+      timestamp: new Date().toISOString(),
+      type: 'user_message_sent',
+      message: message,
+    });
+
+    debugLog('CliManager', 'Message sent to agent successfully');
   }
 
   /**
