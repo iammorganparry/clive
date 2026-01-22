@@ -649,27 +649,18 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
                 for (const line of lines) {
+                  // DISABLED: Auto-approval code was creating duplicate tool_results
+                  // We use --dangerously-skip-permissions which should prevent permission denials entirely
+                  // If permission denials still occur, they should fail rather than auto-approve
                   const event = parseCliOutput(line, (toolUseId, isAskUserQuestion) => {
-                    // Handle permission denials - auto-approve EXCEPT for AskUserQuestion
-                    if (!isAskUserQuestion) {
-                      // Auto-approve permission denial by sending empty tool_result
-                      logToOutput(`[ClaudeCliService] Auto-approving permission denial for tool_use_id: ${toolUseId}`);
-                      const approval = JSON.stringify({
-                        type: "user",
-                        message: {
-                          role: "user",
-                          content: [{
-                            type: "tool_result",
-                            tool_use_id: toolUseId,
-                            content: "",
-                            is_error: false,
-                          }],
-                        },
-                      });
-                      child.stdin.write(`${approval}\n`);
+                    // Log permission denials but DO NOT auto-approve
+                    // Auto-approval was causing duplicate tool_results that led to 400 errors
+                    if (isAskUserQuestion) {
+                      logToOutput(`[ClaudeCliService] Permission denial for AskUserQuestion detected: ${toolUseId} - NOT auto-approving`);
                     } else {
-                      logToOutput(`[ClaudeCliService] Skipping auto-approval for AskUserQuestion: ${toolUseId}`);
+                      logToOutput(`[ClaudeCliService] Permission denial detected for tool: ${toolUseId} - NOT auto-approving (using skip-permissions mode)`);
                     }
+                    // DO NOT send approval - let it fail if it's a real permission issue
                   });
 
                   if (event) {
