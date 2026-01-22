@@ -45,6 +45,9 @@ export class CliManager extends EventEmitter {
   // Track active agent session for persistent modes
   private activeMode: 'plan' | 'build' | null = null;
 
+  // Track pending question to keep handle alive
+  private pendingQuestionId: string | null = null;
+
   // Track conversation history for continuous sessions
   private conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [];
 
@@ -135,8 +138,10 @@ export class CliManager extends EventEmitter {
       );
 
       // Execution complete
-      // In persistent modes (plan/build), keep handle alive for follow-up messages
-      if (!self.activeMode) {
+      // Keep handle alive if:
+      // 1. In persistent modes (plan/build)
+      // 2. There's a pending question waiting for user response
+      if (!self.activeMode && !self.pendingQuestionId) {
         self.currentHandle = null;
       }
       self.emit('complete');
@@ -166,6 +171,10 @@ export class CliManager extends EventEmitter {
             toolId: event.id,
             input: event.input
           });
+
+          // Track pending question to keep CLI handle alive
+          this.pendingQuestionId = event.id;
+          debugLog('CliManager', 'Set pendingQuestionId', { pendingQuestionId: this.pendingQuestionId });
 
           const questionData = this.extractQuestionData(event.id, event.input);
 
@@ -347,6 +356,12 @@ export class CliManager extends EventEmitter {
 
     this.currentHandle.sendToolResult(toolId, result);
 
+    // Clear pending question if this was the answer
+    if (this.pendingQuestionId === toolId) {
+      debugLog('CliManager', 'Clearing pendingQuestionId', { toolId });
+      this.pendingQuestionId = null;
+    }
+
     debugLog('CliManager', 'Tool result sent successfully', { toolId });
   }
 
@@ -426,6 +441,7 @@ export class CliManager extends EventEmitter {
       this.currentHandle.kill();
       this.currentHandle = null;
       this.activeMode = null;
+      this.pendingQuestionId = null;
       this.emit('killed');
     }
   }
@@ -447,6 +463,7 @@ export class CliManager extends EventEmitter {
     this.diffDetector.clear();
     this.subagentTracker.clear();
     this.conversationHistory = [];
+    this.pendingQuestionId = null;
   }
 
   /**
