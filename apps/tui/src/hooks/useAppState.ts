@@ -634,9 +634,12 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
     }
 
     // Execute via CLI Manager
+    // Use Opus for planning (comprehensive research), Sonnet for building (faster execution)
+    const selectedModel = mode === 'plan' ? 'opus' : 'sonnet';
+
     cliManager.current.execute(prompt, {
       workspaceRoot,
-      model: 'sonnet',
+      model: selectedModel,
       systemPrompt,
       mode, // Pass mode to CliManager
     }).catch(error => {
