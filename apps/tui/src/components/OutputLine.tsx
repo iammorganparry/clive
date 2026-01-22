@@ -171,15 +171,10 @@ export function OutputLine({ line }: Props) {
 
     case 'assistant':
       return (
-        <box flexDirection="row" backgroundColor={OneDarkPro.background.highlight} marginBottom={1}>
-          <box paddingLeft={1} paddingRight={1}>
-            <text fg={OneDarkPro.syntax.blue}>█</text>
-          </box>
-          <box padding={1} flexGrow={1}>
-            <text fg={OneDarkPro.foreground.primary}>
-              {line.text}
-            </text>
-          </box>
+        <box backgroundColor={OneDarkPro.background.highlight} padding={1} marginBottom={1}>
+          <text fg={OneDarkPro.foreground.primary}>
+            {line.text}
+          </text>
         </box>
       );
 
