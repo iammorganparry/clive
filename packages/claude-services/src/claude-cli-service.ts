@@ -82,6 +82,8 @@ export interface ClaudeCliExecuteOptions {
   mcpSocketPath?: string;
   /** Path to MCP server JavaScript file */
   mcpServerPath?: string;
+  /** Session ID to resume (uses --resume flag) */
+  resumeSessionId?: string;
   /** Beta features to enable (passed via --betas flag) */
   betas?: string[];
 }
@@ -498,6 +500,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             if (options.workspaceRoot) {
               args.push("--add-dir", options.workspaceRoot);
               logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
+            }
+
+            // Resume previous session if resumeSessionId provided
+            if (options.resumeSessionId) {
+              args.push("--resume", options.resumeSessionId);
+              logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
             }
 
             // Auto-accept edit permissions within allowed directories

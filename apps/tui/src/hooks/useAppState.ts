@@ -345,11 +345,25 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
         const currentMode = state.context.mode;
         const inActiveSession = state.context.agentSessionActive;
 
+        // Check for --resume flag
+        const resumeMatch = args.match(/--resume=([a-f0-9-]+)/);
+        const resumeSessionId = resumeMatch ? resumeMatch[1] : undefined;
+        // Remove --resume flag from args to get clean prompt
+        const cleanArgs = args.replace(/--resume=[a-f0-9-]+\s*/, '').trim();
+
+        // If resuming a session
+        if (resumeSessionId) {
+          addSystemMessage(`Resuming conversation: ${resumeSessionId.substring(0, 8)}...`);
+          const prompt = cleanArgs || 'Continue the conversation';
+          startExecution(prompt, 'plan', `> ${prompt}`, false, resumeSessionId);
+          break;
+        }
+
         // If already in plan mode and has active session, continue the conversation
-        if (currentMode === 'plan' && inActiveSession && args) {
+        if (currentMode === 'plan' && inActiveSession && cleanArgs) {
           // Re-execute with new prompt but don't clear output
-          const prompt = args;
-          startExecution(prompt, 'plan', `> ${args}`, true); // true = continuingSession
+          const prompt = cleanArgs;
+          startExecution(prompt, 'plan', `> ${cleanArgs}`, true); // true = continuingSession
           break;
         }
 
@@ -360,8 +374,8 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
         }
 
         // Start new plan session
-        const prompt = args || 'Create a plan for the current task';
-        startExecution(prompt, 'plan', args ? `> ${args}` : undefined, false);
+        const prompt = cleanArgs || 'Create a plan for the current task';
+        startExecution(prompt, 'plan', cleanArgs ? `> ${cleanArgs}` : undefined, false);
         break;
       }
 
@@ -428,11 +442,17 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   /**
    * Start CLI execution with a prompt
    */
-  const startExecution = (prompt: string, mode: 'plan' | 'build', userMessage?: string, continuingSession: boolean = false) => {
+  const startExecution = (
+    prompt: string,
+    mode: 'plan' | 'build',
+    userMessage?: string,
+    continuingSession: boolean = false,
+    resumeSessionId?: string
+  ) => {
     if (!cliManager.current || state.matches('executing')) return;
 
-    // Only clear output and history if starting a fresh session
-    if (!continuingSession) {
+    // Only clear output and history if starting a fresh session (and not resuming)
+    if (!continuingSession && !resumeSessionId) {
       send({ type: 'CLEAR' });
       cliManager.current.clear(); // Clear conversation history
     }
@@ -684,6 +704,7 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
       model: selectedModel,
       systemPrompt,
       mode,
+      resumeSessionId,
     }).catch((error: Error) => {
       addSystemMessage(`Execution error: ${error.message}`);
       send({ type: 'COMPLETE' });

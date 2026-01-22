@@ -28,6 +28,7 @@ export interface CliManagerOptions {
   model?: string;
   systemPrompt?: string;
   mode?: 'plan' | 'build';
+  resumeSessionId?: string;
 }
 
 export class CliManager extends EventEmitter {
@@ -106,6 +107,7 @@ export class CliManager extends EventEmitter {
         systemPrompt: options.systemPrompt,
         workspaceRoot: options.workspaceRoot,
         model: options.model || 'sonnet',
+        resumeSessionId: options.resumeSessionId,
       });
 
       self.currentHandle = handle;

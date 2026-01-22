@@ -355,12 +355,12 @@ function AppContent() {
 
   // Handler for conversation resume
   const handleConversationResume = (conversation: Conversation) => {
-    // TODO: Implement conversation resumption in CliManager
-    // For now, go to main view with conversation context
     console.log('[Clive TUI] Resuming conversation:', conversation.sessionId);
+
+    // Store the session ID to resume
+    // This will be passed to CliManager when executing
+    executeCommand(`/plan --resume=${conversation.sessionId}`);
     goToMain();
-    setInputFocused(true);
-    setPreFillValue(`/plan Resume from: "${conversation.display.substring(0, 50)}..."`);
   };
 
 
