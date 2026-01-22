@@ -428,6 +428,11 @@ export class CliManager extends EventEmitter {
         reason: 'Already answered question this turn (only one per turn allowed)',
       });
 
+      // CRITICAL: Mark blocked questions as "sent" to prevent them from being answered later
+      // This prevents 400 errors when blocked questions remain in UI and get answered in future turns
+      this.sentToolResults.add(toolId);
+      debugLog('CliManager', 'Marked blocked question as sent to prevent future answers', { toolId });
+
       return;
     }
 
