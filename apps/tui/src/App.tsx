@@ -19,6 +19,8 @@ import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
+import { type Conversation } from './services/ConversationService';
+import { useConversations } from './hooks/useConversations';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -84,6 +86,12 @@ function AppContent() {
       console.log('[Clive TUI] Workspace overridden via --workspace flag (dev mode)');
     }
   }, [workspaceRoot]);
+
+  // Fetch conversations using React Query
+  const {
+    data: conversations = [],
+    isLoading: conversationsLoading,
+  } = useConversations(workspaceRoot, 20);
 
   const {
     outputLines,
@@ -189,7 +197,17 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
-      // Helper function to filter sessions by search query (checks both identifier and title)
+      // Helper functions to filter conversations and sessions by search query
+      const filterConversations = (query: string) => {
+        if (!query) return conversations;
+        const lowerQuery = query.toLowerCase();
+        return conversations.filter(c => {
+          const display = c.display.toLowerCase();
+          const slug = c.slug?.toLowerCase() || '';
+          return display.includes(lowerQuery) || slug.includes(lowerQuery);
+        });
+      };
+
       const filterSessions = (query: string) => {
         if (!query) return sessions;
         const lowerQuery = query.toLowerCase();
@@ -239,18 +257,24 @@ function AppContent() {
         return;
       }
 
-      // Arrow key navigation for epic selection
+      // Arrow key navigation for selection (conversations + sessions)
       if (event.name === 'up' || event.sequence === 'k') {
-        const filteredSessions = filterSessions(epicSearchQuery);
-        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
+        const filteredConvs = filterConversations(epicSearchQuery);
+        const filteredSess = filterSessions(epicSearchQuery);
+        const maxConvIndex = Math.min(filteredConvs.length, 7);
+        const maxSessIndex = Math.min(filteredSess.length, 3);
+        const maxIndex = maxConvIndex + maxSessIndex - 1;
         // Allow -1 for "Create New" option when not searching
         const minIndex = epicSearchQuery ? 0 : -1;
         setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
         return;
       }
       if (event.name === 'down' || event.sequence === 'j') {
-        const filteredSessions = filterSessions(epicSearchQuery);
-        const maxIndex = Math.min(filteredSessions.length, 10) - 1;
+        const filteredConvs = filterConversations(epicSearchQuery);
+        const filteredSess = filterSessions(epicSearchQuery);
+        const maxConvIndex = Math.min(filteredConvs.length, 7);
+        const maxSessIndex = Math.min(filteredSess.length, 3);
+        const maxIndex = maxConvIndex + maxSessIndex - 1;
         // Allow -1 for "Create New" option when not searching
         const minIndex = epicSearchQuery ? 0 : -1;
         setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
@@ -268,11 +292,25 @@ function AppContent() {
           return;
         }
 
-        const filteredSessions = filterSessions(epicSearchQuery);
-        const displaySessions = filteredSessions.slice(0, 10);
+        const filteredConvs = filterConversations(epicSearchQuery);
+        const filteredSess = filterSessions(epicSearchQuery);
+        const displayConvs = filteredConvs.slice(0, 7);
+        const displaySess = filteredSess.slice(0, 3);
 
-        if (displaySessions.length > 0 && displaySessions[selectedEpicIndex]) {
-          handleEpicSelect(displaySessions[selectedEpicIndex]);
+        // Determine if selecting a conversation or session
+        if (selectedEpicIndex < displayConvs.length) {
+          // Selecting a conversation
+          const conversation = displayConvs[selectedEpicIndex];
+          if (conversation) {
+            handleConversationResume(conversation);
+          }
+        } else {
+          // Selecting a session
+          const sessionIndex = selectedEpicIndex - displayConvs.length;
+          const session = displaySess[sessionIndex];
+          if (session) {
+            handleEpicSelect(session);
+          }
         }
         return;
       }
@@ -313,6 +351,16 @@ function AppContent() {
   const handleEpicSelect = (session: typeof sessions[0]) => {
     setActiveSession(session);
     goToMain();
+  };
+
+  // Handler for conversation resume
+  const handleConversationResume = (conversation: Conversation) => {
+    // TODO: Implement conversation resumption in CliManager
+    // For now, go to main view with conversation context
+    console.log('[Clive TUI] Resuming conversation:', conversation.sessionId);
+    goToMain();
+    setInputFocused(true);
+    setPreFillValue(`/plan Resume from: "${conversation.display.substring(0, 50)}..."`);
   };
 
 
@@ -366,10 +414,13 @@ function AppContent() {
         width={width}
         height={height}
         sessions={sessions}
+        conversations={conversations}
         sessionsLoading={sessionsLoading}
+        conversationsLoading={conversationsLoading}
         selectedIndex={selectedEpicIndex}
         searchQuery={epicSearchQuery}
         onSelect={handleEpicSelect}
+        onResumeConversation={handleConversationResume}
         onCreateNew={() => {
           goToMain();
           setInputFocused(true);

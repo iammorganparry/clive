@@ -1,21 +1,42 @@
 /**
  * SelectionView Component
- * Epic/Session selection screen
- * Shows list of available epics with search and selection
+ * Session/Conversation selection screen
+ * Shows list of recent conversations and epics with search and selection
  */
 
 import { OneDarkPro } from '../styles/theme';
 import { Session } from '../types';
 import { LoadingSpinner } from './LoadingSpinner';
+import type { Conversation } from '../services/ConversationService';
+
+/**
+ * Format timestamp as relative time
+ */
+function formatTimeAgo(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return 'just now';
+}
 
 interface SelectionViewProps {
   width: number;
   height: number;
   sessions: Session[];
+  conversations: Conversation[];
   sessionsLoading: boolean;
+  conversationsLoading: boolean;
   selectedIndex: number;
   searchQuery: string;
   onSelect: (session: Session) => void;
+  onResumeConversation: (conversation: Conversation) => void;
   onCreateNew: () => void;
   onBack: () => void;
 }
@@ -24,13 +45,26 @@ export function SelectionView({
   width,
   height,
   sessions,
+  conversations,
   sessionsLoading,
+  conversationsLoading,
   selectedIndex,
   searchQuery,
   onSelect,
+  onResumeConversation,
   onCreateNew,
   onBack,
 }: SelectionViewProps) {
+  // Filter conversations by search query (search display message and slug)
+  const filteredConversations = searchQuery
+    ? conversations.filter(c => {
+        const query = searchQuery.toLowerCase();
+        const display = c.display.toLowerCase();
+        const slug = c.slug?.toLowerCase() || '';
+        return display.includes(query) || slug.includes(query);
+      })
+    : conversations;
+
   // Filter sessions by search query (search both identifier and title)
   const filteredSessions = searchQuery
     ? sessions.filter(s => {
@@ -41,8 +75,10 @@ export function SelectionView({
       })
     : sessions;
 
-  // Limit to first 10
-  const displaySessions = filteredSessions.slice(0, 10);
+  // Combine conversations and sessions (conversations first)
+  const displayConversations = filteredConversations.slice(0, 7);
+  const displaySessions = filteredSessions.slice(0, 3);
+  const totalDisplayed = displayConversations.length + displaySessions.length;
 
   return (
     <box
@@ -60,32 +96,32 @@ export function SelectionView({
             CLIVE
           </text>
           <text fg={OneDarkPro.foreground.muted}>
-            {' · Select Epic'}
+            {' · Resume or Start Session'}
           </text>
         </box>
 
         {/* Loading state */}
-        {sessionsLoading && (
+        {(conversationsLoading || sessionsLoading) && (
           <box marginTop={3}>
-            <LoadingSpinner text="Loading epics..." color={OneDarkPro.syntax.yellow} />
+            <LoadingSpinner text="Loading sessions..." color={OneDarkPro.syntax.yellow} />
           </box>
         )}
 
         {/* Empty state */}
-        {!sessionsLoading && sessions.length === 0 && (
+        {!conversationsLoading && !sessionsLoading && conversations.length === 0 && sessions.length === 0 && (
           <box marginTop={3} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.muted}>
-              No epics found.
+              No recent sessions found.
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-              Use ↑↓ to select "Create New Epic" and press Enter.
+              Use ↑↓ to select "Create New Session" and press Enter.
             </text>
           </box>
         )}
 
-        {/* Session list */}
-        {!sessionsLoading && sessions.length > 0 && (
-          <box marginTop={2} flexDirection="column" width={60}>
+        {/* Session/Conversation list */}
+        {!conversationsLoading && !sessionsLoading && (conversations.length > 0 || sessions.length > 0) && (
+          <box marginTop={2} flexDirection="column" width={70}>
             {/* Search box */}
             <box
               backgroundColor={searchQuery ? OneDarkPro.background.highlight : OneDarkPro.background.secondary}
@@ -104,14 +140,14 @@ export function SelectionView({
 
             {/* Count */}
             <text fg={OneDarkPro.foreground.muted}>
-              {displaySessions.length} of {filteredSessions.length}
-              {searchQuery ? ` (${sessions.length} total)` : ' epics'}
+              {totalDisplayed} of {filteredConversations.length + filteredSessions.length}
+              {searchQuery ? ` (${conversations.length + sessions.length} total)` : ' sessions'}
             </text>
 
-            {/* Session items */}
-            {displaySessions.length === 0 && searchQuery ? (
+            {/* Items */}
+            {totalDisplayed === 0 && searchQuery ? (
               <text fg={OneDarkPro.foreground.muted}>
-                No matching epics. Try a different search.
+                No matching sessions. Try a different search.
               </text>
             ) : (
               <>
@@ -136,49 +172,89 @@ export function SelectionView({
                       }
                     >
                       {selectedIndex === -1 ? '▸ ' : '  '}
-                      ✨ Create New Epic
+                      ✨ Create New Session
                     </text>
                   </box>
                 )}
 
-                {/* Existing sessions */}
-                {displaySessions.map((session, i) => {
+                {/* Recent conversations */}
+                {displayConversations.map((conversation, i) => {
                   const isSelected = i === selectedIndex;
 
-                // Get identifier from linearData if available
-                const identifier = session.linearData?.identifier || '';
-                const prefix = identifier ? `${identifier} ` : '';
-                const maxNameLength = identifier ? 30 : 35;
+                  // Format timestamp
+                  const date = new Date(conversation.timestamp);
+                  const timeAgo = formatTimeAgo(date);
 
-                const name = session.name.length > maxNameLength
-                  ? session.name.substring(0, maxNameLength - 1) + '…'
-                  : session.name;
+                  // Truncate display message
+                  const maxLength = 50;
+                  const display = conversation.display.length > maxLength
+                    ? conversation.display.substring(0, maxLength - 1) + '…'
+                    : conversation.display;
 
-                return (
-                  <box
-                    key={session.id}
-                    backgroundColor={
-                      isSelected
-                        ? OneDarkPro.background.highlight
-                        : 'transparent'
-                    }
-                    paddingLeft={1}
-                    paddingRight={1}
-                  >
-                    <text
-                      fg={
+                  return (
+                    <box
+                      key={conversation.sessionId}
+                      backgroundColor={
                         isSelected
-                          ? OneDarkPro.syntax.blue
-                          : OneDarkPro.foreground.primary
+                          ? OneDarkPro.background.highlight
+                          : 'transparent'
                       }
+                      paddingLeft={1}
+                      paddingRight={1}
                     >
-                      {isSelected ? '▸ ' : '  '}
-                      {identifier ? prefix : ''}
-                      {name}
-                    </text>
-                  </box>
-                );
-              })}
+                      <text
+                        fg={
+                          isSelected
+                            ? OneDarkPro.syntax.blue
+                            : OneDarkPro.foreground.primary
+                        }
+                      >
+                        {isSelected ? '▸ ' : '  '}
+                        💬 {display} {' '}
+                        <text fg={OneDarkPro.foreground.comment}>({timeAgo})</text>
+                      </text>
+                    </box>
+                  );
+                })}
+
+                {/* Linear sessions (if any) */}
+                {displaySessions.map((session, i) => {
+                  const isSelected = (i + displayConversations.length) === selectedIndex;
+
+                  // Get identifier from linearData if available
+                  const identifier = session.linearData?.identifier || '';
+                  const prefix = identifier ? `${identifier} ` : '';
+                  const maxNameLength = identifier ? 30 : 35;
+
+                  const name = session.name.length > maxNameLength
+                    ? session.name.substring(0, maxNameLength - 1) + '…'
+                    : session.name;
+
+                  return (
+                    <box
+                      key={session.id}
+                      backgroundColor={
+                        isSelected
+                          ? OneDarkPro.background.highlight
+                          : 'transparent'
+                      }
+                      paddingLeft={1}
+                      paddingRight={1}
+                    >
+                      <text
+                        fg={
+                          isSelected
+                            ? OneDarkPro.syntax.blue
+                            : OneDarkPro.foreground.primary
+                        }
+                      >
+                        {isSelected ? '▸ ' : '  '}
+                        📋 {identifier ? prefix : ''}
+                        {name}
+                      </text>
+                    </box>
+                  );
+                })}
               </>
             )}
           </box>
@@ -187,7 +263,7 @@ export function SelectionView({
         {/* Keyboard hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.muted}>
-            Type to search  •  1-9/↑↓ Select  •  Enter Confirm  •  Esc {searchQuery ? 'Clear' : 'Back'}  •  q Quit
+            Type to search  •  ↑↓ Select  •  Enter Resume/Start  •  Esc {searchQuery ? 'Clear' : 'Back'}  •  q Quit
           </text>
         </box>
       </box>
