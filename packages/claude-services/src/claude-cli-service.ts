@@ -512,8 +512,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // TODO: Make this configurable based on agent mode (plan vs act)
             args.push("--permission-mode", "acceptEdits");
 
-            // Allow MCP tools to be used without permission prompts
-            args.push("--allowedTools", "mcp__clive-tools__*");
+            // Allow AskUserQuestion and MCP tools without permission prompts
+            // AskUserQuestion requires explicit allowlist to avoid permission denial 400 errors
+            args.push("--allowedTools", "AskUserQuestion,mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
             if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
