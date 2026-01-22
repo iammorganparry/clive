@@ -56,7 +56,7 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
         </box>
       )}
 
-      <scrollable-box
+      <box
         ref={scrollBoxRef}
         width={width}
         height={terminalHeight}
@@ -65,6 +65,15 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
         mouse={true}
         keys={true}
         vi={true}
+        scrollbar={{
+          ch: ' ',
+          track: {
+            bg: OneDarkPro.background.tertiary
+          },
+          style: {
+            inverse: true
+          }
+        }}
       >
         {!ansiOutput ? (
           <box padding={2}>
@@ -79,7 +88,7 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
             rows={terminalRows}
           />
         )}
-      </scrollable-box>
+      </box>
     </box>
   );
 }
