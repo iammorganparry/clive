@@ -111,18 +111,10 @@ function AppContent() {
     cleanup,
   } = useAppState(workspaceRoot, config?.issueTracker);
 
-  // Auto-skip selection view if 0-1 conversations
+  // Auto-resume if exactly 1 conversation
   useEffect(() => {
-    // Only auto-skip when in selection view and conversations are loaded
+    // Only auto-resume when in selection view and conversations are loaded
     if (viewMode !== 'selection' || conversationsLoading || sessionsLoading) {
-      return;
-    }
-
-    // If no conversations and no sessions, skip to main with /plan
-    if (conversations.length === 0 && sessions.length === 0) {
-      goToMain();
-      setInputFocused(true);
-      setPreFillValue('/plan');
       return;
     }
 
@@ -133,7 +125,7 @@ function AppContent() {
       return;
     }
 
-    // Otherwise, show the selection view (2+ conversations or has sessions)
+    // Otherwise, always show the selection view (including when 0 conversations)
   }, [viewMode, conversations.length, sessions.length, conversationsLoading, sessionsLoading]);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
