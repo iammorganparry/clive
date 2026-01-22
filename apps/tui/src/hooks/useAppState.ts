@@ -7,9 +7,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { PtyCliManager, type PtyDimensions } from '../services/PtyCliManager';
+import { CliManager } from '../services/CliManager';
 import { ConversationWatcher } from '../services/ConversationWatcher';
-import { OutputLine, QuestionData, Session, Task } from '../types';
+import type { OutputLine, QuestionData, Session, Task } from '../types';
 import { useSessions, useSessionTasks } from './useTaskQueries';
 import { debugLog } from '../utils/debug-logger';
 
@@ -20,16 +20,16 @@ import { debugLog } from '../utils/debug-logger';
 const tuiMachine = setup({
   types: {
     context: {} as {
-      ansiOutput: string;
+      outputLines: OutputLine[];
       pendingQuestion: QuestionData | null;
       workspaceRoot: string;
-      cliManager: PtyCliManager | null;
+      cliManager: CliManager | null;
       mode: 'none' | 'plan' | 'build';
       agentSessionActive: boolean;
     },
     events: {} as
       | { type: 'EXECUTE'; prompt: string; mode: 'plan' | 'build' }
-      | { type: 'OUTPUT'; ansi: string }
+      | { type: 'OUTPUT'; line: OutputLine }
       | { type: 'QUESTION'; question: QuestionData }
       | { type: 'ANSWER'; answers: Record<string, string> }
       | { type: 'COMPLETE' }
@@ -40,9 +40,9 @@ const tuiMachine = setup({
   },
   actions: {
     updateOutput: assign({
-      ansiOutput: ({ event }) => {
-        if (event.type !== 'OUTPUT') return '';
-        return event.ansi;
+      outputLines: ({ context, event }) => {
+        if (event.type !== 'OUTPUT') return context.outputLines;
+        return [...context.outputLines, event.line];
       },
     }),
     setQuestion: assign({
@@ -59,7 +59,7 @@ const tuiMachine = setup({
       pendingQuestion: null,
     }),
     clearOutput: assign({
-      ansiOutput: '',
+      outputLines: [],
     }),
     setMode: assign({
       mode: ({ event }) => {
@@ -77,7 +77,7 @@ const tuiMachine = setup({
   id: 'tui',
   initial: 'idle',
   context: {
-    ansiOutput: '',
+    outputLines: [],
     pendingQuestion: null,
     workspaceRoot: process.cwd(),
     cliManager: null,
@@ -153,10 +153,8 @@ const tuiMachine = setup({
 
 export interface AppState {
   // Output state
-  ansiOutput: string;
-  outputLines: OutputLine[]; // Keep for compatibility (empty array)
+  outputLines: OutputLine[];
   isRunning: boolean;
-  ptyDimensions: PtyDimensions | null;
 
   // Question state
   pendingQuestion: QuestionData | null;
@@ -179,30 +177,19 @@ export interface AppState {
   clearOutput: () => void;
   interrupt: () => void;
   setActiveSession: (session: Session | null) => void;
+  cleanup: () => void;
 }
 
 export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'beads' | null): AppState {
   // Use XState machine
-  const [state, send] = useMachine(tuiMachine, {
-    context: {
-      ansiOutput: '',
-      pendingQuestion: null,
-      workspaceRoot,
-      cliManager: null,
-      mode: 'none',
-      agentSessionActive: false,
-    },
-  });
+  const [state, send] = useMachine(tuiMachine);
 
   // CLI Manager and Conversation Watcher instances
-  const cliManager = useRef<PtyCliManager | null>(null);
+  const cliManager = useRef<CliManager | null>(null);
   const conversationWatcher = useRef<ConversationWatcher | null>(null);
 
   // Active session tracking
   const [activeSession, setActiveSession] = useState<Session | null>(null);
-
-  // PTY dimensions for OutputPanel centering
-  const [ptyDimensions, setPtyDimensions] = useState<PtyDimensions | null>(null);
 
   // React Query hooks for task/session data
   const {
@@ -215,32 +202,39 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     isLoading: tasksLoading,
   } = useSessionTasks(activeSession?.id ?? null);
 
-  // Initialize PTY CLI Manager and Conversation Watcher
+  // Initialize CLI Manager and Conversation Watcher
   useEffect(() => {
     if (!cliManager.current) {
-      cliManager.current = new PtyCliManager();
+      cliManager.current = new CliManager();
 
-      // Listen for PTY output
-      cliManager.current.on('output', ({ ansi }: { ansi: string }) => {
-        debugLog('useAppState', 'Received PTY output', {
-          bufferSize: ansi.length,
+      // Listen for output events
+      cliManager.current.on('output', (line: OutputLine) => {
+        debugLog('useAppState', 'Received output line', {
+          type: line.type,
+          text: line.text?.substring(0, 50),
         });
-        send({ type: 'OUTPUT', ansi });
-      });
 
-      // Listen for PTY dimensions (for OutputPanel centering)
-      cliManager.current.on('dimensions', (dims: PtyDimensions) => {
-        debugLog('useAppState', 'Received PTY dimensions', dims);
-        setPtyDimensions(dims);
+        // Handle question lines specially
+        if (line.type === 'question' && line.question) {
+          debugLog('useAppState', 'Question line detected', {
+            toolUseID: line.question.toolUseID,
+            questionCount: line.question.questions.length
+          });
+          send({ type: 'QUESTION', question: line.question });
+        }
+
+        send({ type: 'OUTPUT', line });
       });
 
       // Listen for completion
-      cliManager.current.on('complete', () => {
+      cliManager.current.on('complete', ({ exitCode }: { exitCode?: number } = {}) => {
+        debugLog('useAppState', 'Execution complete', { exitCode });
         send({ type: 'COMPLETE' });
       });
 
       // Listen for kill
       cliManager.current.on('killed', () => {
+        debugLog('useAppState', 'CLI process killed');
         send({ type: 'INTERRUPT' });
       });
     }
@@ -425,6 +419,13 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
 
     send({ type: 'EXECUTE', prompt, mode });
 
+    // Log workspace context
+    debugLog('useAppState', 'Executing with workspace context', {
+      workspaceRoot,
+      mode,
+      promptLength: prompt.length,
+    });
+
     // Build system prompt with issue tracker context
     let systemPrompt: string | undefined;
     const terminalFormatting = `\n\nIMPORTANT OUTPUT FORMATTING: You are outputting to a terminal interface. DO NOT use markdown formatting (no **, __, \`\`\`, ##, etc.). Use only plain text with:\n- Line breaks for structure\n- Indentation with spaces\n- Simple ASCII characters (-, *, •) for lists\n- UPPERCASE or "Quotes" for emphasis\nNever use markdown syntax as it will be displayed literally in the terminal.`;
@@ -433,6 +434,8 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
       const issueTrackerContext = issueTracker
         ? `\n\nIMPORTANT: This project uses ${issueTracker === 'linear' ? 'Linear' : 'Beads'} for issue tracking. When creating tasks or issues in your plan, use the ${issueTracker} CLI commands and tools.`
         : '';
+
+      const workspaceContext = `\n\nWORKSPACE CONTEXT: You are working in the directory: ${workspaceRoot}\nAll file paths and operations should be relative to this workspace root. Use tools like Read, Glob, and Grep to explore the codebase structure.`;
 
       systemPrompt = `You are an expert planning assistant that conducts THOROUGH CONTEXT GATHERING through structured interviews.
 
@@ -625,12 +628,14 @@ Before asking questions, explore the codebase to understand existing patterns:
 
 ## Important Notes
 
+${workspaceContext}
 ${issueTrackerContext}
 ${terminalFormatting}
 
 Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposing solutions. Take the time to ask good questions and explore thoroughly.`;
     } else if (mode === 'build') {
-      systemPrompt = `You are a task execution assistant. Execute tasks and provide clear updates.${terminalFormatting}`;
+      const workspaceContext = `\n\nWORKSPACE CONTEXT: You are working in the directory: ${workspaceRoot}\nAll file paths and operations should be relative to this workspace root.`;
+      systemPrompt = `You are a task execution assistant. Execute tasks and provide clear updates.${workspaceContext}${terminalFormatting}`;
     }
 
     // Execute via CLI Manager
@@ -641,9 +646,9 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
       workspaceRoot,
       model: selectedModel,
       systemPrompt,
-      mode, // Pass mode to CliManager
-    }).catch(error => {
-      addSystemMessage(`Execution error: ${error}`);
+      mode,
+    }).catch((error: Error) => {
+      addSystemMessage(`Execution error: ${error.message}`);
       send({ type: 'COMPLETE' });
     });
   };
@@ -655,17 +660,6 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
     if (!cliManager.current || !state.matches('executing')) return;
     cliManager.current.sendMessageToAgent(msg);
     send({ type: 'MESSAGE', content: msg });
-  };
-
-  /**
-   * Send raw keyboard input directly to PTY (for interactive prompts)
-   */
-  const sendRawInput = (key: string) => {
-    if (!cliManager.current || !state.matches('executing')) return;
-    debugLog('useAppState', 'Sending raw input to PTY', {
-      key: key.charCodeAt(0) < 32 ? `\\x${key.charCodeAt(0).toString(16)}` : key,
-    });
-    cliManager.current.sendRawInput(key);
   };
 
   /**
@@ -754,10 +748,8 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
 
   return {
     // Output state
-    ansiOutput: state.context.ansiOutput,
-    outputLines: [], // Keep for compatibility (empty array in PTY mode)
+    outputLines: state.context.outputLines,
     isRunning: state.matches('executing') || state.matches('waiting_for_answer'),
-    ptyDimensions,
     pendingQuestion: state.context.pendingQuestion,
 
     // Mode state
@@ -774,18 +766,10 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
     // Actions
     executeCommand,
     sendMessage,
-    sendRawInput,
     handleQuestionAnswer,
     clearOutput,
     interrupt,
     setActiveSession,
-
-    // PTY control
-    resizePty: (width: number, height: number) => {
-      if (cliManager.current) {
-        cliManager.current.resize(width, height);
-      }
-    },
 
     // Cleanup function for graceful exit
     cleanup: () => {

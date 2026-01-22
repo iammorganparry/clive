@@ -13,11 +13,11 @@ import { EventEmitter } from 'events';
 import { Effect, Runtime, Stream } from 'effect';
 import {
   ClaudeCliService,
-  ClaudeCliEvent,
-  CliExecutionHandle,
+  type ClaudeCliEvent,
+  type CliExecutionHandle,
   ClaudeCliExecutionError,
 } from '@clive/claude-services';
-import { OutputLine, QuestionData } from '../types';
+import type { OutputLine, QuestionData } from '../types';
 import { DiffDetector } from './DiffDetector';
 import { SubagentTracker } from './SubagentTracker';
 import { MetadataCalculator } from './MetadataCalculator';
@@ -76,7 +76,7 @@ export class CliManager extends EventEmitter {
       debugLog('CliManager', 'Execution error', { error: String(error) });
       this.emit('output', {
         text: `Execution error: ${error}`,
-        type: 'error',
+        type: 'stderr',
       } as OutputLine);
     }
   }

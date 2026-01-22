@@ -12,6 +12,20 @@ import { getLogFilePath, debugLog } from './utils/debug-logger';
 const args = process.argv.slice(2);
 const hasDebugFlag = args.includes('--debug') || args.includes('-d');
 
+// Parse workspace directory argument (for development)
+const workspaceArgIndex = args.findIndex(arg => arg.startsWith('--workspace=') || arg.startsWith('--cwd='));
+let userWorkspace: string | undefined;
+if (workspaceArgIndex !== -1) {
+  const argValue = args[workspaceArgIndex];
+  userWorkspace = argValue.split('=')[1];
+  debugLog('main', 'User workspace specified via argument', { userWorkspace });
+}
+
+// Set the workspace as environment variable so App.tsx can access it
+if (userWorkspace) {
+  process.env.CLIVE_WORKSPACE = userWorkspace;
+}
+
 // Enable debug mode if --debug flag is present
 if (hasDebugFlag) {
   process.env.DEBUG = 'true';
@@ -21,6 +35,7 @@ if (hasDebugFlag) {
 // Log startup
 debugLog('main', 'Clive TUI starting up', {
   args: args,
+  workspace: userWorkspace || process.cwd(),
   debugEnabled: hasDebugFlag || !!process.env.DEBUG || process.env.NODE_ENV === 'development'
 });
 

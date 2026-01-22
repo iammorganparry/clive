@@ -6,8 +6,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useTerminalDimensions, useKeyboard, extend } from '@opentui/react';
-import { GhosttyTerminalRenderable } from 'ghostty-opentui/terminal-buffer';
+import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
@@ -20,9 +19,6 @@ import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
-
-// Register ghostty-terminal component for terminal emulation
-extend({ 'ghostty-terminal': GhosttyTerminalRenderable });
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -76,12 +72,22 @@ function AppContent() {
   }, [preFillValue, inputFocused]);
 
   // State management
-  const workspaceRoot = process.cwd();
+  // Get workspace root from user's current terminal directory
+  // In development, this can be overridden via --workspace flag
+  const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
+
+  // Log workspace context on startup
+  useEffect(() => {
+    console.log('[Clive TUI] Starting in workspace:', workspaceRoot);
+    console.log('[Clive TUI] Claude will have context of this directory');
+    if (process.env.CLIVE_WORKSPACE) {
+      console.log('[Clive TUI] Workspace overridden via --workspace flag (dev mode)');
+    }
+  }, [workspaceRoot]);
+
   const {
-    ansiOutput,
     outputLines,
     isRunning,
-    ptyDimensions,
     pendingQuestion,
     mode,
     agentSessionActive,
@@ -92,11 +98,9 @@ function AppContent() {
     activeSession,
     setActiveSession,
     executeCommand,
-    sendRawInput,
     handleQuestionAnswer,
     interrupt,
     cleanup,
-    resizePty,
   } = useAppState(workspaceRoot, config?.issueTracker);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
@@ -112,32 +116,6 @@ function AppContent() {
     };
   }, [cleanup]);
 
-  // Track previous dimensions to avoid unnecessary resizes
-  const prevDimensionsRef = useRef({ width, height });
-  const isRunningRef = useRef(isRunning);
-
-  // Update ref when isRunning changes
-  useEffect(() => {
-    isRunningRef.current = isRunning;
-  }, [isRunning]);
-
-  // Resize PTY when terminal dimensions change (ONLY dimensions, not isRunning)
-  useEffect(() => {
-    const prevWidth = prevDimensionsRef.current.width;
-    const prevHeight = prevDimensionsRef.current.height;
-
-    // Only resize if:
-    // 1. Dimensions actually changed
-    // 2. We're currently running
-    // 3. Not the initial mount (prevent resize during spawn)
-    if (isRunningRef.current && (width !== prevWidth || height !== prevHeight)) {
-      prevDimensionsRef.current = { width, height };
-      resizePty(width, height);
-    } else {
-      // Always update prev dimensions even if not resizing
-      prevDimensionsRef.current = { width, height };
-    }
-  }, [width, height]); // DO NOT include resizePty or isRunning in deps to avoid loops
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
@@ -170,8 +148,8 @@ function AppContent() {
       return;
     }
 
-    // Scroll to bottom (Ctrl+B or End key)
-    if ((event.ctrl && event.sequence === 'b') || event.name === 'end') {
+    // Scroll to bottom (Ctrl+B, Cmd+B, or End key)
+    if (((event.ctrl || event.meta) && event.sequence === 'b') || event.name === 'end') {
       if (outputPanelRef.current) {
         outputPanelRef.current.scrollToBottom();
       }
@@ -413,15 +391,19 @@ function AppContent() {
   }
 
   // Main view (chat interface)
-  const inputHeight = 3;
+  const baseInputHeight = 3;
   const statusHeight = 1;
   const isInMode = mode !== 'none';
+
+  // Calculate dynamic input height based on pending question
+  const questionHeight = pendingQuestion ? Math.min(25, 20) : 0;
+  const dynamicInputHeight = baseInputHeight + questionHeight;
 
   // When border is present, it takes 2 rows (top+bottom) and 2 cols (left+right)
   const borderAdjustment = isInMode ? 2 : 0;
   const innerWidth = width - borderAdjustment;
   const innerHeight = height - borderAdjustment;
-  const bodyHeight = innerHeight - inputHeight - statusHeight;
+  const bodyHeight = innerHeight - dynamicInputHeight - statusHeight;
 
   // Sidebar layout
   const sidebarWidth = 30;
@@ -458,11 +440,10 @@ function AppContent() {
           ref={outputPanelRef}
           width={outputWidth}
           height={bodyHeight}
-          ansiOutput={ansiOutput}
+          lines={outputLines}
           isRunning={isRunning}
           mode={mode}
           modeColor={getModeColor()}
-          ptyDimensions={ptyDimensions}
         />
       </box>
 
@@ -478,8 +459,6 @@ function AppContent() {
         pendingQuestion={pendingQuestion}
         onQuestionAnswer={handleQuestionAnswer}
         onQuestionCancel={() => interrupt()}
-        rawInputMode={isRunning}
-        onRawKeyPress={sendRawInput}
       />
 
       {/* Status Bar */}
@@ -488,6 +467,7 @@ function AppContent() {
         height={statusHeight}
         isRunning={isRunning}
         inputFocused={inputFocused}
+        workspaceRoot={workspaceRoot}
       />
     </box>
   );

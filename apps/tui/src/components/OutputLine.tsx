@@ -171,7 +171,7 @@ export function OutputLine({ line }: Props) {
 
     case 'assistant':
       return (
-        <box flexDirection="row" backgroundColor={OneDarkPro.background.highlight}>
+        <box flexDirection="row" backgroundColor={OneDarkPro.background.highlight} marginBottom={1}>
           <box paddingLeft={1} paddingRight={1}>
             <text fg={OneDarkPro.syntax.blue}>█</text>
           </box>
@@ -188,6 +188,7 @@ export function OutputLine({ line }: Props) {
         <box
           backgroundColor={OneDarkPro.background.secondary}
           padding={1}
+          marginBottom={1}
         >
           <text fg={OneDarkPro.syntax.green}>
             {line.text}
@@ -197,7 +198,7 @@ export function OutputLine({ line }: Props) {
 
     case 'system':
       return (
-        <box>
+        <box marginBottom={1}>
           <text fg={OneDarkPro.foreground.comment}>
             💭 {line.text}
           </text>

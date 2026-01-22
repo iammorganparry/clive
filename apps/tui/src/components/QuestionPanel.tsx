@@ -33,18 +33,40 @@ export function QuestionPanel({
   // Collected answers (question header -> selected option value)
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
+  // Custom input state for "Other" option
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+
   const currentQuestion = question.questions[currentIndex];
   const isLastQuestion = currentIndex === question.questions.length - 1;
 
+  // Add "Other" option to the end of options list
+  const optionsWithOther = [
+    ...currentQuestion.options,
+    { label: 'Other', description: 'Enter a custom answer' }
+  ];
+  const isOtherSelected = selectedIndex === optionsWithOther.length - 1;
+
   // Keyboard navigation
   useKeyboard((key) => {
+    // If custom input is showing, handle differently
+    if (showCustomInput) {
+      if (key.name === 'return' && customInput.trim()) {
+        handleCustomSubmit();
+      } else if (key.name === 'escape') {
+        setShowCustomInput(false);
+        setCustomInput('');
+      }
+      return; // Let input component handle other keys
+    }
+
     if (key.name === 'up' || key.name === 'k') {
       setSelectedIndex((prev) =>
-        prev > 0 ? prev - 1 : currentQuestion.options.length - 1
+        prev > 0 ? prev - 1 : optionsWithOther.length - 1
       );
     } else if (key.name === 'down' || key.name === 'j') {
       setSelectedIndex((prev) =>
-        prev < currentQuestion.options.length - 1 ? prev + 1 : 0
+        prev < optionsWithOther.length - 1 ? prev + 1 : 0
       );
     } else if (key.name === 'return') {
       handleSelect();
@@ -53,22 +75,27 @@ export function QuestionPanel({
     } else if (/^[1-9]$/.test(key.key)) {
       // Number key selection (1-9)
       const index = parseInt(key.key) - 1;
-      if (index < currentQuestion.options.length) {
+      if (index < optionsWithOther.length) {
         setSelectedIndex(index);
         // Auto-submit on number key
         setTimeout(() => {
-          const selectedOption = currentQuestion.options[index];
-          const newAnswers = {
-            ...answers,
-            [currentQuestion.header]: selectedOption.label,
-          };
-          setAnswers(newAnswers);
-
-          if (isLastQuestion) {
-            onAnswer(newAnswers);
+          if (index === optionsWithOther.length - 1) {
+            // Selected "Other" - show input
+            setShowCustomInput(true);
           } else {
-            setCurrentIndex((prev) => prev + 1);
-            setSelectedIndex(0);
+            const selectedOption = currentQuestion.options[index];
+            const newAnswers = {
+              ...answers,
+              [currentQuestion.header]: selectedOption.label,
+            };
+            setAnswers(newAnswers);
+
+            if (isLastQuestion) {
+              onAnswer(newAnswers);
+            } else {
+              setCurrentIndex((prev) => prev + 1);
+              setSelectedIndex(0);
+            }
           }
         }, 100);
       }
@@ -76,12 +103,39 @@ export function QuestionPanel({
   });
 
   const handleSelect = () => {
+    // Check if "Other" is selected
+    if (isOtherSelected) {
+      setShowCustomInput(true);
+      return;
+    }
+
     const selectedOption = currentQuestion.options[selectedIndex];
     const newAnswers = {
       ...answers,
       [currentQuestion.header]: selectedOption.label,
     };
     setAnswers(newAnswers);
+
+    if (isLastQuestion) {
+      // Submit all answers
+      onAnswer(newAnswers);
+    } else {
+      // Move to next question
+      setCurrentIndex((prev) => prev + 1);
+      setSelectedIndex(0);
+    }
+  };
+
+  const handleCustomSubmit = () => {
+    if (!customInput.trim()) return;
+
+    const newAnswers = {
+      ...answers,
+      [currentQuestion.header]: customInput.trim(),
+    };
+    setAnswers(newAnswers);
+    setShowCustomInput(false);
+    setCustomInput('');
 
     if (isLastQuestion) {
       // Submit all answers
@@ -123,7 +177,7 @@ export function QuestionPanel({
 
       {/* Header */}
       <box marginBottom={1}>
-        <text fg={OneDarkPro.syntax.blue} bold>
+        <text fg={OneDarkPro.syntax.blue}>
           ❓ {currentQuestion.header}
         </text>
       </box>
@@ -137,7 +191,7 @@ export function QuestionPanel({
 
       {/* Options */}
       <box flexDirection="column" flexGrow={1}>
-        {currentQuestion.options.map((option, i) => {
+        {optionsWithOther.map((option, i) => {
           const isSelected = i === selectedIndex;
 
           return (
@@ -151,52 +205,62 @@ export function QuestionPanel({
                   ? OneDarkPro.background.highlight
                   : 'transparent'
               }
+              flexDirection="column"
             >
-              <box flexDirection="row" width="100%">
-                {/* Selection indicator */}
-                <text
-                  color={
-                    isSelected
-                      ? OneDarkPro.syntax.green
-                      : OneDarkPro.foreground.muted
-                  }
-                  width={3}
-                >
+              {/* Option label with selection indicator */}
+              <box flexDirection="row">
+                <text fg={isSelected ? OneDarkPro.syntax.green : OneDarkPro.foreground.muted}>
                   {isSelected ? '▸ ' : '  '}
                 </text>
-
-                {/* Option content */}
-                <box flexDirection="column" flexGrow={1}>
-                  <text
-                    color={
-                      isSelected
-                        ? OneDarkPro.foreground.primary
-                        : OneDarkPro.foreground.secondary
-                    }
-                    bold={isSelected}
-                  >
-                    {option.label}
-                  </text>
-
-                  {option.description && (
-                    <text
-                      color={OneDarkPro.foreground.muted}
-                      fontSize={0.9}
-                    >
-                      {option.description}
-                    </text>
-                  )}
-                </box>
+                <text fg={isSelected ? OneDarkPro.foreground.primary : OneDarkPro.foreground.secondary}>
+                  {option.label}
+                </text>
               </box>
+
+              {/* Option description on separate line */}
+              {option.description && (
+                <box paddingLeft={3}>
+                  <text fg={OneDarkPro.foreground.muted}>
+                    {option.description}
+                  </text>
+                </box>
+              )}
             </box>
           );
         })}
       </box>
 
+      {/* Custom input field (shown when "Other" is selected) */}
+      {showCustomInput && (
+        <box
+          marginTop={1}
+          marginBottom={1}
+          paddingLeft={2}
+          paddingRight={2}
+          borderStyle="single"
+          borderColor={OneDarkPro.syntax.green}
+        >
+          <box flexDirection="row" width="100%">
+            <text fg={OneDarkPro.syntax.green}>❯ </text>
+            <input
+              value={customInput}
+              placeholder="Enter your answer..."
+              focused={true}
+              onInput={(newValue: string) => setCustomInput(newValue)}
+              onSubmit={handleCustomSubmit}
+              style={{ flexGrow: 1 }}
+            />
+          </box>
+        </box>
+      )}
+
       {/* Help text */}
       <box marginTop={1}>
         <text fg={OneDarkPro.foreground.muted}>
-          1-{currentQuestion.options.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel
+          {showCustomInput
+            ? 'Type your answer • Enter Submit • Esc Cancel'
+            : `1-${optionsWithOther.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel`
+          }
         </text>
       </box>
     </box>
