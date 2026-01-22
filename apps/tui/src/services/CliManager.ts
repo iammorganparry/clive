@@ -433,6 +433,10 @@ export class CliManager extends EventEmitter {
   sendToolResult(toolId: string, result: string): void {
     debugLog('CliManager', 'sendToolResult called', { toolId, resultLength: result.length });
 
+    // Log EVERY call to sendToolResult with stack trace to debug duplicates
+    console.log(`[CliManager] sendToolResult called: toolId=${toolId}, result=${result.substring(0, 100)}`);
+    console.log(`[CliManager] Call stack:`, new Error().stack);
+
     if (!this.currentHandle) {
       debugLog('CliManager', 'ERROR: Cannot send tool result - no active handle');
       console.error('[CliManager] Cannot send tool result - no active handle');

@@ -737,9 +737,14 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                * The CLI expects a 'user' message containing tool_result content blocks
                */
               sendToolResult: (toolCallId: string, result: string) => {
+                logToOutput(`[ClaudeCliService] sendToolResult called - toolCallId=${toolCallId}`);
+                logToOutput(`[ClaudeCliService] Current sentToolResultMessages size: ${sentToolResultMessages.size}`);
+                logToOutput(`[ClaudeCliService] sentToolResultMessages contents: ${JSON.stringify(Array.from(sentToolResultMessages))}`);
+
                 // Create unique key for this tool_result (tool_use_id + result preview)
                 // This prevents the upstream CLI bug where duplicate tool_results cause 400 errors
                 const resultKey = `${toolCallId}:${result.substring(0, 100)}`;
+                logToOutput(`[ClaudeCliService] Generated resultKey: ${resultKey}`);
 
                 // Check if we've already sent this exact tool_result
                 if (sentToolResultMessages.has(resultKey)) {
@@ -755,6 +760,7 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
                 // Mark this tool_result as sent
                 sentToolResultMessages.add(resultKey);
+                logToOutput(`[ClaudeCliService] Added to sentToolResultMessages. New size: ${sentToolResultMessages.size}`);
 
                 if (!child.stdin?.writable) {
                   console.error(
