@@ -536,11 +536,14 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
             }
 
-            // Resume previous session if resumeSessionId provided
-            if (options.resumeSessionId) {
-              args.push("--resume", options.resumeSessionId);
-              logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
-            }
+            // DISABLED: Resume mode has bugs with tool_use/tool_result pairing in stream-json mode
+            // The CLI makes follow-up API requests with malformed message history after tool_results
+            // causing "unexpected tool_use_id found in tool_result blocks" errors
+            // TODO: Re-enable when Claude CLI fixes conversation history reconstruction in --resume mode
+            // if (options.resumeSessionId) {
+            //   args.push("--resume", options.resumeSessionId);
+            //   logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
+            // }
 
             // Use bypassPermissions mode + dangerously-skip-permissions for maximum permission bypass
             // This prevents permission denials that break the tool_use/tool_result pairing
