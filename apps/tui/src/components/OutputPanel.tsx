@@ -19,7 +19,7 @@ interface OutputPanelProps {
 }
 
 export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode = 'none', modeColor, ptyDimensions }: OutputPanelProps) {
-  const scrollRef = useRef<any>(null);
+  const scrollBoxRef = useRef<any>(null);
   const isInMode = mode !== 'none';
   const modeHeaderHeight = isInMode ? 1 : 0;
   const terminalHeight = height - modeHeaderHeight;
@@ -30,10 +30,10 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
 
   // Auto-scroll to bottom when output changes
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollToBottom?.();
+    if (scrollBoxRef.current && scrollBoxRef.current.scrollToBottom) {
+      scrollBoxRef.current.scrollToBottom();
     }
-  }, [ansiOutput, isRunning]);
+  }, [ansiOutput]);
 
   return (
     <box
@@ -56,9 +56,15 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
         </box>
       )}
 
-      <box
+      <scrollable-box
+        ref={scrollBoxRef}
         width={width}
         height={terminalHeight}
+        scrollable={true}
+        alwaysScroll={true}
+        mouse={true}
+        keys={true}
+        vi={true}
       >
         {!ansiOutput ? (
           <box padding={2}>
@@ -73,7 +79,7 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
             rows={terminalRows}
           />
         )}
-      </box>
+      </scrollable-box>
     </box>
   );
 }

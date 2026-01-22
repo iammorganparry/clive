@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/.."
 SKILLS_DIR="$PLUGIN_DIR/skills"
+LOCAL_SKILLS_DIR=".clive/skills"
 PROGRESS_FILE=".claude/progress.txt"
 
 # Completion markers (generic markers for all skills)
@@ -124,7 +125,10 @@ echo "$MAX_ITERATIONS" > .claude/.build-max-iterations
 
 echo "🚀 Starting build loop"
 echo "   Task source: beads (bd ready)"
-echo "   Skills: $SKILLS_DIR"
+echo "   Built-in skills: $SKILLS_DIR"
+if [ -d "$LOCAL_SKILLS_DIR" ] && [ -n "$(ls -A "$LOCAL_SKILLS_DIR" 2>/dev/null)" ]; then
+    echo "   📦 Local skills: $LOCAL_SKILLS_DIR ($(ls "$LOCAL_SKILLS_DIR" | wc -l | tr -d ' ') custom skills found)"
+fi
 if [ -n "$EPIC_FILTER" ]; then
     echo "   Epic: $EPIC_FILTER"
 fi
@@ -185,12 +189,19 @@ get_task_skill() {
 }
 
 # Function to get skill file path
+# Priority: 1) Local project skills (.clive/skills), 2) Built-in skills, 3) Default to feature
 get_skill_file() {
     local skill="$1"
-    local skill_file="$SKILLS_DIR/${skill}.md"
+    local local_skill_file="$LOCAL_SKILLS_DIR/${skill}.md"
+    local builtin_skill_file="$SKILLS_DIR/${skill}.md"
 
-    if [ -f "$skill_file" ]; then
-        echo "$skill_file"
+    # Check local project skills first (user-defined)
+    if [ -f "$local_skill_file" ]; then
+        echo "$local_skill_file"
+    # Fall back to built-in skills
+    elif [ -f "$builtin_skill_file" ]; then
+        echo "$builtin_skill_file"
+    # Default to built-in feature skill
     else
         echo "$SKILLS_DIR/feature.md"
     fi
@@ -307,6 +318,11 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
     # but still requires approval for dangerous operations (bash, etc.)
     # Full permissions for build agents - they need to run bd commands, git, etc.
     CLAUDE_ARGS=(--add-dir "$(dirname "$TEMP_PROMPT")" --add-dir "$(pwd)" --add-dir "$PLUGIN_DIR" --dangerously-skip-permissions)
+
+    # Add local skills directory if it exists (project-specific custom skills)
+    if [ -d "$LOCAL_SKILLS_DIR" ]; then
+        CLAUDE_ARGS+=(--add-dir "$(pwd)/$LOCAL_SKILLS_DIR")
+    fi
 
     if [ "$STREAMING" = true ]; then
         # Streaming mode for TUI - NDJSON output for parsing

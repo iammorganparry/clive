@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/.."
 SKILLS_DIR="$PLUGIN_DIR/skills"
+LOCAL_SKILLS_DIR=".clive/skills"
 # PROGRESS_FILE is set after argument parsing to support epic-scoped paths
 
 # Completion markers
@@ -156,9 +157,16 @@ get_task_skill() {
 # Function to get skill file path
 get_skill_file() {
     local skill="$1"
-    local skill_file="$SKILLS_DIR/${skill}.md"
-    if [ -f "$skill_file" ]; then
-        echo "$skill_file"
+    local local_skill_file="$LOCAL_SKILLS_DIR/${skill}.md"
+    local builtin_skill_file="$SKILLS_DIR/${skill}.md"
+
+    # Check local project skills first (user-defined)
+    if [ -f "$local_skill_file" ]; then
+        echo "$local_skill_file"
+    # Fall back to built-in skills
+    elif [ -f "$builtin_skill_file" ]; then
+        echo "$builtin_skill_file"
+    # Default to built-in feature skill
     else
         echo "$SKILLS_DIR/feature.md"
     fi
