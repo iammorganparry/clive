@@ -26,12 +26,23 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
 
   // Use PTY dimensions if available (calculated based on available space), otherwise use full available space
   const terminalCols = ptyDimensions?.cols || width;
-  const terminalRows = ptyDimensions?.rows || terminalHeight;
+  // Don't constrain terminal rows - let it grow to full content height for proper scrolling
+  // The parent scrollable box will handle the viewport
 
   // Auto-scroll to bottom when output changes
+  // Use setImmediate to ensure scroll happens after render
   useEffect(() => {
-    if (scrollBoxRef.current && scrollBoxRef.current.scrollToBottom) {
-      scrollBoxRef.current.scrollToBottom();
+    if (scrollBoxRef.current) {
+      // Scroll to bottom immediately
+      setImmediate(() => {
+        if (scrollBoxRef.current?.scrollToBottom) {
+          scrollBoxRef.current.scrollToBottom();
+        }
+        // Also set scroll position directly as fallback
+        if (scrollBoxRef.current?.setScrollPerc) {
+          scrollBoxRef.current.setScrollPerc(100);
+        }
+      });
     }
   }, [ansiOutput]);
 
@@ -65,6 +76,8 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
         mouse={true}
         keys={true}
         vi={true}
+        scrollSpeed={5}
+        baseLimit={10000}
         scrollbar={{
           ch: ' ',
           track: {
@@ -85,7 +98,6 @@ export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode
           <ghostty-terminal
             ansi={ansiOutput}
             cols={terminalCols}
-            rows={terminalRows}
           />
         )}
       </box>
