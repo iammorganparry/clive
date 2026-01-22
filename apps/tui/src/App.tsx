@@ -116,7 +116,6 @@ function AppContent() {
     }
 
     // Otherwise, show the selection view (2+ conversations or has sessions)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, conversations.length, sessions.length, conversationsLoading, sessionsLoading]);
 
   const {
