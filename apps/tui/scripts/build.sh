@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/.."
 SKILLS_DIR="$PLUGIN_DIR/skills"
-LOCAL_SKILLS_DIR=".clive/skills"
+LOCAL_SKILLS_DIR=".claude/skills"
 PROGRESS_FILE=".claude/progress.txt"
 
 # Completion markers (generic markers for all skills)
@@ -189,7 +189,7 @@ get_task_skill() {
 }
 
 # Function to get skill file path
-# Priority: 1) Local project skills (.clive/skills), 2) Built-in skills, 3) Default to feature
+# Priority: 1) Local project skills (.claude/skills), 2) Built-in skills, 3) Default to feature
 get_skill_file() {
     local skill="$1"
     local local_skill_file="$LOCAL_SKILLS_DIR/${skill}.md"

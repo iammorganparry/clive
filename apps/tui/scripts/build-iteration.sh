@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/.."
 SKILLS_DIR="$PLUGIN_DIR/skills"
-LOCAL_SKILLS_DIR=".clive/skills"
+LOCAL_SKILLS_DIR=".claude/skills"
 # PROGRESS_FILE is set after argument parsing to support epic-scoped paths
 
 # Completion markers

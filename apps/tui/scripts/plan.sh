@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 PLUGIN_DIR="$SCRIPT_DIR/../commands"
 PLAN_PROMPT="$PLUGIN_DIR/plan.md"
+LOCAL_SKILLS_DIR=".claude/skills"
 
 # Defaults
 STREAMING=false
@@ -153,6 +154,15 @@ done
 
 if [ -n "$MCP_CONFIG" ]; then
     CLAUDE_ARGS+=(--mcp-config "$MCP_CONFIG")
+fi
+
+# Add local skills directory if it exists (project-specific custom skills)
+if [ -d "$LOCAL_SKILLS_DIR" ]; then
+    CLAUDE_ARGS+=(--add-dir "$(pwd)/$LOCAL_SKILLS_DIR")
+    LOCAL_SKILLS_COUNT=$(ls "$LOCAL_SKILLS_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$LOCAL_SKILLS_COUNT" -gt 0 ]; then
+        echo "Found $LOCAL_SKILLS_COUNT custom skill(s) in $LOCAL_SKILLS_DIR"
+    fi
 fi
 
 if [ "$STREAMING" = true ]; then

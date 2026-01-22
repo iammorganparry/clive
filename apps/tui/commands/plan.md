@@ -153,9 +153,11 @@ Create issues in configured tracker (Beads or Linear) following patterns in "Cre
 
 ## Available Skills
 
-These skills are available for task implementation. Select based on codebase research.
+Skills define how tasks are implemented. Both built-in and project-specific custom skills are available.
 
-**Skills:**
+### Built-in Skills
+
+**Standard skills:**
 - `feature`: New functionality or enhancements (DEFAULT for user-facing capabilities)
 - `bugfix`: Fixing existing broken behavior (ONLY when something is broken)
 - `refactor`: Improving code structure without changing behavior
@@ -163,12 +165,45 @@ These skills are available for task implementation. Select based on codebase res
 - `unit-tests`: Unit test creation (RARE - usually part of DoD)
 - `e2e-tests`: End-to-end test creation (RARE - usually part of DoD)
 
-**Skill Selection Guidance:**
-- Default to `feature` for new user-facing capabilities
+### Project-Specific Custom Skills
+
+**IMPORTANT:** Check for custom skills defined by the project team:
+
+1. Run `ls .claude/skills/*.md 2>/dev/null` to discover local skills
+2. If custom skills exist, list them in your plan
+3. Prioritize custom skills when they match the task type
+4. Custom skills override built-in skills with the same name
+
+**Example custom skills you might find:**
+- `deploy`: Custom deployment workflow
+- `migrate`: Database migration procedures
+- `setup`: Environment setup steps
+- `custom-feature`: Project-specific feature implementation pattern
+
+### Skill Discovery Process
+
+Before writing your plan:
+```bash
+# Check for custom skills
+ls .claude/skills/*.md 2>/dev/null
+
+# If found, read them to understand project-specific workflows
+# Example: Read .claude/skills/deploy.md
+```
+
+Include custom skills in Technical Notes:
+```markdown
+**Recommended skill:** deploy (custom project skill for deployment workflow)
+```
+
+### Skill Selection Guidance
+
+- **Check for custom skills first** - project teams may have defined specific workflows
+- Default to `feature` for new user-facing capabilities if no custom skill exists
 - Use `bugfix` only when fixing something broken
 - Use `refactor` when improving existing working code
 - Avoid `*-tests` skills - tests should be in Definition of Done
-- Justify skill selection based on codebase patterns found in research
+- Justify skill selection based on codebase patterns AND available skills
 
 ---
 
