@@ -166,8 +166,33 @@ export class ConversationWatcher extends EventEmitter {
               });
               this.emit('task_spawn', event);
             }
+
+            // Special handling for Linear project creation
+            if (event.name === 'mcp__linear__create_project') {
+              debugLog('ConversationWatcher', 'Linear project creation detected', {
+                toolId: event.id,
+              });
+              this.emit('linear_project_create', event);
+            }
+
+            // Special handling for Linear issue creation
+            if (event.name === 'mcp__linear__create_issue') {
+              debugLog('ConversationWatcher', 'Linear issue creation detected', {
+                toolId: event.id,
+              });
+              this.emit('linear_issue_create', event);
+            }
           } else if (event.type === 'tool_result') {
             this.emit('tool_result', event);
+
+            // Capture Linear tool results to extract IDs
+            if (event.name === 'mcp__linear__create_project' || event.name === 'mcp__linear__create_issue') {
+              debugLog('ConversationWatcher', 'Linear tool result', {
+                toolName: event.name,
+                toolId: event.id,
+              });
+              this.emit('linear_tool_result', event);
+            }
           } else if (event.type === 'text') {
             this.emit('text', event);
           } else if (event.type === 'thinking') {
@@ -185,6 +210,17 @@ export class ConversationWatcher extends EventEmitter {
         error: String(error),
       });
     }
+  }
+
+  /**
+   * Get the current session ID being watched
+   */
+  getCurrentSessionId(): string | null {
+    if (!this.sessionFile) return null;
+
+    // Extract session ID from file path: /path/to/<session-id>.jsonl
+    const fileName = path.basename(this.sessionFile, '.jsonl');
+    return fileName;
   }
 
   /**

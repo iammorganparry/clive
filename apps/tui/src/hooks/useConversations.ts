@@ -5,8 +5,9 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import { ConversationService, type Conversation } from '../services/ConversationService';
+import { SessionMetadataService } from '../services/SessionMetadataService';
 
 /**
  * Fetch recent conversations for a specific project
@@ -20,9 +21,14 @@ export function useConversations(projectPath: string, limit: number = 20) {
         return yield* service.getConversationsForProject(projectPath, limit);
       });
 
-      // Run the Effect program with ConversationService layer
+      // Run the Effect program with both service layers
+      const serviceLayers = Layer.merge(
+        ConversationService.Default,
+        SessionMetadataService.Default
+      );
+
       return await Effect.runPromise(
-        program.pipe(Effect.provide(ConversationService.Default))
+        program.pipe(Effect.provide(serviceLayers))
       );
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -45,9 +51,14 @@ export function useAllConversations(limit: number = 50) {
         return yield* service.getRecentConversations(limit);
       });
 
-      // Run the Effect program with ConversationService layer
+      // Run the Effect program with both service layers
+      const serviceLayers = Layer.merge(
+        ConversationService.Default,
+        SessionMetadataService.Default
+      );
+
       return await Effect.runPromise(
-        program.pipe(Effect.provide(ConversationService.Default))
+        program.pipe(Effect.provide(serviceLayers))
       );
     },
     staleTime: 1000 * 60 * 5, // 5 minutes

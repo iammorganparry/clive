@@ -11,6 +11,7 @@ import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
+import { SessionMetadataService } from './SessionMetadataService';
 
 export interface Conversation {
   sessionId: string;
@@ -19,6 +20,10 @@ export interface Conversation {
   timestamp: number;
   slug?: string; // Human-readable name from conversation file
   gitBranch?: string;
+  linearProjectId?: string;
+  linearProjectIdentifier?: string;
+  linearTaskId?: string;
+  linearTaskIdentifier?: string;
 }
 
 /**
@@ -131,6 +136,9 @@ class ConversationServiceImpl {
       // Enrich with slug and git branch from conversation files
       yield* this.enrichConversations(conversations);
 
+      // Enrich with Linear metadata from SessionMetadataService
+      yield* this.enrichWithLinearMetadata(conversations);
+
       return conversations;
     });
   }
@@ -183,6 +191,33 @@ class ConversationServiceImpl {
         } catch (error) {
           // Skip enrichment on error
           continue;
+        }
+      }
+    });
+  }
+
+  /**
+   * Enrich conversations with Linear metadata from SessionMetadataService
+   * Errors are caught gracefully - metadata enrichment is optional
+   */
+  private enrichWithLinearMetadata(conversations: Conversation[]): Effect.Effect<void, never> {
+    return Effect.gen(this, function* () {
+      const metadataService = yield* SessionMetadataService;
+
+      for (const conv of conversations) {
+        // Fetch metadata for this session, catching any errors
+        const metadataEffect = metadataService.getMetadata(conv.sessionId).pipe(
+          Effect.catchAll(() => Effect.succeed(null))
+        );
+
+        const metadata = yield* metadataEffect;
+
+        if (metadata) {
+          // Merge Linear metadata into conversation
+          conv.linearProjectId = metadata.linearProjectId;
+          conv.linearProjectIdentifier = metadata.linearProjectIdentifier;
+          conv.linearTaskId = metadata.linearTaskId;
+          conv.linearTaskIdentifier = metadata.linearTaskIdentifier;
         }
       }
     });

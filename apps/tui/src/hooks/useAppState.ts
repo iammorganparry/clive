@@ -7,8 +7,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
+import { Effect } from 'effect';
 import { CliManager } from '../services/CliManager';
 import { ConversationWatcher } from '../services/ConversationWatcher';
+import { SessionMetadataService } from '../services/SessionMetadataService';
 import type { OutputLine, QuestionData, Session, Task } from '../types';
 import { useSessions, useSessionTasks } from './useTaskQueries';
 import { debugLog } from '../utils/debug-logger';
@@ -270,6 +272,85 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
           };
 
           send({ type: 'QUESTION', question: questionData });
+        }
+      });
+
+      // Listen for Linear tool results to capture project/issue IDs
+      conversationWatcher.current.on('linear_tool_result', (event: any) => {
+        debugLog('useAppState', 'Linear tool result detected', {
+          toolName: event.name,
+          toolId: event.id,
+        });
+
+        // Parse tool result content to extract Linear IDs
+        try {
+          const content = event.content;
+          let parsedContent: any;
+
+          // Content might be a string or already parsed
+          if (typeof content === 'string') {
+            parsedContent = JSON.parse(content);
+          } else {
+            parsedContent = content;
+          }
+
+          // Get current session ID from conversation watcher
+          const sessionId = conversationWatcher.current?.getCurrentSessionId();
+          if (!sessionId) {
+            debugLog('useAppState', 'No active session ID, skipping metadata storage');
+            return;
+          }
+
+          debugLog('useAppState', 'Storing Linear metadata for session', {
+            sessionId,
+            toolName: event.name,
+          });
+
+          // Store metadata based on tool type
+          const program = Effect.gen(function* () {
+            const service = yield* SessionMetadataService;
+
+            if (event.name === 'mcp__linear__create_project') {
+              // Extract project ID and identifier
+              const projectId = parsedContent.project?.id || parsedContent.id;
+              const projectIdentifier = parsedContent.project?.identifier || parsedContent.identifier;
+
+              if (projectId) {
+                debugLog('useAppState', 'Storing Linear project association', {
+                  sessionId,
+                  projectId,
+                  projectIdentifier,
+                });
+                yield* service.setLinearProject(sessionId, projectId, projectIdentifier);
+              }
+            } else if (event.name === 'mcp__linear__create_issue') {
+              // Extract issue ID and identifier
+              const taskId = parsedContent.issue?.id || parsedContent.id;
+              const taskIdentifier = parsedContent.issue?.identifier || parsedContent.identifier;
+
+              if (taskId) {
+                debugLog('useAppState', 'Storing Linear task association', {
+                  sessionId,
+                  taskId,
+                  taskIdentifier,
+                });
+                yield* service.setLinearTask(sessionId, taskId, taskIdentifier);
+              }
+            }
+          });
+
+          // Run the Effect program
+          Effect.runPromise(
+            program.pipe(Effect.provide(SessionMetadataService.Default))
+          ).catch((error: any) => {
+            debugLog('useAppState', 'Error storing Linear metadata', {
+              error: String(error),
+            });
+          });
+        } catch (error) {
+          debugLog('useAppState', 'Error parsing Linear tool result', {
+            error: String(error),
+          });
         }
       });
 

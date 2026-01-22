@@ -185,8 +185,11 @@ export function SelectionView({
                   const date = new Date(conversation.timestamp);
                   const timeAgo = formatTimeAgo(date);
 
-                  // Truncate display message
-                  const maxLength = 50;
+                  // Get Linear identifier if available
+                  const linearId = conversation.linearProjectIdentifier || conversation.linearTaskIdentifier;
+
+                  // Truncate display message (shorter if Linear ID present)
+                  const maxLength = linearId ? 40 : 50;
                   const display = conversation.display.length > maxLength
                     ? conversation.display.substring(0, maxLength - 1) + '…'
                     : conversation.display;
@@ -211,6 +214,9 @@ export function SelectionView({
                       >
                         {isSelected ? '▸ ' : '  '}
                         💬 {display} {' '}
+                        {linearId && (
+                          <text fg={OneDarkPro.syntax.magenta}>[{linearId}] </text>
+                        )}
                         <text fg={OneDarkPro.foreground.comment}>({timeAgo})</text>
                       </text>
                     </box>
