@@ -22,6 +22,7 @@ import { GitHubConfigFlow } from './components/GitHubConfigFlow';
 import { type Conversation } from './services/ConversationService';
 import { useConversations } from './hooks/useConversations';
 import { useSelectionState } from './hooks/useSelectionState';
+import type { Session } from './types';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -366,7 +367,7 @@ function AppContent() {
   };
 
   // Handler for creating new session for specific issue
-  const handleCreateNewForIssue = (issue: typeof sessions[0]) => {
+  const handleCreateNewForIssue = (issue: Session) => {
     setActiveSession(issue);
     goToMain();
     setInputFocused(true);
