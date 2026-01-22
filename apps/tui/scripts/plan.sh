@@ -13,7 +13,7 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-PLUGIN_DIR="$SCRIPT_DIR/../../tui/commands"
+PLUGIN_DIR="$SCRIPT_DIR/../commands"
 PLAN_PROMPT="$PLUGIN_DIR/plan.md"
 
 # Defaults
@@ -119,9 +119,15 @@ mv "$TEMP_PROMPT" "${TEMP_PROMPT}.md"
 TEMP_PROMPT="${TEMP_PROMPT}.md"
 trap "rm -f $TEMP_PROMPT" EXIT
 
-# Write prompt to temp file (strip frontmatter from source, inject args)
+# Write prompt to temp file (strip frontmatter from source, inject args and context)
 {
     echo "\$ARGUMENTS=\"$USER_INPUT\""
+    echo "\$WORKING_DIRECTORY=\"$(pwd)\""
+    echo ""
+    echo "# Context"
+    echo "You are working from: \`$(pwd)\`"
+    echo "All bash commands will execute from this directory."
+    echo "All file paths should be relative to this directory unless absolute paths are needed."
     echo ""
     sed '1{/^---$/!q;};1,/^---$/d' "$PLAN_PROMPT"
 } > "$TEMP_PROMPT"

@@ -13,7 +13,7 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-PLUGIN_DIR="$SCRIPT_DIR/../../tui"
+PLUGIN_DIR="$SCRIPT_DIR/.."
 SKILLS_DIR="$PLUGIN_DIR/skills"
 PROGRESS_FILE=".claude/progress.txt"
 
@@ -265,6 +265,7 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         echo "# Task Execution - Iteration $i/$MAX_ITERATIONS"
         echo ""
         echo "## Context"
+        echo "- Working directory: \`$(pwd)\`"
         echo "- Task source: beads (bd ready)"
         echo "- Progress: $PROGRESS_FILE"
         echo "- Skill: $SKILL"
@@ -272,6 +273,8 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
             echo "- Task ID: $TASK_ID"
             echo "- Task: $TASK_TITLE"
         fi
+        echo ""
+        echo "**Note:** All bash commands execute from the working directory above. File paths are relative to this directory."
         echo ""
         if [ -n "$EXTRA_CONTEXT" ]; then
             echo "## Additional Context"
