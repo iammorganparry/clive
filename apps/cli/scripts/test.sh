@@ -18,7 +18,7 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-PLUGIN_DIR="$SCRIPT_DIR/../../claude-code-plugin/commands"
+PLUGIN_DIR="$SCRIPT_DIR/../../tui/commands"
 TEST_PROMPT="$PLUGIN_DIR/test.md"
 PROGRESS_FILE=".claude/progress.txt"
 

@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useKeyboard } from '@opentui/react';
 import { SuggestionsPanel, type CommandSuggestion } from './SuggestionsPanel';
+import { QuestionPanel } from './QuestionPanel';
 import { useCommandHistory } from '../hooks/useCommandHistory';
 import { usePaste } from '../hooks/usePaste';
 import { OneDarkPro } from '../styles/theme';
+import type { QuestionData } from '../types';
 
 // Available commands
 const COMMANDS: CommandSuggestion[] = [
@@ -25,6 +27,11 @@ interface DynamicInputProps {
   inputFocused?: boolean;
   onFocusChange?: (focused: boolean) => void;
   preFillValue?: string;
+  pendingQuestion?: QuestionData | null;
+  onQuestionAnswer?: (answers: Record<string, string>) => void;
+  onQuestionCancel?: () => void;
+  rawInputMode?: boolean; // When true, forward all keys directly to PTY
+  onRawKeyPress?: (key: string) => void; // Handler for raw key events
 }
 
 export function DynamicInput({
@@ -35,6 +42,11 @@ export function DynamicInput({
   inputFocused = false,
   onFocusChange,
   preFillValue,
+  pendingQuestion = null,
+  onQuestionAnswer,
+  onQuestionCancel,
+  rawInputMode = false,
+  onRawKeyPress,
 }: DynamicInputProps) {
   const [value, setValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -50,20 +62,20 @@ export function DynamicInput({
     }
   }, [preFillValue, inputFocused]);
 
-  // Filter suggestions based on input
-  const filteredSuggestions = value.startsWith('/') && !value.includes(' ')
+  // Filter suggestions based on input (disabled in raw input mode)
+  const filteredSuggestions = !rawInputMode && value.startsWith('/') && !value.includes(' ')
     ? COMMANDS.filter((c) => c.cmd.startsWith(value))
     : [];
 
-  // Show suggestions when typing "/" commands
+  // Show suggestions when typing "/" commands (disabled in raw input mode)
   useEffect(() => {
-    if (filteredSuggestions.length > 0 && inputFocused) {
+    if (!rawInputMode && filteredSuggestions.length > 0 && inputFocused) {
       setShowSuggestions(true);
     } else {
       setShowSuggestions(false);
       setSelectedSuggestion(0);
     }
-  }, [filteredSuggestions.length, inputFocused]);
+  }, [filteredSuggestions.length, inputFocused, rawInputMode]);
 
   // Handle paste events
   usePaste((pasteEvent) => {
@@ -81,6 +93,50 @@ export function DynamicInput({
   useKeyboard((event) => {
     // Only handle when input is focused
     if (!inputFocused) return;
+
+    // RAW INPUT MODE: Forward all keys directly to PTY
+    if (rawInputMode && onRawKeyPress) {
+      // Map keys to appropriate sequences
+      const keyMap: Record<string, string> = {
+        'up': '\x1b[A',
+        'down': '\x1b[B',
+        'right': '\x1b[C',
+        'left': '\x1b[D',
+        'return': '\r',
+        'escape': '\x1b',
+        'tab': '\t',
+        'backspace': '\x7f',
+        'delete': '\x1b[3~',
+      };
+
+      const mappedKey = keyMap[event.name];
+      if (mappedKey) {
+        event.preventDefault?.();
+        onRawKeyPress(mappedKey);
+        return;
+      }
+
+      // For regular characters, forward as-is
+      if (event.sequence) {
+        event.preventDefault?.();
+        onRawKeyPress(event.sequence);
+        return;
+      }
+    }
+
+    // Select all functionality (Ctrl+A / Cmd+A)
+    if ((event.ctrl || event.meta) && event.name === 'a') {
+      // Try to select all text if the input ref supports it
+      if (inputRef.current) {
+        // OpenTUI may support selectAll or setSelectionRange
+        if (typeof inputRef.current.selectAll === 'function') {
+          inputRef.current.selectAll();
+        } else if (typeof inputRef.current.setSelectionRange === 'function' && value) {
+          inputRef.current.setSelectionRange(0, value.length);
+        }
+      }
+      return;
+    }
 
     // Handle suggestion navigation when showing suggestions
     if (showSuggestions && filteredSuggestions.length > 0) {
@@ -133,11 +189,11 @@ export function DynamicInput({
       }
     }
 
-    // Ctrl+C - cancel running process
+    // Ctrl+C - handled at App level for two-stage exit
+    // In raw mode: First Ctrl+C kills TTY, second Ctrl+C exits Clive
+    // In normal mode: Ctrl+C exits Clive immediately (no active session)
     if (event.ctrl && event.name === 'c') {
-      if (isRunning) {
-        onSubmit('/cancel');
-      }
+      // Don't send to PTY, let App.tsx handle it
       return;
     }
 
@@ -146,6 +202,8 @@ export function DynamicInput({
   });
 
   const handleSubmit = (submittedValue: string) => {
+    // In raw input mode, don't handle submit (already handled by raw key press)
+    if (rawInputMode) return;
     if (!submittedValue.trim()) return;
 
     const cmd = submittedValue.trim();
@@ -158,23 +216,39 @@ export function DynamicInput({
   };
 
   const handleInput = (newValue: string) => {
+    // In raw input mode, don't handle input (already handled by raw key press)
+    if (rawInputMode) return;
     setValue(newValue);
     commandHistory.reset();
   };
 
   // Calculate dynamic height
   const baseHeight = 3;
+  const questionHeight = pendingQuestion ? Math.min(25, 20) : 0; // Cap at 25, typical height ~20
   const suggestionsHeight = showSuggestions ? Math.min(filteredSuggestions.length + 2, 8) : 0;
-  const totalHeight = baseHeight + suggestionsHeight;
+  const totalHeight = baseHeight + questionHeight + suggestionsHeight;
 
   const placeholder = disabled
     ? 'Input disabled during question'
-    : isRunning
-      ? 'Type message or /add task...'
-      : 'Type / for commands or enter prompt...';
+    : rawInputMode
+      ? 'Interactive mode: Use arrow keys, Enter, Esc...'
+      : isRunning
+        ? 'Type message or /add task...'
+        : 'Type / for commands or enter prompt...';
 
   return (
     <box width={width} height={totalHeight} flexDirection="column">
+      {/* Question Panel (appears above input) */}
+      {pendingQuestion && onQuestionAnswer && (
+        <QuestionPanel
+          width={width - 2}
+          height={questionHeight}
+          question={pendingQuestion}
+          onAnswer={onQuestionAnswer}
+          onCancel={onQuestionCancel}
+        />
+      )}
+
       {/* Suggestions Panel (appears above input) */}
       {showSuggestions && filteredSuggestions.length > 0 && (
         <SuggestionsPanel
@@ -190,18 +264,27 @@ export function DynamicInput({
         height={baseHeight}
         backgroundColor={OneDarkPro.background.secondary}
         borderStyle="single"
-        borderColor={inputFocused ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
+        borderColor={
+          rawInputMode
+            ? OneDarkPro.ui.border
+            : inputFocused
+              ? OneDarkPro.syntax.green
+              : OneDarkPro.ui.border
+        }
         paddingLeft={1}
         paddingRight={1}
+        opacity={rawInputMode ? 0.5 : 1.0}
       >
         <box flexDirection="row" width="100%">
-          <text fg={OneDarkPro.syntax.green}>❯ </text>
+          <text fg={rawInputMode ? OneDarkPro.ui.border : OneDarkPro.syntax.green}>
+            {rawInputMode ? '⊙ ' : '❯ '}
+          </text>
           <input
             ref={inputRef}
-            value={value}
+            value={rawInputMode ? '' : value}
             placeholder={placeholder}
-            focused={inputFocused && !disabled}
-            disabled={disabled}
+            focused={inputFocused && !disabled && !rawInputMode}
+            disabled={disabled || rawInputMode}
             onInput={handleInput}
             onSubmit={handleSubmit}
             style={{

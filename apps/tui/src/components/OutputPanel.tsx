@@ -1,36 +1,39 @@
 /**
  * OutputPanel Component
- * Displays scrollable list of output lines
- * Ported from apps/tui-go/internal/tui/root.go renderOutputContent
+ * Displays terminal output using ghostty-terminal renderer
+ * Renders ANSI output from PTY-based Claude CLI
  */
 
 import { useEffect, useRef } from 'react';
-import { OutputLine as OutputLineType } from '../types';
-import { OutputLine } from './OutputLine';
-import { LoadingIndicator } from './LoadingIndicator';
 import { OneDarkPro } from '../styles/theme';
+import type { PtyDimensions } from '../services/PtyCliManager';
 
 interface OutputPanelProps {
   width: number;
   height: number;
-  lines: OutputLineType[];
+  ansiOutput: string;
   isRunning?: boolean;
   mode?: 'none' | 'plan' | 'build';
   modeColor?: string;
+  ptyDimensions?: PtyDimensions | null;
 }
 
-export function OutputPanel({ width, height, lines, isRunning = false, mode = 'none', modeColor }: OutputPanelProps) {
+export function OutputPanel({ width, height, ansiOutput, isRunning = false, mode = 'none', modeColor, ptyDimensions }: OutputPanelProps) {
   const scrollRef = useRef<any>(null);
   const isInMode = mode !== 'none';
   const modeHeaderHeight = isInMode ? 1 : 0;
-  const scrollboxHeight = height - modeHeaderHeight;
+  const terminalHeight = height - modeHeaderHeight;
 
-  // Auto-scroll to bottom when new lines are added or when loading state changes
+  // Use PTY dimensions if available (calculated based on available space), otherwise use full available space
+  const terminalCols = ptyDimensions?.cols || width;
+  const terminalRows = ptyDimensions?.rows || terminalHeight;
+
+  // Auto-scroll to bottom when output changes
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollToBottom?.();
     }
-  }, [lines.length, isRunning]);
+  }, [ansiOutput, isRunning]);
 
   return (
     <box
@@ -53,27 +56,24 @@ export function OutputPanel({ width, height, lines, isRunning = false, mode = 'n
         </box>
       )}
 
-      <scrollbox
-        ref={scrollRef}
+      <box
         width={width}
-        height={scrollboxHeight}
-        overflow="auto"
+        height={terminalHeight}
       >
-        {lines.length === 0 ? (
+        {!ansiOutput ? (
           <box padding={2}>
             <text fg={OneDarkPro.foreground.muted}>
               No output yet. Waiting for execution...
             </text>
           </box>
         ) : (
-          <box flexDirection="column">
-            {lines.map((line, i) => (
-              <OutputLine key={i} line={line} />
-            ))}
-            {isRunning && <LoadingIndicator />}
-          </box>
+          <ghostty-terminal
+            ansi={ansiOutput}
+            cols={terminalCols}
+            rows={terminalRows}
+          />
         )}
-      </scrollbox>
+      </box>
     </box>
   );
 }

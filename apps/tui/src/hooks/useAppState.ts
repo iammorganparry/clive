@@ -7,7 +7,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { CliManager } from '../services/CliManager';
+import { PtyCliManager, type PtyDimensions } from '../services/PtyCliManager';
+import { ConversationWatcher } from '../services/ConversationWatcher';
 import { OutputLine, QuestionData, Session, Task } from '../types';
 import { useSessions, useSessionTasks } from './useTaskQueries';
 import { debugLog } from '../utils/debug-logger';
@@ -19,16 +20,16 @@ import { debugLog } from '../utils/debug-logger';
 const tuiMachine = setup({
   types: {
     context: {} as {
-      outputLines: OutputLine[];
+      ansiOutput: string;
       pendingQuestion: QuestionData | null;
       workspaceRoot: string;
-      cliManager: CliManager | null;
+      cliManager: PtyCliManager | null;
       mode: 'none' | 'plan' | 'build';
       agentSessionActive: boolean;
     },
     events: {} as
       | { type: 'EXECUTE'; prompt: string; mode: 'plan' | 'build' }
-      | { type: 'OUTPUT'; line: OutputLine }
+      | { type: 'OUTPUT'; ansi: string }
       | { type: 'QUESTION'; question: QuestionData }
       | { type: 'ANSWER'; answers: Record<string, string> }
       | { type: 'COMPLETE' }
@@ -38,12 +39,10 @@ const tuiMachine = setup({
       | { type: 'MESSAGE'; content: string },
   },
   actions: {
-    addOutput: assign({
-      outputLines: ({ context, event }) => {
-        if (event.type !== 'OUTPUT') return context.outputLines;
-        const newLines = [...context.outputLines, event.line];
-        // Keep last 1000 lines
-        return newLines.slice(-1000);
+    updateOutput: assign({
+      ansiOutput: ({ event }) => {
+        if (event.type !== 'OUTPUT') return '';
+        return event.ansi;
       },
     }),
     setQuestion: assign({
@@ -60,7 +59,7 @@ const tuiMachine = setup({
       pendingQuestion: null,
     }),
     clearOutput: assign({
-      outputLines: [],
+      ansiOutput: '',
     }),
     setMode: assign({
       mode: ({ event }) => {
@@ -78,7 +77,7 @@ const tuiMachine = setup({
   id: 'tui',
   initial: 'idle',
   context: {
-    outputLines: [],
+    ansiOutput: '',
     pendingQuestion: null,
     workspaceRoot: process.cwd(),
     cliManager: null,
@@ -103,14 +102,14 @@ const tuiMachine = setup({
           actions: 'clearOutput',
         },
         OUTPUT: {
-          actions: 'addOutput',
+          actions: 'updateOutput',
         },
       },
     },
     executing: {
       on: {
         OUTPUT: {
-          actions: 'addOutput',
+          actions: 'updateOutput',
         },
         QUESTION: {
           target: 'waiting_for_answer',
@@ -154,8 +153,10 @@ const tuiMachine = setup({
 
 export interface AppState {
   // Output state
-  outputLines: OutputLine[];
+  ansiOutput: string;
+  outputLines: OutputLine[]; // Keep for compatibility (empty array)
   isRunning: boolean;
+  ptyDimensions: PtyDimensions | null;
 
   // Question state
   pendingQuestion: QuestionData | null;
@@ -184,7 +185,7 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   // Use XState machine
   const [state, send] = useMachine(tuiMachine, {
     context: {
-      outputLines: [],
+      ansiOutput: '',
       pendingQuestion: null,
       workspaceRoot,
       cliManager: null,
@@ -193,11 +194,15 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     },
   });
 
-  // CLI Manager instance
-  const cliManager = useRef<CliManager | null>(null);
+  // CLI Manager and Conversation Watcher instances
+  const cliManager = useRef<PtyCliManager | null>(null);
+  const conversationWatcher = useRef<ConversationWatcher | null>(null);
 
   // Active session tracking
   const [activeSession, setActiveSession] = useState<Session | null>(null);
+
+  // PTY dimensions for OutputPanel centering
+  const [ptyDimensions, setPtyDimensions] = useState<PtyDimensions | null>(null);
 
   // React Query hooks for task/session data
   const {
@@ -210,45 +215,23 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     isLoading: tasksLoading,
   } = useSessionTasks(activeSession?.id ?? null);
 
-  // Initialize CLI Manager
+  // Initialize PTY CLI Manager and Conversation Watcher
   useEffect(() => {
     if (!cliManager.current) {
-      cliManager.current = new CliManager();
+      cliManager.current = new PtyCliManager();
 
-      // Listen for output events
-      cliManager.current.on('output', (line: OutputLine) => {
-        debugLog('useAppState', 'Received output event', {
-          type: line.type,
-          hasQuestion: !!(line.type === 'question' && line.question)
+      // Listen for PTY output
+      cliManager.current.on('output', ({ ansi }: { ansi: string }) => {
+        debugLog('useAppState', 'Received PTY output', {
+          bufferSize: ansi.length,
         });
+        send({ type: 'OUTPUT', ansi });
+      });
 
-        // Handle special line types
-        if (line.type === 'exit') {
-          send({ type: 'OUTPUT', line });
-          send({ type: 'COMPLETE' });
-          return;
-        }
-
-        if (line.type === 'question' && line.question) {
-          debugLog('useAppState', 'Question detected, sending QUESTION event to state machine', {
-            toolUseID: line.question.toolUseID,
-            questionCount: line.question.questions.length,
-            currentState: state.value,
-            machineMatches: {
-              idle: state.matches('idle'),
-              executing: state.matches('executing'),
-              waiting_for_answer: state.matches('waiting_for_answer')
-            }
-          });
-          send({ type: 'QUESTION', question: line.question });
-          debugLog('useAppState', 'QUESTION event sent, new state', {
-            currentState: state.value
-          });
-          return;
-        }
-
-        // Add regular output
-        send({ type: 'OUTPUT', line });
+      // Listen for PTY dimensions (for OutputPanel centering)
+      cliManager.current.on('dimensions', (dims: PtyDimensions) => {
+        debugLog('useAppState', 'Received PTY dimensions', dims);
+        setPtyDimensions(dims);
       });
 
       // Listen for completion
@@ -262,11 +245,53 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
       });
     }
 
+    if (!conversationWatcher.current) {
+      conversationWatcher.current = new ConversationWatcher();
+
+      // Listen for task spawn events (for Linear refetching)
+      conversationWatcher.current.on('task_spawn', (event: any) => {
+        debugLog('useAppState', 'Task spawn detected via conversation watcher', {
+          subagentType: event.input?.subagent_type,
+        });
+
+        // Handle build agent spawn - refetch Linear tasks
+        if (event.input?.subagent_type === 'build') {
+          debugLog('useAppState', 'Build agent spawned - refetch Linear tasks');
+          // TODO: Trigger Linear task refetch here
+          // queryClient.invalidateQueries({ queryKey: ['linear-tasks'] });
+        }
+      });
+
+      // Listen for AskUserQuestion tool use
+      conversationWatcher.current.on('tool_use', (event: any) => {
+        if (event.name === 'AskUserQuestion') {
+          debugLog('useAppState', 'AskUserQuestion detected via conversation watcher', {
+            toolId: event.id,
+            input: event.input,
+          });
+
+          const questionData: QuestionData = {
+            toolUseID: event.id,
+            questions: event.input.questions || [],
+          };
+
+          send({ type: 'QUESTION', question: questionData });
+        }
+      });
+
+      // Start watching for conversation files
+      conversationWatcher.current.start();
+    }
+
     // Cleanup on unmount
     return () => {
       if (cliManager.current) {
         cliManager.current.kill();
         cliManager.current.removeAllListeners();
+      }
+      if (conversationWatcher.current) {
+        conversationWatcher.current.stop();
+        conversationWatcher.current.removeAllListeners();
       }
     };
   }, [send]);
@@ -625,8 +650,19 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
    */
   const sendMessage = (msg: string) => {
     if (!cliManager.current || !state.matches('executing')) return;
-    cliManager.current.sendMessage(msg);
+    cliManager.current.sendMessageToAgent(msg);
     send({ type: 'MESSAGE', content: msg });
+  };
+
+  /**
+   * Send raw keyboard input directly to PTY (for interactive prompts)
+   */
+  const sendRawInput = (key: string) => {
+    if (!cliManager.current || !state.matches('executing')) return;
+    debugLog('useAppState', 'Sending raw input to PTY', {
+      key: key.charCodeAt(0) < 32 ? `\\x${key.charCodeAt(0).toString(16)}` : key,
+    });
+    cliManager.current.sendRawInput(key);
   };
 
   /**
@@ -715,8 +751,10 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
 
   return {
     // Output state
-    outputLines: state.context.outputLines,
+    ansiOutput: state.context.ansiOutput,
+    outputLines: [], // Keep for compatibility (empty array in PTY mode)
     isRunning: state.matches('executing') || state.matches('waiting_for_answer'),
+    ptyDimensions,
     pendingQuestion: state.context.pendingQuestion,
 
     // Mode state
@@ -733,9 +771,24 @@ Remember: Your primary goal in plan mode is to UNDERSTAND deeply before proposin
     // Actions
     executeCommand,
     sendMessage,
+    sendRawInput,
     handleQuestionAnswer,
     clearOutput,
     interrupt,
     setActiveSession,
+
+    // PTY control
+    resizePty: (width: number, height: number) => {
+      if (cliManager.current) {
+        cliManager.current.resize(width, height);
+      }
+    },
+
+    // Cleanup function for graceful exit
+    cleanup: () => {
+      if (cliManager.current) {
+        cliManager.current.kill();
+      }
+    },
   };
 }

@@ -62,8 +62,48 @@ fi
 # For Linear: Task info should now be available from Step 0
 ```
 
-### 0.5.2 Read the Plan File
-Get refactoring goals and target files from the plan.
+### 0.5.2 Read Acceptance Criteria and Definition of Done
+
+**CRITICAL: Read task requirements FIRST before any refactoring.**
+
+**Your task includes:**
+- **Acceptance Criteria** - Specific, testable requirements that define successful refactoring
+- **Definition of Done** - Checklist including behavior verification, tests passing
+- **Technical Notes** - Refactoring goals, target files, patterns to establish
+
+**Where to find them:**
+- **For Linear**: Call `mcp__linear__get_issue` with the task ID to fetch full description
+- **For Beads**: Task description in the prompt contains AC and DoD
+- **In plan file**: Check `.claude/plans/*.md` for detailed refactoring goals
+
+**Parse the requirements:**
+```
+Refactoring Goal:
+[What structure needs improving and why]
+
+Acceptance Criteria:
+1. [Code structure improved as specified]
+2. [All existing tests still pass]
+3. [External behavior unchanged]
+4. [Improved maintainability/readability]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] All existing tests still pass
+- [ ] No new bugs introduced
+- [ ] Code follows project patterns
+- [ ] Build succeeds
+
+Technical Notes:
+- Target files: [files to refactor]
+- Refactoring pattern: [extract function/class, rename, etc.]
+- Existing patterns: [references to follow]
+```
+
+**Important:**
+- **Acceptance criteria define success** - Refactoring is successful when ALL criteria met
+- **DoD emphasizes behavior preservation** - All tests MUST still pass
+- **Technical notes guide approach** - Follow recommended refactoring patterns
 
 ### 0.5.3 Understand Current Behavior
 Before refactoring, document what the code currently does:
@@ -281,38 +321,81 @@ Check code manually for:
 
 ---
 
-## Step 3: Verify Refactoring
+## Step 3: Verify Refactoring and Acceptance Criteria
 
-**ALL four checks must pass before marking complete.**
+### 3.1 Verify All Acceptance Criteria (CRITICAL)
 
-### 3.1 Type Safety Check
+**Before marking task complete, verify EVERY acceptance criterion from Step 0.5.2:**
+
+**Example verification:**
+```
+✓ Acceptance Criteria Check:
+
+1. "Extract duplicate validation logic into shared validator"
+   ✓ Verified: Created UserValidator class with shared logic
+   ✓ Manual: All 3 instances now use UserValidator
+   ✓ Test: Validation still works correctly
+
+2. "All existing tests still pass"
+   ✓ Verified: npm test shows all 247 tests passing
+   ✓ No behavior changes introduced
+
+3. "Improved code readability and maintainability"
+   ✓ Verified: Duplication eliminated, clear separation of concerns
+   ✓ Manual: Code is now easier to understand
+
+All acceptance criteria met ✓
+```
+
+**If ANY criterion is not met, DO NOT mark complete. Fix remaining issues first.**
+
+### 3.2 Verify Definition of Done
+
+**Check off every item from the task's Definition of Done:**
+
+```
+Definition of Done verification:
+- [✓] All acceptance criteria met (verified above)
+- [✓] All existing tests still pass
+- [✓] No new bugs introduced (behavior unchanged)
+- [✓] Code follows project patterns
+- [✓] Build succeeds
+- [✓] No linting errors
+- [✓] No type errors
+```
+
+**Run quality checks:**
+
+### 3.3 Type Safety Check
 ```bash
 npx tsc --noEmit
 # Must pass with ZERO errors
 # Verify no `any` types were introduced
 ```
 
-### 3.2 Lint Check
+### 3.4 Lint Check
 ```bash
 npm run lint
 # Must pass with ZERO errors and ZERO warnings
 ```
 
-### 3.3 Test Check
+### 3.5 Test Check
 ```bash
 npm test
-# All tests must pass
+# All tests must pass - behavior MUST be unchanged
 ```
 
 **If tests fail:**
 1. The refactoring broke something - fix it
 2. The tests were testing implementation details - note this, may need test updates
 
-### 3.4 Build Check
+### 3.6 Build Check
 ```bash
 npm run build
 # Must build successfully
 ```
+
+**If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
 
 ---
 
@@ -418,7 +501,9 @@ SCRATCHPAD
 
 **Final checklist before outputting marker:**
 
-- [ ] All tests passing (npm test)
+- [ ] ALL acceptance criteria verified and met (Step 3.1)
+- [ ] ALL Definition of Done items checked off (Step 3.2)
+- [ ] All tests passing - behavior unchanged (npm test)
 - [ ] Type checking passes (tsc --noEmit)
 - [ ] Linting passes with zero warnings (npm run lint)
 - [ ] Build succeeds (npm run build)

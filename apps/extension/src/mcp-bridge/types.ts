@@ -33,6 +33,7 @@ export type BridgeHandler<TParams = unknown, TResult = unknown> = (
  * Includes typed handlers for known methods and index signature for extensibility
  */
 export interface BridgeHandlers {
+  proposePlan?: (params: unknown) => Promise<ProposePlanBridgeResponse>;
   proposeTestPlan?: (params: unknown) => Promise<ProposeTestPlanBridgeResponse>;
   approvePlan?: (params: unknown) => Promise<ApprovePlanBridgeResponse>;
   summarizeContext?: (
@@ -47,6 +48,7 @@ export interface BridgeHandlers {
  * Extends BridgeHandlers for compatibility with functions expecting partial handlers
  */
 export interface TypedBridgeHandlers extends BridgeHandlers {
+  proposePlan: (params: unknown) => Promise<ProposePlanBridgeResponse>;
   proposeTestPlan: (params: unknown) => Promise<ProposeTestPlanBridgeResponse>;
   approvePlan: (params: unknown) => Promise<ApprovePlanBridgeResponse>;
   summarizeContext: (params: unknown) => Promise<SummarizeContextBridgeResponse>;
@@ -63,7 +65,61 @@ export interface McpBridgeStatus {
 }
 
 /**
- * proposeTestPlan bridge params
+ * proposePlan bridge params (new user story format)
+ */
+export interface ProposePlanBridgeParams {
+  name: string;
+  overview: string;
+  category: "feature" | "bugfix" | "refactor" | "docs";
+  epicUserStory: {
+    role: string;
+    capability: string;
+    benefit: string;
+  };
+  scope?: {
+    inScope: string[];
+    outOfScope: string[];
+  };
+  successCriteria?: string[];
+  tasks: Array<{
+    id: string;
+    title: string;
+    userStory?: {
+      role: string;
+      capability: string;
+      benefit: string;
+    };
+    acceptanceCriteria: string[];
+    definitionOfDone: string[];
+    skill: "feature" | "bugfix" | "refactor" | "docs" | "unit-tests" | "e2e-tests";
+    complexity: number;
+    estimatedEffort?: string;
+    dependencies?: string[];
+    technicalNotes: string;
+    outOfScope?: string;
+  }>;
+  risks?: Array<{
+    description: string;
+    mitigation: string;
+  }>;
+  dependencies?: string[];
+  verificationPlan?: string[];
+  planContent: string;
+  toolCallId: string;
+}
+
+/**
+ * proposePlan bridge response
+ */
+export interface ProposePlanBridgeResponse {
+  success: boolean;
+  planId: string;
+  filePath?: string;
+  message: string;
+}
+
+/**
+ * proposeTestPlan bridge params (DEPRECATED - use ProposePlanBridgeParams)
  */
 export interface ProposeTestPlanBridgeParams {
   name: string;

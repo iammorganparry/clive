@@ -6,7 +6,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerSearchKnowledge } from "./search-knowledge.js";
 import { registerCompleteTask } from "./complete-task.js";
-import { registerProposeTestPlan } from "./propose-test-plan.js";
+import { registerProposePlan, registerProposeTestPlan } from "./propose-plan.js";
 import { registerApprovePlan } from "./approve-plan.js";
 import { registerSummarizeContext } from "./summarize-context.js";
 
@@ -19,7 +19,8 @@ export function registerTools(server: McpServer): void {
   registerCompleteTask(server);
 
   // Bridge-dependent tools (require VSCode extension)
-  registerProposeTestPlan(server);
+  registerProposePlan(server); // New user story-based planning
+  registerProposeTestPlan(server); // Deprecated - backward compatibility
   registerApprovePlan(server);
   registerSummarizeContext(server);
 }
@@ -27,7 +28,8 @@ export function registerTools(server: McpServer): void {
 export {
   registerSearchKnowledge,
   registerCompleteTask,
-  registerProposeTestPlan,
+  registerProposePlan,
+  registerProposeTestPlan, // Deprecated
   registerApprovePlan,
   registerSummarizeContext,
 };

@@ -48,7 +48,53 @@ You implement features **ONE TASK AT A TIME** following a 4-phase workflow:
 - Output: `ERROR: Unable to determine task. Please check build configuration.`
 - STOP - do not proceed without a valid task
 
-### 1.2 Read Previous Work Context
+### 1.2 Read Acceptance Criteria and Definition of Done
+
+**CRITICAL: Read task requirements FIRST before any implementation.**
+
+**Your task includes:**
+- **Acceptance Criteria** - Specific, testable requirements that define "done"
+- **Definition of Done** - Checklist including tests, code quality, documentation
+- **Technical Notes** - Codebase patterns, file references, testing strategy, skill justification
+
+**Where to find them:**
+- **For Linear**: Call `mcp__linear__get_issue` with the task ID to fetch full description
+- **For Beads**: Task description in the prompt contains AC and DoD
+- **In plan file**: Check `.claude/plans/*.md` for detailed user story and technical notes
+
+**Parse the requirements:**
+```
+User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Specific testable criterion]
+2. [Specific testable criterion]
+3. [Specific testable criterion]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Unit tests written and passing
+- [ ] Integration tests written and passing
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+Technical Notes:
+- Files affected: [paths with line numbers]
+- Existing patterns: [references to similar code]
+- Code examples: [snippets showing approach]
+- Testing strategy: [based on codebase patterns]
+```
+
+**Important:**
+- **Acceptance criteria are your requirements** - Every criterion must be verifiable in Phase 4
+- **DoD is your quality checklist** - Testing is PART OF DoD, not a separate task
+- **Technical notes guide your implementation** - Follow existing patterns referenced there
+
+### 1.3 Read Previous Work Context
 
 **Read the scratchpad:**
 - The prompt above contains scratchpad notes from previous iterations
@@ -66,7 +112,7 @@ if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
 fi
 ```
 
-### 1.3 Understand Existing Architecture
+### 1.4 Understand Existing Architecture
 
 **Before writing new code, understand the codebase:**
 - Read similar existing implementations
@@ -84,7 +130,7 @@ grep -rn "similar-pattern" --include="*.ts" src/
 cat src/path/to/similar-feature.ts
 ```
 
-### 1.4 Mark Task In Progress (REQUIRED - DO NOT SKIP)
+### 1.5 Mark Task In Progress (REQUIRED - DO NOT SKIP)
 
 **You MUST update the tracker status before starting implementation. This is NON-NEGOTIABLE.**
 
@@ -173,38 +219,45 @@ Then continue with your current task - do not switch focus.
 
 ---
 
-## Phase 3: Testing
+## Phase 3: Testing (Part of Definition of Done)
 
-**Goal:** Build confidence in the implementation through meaningful tests.
+**Goal:** Fulfill the testing requirements from the Definition of Done and verify acceptance criteria.
 
-### 3.1 Identify What Needs Testing
+### 3.1 Review DoD Testing Requirements
 
-**DO test:**
-- Business logic that makes decisions
-- Error handling and edge cases
-- Data transformations
-- API integrations
-- User-facing functionality
-- State management
+**Your task's Definition of Done specifies testing requirements. Common items:**
+- Unit tests written and passing
+- Integration tests written and passing
+- E2E tests written and passing (if applicable)
+- Error scenarios tested
+- Edge cases covered
 
-**DON'T test:**
-- Trivial getters/setters
-- Pass-through functions with no logic
-- Third-party library behavior
-- Framework internals
+**Check the task description or plan file for specific testing strategy:**
+- Technical notes often include testing patterns from the codebase
+- Testing strategy may reference existing test files to follow
 
-### 3.2 Write Confidence-Building Tests
+### 3.2 Write Tests Based on Acceptance Criteria
 
-**For this feature:**
-- Tests that verify the feature works as intended
-- Tests that cover error cases and edge conditions
-- Tests that would fail if the feature breaks
+**Each acceptance criterion should be verifiable through tests:**
+
+**Example:**
+```
+Acceptance Criteria:
+1. User sees error message when login fails
+2. Form validation shows inline errors
+3. User can export data as CSV
+
+Tests to write:
+- Unit test: Login failure shows error component
+- Integration test: Form submission validates and displays errors
+- E2E test: Export button downloads CSV file
+```
 
 **Testing Philosophy:**
 - Test **outcomes** (what), not **implementation** (how)
-- Tests should fail if the feature breaks
+- Tests should fail if acceptance criteria are not met
 - Tests should pass if implementation changes but behavior doesn't
-- Avoid testing implementation details (internal state, private methods)
+- Follow testing patterns referenced in technical notes
 
 **Good test (tests behavior):**
 ```typescript
@@ -290,8 +343,51 @@ mcp__linear__create_issue
 2. Create a discovered work task (using same commands as 4.1)
 3. Continue with current task completion
 
-### 4.3 Verify Quality Standards
+### 4.3 Verify All Acceptance Criteria (CRITICAL)
 
+**Before marking task complete, verify EVERY acceptance criterion from Phase 1:**
+
+**Example verification:**
+```
+✓ Acceptance Criteria Check:
+
+1. "User sees error message when login fails"
+   ✓ Verified: LoginForm shows ErrorMessage component on auth failure
+   ✓ Test: unit test "shows error on failed login" passes
+   ✓ Manual: Tested in Extension Development Host
+
+2. "Form validation shows inline errors"
+   ✓ Verified: ValidationError components render below invalid fields
+   ✓ Test: integration test "displays validation errors" passes
+   ✓ Manual: Confirmed in UI
+
+3. "User can export data as CSV"
+   ✓ Verified: Export button triggers CSV download
+   ✓ Test: E2E test "exports CSV file" passes
+   ✓ Manual: Downloaded file contains correct data
+
+All acceptance criteria met ✓
+```
+
+**If ANY criterion is not met, DO NOT mark complete. Fix the issue first.**
+
+### 4.4 Verify Definition of Done
+
+**Check off every item from the task's Definition of Done:**
+
+```
+Definition of Done verification:
+- [✓] All acceptance criteria met (verified above)
+- [✓] Unit tests written and passing
+- [✓] Integration tests written and passing
+- [✓] Code reviewed (self-review in Phase 4.1-4.2)
+- [✓] Documentation updated (if applicable)
+- [✓] No linting errors
+- [✓] No type errors
+- [✓] Build succeeds
+```
+
+**Run quality checks:**
 ```bash
 # TypeScript check
 tsc --noEmit  # Must pass with ZERO errors
@@ -301,21 +397,19 @@ npm run lint  # Must pass with ZERO warnings
 
 # Build
 npm run build  # Must succeed
+
+# All tests
+npm test  # Must pass with ZERO failures
 ```
 
-**Quality checklist:**
-- [ ] No `any` types introduced
-- [ ] No unnarrowed `unknown` types
-- [ ] All tests pass
-- [ ] Build succeeds
-- [ ] Lint passes with zero warnings
+**If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
 
-### 4.4 Complete the Task (REQUIRED - DO NOT SKIP)
+### 4.5 Complete the Task (REQUIRED - DO NOT SKIP)
 
 **Before outputting TASK_COMPLETE marker, you MUST:**
 
-1. Verify all acceptance criteria are met
-2. Confirm build/tests pass
+1. ✓ Verify all acceptance criteria are met (4.3)
+2. ✓ Verify all Definition of Done items complete (4.4)
 3. **Update tracker status to "Done"**
 
 **For Beads:**
@@ -356,7 +450,7 @@ bd close [TASK_ID]
 
 **If either call fails, DO NOT mark the task complete. Debug the issue first.**
 
-### 4.5 Commit Changes (REQUIRED)
+### 4.6 Commit Changes (REQUIRED)
 
 ```bash
 git add -A
@@ -368,7 +462,7 @@ Skill: feature"
 
 **Note:** Local commits only - do NOT push.
 
-### 4.6 Update Scratchpad (REQUIRED)
+### 4.7 Update Scratchpad (REQUIRED)
 
 ```bash
 cat >> [scratchpad-file] << 'SCRATCHPAD'
@@ -398,9 +492,11 @@ SCRATCHPAD
 ## Final Checklist
 
 **ONLY output the completion marker if ALL of these are verified:**
-- [ ] Feature implemented and meets requirements
+- [ ] ALL acceptance criteria verified and met (Phase 4.3)
+- [ ] ALL Definition of Done items checked off (Phase 4.4)
+- [ ] Feature implemented following technical notes patterns
 - [ ] Build passes without errors
-- [ ] Tests pass (and new tests added for the feature)
+- [ ] All tests pass (unit, integration, E2E as specified in DoD)
 - [ ] Tracker status updated to "Done"
 - [ ] Git commit created
 - [ ] Scratchpad updated with notes for next agent

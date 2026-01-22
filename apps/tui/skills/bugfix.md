@@ -62,8 +62,47 @@ fi
 # For Linear: Task info should now be available from Step 0
 ```
 
-### 0.5.2 Read the Plan File
-Get bug description, reproduction steps, and expected behavior from the plan.
+### 0.5.2 Read Acceptance Criteria and Definition of Done
+
+**CRITICAL: Read task requirements FIRST before any fix work.**
+
+**Your task includes:**
+- **Acceptance Criteria** - Specific, testable requirements that define "fixed"
+- **Definition of Done** - Checklist including regression tests, verification
+- **Technical Notes** - Bug reproduction steps, root cause hints, related code
+
+**Where to find them:**
+- **For Linear**: Call `mcp__linear__get_issue` with the task ID to fetch full description
+- **For Beads**: Task description in the prompt contains AC and DoD
+- **In plan file**: Check `.claude/plans/*.md` for detailed bug description
+
+**Parse the requirements:**
+```
+Bug Description:
+[What's broken and impact]
+
+Acceptance Criteria:
+1. [Specific testable criterion - bug is fixed]
+2. [Error no longer occurs]
+3. [Expected behavior restored]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Regression test written and passing
+- [ ] Bug no longer reproducible
+- [ ] All existing tests still pass
+- [ ] Build succeeds
+
+Technical Notes:
+- Reproduction steps: [how to trigger bug]
+- Root cause hints: [suspected issue]
+- Related code: [files to investigate]
+```
+
+**Important:**
+- **Acceptance criteria define "fixed"** - Bug is only fixed when ALL criteria met
+- **DoD includes regression test** - Test MUST be added to prevent recurrence
+- **Technical notes guide investigation** - Follow reproduction steps provided
 
 ---
 
@@ -181,24 +220,63 @@ This test ensures the bug never returns.
 
 ---
 
-## Step 6: Verify Fix Works
+## Step 6: Verify Fix and Acceptance Criteria
 
-### Run All Tests
-```bash
-npm test
+### 6.1 Verify All Acceptance Criteria (CRITICAL)
+
+**Before marking task complete, verify EVERY acceptance criterion from Step 0.5.2:**
+
+**Example verification:**
+```
+✓ Acceptance Criteria Check:
+
+1. "Error no longer occurs when user ID not found"
+   ✓ Verified: getUser() returns null instead of crashing
+   ✓ Test: regression test "handles missing user" passes
+   ✓ Manual: Tested with nonexistent ID - no crash
+
+2. "Proper error handling for edge cases"
+   ✓ Verified: Null check added before accessing user properties
+   ✓ Test: edge case tests pass
+   ✓ Manual: Confirmed graceful handling
+
+3. "Existing functionality unaffected"
+   ✓ Verified: Valid user IDs still work correctly
+   ✓ Test: all existing tests still pass
+   ✓ Manual: Tested happy path - works as before
+
+All acceptance criteria met ✓
 ```
 
-### Specifically Run the New Test
-```bash
-npm test -- --grep "should handle user not found"
+**If ANY criterion is not met, DO NOT mark complete. Fix remaining issues first.**
+
+### 6.2 Verify Definition of Done
+
+**Check off every item from the task's Definition of Done:**
+
+```
+Definition of Done verification:
+- [✓] All acceptance criteria met (verified above)
+- [✓] Regression test written and passing
+- [✓] Bug no longer reproducible
+- [✓] All existing tests still pass
+- [✓] Build succeeds
+- [✓] No new linting errors
 ```
 
-### Build Check
+**Run quality checks:**
 ```bash
-npm run build
+# All tests including new regression test
+npm test  # Must pass with ZERO failures
+
+# Build check
+npm run build  # Must succeed
+
+# Lint check
+npm run lint  # Must pass with ZERO new warnings
 ```
 
-**ALL tests must pass before marking complete.**
+**If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
 
 ---
 
@@ -334,9 +412,11 @@ SCRATCHPAD
 ## Step 8: Output Completion Marker
 
 **ONLY output the marker if ALL of these are verified:**
+- [ ] ALL acceptance criteria verified and met (Step 6.1)
+- [ ] ALL Definition of Done items checked off (Step 6.2)
 - [ ] Bug fixed and root cause addressed
-- [ ] Regression test added
-- [ ] All tests pass
+- [ ] Regression test added and passing
+- [ ] All tests pass (existing + new)
 - [ ] Tracker status updated to "Done" (mcp__linear__update_issue or bd close called successfully)
 - [ ] Git commit created
 - [ ] Scratchpad updated with notes for next agent

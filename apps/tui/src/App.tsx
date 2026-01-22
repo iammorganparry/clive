@@ -4,9 +4,10 @@
  * View flow: Setup -> Selection -> Main <-> Help
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useTerminalDimensions, useKeyboard } from '@opentui/react';
+import { useTerminalDimensions, useKeyboard, extend } from '@opentui/react';
+import { GhosttyTerminalRenderable } from 'ghostty-opentui/terminal-buffer';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
@@ -17,10 +18,11 @@ import { StatusBar } from './components/StatusBar';
 import { SetupView } from './components/SetupView';
 import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
-import { QuestionPanel } from './components/QuestionPanel';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
-import { debugLog } from './utils/debug-logger';
+
+// Register ghostty-terminal component for terminal emulation
+extend({ 'ghostty-terminal': GhosttyTerminalRenderable });
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -73,8 +75,10 @@ function AppContent() {
   // State management
   const workspaceRoot = process.cwd();
   const {
+    ansiOutput,
     outputLines,
     isRunning,
+    ptyDimensions,
     pendingQuestion,
     mode,
     agentSessionActive,
@@ -85,18 +89,52 @@ function AppContent() {
     activeSession,
     setActiveSession,
     executeCommand,
+    sendRawInput,
     handleQuestionAnswer,
     interrupt,
+    cleanup,
+    resizePty,
   } = useAppState(workspaceRoot, config?.issueTracker);
 
-  // Debug: log when pendingQuestion changes
+  // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
   useEffect(() => {
-    debugLog('App', 'pendingQuestion changed', {
-      hasPendingQuestion: !!pendingQuestion,
-      toolUseID: pendingQuestion?.toolUseID,
-      questionCount: pendingQuestion?.questions.length
-    });
-  }, [pendingQuestion]);
+    const handleExit = () => {
+      cleanup();
+    };
+
+    process.on('exit', handleExit);
+
+    return () => {
+      process.off('exit', handleExit);
+    };
+  }, [cleanup]);
+
+  // Track previous dimensions to avoid unnecessary resizes
+  const prevDimensionsRef = useRef({ width, height });
+  const isRunningRef = useRef(isRunning);
+
+  // Update ref when isRunning changes
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  // Resize PTY when terminal dimensions change (ONLY dimensions, not isRunning)
+  useEffect(() => {
+    const prevWidth = prevDimensionsRef.current.width;
+    const prevHeight = prevDimensionsRef.current.height;
+
+    // Only resize if:
+    // 1. Dimensions actually changed
+    // 2. We're currently running
+    // 3. Not the initial mount (prevent resize during spawn)
+    if (isRunningRef.current && (width !== prevWidth || height !== prevHeight)) {
+      prevDimensionsRef.current = { width, height };
+      resizePty(width, height);
+    } else {
+      // Always update prev dimensions even if not resizing
+      prevDimensionsRef.current = { width, height };
+    }
+  }, [width, height]); // DO NOT include resizePty or isRunning in deps to avoid loops
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
@@ -254,7 +292,17 @@ function AppContent() {
         goToSelection();
       }
       if (event.ctrl && event.name === 'c') {
-        interrupt();
+        // Two-stage Ctrl+C handling:
+        // 1. First Ctrl+C: Kill active TTY session
+        // 2. Second Ctrl+C (when idle): Exit Clive
+        if (isRunning) {
+          // TTY is active - interrupt it
+          interrupt();
+        } else {
+          // No active session - exit Clive immediately
+          cleanup();
+          process.exit(0);
+        }
       }
       // Input focus shortcuts
       if (event.sequence === '/') {
@@ -398,10 +446,11 @@ function AppContent() {
         <OutputPanel
           width={outputWidth}
           height={bodyHeight}
-          lines={outputLines}
+          ansiOutput={ansiOutput}
           isRunning={isRunning}
           mode={mode}
           modeColor={getModeColor()}
+          ptyDimensions={ptyDimensions}
         />
       </box>
 
@@ -414,6 +463,11 @@ function AppContent() {
         inputFocused={inputFocused}
         onFocusChange={setInputFocused}
         preFillValue={preFillValue}
+        pendingQuestion={pendingQuestion}
+        onQuestionAnswer={handleQuestionAnswer}
+        onQuestionCancel={() => interrupt()}
+        rawInputMode={isRunning}
+        onRawKeyPress={sendRawInput}
       />
 
       {/* Status Bar */}
@@ -423,17 +477,6 @@ function AppContent() {
         isRunning={isRunning}
         inputFocused={inputFocused}
       />
-
-      {/* Question Panel Overlay */}
-      {pendingQuestion && (
-        <QuestionPanel
-          width={width}
-          height={height}
-          question={pendingQuestion}
-          onAnswer={handleQuestionAnswer}
-          onCancel={() => interrupt()}
-        />
-      )}
     </box>
   );
 }

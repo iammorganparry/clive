@@ -6,6 +6,7 @@
 import { Effect, Runtime, pipe } from "effect";
 import type {
   ApprovePlanBridgeResponse,
+  ProposePlanBridgeResponse,
   ProposeTestPlanBridgeResponse,
   SummarizeContextBridgeResponse,
   TypedBridgeHandlers,
@@ -32,7 +33,109 @@ export function createBridgeHandlers(
 
   return {
     /**
-     * Handle proposeTestPlan requests
+     * Handle proposePlan requests (new user story format)
+     * Streams the plan content to a file in the VSCode editor
+     */
+    proposePlan: async (
+      params: unknown,
+    ): Promise<ProposePlanBridgeResponse> => {
+      const input = params as {
+        name: string;
+        overview?: string;
+        category: "feature" | "bugfix" | "refactor" | "docs";
+        epicUserStory: {
+          role: string;
+          capability: string;
+          benefit: string;
+        };
+        tasks: Array<{
+          id: string;
+          title: string;
+          acceptanceCriteria: string[];
+          definitionOfDone: string[];
+          skill: string;
+          complexity: number;
+          technicalNotes?: string;
+        }>;
+        planContent: string;
+        toolCallId: string;
+      };
+
+      try {
+        // Generate a unique plan file path
+        const planId = `plan-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        const sanitizedName = input.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .substring(0, 50);
+        const filePath = `.clive/plans/${sanitizedName}-${planId.slice(-6)}.md`;
+
+        // Build full content with YAML frontmatter using shared utility
+        const fullContent = buildFullPlanContent(
+          {
+            name: input.name,
+            overview: input.overview,
+            category: input.category,
+            epicUserStory: input.epicUserStory,
+            tasks: input.tasks,
+          },
+          input.planContent,
+        );
+
+        // Initialize the streaming write
+        await pipe(
+          initializePlanStreamingWriteEffect(filePath, input.toolCallId),
+          Effect.provide(VSCodeService.Default),
+          Runtime.runPromise(runtime),
+        );
+
+        // Write the plan content with YAML frontmatter
+        await pipe(
+          appendPlanStreamingContentEffect(input.toolCallId, fullContent),
+          Effect.provide(VSCodeService.Default),
+          Runtime.runPromise(runtime),
+        );
+
+        // Finalize the write
+        const finalPath = await pipe(
+          finalizePlanStreamingWriteEffect(input.toolCallId),
+          Effect.provide(VSCodeService.Default),
+          Runtime.runPromise(runtime),
+        );
+
+        // Emit plan content event to webview so UI can display approval card
+        const webview = webviewProvider?.getWebview();
+        if (webview) {
+          webview.webview.postMessage({
+            type: "mcp-bridge-event",
+            event: "plan-content-streaming",
+            data: {
+              toolCallId: input.toolCallId,
+              content: fullContent,
+              isComplete: true,
+              filePath: finalPath,
+            },
+          });
+        }
+
+        return {
+          success: true,
+          planId,
+          filePath: finalPath,
+          message: `Plan created: ${input.name}`,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          planId: "",
+          message:
+            error instanceof Error ? error.message : "Failed to create plan",
+        };
+      }
+    },
+
+    /**
+     * Handle proposeTestPlan requests (DEPRECATED - use proposePlan)
      * Streams the plan content to a file in the VSCode editor
      */
     proposeTestPlan: async (
