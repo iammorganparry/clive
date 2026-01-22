@@ -363,6 +363,18 @@ function AppContent() {
     goToMain();
   };
 
+  // Wrapper for executeCommand to handle special commands
+  const handleExecuteCommand = (cmd: string) => {
+    // Check for /resume command
+    if (cmd.trim() === '/resume') {
+      goToSelection();
+      return;
+    }
+
+    // Otherwise, execute normally
+    executeCommand(cmd);
+  };
+
 
   // Handler for config flow completion
   const handleConfigComplete = (config: { apiKey: string; teamID: string }) => {
@@ -501,7 +513,7 @@ function AppContent() {
       {/* Input Bar */}
       <DynamicInput
         width={innerWidth}
-        onSubmit={executeCommand}
+        onSubmit={handleExecuteCommand}
         disabled={!!pendingQuestion}
         isRunning={isRunning}
         inputFocused={inputFocused}

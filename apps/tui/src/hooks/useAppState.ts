@@ -403,6 +403,14 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
         break;
       }
 
+      case '/resume':
+        // Resume command - go back to selection view where user can pick a conversation
+        // In the future, could auto-resume most recent conversation if no args
+        addSystemMessage('Select a conversation to resume from the list');
+        // This will be handled by the app - need to add a way to go back to selection
+        // For now, just show a message
+        break;
+
       case '/exit':
         if (state.context.mode !== 'none') {
           // Kill active agent process
