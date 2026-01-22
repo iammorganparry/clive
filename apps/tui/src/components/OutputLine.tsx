@@ -22,9 +22,8 @@ export function OutputLine({ line }: Props) {
         const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
         return (
           <box>
-            <text fg={OneDarkPro.syntax.yellow}>
-              Read 📄 {filename}
-            </text>
+            <text fg={OneDarkPro.syntax.yellow}>Read 📄 </text>
+            <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
         );
       }
@@ -35,9 +34,8 @@ export function OutputLine({ line }: Props) {
         const filename = path.split('/').pop() || path;
         return (
           <box>
-            <text fg={OneDarkPro.syntax.yellow}>
-              Grep 🔍 "{toolInput.pattern}" in {filename}
-            </text>
+            <text fg={OneDarkPro.syntax.yellow}>Grep 🔍 "{toolInput.pattern}" in </text>
+            <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
         );
       }
@@ -46,9 +44,8 @@ export function OutputLine({ line }: Props) {
       if (line.toolName === 'Glob' && toolInput.pattern) {
         return (
           <box>
-            <text fg={OneDarkPro.syntax.yellow}>
-              Glob 📁 {toolInput.pattern}
-            </text>
+            <text fg={OneDarkPro.syntax.yellow}>Glob 📁 </text>
+            <text fg={OneDarkPro.foreground.muted}>{toolInput.pattern}</text>
           </box>
         );
       }
@@ -57,9 +54,8 @@ export function OutputLine({ line }: Props) {
       if (line.toolName === 'Bash' && toolInput.command) {
         return (
           <box>
-            <text fg={OneDarkPro.syntax.cyan}>
-              Bash $ {toolInput.command}
-            </text>
+            <text fg={OneDarkPro.syntax.cyan}>Bash $ </text>
+            <text fg={OneDarkPro.foreground.muted}>{toolInput.command}</text>
           </box>
         );
       }
@@ -69,9 +65,8 @@ export function OutputLine({ line }: Props) {
         const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
         return (
           <box>
-            <text fg={OneDarkPro.syntax.yellow}>
-              {line.toolName} ✏️  {filename}
-            </text>
+            <text fg={OneDarkPro.syntax.yellow}>{line.toolName} ✏️  </text>
+            <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
         );
       }
