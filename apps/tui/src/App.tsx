@@ -93,6 +93,32 @@ function AppContent() {
     isLoading: conversationsLoading,
   } = useConversations(workspaceRoot, 20);
 
+  // Auto-skip selection view if 0-1 conversations
+  useEffect(() => {
+    // Only auto-skip when in selection view and conversations are loaded
+    if (viewMode !== 'selection' || conversationsLoading || sessionsLoading) {
+      return;
+    }
+
+    // If no conversations and no sessions, skip to main with /plan
+    if (conversations.length === 0 && sessions.length === 0) {
+      goToMain();
+      setInputFocused(true);
+      setPreFillValue('/plan');
+      return;
+    }
+
+    // If exactly 1 conversation and no sessions, auto-resume it
+    if (conversations.length === 1 && sessions.length === 0) {
+      const conversation = conversations[0];
+      handleConversationResume(conversation);
+      return;
+    }
+
+    // Otherwise, show the selection view (2+ conversations or has sessions)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, conversations.length, sessions.length, conversationsLoading, sessionsLoading]);
+
   const {
     outputLines,
     isRunning,
