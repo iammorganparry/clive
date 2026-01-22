@@ -204,6 +204,7 @@ export function SelectionView({
                       }
                       paddingLeft={1}
                       paddingRight={1}
+                      flexDirection="row"
                     >
                       <text
                         fg={
@@ -212,13 +213,12 @@ export function SelectionView({
                             : OneDarkPro.foreground.primary
                         }
                       >
-                        {isSelected ? '▸ ' : '  '}
-                        💬 {display} {' '}
-                        {linearId && (
-                          <text fg={OneDarkPro.syntax.magenta}>[{linearId}] </text>
-                        )}
-                        <text fg={OneDarkPro.foreground.comment}>({timeAgo})</text>
+                        {isSelected ? '▸ ' : '  '}💬 {display}
                       </text>
+                      {linearId && (
+                        <text fg={OneDarkPro.syntax.magenta}> [{linearId}]</text>
+                      )}
+                      <text fg={OneDarkPro.foreground.comment}> ({timeAgo})</text>
                     </box>
                   );
                 })}
