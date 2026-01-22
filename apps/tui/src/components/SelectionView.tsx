@@ -35,9 +35,10 @@ interface SelectionViewProps {
   conversationsLoading: boolean;
   selectedIndex: number;
   searchQuery: string;
-  onSelect: (session: Session) => void;
+  selectedIssue: Session | null; // null = show issues, Session = show conversations for this issue
+  onSelectIssue: (session: Session) => void;
   onResumeConversation: (conversation: Conversation) => void;
-  onCreateNew: () => void;
+  onCreateNew: (issue?: Session) => void;
   onBack: () => void;
 }
 
@@ -50,35 +51,202 @@ export function SelectionView({
   conversationsLoading,
   selectedIndex,
   searchQuery,
-  onSelect,
+  selectedIssue,
+  onSelectIssue,
   onResumeConversation,
   onCreateNew,
   onBack,
 }: SelectionViewProps) {
-  // Filter conversations by search query (search display message and slug)
+  // Level 1: Show issues (when selectedIssue is null)
+  // Level 2: Show conversations for selected issue (when selectedIssue is set)
+
+  if (!selectedIssue) {
+    // Level 1: Filter sessions/issues by search query
+    const filteredSessions = searchQuery
+      ? sessions.filter(s => {
+          const query = searchQuery.toLowerCase();
+          const identifier = s.linearData?.identifier?.toLowerCase() || '';
+          const title = s.name.toLowerCase();
+          return identifier.includes(query) || title.includes(query);
+        })
+      : sessions;
+
+    const displayIssues = filteredSessions.slice(0, 10);
+    const totalDisplayed = displayIssues.length;
+
+    return (
+      <box
+        width={width}
+        height={height}
+        backgroundColor={OneDarkPro.background.primary}
+        alignItems="center"
+        justifyContent="center"
+        flexDirection="column"
+      >
+        <box flexDirection="column" alignItems="center" width={50}>
+          {/* Header */}
+          <box flexDirection="row">
+            <text fg={OneDarkPro.syntax.red} bold>
+              CLIVE
+            </text>
+            <text fg={OneDarkPro.foreground.muted}>
+              {' · Select Issue'}
+            </text>
+          </box>
+
+          {/* Loading state */}
+          {sessionsLoading && (
+            <box marginTop={3}>
+              <LoadingSpinner text="Loading issues..." color={OneDarkPro.syntax.yellow} />
+            </box>
+          )}
+
+          {/* Empty state */}
+          {!sessionsLoading && sessions.length === 0 && (
+            <box marginTop={3} flexDirection="column" alignItems="center">
+              <text fg={OneDarkPro.foreground.muted}>
+                No Linear issues found.
+              </text>
+              <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+                Use ↑↓ to select "Create New Session" and press Enter.
+              </text>
+            </box>
+          )}
+
+          {/* Issue list */}
+          {!sessionsLoading && sessions.length > 0 && (
+            <box marginTop={2} flexDirection="column" width={70}>
+              {/* Search box */}
+              <box
+                backgroundColor={searchQuery ? OneDarkPro.background.highlight : OneDarkPro.background.secondary}
+                borderStyle="single"
+                borderColor={searchQuery ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
+                paddingLeft={1}
+                paddingRight={1}
+                marginBottom={1}
+                flexDirection="row"
+              >
+                <text fg={OneDarkPro.syntax.green}>🔍 </text>
+                <text fg={searchQuery ? OneDarkPro.foreground.primary : OneDarkPro.foreground.muted}>
+                  {searchQuery || 'Type to search...'}
+                </text>
+              </box>
+
+              {/* Count */}
+              <text fg={OneDarkPro.foreground.muted}>
+                {totalDisplayed} of {filteredSessions.length}
+                {searchQuery ? ` (${sessions.length} total)` : ' issues'}
+              </text>
+
+              {/* Items */}
+              {totalDisplayed === 0 && searchQuery ? (
+                <text fg={OneDarkPro.foreground.muted}>
+                  No matching issues. Try a different search.
+                </text>
+              ) : (
+                <>
+                  {/* Create New option (only show when not searching) */}
+                  {!searchQuery && (
+                    <box
+                      key="create-new"
+                      backgroundColor={
+                        selectedIndex === -1
+                          ? OneDarkPro.background.highlight
+                          : 'transparent'
+                      }
+                      paddingLeft={1}
+                      paddingRight={1}
+                      marginBottom={1}
+                    >
+                      <text
+                        fg={
+                          selectedIndex === -1
+                            ? OneDarkPro.syntax.green
+                            : OneDarkPro.syntax.cyan
+                        }
+                      >
+                        {selectedIndex === -1 ? '▸ ' : '  '}
+                        ✨ Create New Session
+                      </text>
+                    </box>
+                  )}
+
+                  {/* Linear issues */}
+                  {displayIssues.map((session, i) => {
+                    const isSelected = i === selectedIndex;
+
+                    // Get identifier from linearData if available
+                    const identifier = session.linearData?.identifier || '';
+                    const prefix = identifier ? `${identifier} ` : '';
+                    const maxNameLength = identifier ? 30 : 35;
+
+                    const name = session.name.length > maxNameLength
+                      ? session.name.substring(0, maxNameLength - 1) + '…'
+                      : session.name;
+
+                    return (
+                      <box
+                        key={session.id}
+                        backgroundColor={
+                          isSelected
+                            ? OneDarkPro.background.highlight
+                            : 'transparent'
+                        }
+                        paddingLeft={1}
+                        paddingRight={1}
+                      >
+                        <text
+                          fg={
+                            isSelected
+                              ? OneDarkPro.syntax.blue
+                              : OneDarkPro.foreground.primary
+                          }
+                        >
+                          {isSelected ? '▸ ' : '  '}
+                          📋 {identifier ? prefix : ''}
+                          {name}
+                        </text>
+                      </box>
+                    );
+                  })}
+                </>
+              )}
+            </box>
+          )}
+
+          {/* Keyboard hints */}
+          <box marginTop={4} flexDirection="column" alignItems="center">
+            <text fg={OneDarkPro.foreground.muted}>
+              Type to search  •  ↑↓ Select  •  Enter Choose  •  Esc Back  •  q Quit
+            </text>
+          </box>
+        </box>
+      </box>
+    );
+  }
+
+  // Level 2: Show conversations for the selected issue
+  // Filter conversations that match the selected issue's Linear ID
+  const issueLinearId = selectedIssue.linearData?.id;
+  const conversationsForIssue = conversations.filter(c =>
+    c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
+  );
+
+  // Filter by search query
   const filteredConversations = searchQuery
-    ? conversations.filter(c => {
+    ? conversationsForIssue.filter(c => {
         const query = searchQuery.toLowerCase();
         const display = c.display.toLowerCase();
         const slug = c.slug?.toLowerCase() || '';
         return display.includes(query) || slug.includes(query);
       })
-    : conversations;
+    : conversationsForIssue;
 
-  // Filter sessions by search query (search both identifier and title)
-  const filteredSessions = searchQuery
-    ? sessions.filter(s => {
-        const query = searchQuery.toLowerCase();
-        const identifier = s.linearData?.identifier?.toLowerCase() || '';
-        const title = s.name.toLowerCase();
-        return identifier.includes(query) || title.includes(query);
-      })
-    : sessions;
+  const displayConversations = filteredConversations.slice(0, 10);
+  const totalDisplayed = displayConversations.length;
 
-  // Combine conversations and sessions (conversations first)
-  const displayConversations = filteredConversations.slice(0, 7);
-  const displaySessions = filteredSessions.slice(0, 3);
-  const totalDisplayed = displayConversations.length + displaySessions.length;
+  // Level 2: Render conversations for the selected issue
+  const issueIdentifier = selectedIssue.linearData?.identifier || '';
 
   return (
     <box
@@ -90,28 +258,34 @@ export function SelectionView({
       flexDirection="column"
     >
       <box flexDirection="column" alignItems="center" width={50}>
-        {/* Header */}
+        {/* Header with issue identifier */}
         <box flexDirection="row">
           <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
           </text>
           <text fg={OneDarkPro.foreground.muted}>
-            {' · Resume or Start Session'}
+            {' · '}
+          </text>
+          <text fg={OneDarkPro.syntax.magenta}>
+            {issueIdentifier}
+          </text>
+          <text fg={OneDarkPro.foreground.muted}>
+            {' · Sessions'}
           </text>
         </box>
 
         {/* Loading state */}
-        {(conversationsLoading || sessionsLoading) && (
+        {conversationsLoading && (
           <box marginTop={3}>
-            <LoadingSpinner text="Loading sessions..." color={OneDarkPro.syntax.yellow} />
+            <LoadingSpinner text="Loading conversations..." color={OneDarkPro.syntax.yellow} />
           </box>
         )}
 
         {/* Empty state */}
-        {!conversationsLoading && !sessionsLoading && conversations.length === 0 && sessions.length === 0 && (
+        {!conversationsLoading && conversationsForIssue.length === 0 && (
           <box marginTop={3} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.muted}>
-              No recent sessions found.
+              No conversations for this issue yet.
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
               Use ↑↓ to select "Create New Session" and press Enter.
@@ -119,8 +293,8 @@ export function SelectionView({
           </box>
         )}
 
-        {/* Session/Conversation list */}
-        {!conversationsLoading && !sessionsLoading && (conversations.length > 0 || sessions.length > 0) && (
+        {/* Conversation list */}
+        {!conversationsLoading && (conversationsForIssue.length > 0 || !searchQuery) && (
           <box marginTop={2} flexDirection="column" width={70}>
             {/* Search box */}
             <box
@@ -140,14 +314,14 @@ export function SelectionView({
 
             {/* Count */}
             <text fg={OneDarkPro.foreground.muted}>
-              {totalDisplayed} of {filteredConversations.length + filteredSessions.length}
-              {searchQuery ? ` (${conversations.length + sessions.length} total)` : ' sessions'}
+              {totalDisplayed} of {filteredConversations.length}
+              {searchQuery ? ` (${conversationsForIssue.length} total)` : ' conversations'}
             </text>
 
             {/* Items */}
             {totalDisplayed === 0 && searchQuery ? (
               <text fg={OneDarkPro.foreground.muted}>
-                No matching sessions. Try a different search.
+                No matching conversations. Try a different search.
               </text>
             ) : (
               <>
@@ -172,12 +346,12 @@ export function SelectionView({
                       }
                     >
                       {selectedIndex === -1 ? '▸ ' : '  '}
-                      ✨ Create New Session
+                      ✨ Create New Session for {issueIdentifier}
                     </text>
                   </box>
                 )}
 
-                {/* Recent conversations */}
+                {/* Conversations for this issue */}
                 {displayConversations.map((conversation, i) => {
                   const isSelected = i === selectedIndex;
 
@@ -185,11 +359,8 @@ export function SelectionView({
                   const date = new Date(conversation.timestamp);
                   const timeAgo = formatTimeAgo(date);
 
-                  // Get Linear identifier if available
-                  const linearId = conversation.linearProjectIdentifier || conversation.linearTaskIdentifier;
-
-                  // Truncate display message (shorter if Linear ID present)
-                  const maxLength = linearId ? 40 : 50;
+                  // Truncate display message
+                  const maxLength = 50;
                   const display = conversation.display.length > maxLength
                     ? conversation.display.substring(0, maxLength - 1) + '…'
                     : conversation.display;
@@ -215,49 +386,7 @@ export function SelectionView({
                       >
                         {isSelected ? '▸ ' : '  '}💬 {display}
                       </text>
-                      {linearId && (
-                        <text fg={OneDarkPro.syntax.magenta}> [{linearId}]</text>
-                      )}
                       <text fg={OneDarkPro.foreground.comment}> ({timeAgo})</text>
-                    </box>
-                  );
-                })}
-
-                {/* Linear sessions (if any) */}
-                {displaySessions.map((session, i) => {
-                  const isSelected = (i + displayConversations.length) === selectedIndex;
-
-                  // Get identifier from linearData if available
-                  const identifier = session.linearData?.identifier || '';
-                  const prefix = identifier ? `${identifier} ` : '';
-                  const maxNameLength = identifier ? 30 : 35;
-
-                  const name = session.name.length > maxNameLength
-                    ? session.name.substring(0, maxNameLength - 1) + '…'
-                    : session.name;
-
-                  return (
-                    <box
-                      key={session.id}
-                      backgroundColor={
-                        isSelected
-                          ? OneDarkPro.background.highlight
-                          : 'transparent'
-                      }
-                      paddingLeft={1}
-                      paddingRight={1}
-                    >
-                      <text
-                        fg={
-                          isSelected
-                            ? OneDarkPro.syntax.blue
-                            : OneDarkPro.foreground.primary
-                        }
-                      >
-                        {isSelected ? '▸ ' : '  '}
-                        📋 {identifier ? prefix : ''}
-                        {name}
-                      </text>
                     </box>
                   );
                 })}
@@ -269,7 +398,7 @@ export function SelectionView({
         {/* Keyboard hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.muted}>
-            Type to search  •  ↑↓ Select  •  Enter Resume/Start  •  Esc {searchQuery ? 'Clear' : 'Back'}  •  q Quit
+            Type to search  •  ↑↓ Select  •  Enter Resume/Start  •  Esc {searchQuery ? 'Clear' : 'Back to Issues'}  •  q Quit
           </text>
         </box>
       </box>

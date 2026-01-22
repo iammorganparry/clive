@@ -51,6 +51,7 @@ function AppContent() {
   // Selection state (for SelectionView)
   const [selectedEpicIndex, setSelectedEpicIndex] = useState(0);
   const [epicSearchQuery, setEpicSearchQuery] = useState('');
+  const [selectedIssue, setSelectedIssue] = useState<typeof sessions[0] | null>(null);
 
   // Setup view state
   const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
@@ -121,7 +122,9 @@ function AppContent() {
     // If exactly 1 conversation and no sessions, auto-resume it
     if (conversations.length === 1 && sessions.length === 0) {
       const conversation = conversations[0];
-      handleConversationResume(conversation);
+      if (conversation) {
+        handleConversationResume(conversation);
+      }
       return;
     }
 
@@ -214,33 +217,22 @@ function AppContent() {
         }
       }
     } else if (viewMode === 'selection') {
-      // Helper functions to filter conversations and sessions by search query
-      const filterConversations = (query: string) => {
-        if (!query) return conversations;
-        const lowerQuery = query.toLowerCase();
-        return conversations.filter(c => {
-          const display = c.display.toLowerCase();
-          const slug = c.slug?.toLowerCase() || '';
-          return display.includes(lowerQuery) || slug.includes(lowerQuery);
-        });
-      };
+      // Two-level selection: Level 1 (issues) or Level 2 (conversations for issue)
+      const isLevel1 = !selectedIssue;
+      const isLevel2 = !!selectedIssue;
 
-      const filterSessions = (query: string) => {
-        if (!query) return sessions;
-        const lowerQuery = query.toLowerCase();
-        return sessions.filter(s => {
-          const identifier = s.linearData?.identifier?.toLowerCase() || '';
-          const title = s.name.toLowerCase();
-          return identifier.includes(lowerQuery) || title.includes(lowerQuery);
-        });
-      };
-
-      // Escape - clear search or go back
+      // Escape - clear search, go back to level 1, or go back
       if (event.name === 'escape') {
         if (epicSearchQuery) {
+          // Clear search
           setEpicSearchQuery('');
           setSelectedEpicIndex(0);
+        } else if (isLevel2) {
+          // Go back to level 1 (issues)
+          setSelectedIssue(null);
+          setSelectedEpicIndex(0);
         } else {
+          // Go back to previous view
           goBack();
         }
         return;
@@ -256,7 +248,6 @@ function AppContent() {
       }
 
       // Printable characters - add to search query
-      // Exclude special keys and shortcuts
       if (
         event.sequence &&
         event.sequence.length === 1 &&
@@ -274,59 +265,113 @@ function AppContent() {
         return;
       }
 
-      // Arrow key navigation for selection (conversations + sessions)
-      if (event.name === 'up' || event.sequence === 'k') {
-        const filteredConvs = filterConversations(epicSearchQuery);
-        const filteredSess = filterSessions(epicSearchQuery);
-        const maxConvIndex = Math.min(filteredConvs.length, 7);
-        const maxSessIndex = Math.min(filteredSess.length, 3);
-        const maxIndex = maxConvIndex + maxSessIndex - 1;
-        // Allow -1 for "Create New" option when not searching
-        const minIndex = epicSearchQuery ? 0 : -1;
-        setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
-        return;
-      }
-      if (event.name === 'down' || event.sequence === 'j') {
-        const filteredConvs = filterConversations(epicSearchQuery);
-        const filteredSess = filterSessions(epicSearchQuery);
-        const maxConvIndex = Math.min(filteredConvs.length, 7);
-        const maxSessIndex = Math.min(filteredSess.length, 3);
-        const maxIndex = maxConvIndex + maxSessIndex - 1;
-        // Allow -1 for "Create New" option when not searching
-        const minIndex = epicSearchQuery ? 0 : -1;
-        setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
-        return;
+      // Arrow key navigation - depends on level
+      if (isLevel1) {
+        // Level 1: Navigate issues
+        const filteredSessions = epicSearchQuery
+          ? sessions.filter(s => {
+              const query = epicSearchQuery.toLowerCase();
+              const identifier = s.linearData?.identifier?.toLowerCase() || '';
+              const title = s.name.toLowerCase();
+              return identifier.includes(query) || title.includes(query);
+            })
+          : sessions;
+
+        const displayIssues = filteredSessions.slice(0, 10);
+        const maxIndex = displayIssues.length - 1;
+        const minIndex = epicSearchQuery ? 0 : -1; // Allow -1 for "Create New"
+
+        if (event.name === 'up' || event.sequence === 'k') {
+          setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
+          return;
+        }
+        if (event.name === 'down' || event.sequence === 'j') {
+          setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
+          return;
+        }
+      } else if (isLevel2) {
+        // Level 2: Navigate conversations for selected issue
+        const issueLinearId = selectedIssue.linearData?.id;
+        const conversationsForIssue = conversations.filter(c =>
+          c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
+        );
+
+        const filteredConversations = epicSearchQuery
+          ? conversationsForIssue.filter(c => {
+              const query = epicSearchQuery.toLowerCase();
+              const display = c.display.toLowerCase();
+              const slug = c.slug?.toLowerCase() || '';
+              return display.includes(query) || slug.includes(query);
+            })
+          : conversationsForIssue;
+
+        const displayConversations = filteredConversations.slice(0, 10);
+        const maxIndex = displayConversations.length - 1;
+        const minIndex = epicSearchQuery ? 0 : -1; // Allow -1 for "Create New"
+
+        if (event.name === 'up' || event.sequence === 'k') {
+          setSelectedEpicIndex((prev) => (prev > minIndex ? prev - 1 : maxIndex));
+          return;
+        }
+        if (event.name === 'down' || event.sequence === 'j') {
+          setSelectedEpicIndex((prev) => (prev < maxIndex ? prev + 1 : minIndex));
+          return;
+        }
       }
 
       // Enter to select
       if (event.name === 'return' || event.name === 'enter') {
-        // Check if "Create New" is selected
-        if (selectedEpicIndex === -1) {
-          // Go to main view with /plan pre-filled
-          goToMain();
-          setInputFocused(true);
-          setPreFillValue('/plan');
-          return;
-        }
+        if (isLevel1) {
+          // Level 1: Selecting an issue
+          if (selectedEpicIndex === -1) {
+            // Create new session without issue
+            handleCreateNewWithoutIssue();
+            return;
+          }
 
-        const filteredConvs = filterConversations(epicSearchQuery);
-        const filteredSess = filterSessions(epicSearchQuery);
-        const displayConvs = filteredConvs.slice(0, 7);
-        const displaySess = filteredSess.slice(0, 3);
+          const filteredSessions = epicSearchQuery
+            ? sessions.filter(s => {
+                const query = epicSearchQuery.toLowerCase();
+                const identifier = s.linearData?.identifier?.toLowerCase() || '';
+                const title = s.name.toLowerCase();
+                return identifier.includes(query) || title.includes(query);
+              })
+            : sessions;
 
-        // Determine if selecting a conversation or session
-        if (selectedEpicIndex < displayConvs.length) {
-          // Selecting a conversation
-          const conversation = displayConvs[selectedEpicIndex];
+          const displayIssues = filteredSessions.slice(0, 10);
+          const issue = displayIssues[selectedEpicIndex];
+          if (issue) {
+            // Go to Level 2 - show conversations for this issue
+            setSelectedIssue(issue);
+            setSelectedEpicIndex(-1); // Reset to "Create New" position for level 2
+            setEpicSearchQuery(''); // Clear search
+          }
+        } else if (isLevel2) {
+          // Level 2: Selecting a conversation for the issue
+          if (selectedEpicIndex === -1) {
+            // Create new session for this issue
+            handleCreateNewForIssue(selectedIssue);
+            return;
+          }
+
+          const issueLinearId = selectedIssue.linearData?.id;
+          const conversationsForIssue = conversations.filter(c =>
+            c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
+          );
+
+          const filteredConversations = epicSearchQuery
+            ? conversationsForIssue.filter(c => {
+                const query = epicSearchQuery.toLowerCase();
+                const display = c.display.toLowerCase();
+                const slug = c.slug?.toLowerCase() || '';
+                return display.includes(query) || slug.includes(query);
+              })
+            : conversationsForIssue;
+
+          const displayConversations = filteredConversations.slice(0, 10);
+          const conversation = displayConversations[selectedEpicIndex];
           if (conversation) {
             handleConversationResume(conversation);
-          }
-        } else {
-          // Selecting a session
-          const sessionIndex = selectedEpicIndex - displayConvs.length;
-          const session = displaySess[sessionIndex];
-          if (session) {
-            handleEpicSelect(session);
           }
         }
         return;
@@ -364,18 +409,24 @@ function AppContent() {
     }
   });
 
-  // Handler for epic selection
-  const handleEpicSelect = (session: typeof sessions[0]) => {
-    setActiveSession(session);
+  // Handler for creating new session without issue
+  const handleCreateNewWithoutIssue = () => {
     goToMain();
+    setInputFocused(true);
+    setPreFillValue('/plan');
+  };
+
+  // Handler for creating new session for specific issue
+  const handleCreateNewForIssue = (issue: typeof sessions[0]) => {
+    setActiveSession(issue);
+    goToMain();
+    setInputFocused(true);
+    setPreFillValue('/plan');
   };
 
   // Handler for conversation resume
   const handleConversationResume = (conversation: Conversation) => {
     console.log('[Clive TUI] Resuming conversation:', conversation.sessionId);
-
-    // Store the session ID to resume
-    // This will be passed to CliManager when executing
     executeCommand(`/plan --resume=${conversation.sessionId}`);
     goToMain();
   };
@@ -448,14 +499,31 @@ function AppContent() {
         conversationsLoading={conversationsLoading}
         selectedIndex={selectedEpicIndex}
         searchQuery={epicSearchQuery}
-        onSelect={handleEpicSelect}
-        onResumeConversation={handleConversationResume}
-        onCreateNew={() => {
-          goToMain();
-          setInputFocused(true);
-          setPreFillValue('/plan');
+        selectedIssue={selectedIssue}
+        onSelectIssue={(issue) => {
+          setSelectedIssue(issue);
+          setSelectedEpicIndex(-1); // Reset to "Create New" position
+          setEpicSearchQuery(''); // Clear search
         }}
-        onBack={goBack}
+        onResumeConversation={handleConversationResume}
+        onCreateNew={(issue) => {
+          if (issue) {
+            handleCreateNewForIssue(issue);
+          } else {
+            handleCreateNewWithoutIssue();
+          }
+        }}
+        onBack={() => {
+          if (selectedIssue) {
+            // Go back to Level 1
+            setSelectedIssue(null);
+            setSelectedEpicIndex(0);
+            setEpicSearchQuery('');
+          } else {
+            // Go back to previous view
+            goBack();
+          }
+        }}
       />
     );
   }
