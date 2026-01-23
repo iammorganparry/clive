@@ -4,10 +4,16 @@
  * Shows list of recent conversations and epics with search and selection
  */
 
+import { useMemo } from 'react';
 import { OneDarkPro } from '../styles/theme';
 import { Session } from '../types';
 import { LoadingSpinner } from './LoadingSpinner';
 import type { Conversation } from '../services/ConversationService';
+
+/**
+ * Special session ID for the "Other Conversations" group
+ */
+const UNATTACHED_GROUP_ID = '__unattached__';
 
 /**
  * Format timestamp as relative time
@@ -33,6 +39,8 @@ interface SelectionViewProps {
   conversations: Conversation[];
   sessionsLoading: boolean;
   conversationsLoading: boolean;
+  sessionsError?: Error | null;
+  conversationsError?: Error | null;
   selectedIndex: number;
   searchQuery: string;
   selectedIssue: Session | null; // null = show issues, Session = show conversations for this issue
@@ -49,6 +57,8 @@ export function SelectionView({
   conversations,
   sessionsLoading,
   conversationsLoading,
+  sessionsError,
+  conversationsError,
   selectedIndex,
   searchQuery,
   selectedIssue,
@@ -57,19 +67,59 @@ export function SelectionView({
   onCreateNew,
   onBack,
 }: SelectionViewProps) {
+  // Separate conversations into attached and unattached
+  const { attachedConversations, unattachedConversations } = useMemo(() => {
+    const attached: Conversation[] = [];
+    const unattached: Conversation[] = [];
+
+    conversations.forEach(conv => {
+      if (conv.linearProjectId || conv.linearTaskId) {
+        attached.push(conv);
+      } else {
+        unattached.push(conv);
+      }
+    });
+
+    // Sort unattached by timestamp (newest first)
+    unattached.sort((a, b) => b.timestamp - a.timestamp);
+
+    return { attachedConversations: attached, unattachedConversations: unattached };
+  }, [conversations]);
+
+  // Create "Other Conversations" group if there are unattached conversations
+  const issuesWithOther = useMemo(() => {
+    const items: Session[] = [];
+
+    // Always add "Other Conversations" at the TOP if there are unattached conversations
+    if (unattachedConversations.length > 0) {
+      items.push({
+        id: UNATTACHED_GROUP_ID,
+        name: `Other Conversations (${unattachedConversations.length})`,
+        createdAt: new Date(),
+        source: 'linear' as const,
+        // No linearData - this marks it as the unattached group
+      });
+    }
+
+    // Add all Linear sessions after
+    items.push(...sessions);
+
+    return items;
+  }, [sessions, unattachedConversations.length]);
+
   // Level 1: Show issues (when selectedIssue is null)
   // Level 2: Show conversations for selected issue (when selectedIssue is set)
 
   if (!selectedIssue) {
-    // Level 1: Filter sessions/issues by search query
+    // Level 1: Filter sessions/issues by search query (including "Other Conversations")
     const filteredSessions = searchQuery
-      ? sessions.filter(s => {
+      ? issuesWithOther.filter(s => {
           const query = searchQuery.toLowerCase();
           const identifier = s.linearData?.identifier?.toLowerCase() || '';
           const title = s.name.toLowerCase();
           return identifier.includes(query) || title.includes(query);
         })
-      : sessions;
+      : issuesWithOther;
 
     const displayIssues = filteredSessions.slice(0, 10);
     const totalDisplayed = displayIssues.length;
@@ -94,18 +144,53 @@ export function SelectionView({
             </text>
           </box>
 
-          {/* Loading state */}
-          {sessionsLoading && (
+          {/* Loading state - wait for both sessions and conversations */}
+          {(sessionsLoading || conversationsLoading) && (
             <box marginTop={3}>
-              <LoadingSpinner text="Loading issues..." color={OneDarkPro.syntax.yellow} />
+              <LoadingSpinner
+                text={
+                  sessionsLoading && conversationsLoading
+                    ? "Loading issues and conversations..."
+                    : sessionsLoading
+                    ? "Loading issues..."
+                    : "Loading conversations..."
+                }
+                color={OneDarkPro.syntax.yellow}
+              />
+            </box>
+          )}
+
+          {/* Error state */}
+          {!sessionsLoading && !conversationsLoading && sessionsError && (
+            <box marginTop={3} flexDirection="column" alignItems="center" width={70}>
+              <text fg={OneDarkPro.syntax.red}>
+                Failed to load Linear issues:
+              </text>
+              <text fg={OneDarkPro.foreground.primary} marginTop={1}>
+                {sessionsError.message}
+              </text>
+              <box marginTop={2} flexDirection="column" alignItems="flex-start">
+                <text fg={OneDarkPro.foreground.muted}>
+                  • Check that your Linear API key is set correctly
+                </text>
+                <text fg={OneDarkPro.foreground.muted}>
+                  • Verify your team ID is correct
+                </text>
+                <text fg={OneDarkPro.foreground.muted}>
+                  • Run the Linear setup flow again if needed
+                </text>
+              </box>
+              <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+                Press Esc to go back or q to quit
+              </text>
             </box>
           )}
 
           {/* Empty state */}
-          {!sessionsLoading && sessions.length === 0 && (
+          {!sessionsLoading && !conversationsLoading && !sessionsError && issuesWithOther.length === 0 && (
             <box marginTop={3} flexDirection="column" alignItems="center">
               <text fg={OneDarkPro.foreground.muted}>
-                No Linear issues found.
+                No Linear issues or conversations found.
               </text>
               <text fg={OneDarkPro.foreground.muted} marginTop={1}>
                 Use ↑↓ to select "Create New Session" and press Enter.
@@ -114,7 +199,7 @@ export function SelectionView({
           )}
 
           {/* Issue list */}
-          {!sessionsLoading && sessions.length > 0 && (
+          {!sessionsLoading && !conversationsLoading && !sessionsError && issuesWithOther.length > 0 && (
             <box marginTop={2} flexDirection="column" width={70}>
               {/* Search box */}
               <box
@@ -135,7 +220,7 @@ export function SelectionView({
               {/* Count */}
               <text fg={OneDarkPro.foreground.muted}>
                 {totalDisplayed} of {filteredSessions.length}
-                {searchQuery ? ` (${sessions.length} total)` : ' issues'}
+                {searchQuery ? ` (${issuesWithOther.length} total)` : ' items'}
               </text>
 
               {/* Items */}
@@ -171,9 +256,10 @@ export function SelectionView({
                     </box>
                   )}
 
-                  {/* Linear issues */}
+                  {/* Linear issues and Other Conversations */}
                   {displayIssues.map((session, i) => {
                     const isSelected = i === selectedIndex;
+                    const isUnattachedGroup = session.id === UNATTACHED_GROUP_ID;
 
                     // Get identifier from linearData if available
                     const identifier = session.linearData?.identifier || '';
@@ -183,6 +269,9 @@ export function SelectionView({
                     const name = session.name.length > maxNameLength
                       ? session.name.substring(0, maxNameLength - 1) + '…'
                       : session.name;
+
+                    // Use different icon and styling for unattached group
+                    const icon = isUnattachedGroup ? '💬' : '📋';
 
                     return (
                       <box
@@ -194,16 +283,21 @@ export function SelectionView({
                         }
                         paddingLeft={1}
                         paddingRight={1}
+                        borderStyle={isUnattachedGroup && !isSelected ? 'single' : undefined}
+                        borderColor={isUnattachedGroup && !isSelected ? OneDarkPro.syntax.cyan : undefined}
                       >
                         <text
                           fg={
                             isSelected
                               ? OneDarkPro.syntax.blue
+                              : isUnattachedGroup
+                              ? OneDarkPro.syntax.cyan
                               : OneDarkPro.foreground.primary
                           }
+                          fontWeight={isUnattachedGroup ? 'bold' : 'normal'}
                         >
                           {isSelected ? '▸ ' : '  '}
-                          📋 {identifier ? prefix : ''}
+                          {icon} {identifier ? prefix : ''}
                           {name}
                         </text>
                       </box>
@@ -226,11 +320,16 @@ export function SelectionView({
   }
 
   // Level 2: Show conversations for the selected issue
-  // Filter conversations that match the selected issue's Linear ID
-  const issueLinearId = selectedIssue.linearData?.id;
-  const conversationsForIssue = conversations.filter(c =>
-    c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
-  );
+  // Check if this is the "Other Conversations" group
+  const isUnattachedGroup = selectedIssue.id === UNATTACHED_GROUP_ID;
+
+  // Filter conversations based on selection
+  const conversationsForIssue = isUnattachedGroup
+    ? unattachedConversations
+    : attachedConversations.filter(c => {
+        const issueLinearId = selectedIssue.linearData?.id;
+        return c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId;
+      });
 
   // Filter by search query
   const filteredConversations = searchQuery
@@ -246,7 +345,9 @@ export function SelectionView({
   const totalDisplayed = displayConversations.length;
 
   // Level 2: Render conversations for the selected issue
-  const issueIdentifier = selectedIssue.linearData?.identifier || '';
+  const issueIdentifier = isUnattachedGroup
+    ? 'Other Conversations'
+    : selectedIssue.linearData?.identifier || '';
 
   return (
     <box
@@ -258,7 +359,7 @@ export function SelectionView({
       flexDirection="column"
     >
       <box flexDirection="column" alignItems="center" width={50}>
-        {/* Header with issue identifier */}
+        {/* Header with issue identifier or "Other Conversations" */}
         <box flexDirection="row">
           <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
@@ -266,7 +367,7 @@ export function SelectionView({
           <text fg={OneDarkPro.foreground.muted}>
             {' · '}
           </text>
-          <text fg={OneDarkPro.syntax.magenta}>
+          <text fg={isUnattachedGroup ? OneDarkPro.syntax.cyan : OneDarkPro.syntax.magenta}>
             {issueIdentifier}
           </text>
           <text fg={OneDarkPro.foreground.muted}>
@@ -325,8 +426,8 @@ export function SelectionView({
               </text>
             ) : (
               <>
-                {/* Create New option (only show when not searching) */}
-                {!searchQuery && (
+                {/* Create New option (only show when not searching and not in unattached group) */}
+                {!searchQuery && !isUnattachedGroup && (
                   <box
                     key="create-new"
                     backgroundColor={

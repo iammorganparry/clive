@@ -153,6 +153,47 @@ it("should update user", async () => {
 });
 ```
 
+### 2.6 Document Testing Patterns (Global Learnings)
+
+**If you discover effective testing patterns during this work:**
+
+1. **Check global learnings first:**
+   - Review `.claude/learnings/success-patterns.md` for established testing patterns
+   - Check `.claude/learnings/gotchas.md` for testing quirks
+
+2. **If you discover a reusable testing pattern:**
+   ```bash
+   cat >> .claude/learnings/success-patterns.md << 'EOF'
+
+   ### [Testing Pattern Name]
+   **Use Case:** [When to apply this testing pattern]
+   **Implementation:** [How to implement with code example]
+   **Benefits:** [What this improves - reliability, speed, clarity]
+   **Examples:** [Test files where this was successfully used]
+   **First Used:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Task: [TASK_IDENTIFIER]
+   **Reused In:** [Will be updated when pattern is reused]
+
+   ---
+   EOF
+   ```
+
+3. **For testing-related gotchas:**
+   ```bash
+   cat >> .claude/learnings/gotchas.md << 'EOF'
+
+   ### [Testing Gotcha Name]
+   **What Happens:** [Problem that occurs during testing]
+   **Why:** [Reason or framework limitation]
+   **How to Handle:** [Correct testing approach]
+   **Files Affected:** [Where this applies]
+   **Discovered:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+
+   ---
+   EOF
+   ```
+
+**Document patterns that help future agents write better tests.**
+
 ---
 
 ## Step 3: Verify Tests Pass (REQUIRED)
@@ -229,13 +270,82 @@ After creating the task:
 
 ---
 
+## Step 3.5: Validate Scratchpad Documentation (MANDATORY)
+
+**Before marking task complete, verify you've documented learnings.**
+
+**Check scratchpad was updated:**
+```bash
+# Verify scratchpad has entry for this iteration
+ITERATION=$(cat .claude/.build-iteration)
+
+if [ -f "$SCRATCHPAD_FILE" ]; then
+    if ! grep -q "## Iteration $ITERATION" "$SCRATCHPAD_FILE"; then
+        echo "ERROR: Scratchpad not updated for iteration $ITERATION"
+        echo "You MUST document learnings in scratchpad before completion"
+        echo "See scratchpad template in prompt above"
+        exit 1
+    fi
+else
+    echo "ERROR: Scratchpad file not found at $SCRATCHPAD_FILE"
+    exit 1
+fi
+```
+
+**Scratchpad checklist:**
+- [ ] "What Worked" section documents effective testing approaches
+- [ ] "Key Decisions" section explains testing strategy choices
+- [ ] "Files Modified" section lists all test files
+- [ ] "Success Patterns" section documents reusable test patterns
+- [ ] Date/time stamp is current
+
+**If scratchpad is incomplete:**
+- Fill it out NOW before proceeding
+- Use the structured template provided in the prompt
+- Be specific about testing patterns and decisions
+
+## Step 3.6: Post-Task Reflection (MANDATORY)
+
+**Before outputting TASK_COMPLETE, reflect on this testing work:**
+
+**Answer these questions in scratchpad:**
+
+1. **Test Quality:** Are these tests resilient to refactoring? Do they test behavior, not implementation?
+2. **Coverage:** What edge cases are covered? What's missing?
+3. **Pattern Discovery:** Did you establish a reusable testing pattern?
+4. **Mocking Strategy:** Was the mocking approach effective? Too complex?
+5. **Test Speed:** Are tests fast enough? Any performance concerns?
+6. **Knowledge Gap:** What would have made writing these tests faster?
+
+**Append reflection to scratchpad:**
+```bash
+cat >> $SCRATCHPAD_FILE << 'REFLECTION'
+
+### 🔄 Post-Task Reflection
+
+**Test Quality:** [resilient/brittle - behavior-focused/implementation-focused]
+**Coverage:** [edge cases covered, gaps identified]
+**Pattern Discovered:** [reusable testing technique]
+**Mocking Strategy:** [effective/overcomplicated]
+**Test Speed:** [fast/slow - performance notes]
+**Learned:** [key insight for future testing]
+
+REFLECTION
+```
+
+**This reflection helps future agents write better tests.**
+
+---
+
 ## Step 4: Mark Task Complete (REQUIRED - DO NOT SKIP)
 
 **Before outputting TASK_COMPLETE marker, you MUST:**
 
 1. Verify all tests pass
 2. Confirm tests provide adequate coverage
-3. **Update tracker status to "Done"**
+3. Validate scratchpad documentation (Step 3.5)
+4. Complete post-task reflection (Step 3.6)
+5. **Update tracker status to "Done"**
 
 **For Beads:**
 ```bash

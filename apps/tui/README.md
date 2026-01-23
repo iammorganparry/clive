@@ -34,6 +34,43 @@ TypeScript/React-based TUI for Clive, migrating from Go/Bubble Tea.
 - **TaskService**: Unified task management (Beads/Linear abstraction)
 - **CliManager**: CLI execution with event enrichment pipeline
 
+## Linear Integration Setup
+
+Clive TUI integrates with Linear for task and issue management. See [LINEAR_SETUP.md](./LINEAR_SETUP.md) for detailed instructions.
+
+### Quick Setup
+
+1. Get your Linear API key from https://linear.app/settings/api
+2. Run Clive TUI - it will guide you through the setup
+3. Your API key will be saved securely to `~/.clive/.env`
+
+### Configuration Files
+
+- **`~/.clive/.env`** - Stores your Linear API key (secure, not committed to git)
+- **`~/.clive/config.json`** - Stores your team ID and preferences
+- **`<project>/.clive/config.json`** - Project-specific team configuration (optional)
+
+### Security Features
+
+✅ API keys are stored in `~/.clive/.env` with restricted permissions (600)
+✅ API keys are NOT stored in config.json files
+✅ `.env` files are gitignored to prevent accidental commits
+✅ Environment variables take priority over config files
+
+### Configuration Priority
+
+Configuration is loaded in this order (highest to lowest priority):
+
+1. `LINEAR_API_KEY` environment variable
+2. `~/.clive/.env` file
+3. `<workspace>/.clive/config.json` (project-specific)
+4. `~/.clive/config.json` (global)
+
+This allows you to:
+- Use one API key across all projects
+- Override team settings per project
+- Keep credentials secure and separate from project files
+
 ## Known Issues
 
 ### Runtime Errors

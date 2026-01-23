@@ -112,10 +112,35 @@ if [ -n "$EPIC_FILTER" ]; then
     mkdir -p "$EPIC_DIR"
     PROGRESS_FILE="$EPIC_DIR/progress.txt"
     SCRATCHPAD_FILE="$EPIC_DIR/scratchpad.md"
+    ERROR_PATTERNS_FILE="$EPIC_DIR/error-patterns.md"
 else
     # Fallback for no epic (shouldn't happen in normal use)
     PROGRESS_FILE=".claude/progress.txt"
     SCRATCHPAD_FILE=".claude/scratchpad.md"
+    ERROR_PATTERNS_FILE=".claude/error-patterns.md"
+fi
+
+# Initialize error patterns file if needed
+if [ ! -f "$ERROR_PATTERNS_FILE" ]; then
+    cat > "$ERROR_PATTERNS_FILE" << 'EOF'
+# Error Patterns & Solutions
+
+This file tracks recurring errors, their root causes, and proven solutions.
+
+## Template
+When you encounter an error multiple times, document it here:
+
+### [Error Name/Description]
+**Symptom:** [What you see]
+**Root Cause:** [Why it happens]
+**Solution:** [How to fix it]
+**Prevention:** [How to avoid it]
+**First Seen:** [Date/Iteration]
+**Last Seen:** [Date/Iteration]
+**Frequency:** [Number of occurrences]
+
+---
+EOF
 fi
 
 # Verify skills directory
@@ -126,6 +151,75 @@ fi
 
 # Ensure .claude directory exists
 mkdir -p .claude
+mkdir -p .claude/learnings
+
+# Initialize global learnings files if needed
+GLOBAL_ERROR_PATTERNS=".claude/learnings/error-patterns.md"
+GLOBAL_SUCCESS_PATTERNS=".claude/learnings/success-patterns.md"
+GLOBAL_GOTCHAS=".claude/learnings/gotchas.md"
+
+if [ ! -f "$GLOBAL_ERROR_PATTERNS" ]; then
+    cat > "$GLOBAL_ERROR_PATTERNS" << 'EOF'
+# Global Error Patterns
+
+Cross-epic knowledge base of recurring errors and their solutions.
+When you encounter an error that might affect other work, document it here.
+
+## Template
+
+### [Error Name/Description]
+**Symptom:** [What you see]
+**Root Cause:** [Why it happens]
+**Solution:** [How to fix it]
+**Prevention:** [How to avoid it]
+**First Seen:** [Date/Epic/Iteration]
+**Occurrences:** [List of epics/iterations where this occurred]
+**Related Files:** [Files commonly affected]
+
+---
+EOF
+fi
+
+if [ ! -f "$GLOBAL_SUCCESS_PATTERNS" ]; then
+    cat > "$GLOBAL_SUCCESS_PATTERNS" << 'EOF'
+# Global Success Patterns
+
+Reusable patterns and techniques that have worked well across different tasks.
+When you discover an effective approach, document it here for others to use.
+
+## Template
+
+### [Pattern Name]
+**Use Case:** [When to apply this pattern]
+**Implementation:** [How to implement it]
+**Benefits:** [Why this works well]
+**Examples:** [References to where this was used successfully]
+**First Used:** [Date/Epic/Iteration]
+**Reused In:** [List of other contexts where this pattern was applied]
+
+---
+EOF
+fi
+
+if [ ! -f "$GLOBAL_GOTCHAS" ]; then
+    cat > "$GLOBAL_GOTCHAS" << 'EOF'
+# Global Gotchas
+
+Codebase-specific quirks, traps, and non-obvious behaviors.
+Document anything that surprised you or took time to figure out.
+
+## Template
+
+### [Gotcha Name]
+**What Happens:** [Surprising behavior]
+**Why:** [Root cause or design decision]
+**How to Handle:** [Correct approach]
+**Files Affected:** [Where this applies]
+**Discovered:** [Date/Epic/Iteration]
+
+---
+EOF
+fi
 
 # Initialize progress file if needed
 if [ ! -f "$PROGRESS_FILE" ]; then
@@ -283,6 +377,57 @@ fi
     echo ""
     echo "---"
     echo ""
+    echo "## Global Learnings (Cross-Epic Knowledge)"
+    echo ""
+    echo "These learnings apply across ALL epics and tasks. Review before starting work."
+    echo ""
+
+    # Show global error patterns
+    if [ -f "$GLOBAL_ERROR_PATTERNS" ]; then
+        ERROR_COUNT=$(grep -c "^### " "$GLOBAL_ERROR_PATTERNS" 2>/dev/null || echo "0")
+        if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "### Known Error Patterns ($ERROR_COUNT documented)"
+            echo ""
+            grep -A 8 "^### " "$GLOBAL_ERROR_PATTERNS" | head -60
+            echo ""
+        fi
+    fi
+
+    # Show global success patterns
+    if [ -f "$GLOBAL_SUCCESS_PATTERNS" ]; then
+        PATTERN_COUNT=$(grep -c "^### " "$GLOBAL_SUCCESS_PATTERNS" 2>/dev/null || echo "0")
+        if [ "$PATTERN_COUNT" -gt 0 ]; then
+            echo "### Reusable Success Patterns ($PATTERN_COUNT documented)"
+            echo ""
+            grep -A 7 "^### " "$GLOBAL_SUCCESS_PATTERNS" | head -60
+            echo ""
+        fi
+    fi
+
+    # Show global gotchas
+    if [ -f "$GLOBAL_GOTCHAS" ]; then
+        GOTCHA_COUNT=$(grep -c "^### " "$GLOBAL_GOTCHAS" 2>/dev/null || echo "0")
+        if [ "$GOTCHA_COUNT" -gt 0 ]; then
+            echo "### Codebase Gotchas ($GOTCHA_COUNT documented)"
+            echo ""
+            grep -A 6 "^### " "$GLOBAL_GOTCHAS" | head -60
+            echo ""
+        fi
+    fi
+
+    if [ ! -f "$GLOBAL_ERROR_PATTERNS" ] || [ $(grep -c "^### " "$GLOBAL_ERROR_PATTERNS" 2>/dev/null || echo "0") -eq 0 ]; then
+        if [ ! -f "$GLOBAL_SUCCESS_PATTERNS" ] || [ $(grep -c "^### " "$GLOBAL_SUCCESS_PATTERNS" 2>/dev/null || echo "0") -eq 0 ]; then
+            if [ ! -f "$GLOBAL_GOTCHAS" ] || [ $(grep -c "^### " "$GLOBAL_GOTCHAS" 2>/dev/null || echo "0") -eq 0 ]; then
+                echo "_No global learnings documented yet. As you work, document errors, patterns, and gotchas in:_"
+                echo "- _$GLOBAL_ERROR_PATTERNS (recurring errors)_"
+                echo "- _$GLOBAL_SUCCESS_PATTERNS (reusable techniques)_"
+                echo "- _$GLOBAL_GOTCHAS (codebase quirks)_"
+            fi
+        fi
+    fi
+    echo ""
+    echo "---"
+    echo ""
     echo "## Recent Progress (Last 5 Iterations)"
     echo ""
     if [ -f "$PROGRESS_FILE" ]; then
@@ -294,13 +439,49 @@ fi
     echo ""
     echo "---"
     echo ""
+    echo "## Known Error Patterns"
+    echo ""
+    if [ -f "$ERROR_PATTERNS_FILE" ]; then
+        ERROR_COUNT=$(grep -c "^### " "$ERROR_PATTERNS_FILE" 2>/dev/null || echo "0")
+        echo "Documented error patterns: $ERROR_COUNT"
+        echo ""
+        if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "Review before starting work:"
+            echo ""
+            cat "$ERROR_PATTERNS_FILE" | grep -A 10 "^### " | head -50
+            echo ""
+            echo "If you encounter known errors, check this file for solutions."
+        fi
+    else
+        echo "_No error patterns documented yet_"
+    fi
+    echo ""
+    echo "---"
+    echo ""
     echo "## Current Task"
     echo "- Task tracker: $TRACKER"
     echo "- Progress: $PROGRESS_FILE"
     echo "- Skill: $SKILL"
+    echo ""
+
+    # Extract and display full task details
     if [ "$TRACKER" = "beads" ] && [ -n "$TASK_ID" ]; then
-        echo "- Task ID: $TASK_ID"
-        echo "- Task: $TASK_TITLE"
+        echo "### Task Details"
+        echo "- **ID:** $TASK_ID"
+        echo "- **Title:** $TASK_TITLE"
+        echo ""
+
+        # Fetch full task details if available
+        TASK_DETAILS=$(bd show "$TASK_ID" --format json 2>/dev/null || echo "")
+        if [ -n "$TASK_DETAILS" ]; then
+            TASK_DESC=$(echo "$TASK_DETAILS" | jq -r '.description // "No description"')
+            TASK_STATUS=$(echo "$TASK_DETAILS" | jq -r '.status // "unknown"')
+            echo "**Status:** $TASK_STATUS"
+            echo ""
+            echo "**Description:**"
+            echo "$TASK_DESC"
+            echo ""
+        fi
     fi
     echo ""
 
@@ -311,6 +492,43 @@ fi
         if [ -f "$EPIC_DIR/tasks.json" ]; then
             CACHED_TASKS_FILE="$EPIC_DIR/tasks.json"
             echo "[DEBUG] Found cached tasks file with $(jq '. | length' "$CACHED_TASKS_FILE") tasks" >&2
+
+            # For Linear, extract and display next pending task details
+            if [ "$LINEAR_TASK_FETCH" = true ]; then
+                FIRST_TASK=$(jq -r '[.[] | select(.status == "pending" or .status == "in_progress")] | .[0] // empty' "$CACHED_TASKS_FILE")
+
+                if [ -n "$FIRST_TASK" ] && [ "$FIRST_TASK" != "null" ]; then
+                    TASK_ID=$(echo "$FIRST_TASK" | jq -r '.id')
+                    TASK_IDENTIFIER=$(echo "$FIRST_TASK" | jq -r '.identifier // .id')
+                    TASK_TITLE=$(echo "$FIRST_TASK" | jq -r '.title')
+                    TASK_DESC=$(echo "$FIRST_TASK" | jq -r '.description // "No description"')
+                    TASK_STATUS=$(echo "$FIRST_TASK" | jq -r '.status')
+
+                    echo "### Next Task Details"
+                    echo "- **ID:** $TASK_ID"
+                    echo "- **Identifier:** $TASK_IDENTIFIER"
+                    echo "- **Title:** $TASK_TITLE"
+                    echo "- **Status:** $TASK_STATUS"
+                    echo ""
+                    echo "**Description:**"
+                    echo "$TASK_DESC"
+                    echo ""
+
+                    # Extract acceptance criteria if present
+                    if echo "$TASK_DESC" | grep -q "Acceptance Criteria:"; then
+                        echo "**Acceptance Criteria:**"
+                        echo "$TASK_DESC" | sed -n '/Acceptance Criteria:/,/^$/p' | tail -n +2
+                        echo ""
+                    fi
+
+                    # Extract definition of done if present
+                    if echo "$TASK_DESC" | grep -q "Definition of Done:"; then
+                        echo "**Definition of Done:**"
+                        echo "$TASK_DESC" | sed -n '/Definition of Done:/,/^$/p' | tail -n +2
+                        echo ""
+                    fi
+                fi
+            fi
         else
             echo "[DEBUG] Cached tasks file not found - Claude will fetch from Linear" >&2
         fi
@@ -455,18 +673,53 @@ fi
     fi
 
     echo ""
-    echo "SCRATCHPAD UPDATES (Required):"
-    echo "Append notes to $SCRATCHPAD_FILE before completion."
+    echo "SCRATCHPAD UPDATES (MANDATORY - VERIFICATION REQUIRED):"
+    echo "You MUST append structured notes to $SCRATCHPAD_FILE BEFORE marking task complete."
     echo ""
-    echo "Format:"
+    echo "Use this EXACT template:"
+    echo ""
     echo "cat >> $SCRATCHPAD_FILE << 'SCRATCHPAD'"
-    echo "## Iteration $ITERATION - [Task Title]"
-    echo "Completed: \$(date +%Y-%m-%d %H:%M)"
+    echo "---"
+    echo "## Iteration $ITERATION - [Task ID] [Task Title]"
+    echo "**Completed:** \$(date '+%Y-%m-%d %H:%M')"
+    echo "**Status:** [Completed/Blocked/Partial]"
     echo ""
-    echo "Key decisions: [what you decided and why]"
-    echo "Files modified: [list of files]"
-    echo "Notes for next agent: [important context]"
+    echo "### ✅ What Worked"
+    echo "- [Successful approach or technique]"
+    echo "- [Pattern that should be reused]"
+    echo "- [Tool/library that solved the problem well]"
+    echo ""
+    echo "### ❌ What Didn't Work / Blockers"
+    echo "- [Approach that failed and why]"
+    echo "- [Blocker encountered and resolution]"
+    echo "- [Dead end to avoid]"
+    echo ""
+    echo "### 🧠 Key Decisions & Rationale"
+    echo "- [Important decision]: [Why this choice was made]"
+    echo "- [Trade-off]: [What was gained vs what was sacrificed]"
+    echo ""
+    echo "### 📝 Files Modified"
+    echo "- \\\`path/to/file.ts\\\` - [What changed and why]"
+    echo "- \\\`path/to/test.ts\\\` - [Test coverage added]"
+    echo ""
+    echo "### ⚠️  Gotchas for Next Agent"
+    echo "- [Tricky part of codebase to watch out for]"
+    echo "- [Configuration quirk]"
+    echo "- [Test that's flaky]"
+    echo ""
+    echo "### 🎯 Success Patterns"
+    echo "- [Reusable pattern discovered]"
+    echo "- [Effective workflow]"
+    echo ""
+    echo "### 📊 Metrics"
+    echo "- Tests: [X passed / Y total]"
+    echo "- Build time: [duration]"
+    echo "- Lines changed: [+X -Y]"
+    echo ""
     echo "SCRATCHPAD"
+    echo ""
+    echo "VERIFICATION: After writing scratchpad, confirm with:"
+    echo "echo 'SCRATCHPAD_UPDATED: Iteration $ITERATION' >> $PROGRESS_FILE"
     echo ""
     echo "GIT COMMITS (Required):"
     echo "Create local commit before marking complete."

@@ -203,6 +203,48 @@ function getUser(id: string) {
 - **Document why** - Add a comment if the fix isn't obvious
 - **Handle edge cases** - If this bug exists, similar ones might too
 
+### 4.3 Error Documentation (Global Learnings)
+
+**If you encounter similar bugs or patterns during investigation:**
+
+1. **Check global learnings first:**
+   - Review `.claude/learnings/error-patterns.md` for known bug patterns
+   - Check `.claude/learnings/gotchas.md` for codebase quirks that cause bugs
+
+2. **If this bug represents a recurring pattern, document it globally:**
+   ```bash
+   cat >> .claude/learnings/error-patterns.md << 'EOF'
+
+   ### [Bug Pattern Name]
+   **Symptom:** [What users/tests see when this bug occurs]
+   **Root Cause:** [Underlying issue - why this bug happens]
+   **Solution:** [How to fix it - specific technique]
+   **Prevention:** [How to avoid this pattern - coding practices]
+   **First Seen:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+   **Occurrences:** 1
+   **Related Files:** [Files where this pattern appears]
+
+   ---
+   EOF
+   ```
+
+3. **For codebase-specific gotchas that lead to bugs:**
+   ```bash
+   cat >> .claude/learnings/gotchas.md << 'EOF'
+
+   ### [Gotcha Name]
+   **What Happens:** [Surprising behavior that causes bugs]
+   **Why:** [Design decision or limitation]
+   **How to Handle:** [Correct approach to avoid bugs]
+   **Files Affected:** [Where developers need to be careful]
+   **Discovered:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+
+   ---
+   EOF
+   ```
+
+**Document patterns that future agents can learn from to prevent similar bugs.**
+
 ---
 
 ## Step 5: Add Regression Test
@@ -277,6 +319,88 @@ npm run lint  # Must pass with ZERO new warnings
 ```
 
 **If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
+
+### 6.3 Validate Scratchpad Documentation (MANDATORY)
+
+**Before marking task complete, verify you've documented learnings.**
+
+**Check scratchpad was updated:**
+```bash
+# Verify scratchpad has entry for this iteration
+ITERATION=$(cat .claude/.build-iteration)
+
+if [ -f "$SCRATCHPAD_FILE" ]; then
+    if ! grep -q "## Iteration $ITERATION" "$SCRATCHPAD_FILE"; then
+        echo "ERROR: Scratchpad not updated for iteration $ITERATION"
+        echo "You MUST document learnings in scratchpad before completion"
+        echo "See scratchpad template in prompt above"
+        exit 1
+    fi
+else
+    echo "ERROR: Scratchpad file not found at $SCRATCHPAD_FILE"
+    exit 1
+fi
+```
+
+**Scratchpad checklist:**
+- [ ] "What Worked" section documents the fix approach
+- [ ] "Key Decisions" section explains why this fix was chosen
+- [ ] "Files Modified" section lists all changed files
+- [ ] Root cause analysis documented
+- [ ] Date/time stamp is current
+
+**If scratchpad is incomplete:**
+- Fill it out NOW before proceeding
+- Use the structured template provided in the prompt
+- Be specific about root cause and fix rationale
+
+### 6.4 Post-Task Reflection (MANDATORY)
+
+**Before outputting TASK_COMPLETE, reflect on this bug fix:**
+
+**Answer these questions in scratchpad:**
+
+1. **Root Cause Clarity:** How long did it take to find the root cause? Was it obvious or hidden?
+2. **Fix Confidence:** Are you confident this addresses the root cause (not just symptoms)?
+3. **Test Coverage:** Does the regression test adequately prevent recurrence?
+4. **Pattern Recognition:** Is this a one-off bug or part of a larger pattern?
+5. **Prevention:** What could have prevented this bug in the first place?
+6. **Knowledge Gap:** What did you learn that would have made this fix faster?
+
+**Append reflection to scratchpad:**
+```bash
+cat >> $SCRATCHPAD_FILE << 'REFLECTION'
+
+### 🔄 Post-Task Reflection
+
+**Root Cause Time:** [quick/moderate/lengthy investigation]
+**Fix Confidence:** [high/medium/low - why]
+**Regression Test:** [coverage assessment]
+**Pattern:** [one-off / recurring pattern]
+**Prevention:** [what could have stopped this bug]
+**Learned:** [key insight for future debugging]
+
+REFLECTION
+```
+
+**If this bug revealed a success pattern for debugging, document it globally:**
+
+```bash
+# Only if the debugging technique is truly reusable
+cat >> .claude/learnings/success-patterns.md << 'EOF'
+
+### [Debugging Pattern Name]
+**Use Case:** [When to apply this debugging approach]
+**Implementation:** [Step-by-step debugging technique]
+**Benefits:** [Why this approach works well - faster diagnosis, etc.]
+**Examples:** [Where this was used successfully - bug references]
+**First Used:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Task: [TASK_IDENTIFIER]
+
+---
+EOF
+```
+
+**This reflection helps future agents debug similar issues faster.**
 
 ---
 

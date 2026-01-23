@@ -12,11 +12,42 @@ import * as path from 'path';
 import * as os from 'os';
 
 const CONFIG_PATH = path.join(os.homedir(), '.clive', 'config.json');
+const ENV_PATH = path.join(os.homedir(), '.clive', '.env');
+
+/**
+ * Load and set environment variables from ~/.clive/.env
+ * This allows storing sensitive credentials outside of config files
+ */
+function loadEnvFile(): void {
+  try {
+    if (fs.existsSync(ENV_PATH)) {
+      const content = fs.readFileSync(ENV_PATH, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const [key, ...valueParts] = trimmed.split('=');
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=').trim();
+            // Remove quotes if present
+            const cleanValue = value.replace(/^["']|["']$/g, '');
+            process.env[key.trim()] = cleanValue;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[useViewMode] Failed to load .env file:', error);
+  }
+}
 
 /**
  * Load config from ~/.clive/config.json
  */
 function loadConfig(): IssueTrackerConfig | null {
+  // Load environment variables first
+  loadEnvFile();
+
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
@@ -29,7 +60,50 @@ function loadConfig(): IssueTrackerConfig | null {
 }
 
 /**
+ * Save API key to ~/.clive/.env file (secure, not committed to git)
+ */
+function saveApiKey(apiKey: string): void {
+  try {
+    const dir = path.dirname(ENV_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Read existing .env content
+    let envContent = '';
+    if (fs.existsSync(ENV_PATH)) {
+      envContent = fs.readFileSync(ENV_PATH, 'utf-8');
+    }
+
+    // Update or add LINEAR_API_KEY
+    const lines = envContent.split('\n');
+    let found = false;
+    const updatedLines = lines.map(line => {
+      if (line.trim().startsWith('LINEAR_API_KEY=')) {
+        found = true;
+        return `LINEAR_API_KEY=${apiKey}`;
+      }
+      return line;
+    });
+
+    if (!found) {
+      updatedLines.push(`LINEAR_API_KEY=${apiKey}`);
+    }
+
+    fs.writeFileSync(ENV_PATH, updatedLines.join('\n'), 'utf-8');
+    // Set restrictive permissions (owner read/write only)
+    fs.chmodSync(ENV_PATH, 0o600);
+
+    // Also set in current process env
+    process.env.LINEAR_API_KEY = apiKey;
+  } catch (error) {
+    console.error('[useViewMode] Failed to save API key:', error);
+  }
+}
+
+/**
  * Save config to ~/.clive/config.json
+ * API keys are saved separately in ~/.clive/.env for security
  */
 function saveConfig(config: IssueTrackerConfig): void {
   try {
@@ -37,7 +111,16 @@ function saveConfig(config: IssueTrackerConfig): void {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+
+    // Extract API key if present and save separately
+    const configToSave = { ...config };
+    if (configToSave.linear?.apiKey) {
+      saveApiKey(configToSave.linear.apiKey);
+      // Remove apiKey from config before saving
+      delete configToSave.linear.apiKey;
+    }
+
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(configToSave, null, 2), 'utf-8');
   } catch (error) {
     console.error('[useViewMode] Failed to save config:', error);
   }

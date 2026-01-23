@@ -19,7 +19,26 @@ export const taskQueryKeys = {
 };
 
 /**
- * Hook to load config from ~/.clive/config.json
+ * Normalize nested Linear config fields
+ * Handles both snake_case and camelCase field names for backwards compatibility
+ * Priority: LINEAR_API_KEY env var > config file apiKey
+ */
+function normalizeLinearConfig(linear: any): Config['linear'] {
+  if (!linear) return undefined;
+
+  // Check for API key in environment variable first, then fall back to config file
+  const apiKey = process.env.LINEAR_API_KEY || linear.apiKey || linear.api_key;
+
+  return {
+    apiKey,
+    teamID: linear.teamID || linear.team_id || linear.teamId,
+  };
+}
+
+/**
+ * Hook to load config
+ * Priority: workspace .clive/config.json -> global ~/.clive/config.json
+ * Each workspace must have complete Linear config (no merging with global)
  */
 export function useConfig() {
   return useQuery({
@@ -27,21 +46,94 @@ export function useConfig() {
     queryFn: async (): Promise<Config> => {
       // Load config from file system
       const fs = await import('fs/promises');
+      const fsSync = await import('fs');
       const os = await import('os');
       const path = await import('path');
 
-      const configPath = path.join(os.homedir(), '.clive', 'config.json');
+      const logToFile = (msg: string) => {
+        fsSync.appendFileSync('/tmp/tui-debug.log', `${new Date().toISOString()} ${msg}\n`);
+      };
 
+      const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
+      const workspaceConfigPath = path.join(workspaceRoot, '.clive', 'config.json');
+      const globalConfigPath = path.join(os.homedir(), '.clive', 'config.json');
+
+      let config: Config | null = null;
+      let configSource: 'workspace' | 'global' | 'none' = 'none';
+
+      // Try workspace config first (project-specific)
       try {
-        const content = await fs.readFile(configPath, 'utf-8');
-        return JSON.parse(content);
+        const content = await fs.readFile(workspaceConfigPath, 'utf-8');
+        const raw = JSON.parse(content);
+
+        config = {
+          issueTracker: raw.issueTracker || raw.issue_tracker,
+          linear: normalizeLinearConfig(raw.linear),
+          beads: raw.beads,
+        };
+        configSource = 'workspace';
+
+        logToFile(`[useConfig] Loaded config from workspace: ${workspaceConfigPath}`);
       } catch (error) {
-        // Return default config if file doesn't exist
+        logToFile(`[useConfig] No workspace config found at ${workspaceConfigPath}`);
+        // Workspace config doesn't exist or invalid, try global
+      }
+
+      // Try global config only if no workspace config
+      if (!config) {
+        try {
+          const content = await fs.readFile(globalConfigPath, 'utf-8');
+          const raw = JSON.parse(content);
+
+          config = {
+            issueTracker: raw.issueTracker || raw.issue_tracker,
+            linear: normalizeLinearConfig(raw.linear),
+            beads: raw.beads,
+          };
+          configSource = 'global';
+
+          logToFile(`[useConfig] Loaded config from global: ${globalConfigPath}`);
+        } catch (error) {
+          logToFile('[useConfig] No global config found');
+          // No config found
+        }
+      }
+
+      // Return empty config if nothing found
+      if (!config) {
+        logToFile('[useConfig] No config found, returning defaults');
         return {
           issueTracker: undefined,
           linear: undefined,
         };
       }
+
+      logToFile(`[useConfig] Final config: ${JSON.stringify(config)}`);
+
+      // Validate Linear config completeness
+      if (config.issueTracker === 'linear') {
+        if (!config.linear) {
+          const errorMsg = 'Linear is selected but no Linear configuration found';
+          logToFile(`[useConfig] Validation error: ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+        if (!config.linear.apiKey) {
+          const errorMsg =
+            `Linear API key is missing in ${configSource} config. ` +
+            `Please run the Linear setup flow in this workspace.`;
+          logToFile(`[useConfig] Validation error: ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+        if (!config.linear.teamID) {
+          const errorMsg =
+            `Linear team ID is missing in ${configSource} config. ` +
+            `Please run the Linear setup flow in this workspace.`;
+          logToFile(`[useConfig] Validation error: ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+      }
+
+      return config;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

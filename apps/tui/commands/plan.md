@@ -1,7 +1,7 @@
 ---
 description: Collaborate with user as an Agile Project Manager to create user story-based plans with acceptance criteria and create issues in Linear
 model: opus
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__linear__create_issue, mcp__linear__update_issue, mcp__linear__list_issue_labels, mcp__linear__get_team, mcp__linear__list_teams, mcp__linear__create_project, mcp__linear__list_projects, mcp__linear__get_project, mcp__linear__update_project
+allowed-tools: Bash, Read, Glob, Grep, mcp__linear__*, mcp__v0__*
 denied-tools: TodoWrite, Edit, Write, Task, EnterPlanMode, ExitPlanMode
 ---
 
@@ -49,7 +49,7 @@ Follow this process strictly - ALL PHASES ARE MANDATORY:
 
 ### Phase 1: Stakeholder Interview (4-Phase Framework)
 
-Conduct structured interview to understand requirements. Ask ONE question at a time using AskUserQuestion.
+Conduct structured interview to understand requirements. Ask ONE question at a time in plain text.
 
 **Phase 1: Problem Understanding (2-4 questions)**
 - What problem are you solving?
@@ -74,42 +74,13 @@ Conduct structured interview to understand requirements. Ask ONE question at a t
 - Dependencies or risks we should know about?
 
 **Question Guidelines:**
+- Ask questions in plain text (no tool calls needed)
 - ONE question at a time - wait for answer before next question
 - Stop when you can write clear user stories with acceptance criteria
 - Don't ask "should I continue?" - just continue naturally
 - Don't list "Question 1, 2, 3, 4" - ask one, wait, continue
-
-**⚠️ CRITICAL - AskUserQuestion MUST BE THE ABSOLUTE LAST THING:**
-
-**STOP IMMEDIATELY AFTER CALLING AskUserQuestion - NO EXCEPTIONS**
-
-1. Call AskUserQuestion with ONE question
-2. **STOP YOUR MESSAGE IMMEDIATELY** - Do not write another word
-3. Do NOT call AskUserQuestion multiple times in one message
-4. Do NOT output ANY text after AskUserQuestion (not even "." or whitespace)
-5. Do NOT make any other tool calls after AskUserQuestion
-6. The system will automatically wait for the user's answer
-
-**Why this is CRITICAL:**
-- The Claude API requires tool_result to IMMEDIATELY follow tool_use in the SAME message
-- If you output text or make more tool calls after AskUserQuestion, you create a NEW message
-- This breaks the API requirement and causes 400 errors: "unexpected tool_use_id found in tool_result blocks"
-- The conversation will FAIL and need to be restarted
-
-**Example of CORRECT usage:**
-```
-<thinking>I need to ask about the problem</thinking>
-<tool_use>AskUserQuestion with options</tool_use>
-[MESSAGE ENDS HERE - NOTHING AFTER THE TOOL CALL]
-```
-
-**Example of INCORRECT usage (DO NOT DO THIS):**
-```
-<tool_use>AskUserQuestion</tool_use>
-Let me know if you need clarification.  ← WRONG - causes 400 error
-```
-
-**If you need to ask multiple questions:** Ask ONE question, wait for the answer, then ask the next question in your NEXT message after receiving the tool_result.
+- Keep questions focused and specific
+- Use natural, conversational language
 
 ### Phase 2: Codebase Research (MANDATORY - DO NOT SKIP)
 
@@ -174,10 +145,9 @@ Every task MUST include:
 
 ### Phase 4: Plan Approval
 
-After writing plan, use AskUserQuestion:
-- Question: "I've created a comprehensive plan with user stories and acceptance criteria. Would you like to review it and approve, or request changes?"
-- Options: ["Approve and proceed", "Request changes"]
-- **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
+After writing the plan, ask the user in plain text:
+"I've created a comprehensive plan with user stories and acceptance criteria. Would you like to review it and approve, or request changes?"
+
 - If changes requested, refine based on feedback
 - If approved, create issues in configured tracker
 
@@ -270,11 +240,12 @@ Consider creating a project when work meets **2 or more** of these criteria:
 
 **ALWAYS ask user for confirmation before creating a project.** Present it as a recommendation, not a requirement.
 
-Use AskUserQuestion to explain:
+Ask the user in plain text:
 - Why a project is recommended (which criteria are met)
 - Benefits of creating a project (organization, visibility, tracking)
-- **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
 - Alternative (create issues directly under team)
+
+Example: "This work involves [criteria]. I recommend creating a Linear project for better organization and tracking. Would you like me to create a project, or should I create the issues directly under the team?"
 
 The user always has final say on whether to create a project.
 
@@ -300,9 +271,7 @@ Follow the plan structure documented in "Writing the Plan Document" section belo
 
 Present the plan to the user and get explicit approval before creating issues.
 
-Use AskUserQuestion to ask: "I've created a plan with [N] user stories. Would you like me to create these issues in [Linear/Beads] now?"
-
-**CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call.
+Ask in plain text: "I've created a plan with [N] user stories. Would you like me to create these issues in [Linear/Beads] now?"
 
 Wait for user approval before proceeding to Phase 5.
 
@@ -326,10 +295,9 @@ Look for `"issueTracker": "linear"` or `"issueTracker": "beads"`.
 If using Linear, evaluate the scope against Project Decision Criteria (see above section).
 
 If 2+ criteria are met, suggesting a project:
-1. Use AskUserQuestion to propose project creation
+1. Ask the user in plain text to propose project creation
 2. Explain which criteria are met and why a project is recommended
 3. Present benefits: centralized tracking, progress visibility, better organization
-4. **CRITICAL:** END YOUR TURN immediately after calling AskUserQuestion - output NO text after the tool call
 4. Wait for user confirmation
 5. If approved, proceed to Step 3a (create project + issues)
 6. If declined, proceed to Step 3b (create issues without project)
@@ -1051,7 +1019,11 @@ Technical Notes:
 - Search the codebase (Grep, Glob, Bash read-only commands)
 - Ask user questions ONE AT A TIME when you need clarity
 - Write to planning files (.claude/*.md, .claude/*.json)
-- Create issues in configured tracker (Beads or Linear) after approval
+- Create issues in configured tracker (Linear) after approval using mcp__linear__* tools
+- Use v0.dev to prototype UI components (mcp__v0__*) when planning frontend features
+  - Generate component mockups to validate user stories
+  - Share visual examples with stakeholders for approval
+  - Include v0 component links in technical notes
 
 ---
 

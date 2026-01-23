@@ -188,7 +188,54 @@ Build the feature incrementally:
 - **Proper exports** - ensure new code is accessible where needed
 - **Type safety** - use proper TypeScript types (no `any`)
 
-### 2.5 Discovered Work Protocol
+### 2.5 Error Documentation (Global Learnings)
+
+**If you encounter an error during implementation:**
+
+1. **Check global learnings first:**
+   - Review `.claude/learnings/error-patterns.md` for known solutions
+   - Check `.claude/learnings/gotchas.md` for codebase quirks
+
+2. **If error is new or recurring, document it globally:**
+   ```bash
+   cat >> .claude/learnings/error-patterns.md << 'EOF'
+
+   ### [Brief Error Description]
+   **Symptom:** [What you see - error message, behavior]
+   **Root Cause:** [Why it happens - after investigation]
+   **Solution:** [How you fixed it - concrete steps]
+   **Prevention:** [How to avoid in future - pattern/practice]
+   **First Seen:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+   **Occurrences:** 1
+   **Related Files:** [Files affected]
+
+   ---
+   EOF
+   ```
+
+3. **If error already documented, update it:**
+   - Increment frequency count
+   - Add current epic/iteration to "Occurrences" list
+   - Update "Last Seen" date
+
+4. **For codebase quirks (not errors but surprising behavior):**
+   ```bash
+   cat >> .claude/learnings/gotchas.md << 'EOF'
+
+   ### [Gotcha Name]
+   **What Happens:** [Surprising behavior]
+   **Why:** [Root cause or design decision]
+   **How to Handle:** [Correct approach]
+   **Files Affected:** [Where this applies]
+   **Discovered:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+
+   ---
+   EOF
+   ```
+
+**Remember:** Global learnings help ALL future agents avoid the same issues.
+
+### 2.6 Discovered Work Protocol
 
 **If you discover work outside the current task's scope:**
 - Bugs in existing code
@@ -404,7 +451,97 @@ npm test  # Must pass with ZERO failures
 
 **If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
 
-### 4.5 Complete the Task (REQUIRED - DO NOT SKIP)
+### 4.5 Validate Scratchpad Documentation (MANDATORY)
+
+**Before marking task complete, verify you've documented learnings.**
+
+**Check scratchpad was updated:**
+```bash
+# Verify scratchpad has entry for this iteration
+ITERATION=$(cat .claude/.build-iteration)
+EPIC_ID=$(basename "$(dirname "$SCRATCHPAD_FILE")" 2>/dev/null || echo "unknown")
+
+if [ -f "$SCRATCHPAD_FILE" ]; then
+    if ! grep -q "## Iteration $ITERATION" "$SCRATCHPAD_FILE"; then
+        echo "ERROR: Scratchpad not updated for iteration $ITERATION"
+        echo "You MUST document learnings in scratchpad before completion"
+        echo "See scratchpad template in prompt above"
+        exit 1
+    fi
+else
+    echo "ERROR: Scratchpad file not found at $SCRATCHPAD_FILE"
+    exit 1
+fi
+```
+
+**Scratchpad checklist:**
+- [ ] "What Worked" section has at least 1 item
+- [ ] "Key Decisions" section documents major choices
+- [ ] "Files Modified" section lists all changed files
+- [ ] "Gotchas" section warns about pitfalls (if any)
+- [ ] Date/time stamp is current
+
+**If scratchpad is incomplete:**
+- Fill it out NOW before proceeding
+- Use the structured template provided in the prompt
+- Be specific - generic notes don't help future agents
+
+### 4.6 Post-Task Reflection (MANDATORY)
+
+**Before outputting TASK_COMPLETE, reflect on this task:**
+
+**Answer these questions in scratchpad:**
+
+1. **Effectiveness:** What was the most effective technique/tool you used?
+2. **Efficiency:** What slowed you down? How could next iteration be faster?
+3. **Quality:** Did tests adequately cover the implementation?
+4. **Patterns:** What reusable pattern emerged from this work?
+5. **Improvements:** What would you do differently next time?
+6. **Knowledge Gap:** What did you learn that you wish you knew before starting?
+
+**Append reflection to scratchpad:**
+```bash
+cat >> $SCRATCHPAD_FILE << 'REFLECTION'
+
+### 🔄 Post-Task Reflection
+
+**Most Effective:** [technique/tool]
+**Slowed By:** [bottleneck]
+**Test Coverage:** [adequate/needs improvement]
+**Reusable Pattern:** [pattern discovered]
+**Would Do Differently:** [improvement]
+**Learned:** [key insight]
+
+REFLECTION
+```
+
+**If you discovered a reusable pattern, document it globally:**
+
+```bash
+# Only if the pattern is truly reusable across different contexts
+cat >> .claude/learnings/success-patterns.md << 'EOF'
+
+### [Pattern Name]
+**Use Case:** [When to apply this pattern - be specific about context]
+**Implementation:** [Step-by-step how to implement - with code example if helpful]
+**Benefits:** [Why this works well - measurable improvements]
+**Examples:** [Where this was used successfully - file:line references]
+**First Used:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Task: [TASK_IDENTIFIER]
+**Reused In:** [Will be updated when pattern is reused]
+
+---
+EOF
+```
+
+**Guidelines for global pattern documentation:**
+- Only document patterns that are TRULY reusable (not task-specific)
+- Include concrete examples and code references
+- Be specific about when to apply (and when NOT to apply)
+- Patterns should save future agents time and improve quality
+
+**This reflection will guide the next agent's approach.**
+
+### 4.7 Complete the Task (REQUIRED - DO NOT SKIP)
 
 **Before outputting TASK_COMPLETE marker, you MUST:**
 

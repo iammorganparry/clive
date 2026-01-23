@@ -10,7 +10,7 @@
  * - Buffer zone reduces flickering during rapid scrolling
  */
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { OutputLine } from './OutputLine';
 import type { OutputLine as OutputLineType } from '../types';
 
@@ -36,8 +36,34 @@ export function VirtualizedOutputList({
   const [scrollTop, setScrollTop] = useState(0);
   const lastScrollTopRef = useRef(0);
 
-  // Track scroll position changes via polling
-  // OpenTUI's scrollbox doesn't reliably emit scroll events, so we poll
+  // Track actual rendered heights for more accurate virtualization
+  const itemHeights = useRef<Map<number, number>>(new Map());
+  const measureRefs = useRef<Map<number, HTMLElement>>(new Map());
+
+  // Measure callback for tracking actual heights
+  const setMeasureRef = useCallback((index: number, element: HTMLElement | null) => {
+    if (element) {
+      measureRefs.current.set(index, element);
+      const height = element.getBoundingClientRect?.()?.height;
+      if (height && height > 0) {
+        itemHeights.current.set(index, height);
+      }
+    } else {
+      measureRefs.current.delete(index);
+    }
+  }, []);
+
+  // Calculate total height from actual measurements
+  const getTotalHeight = useCallback(() => {
+    let total = 0;
+    for (let i = 0; i < lines.length; i++) {
+      total += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;
+    }
+    return total;
+  }, [lines.length]);
+
+  // Track scroll position changes
+  // Try event listener first, fall back to polling for OpenTUI compatibility
   useEffect(() => {
     const scrollBox = scrollBoxRef.current;
     if (!scrollBox) return;
@@ -47,18 +73,23 @@ export function VirtualizedOutputList({
     setScrollTop(initialScroll);
     lastScrollTopRef.current = initialScroll;
 
-    // Poll for scroll position changes
-    const pollInterval = setInterval(() => {
+    const handleScroll = () => {
       const currentScroll = scrollBox.scrollTop || 0;
       if (currentScroll !== lastScrollTopRef.current) {
         lastScrollTopRef.current = currentScroll;
         setScrollTop(currentScroll);
       }
-    }, SCROLL_POLL_INTERVAL);
-
-    return () => {
-      clearInterval(pollInterval);
     };
+
+    // Try event listener first (for better performance if supported)
+    if (scrollBox.addEventListener) {
+      scrollBox.addEventListener('scroll', handleScroll, { passive: true });
+      return () => scrollBox.removeEventListener('scroll', handleScroll);
+    } else {
+      // Fallback: polling for OpenTUI compatibility
+      const pollInterval = setInterval(handleScroll, SCROLL_POLL_INTERVAL);
+      return () => clearInterval(pollInterval);
+    }
   }, [scrollBoxRef]);
 
   // Calculate visible range with virtualization
@@ -85,10 +116,17 @@ export function VirtualizedOutputList({
     const start = Math.max(0, scrolledLines - BUFFER_SIZE);
     const end = Math.min(totalLines, scrolledLines + viewportLines + BUFFER_SIZE);
 
-    // Calculate spacer heights to maintain correct scroll position
+    // Calculate spacer heights using actual measured heights when available
     // These invisible boxes fill the space of unrendered lines
-    const topHeight = Math.floor(start * ESTIMATED_LINE_HEIGHT);
-    const bottomHeight = Math.floor((totalLines - end) * ESTIMATED_LINE_HEIGHT);
+    let topHeight = 0;
+    for (let i = 0; i < start; i++) {
+      topHeight += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;
+    }
+
+    let bottomHeight = 0;
+    for (let i = end; i < totalLines; i++) {
+      bottomHeight += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;
+    }
 
     return {
       startIndex: start,
@@ -106,10 +144,15 @@ export function VirtualizedOutputList({
         <box height={topSpacerHeight} width={width} />
       )}
 
-      {/* Render visible lines + buffer zone */}
-      {visibleLines.map((line, index) => (
-        <OutputLine key={startIndex + index} line={line} />
-      ))}
+      {/* Render visible lines + buffer zone with height measurement */}
+      {visibleLines.map((line, index) => {
+        const actualIndex = startIndex + index;
+        return (
+          <box key={actualIndex} ref={(el: any) => setMeasureRef(actualIndex, el)}>
+            <OutputLine line={line} />
+          </box>
+        );
+      })}
 
       {/* Bottom spacer - maintains scroll position for unrendered lines below viewport */}
       {bottomSpacerHeight > 0 && (

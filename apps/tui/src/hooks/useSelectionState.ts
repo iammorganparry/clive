@@ -73,6 +73,9 @@ const selectionMachine = setup({
 
         if (!selectedIssue) {
           // Level 1: Navigate issues
+          // Include "Other Conversations" in navigation calculation
+          const unattachedCount = conversations.filter(c => !c.linearProjectId && !c.linearTaskId).length;
+
           const filteredSessions = searchQuery
             ? sessions.filter(s => {
                 const query = searchQuery.toLowerCase();
@@ -82,16 +85,23 @@ const selectionMachine = setup({
               })
             : sessions;
 
-          const maxIndex = Math.min(filteredSessions.length - 1, 9);
+          // Add 1 for "Other Conversations" if there are unattached conversations
+          const totalItems = unattachedCount > 0 ? filteredSessions.length + 1 : filteredSessions.length;
+          const maxIndex = Math.min(totalItems - 1, 9);
           const minIndex = searchQuery ? 0 : -1; // Allow -1 for "Create New"
 
           return selectedIndex > minIndex ? selectedIndex - 1 : maxIndex;
         } else {
           // Level 2: Navigate conversations
-          const issueLinearId = selectedIssue.linearData?.id;
-          const conversationsForIssue = conversations.filter(c =>
-            c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
-          );
+          // Check if this is the "Other Conversations" group (no linearData)
+          const isUnattachedGroup = !selectedIssue.linearData;
+
+          const conversationsForIssue = isUnattachedGroup
+            ? conversations.filter(c => !c.linearProjectId && !c.linearTaskId)
+            : conversations.filter(c => {
+                const issueLinearId = selectedIssue.linearData?.id;
+                return c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId;
+              });
 
           const filteredConversations = searchQuery
             ? conversationsForIssue.filter(c => {
@@ -103,7 +113,8 @@ const selectionMachine = setup({
             : conversationsForIssue;
 
           const maxIndex = Math.min(filteredConversations.length - 1, 9);
-          const minIndex = searchQuery ? 0 : -1; // Allow -1 for "Create New"
+          // Don't allow "Create New" for unattached group
+          const minIndex = (searchQuery || isUnattachedGroup) ? 0 : -1;
 
           return selectedIndex > minIndex ? selectedIndex - 1 : maxIndex;
         }
@@ -115,6 +126,9 @@ const selectionMachine = setup({
 
         if (!selectedIssue) {
           // Level 1: Navigate issues
+          // Include "Other Conversations" in navigation calculation
+          const unattachedCount = conversations.filter(c => !c.linearProjectId && !c.linearTaskId).length;
+
           const filteredSessions = searchQuery
             ? sessions.filter(s => {
                 const query = searchQuery.toLowerCase();
@@ -124,16 +138,23 @@ const selectionMachine = setup({
               })
             : sessions;
 
-          const maxIndex = Math.min(filteredSessions.length - 1, 9);
+          // Add 1 for "Other Conversations" if there are unattached conversations
+          const totalItems = unattachedCount > 0 ? filteredSessions.length + 1 : filteredSessions.length;
+          const maxIndex = Math.min(totalItems - 1, 9);
           const minIndex = searchQuery ? 0 : -1; // Allow -1 for "Create New"
 
           return selectedIndex < maxIndex ? selectedIndex + 1 : minIndex;
         } else {
           // Level 2: Navigate conversations
-          const issueLinearId = selectedIssue.linearData?.id;
-          const conversationsForIssue = conversations.filter(c =>
-            c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
-          );
+          // Check if this is the "Other Conversations" group (no linearData)
+          const isUnattachedGroup = !selectedIssue.linearData;
+
+          const conversationsForIssue = isUnattachedGroup
+            ? conversations.filter(c => !c.linearProjectId && !c.linearTaskId)
+            : conversations.filter(c => {
+                const issueLinearId = selectedIssue.linearData?.id;
+                return c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId;
+              });
 
           const filteredConversations = searchQuery
             ? conversationsForIssue.filter(c => {
@@ -145,7 +166,8 @@ const selectionMachine = setup({
             : conversationsForIssue;
 
           const maxIndex = Math.min(filteredConversations.length - 1, 9);
-          const minIndex = searchQuery ? 0 : -1; // Allow -1 for "Create New"
+          // Don't allow "Create New" for unattached group
+          const minIndex = (searchQuery || isUnattachedGroup) ? 0 : -1;
 
           return selectedIndex < maxIndex ? selectedIndex + 1 : minIndex;
         }

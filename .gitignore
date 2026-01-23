@@ -43,6 +43,7 @@ yarn-error.log*
 
 # Clive test environment (agent-generated)
 .clive/.env.test
+.clive/.env
 .clive/plans/
 
 # vercel

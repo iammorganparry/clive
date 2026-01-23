@@ -182,11 +182,23 @@ export class ConversationWatcher extends EventEmitter {
               });
               this.emit('linear_issue_create', event);
             }
+
+            // Special handling for Linear issue updates
+            if (event.name === 'mcp__linear__update_issue') {
+              debugLog('ConversationWatcher', 'Linear issue update detected', {
+                toolId: event.id,
+              });
+              this.emit('linear_issue_update', event);
+            }
           } else if (event.type === 'tool_result') {
             this.emit('tool_result', event);
 
             // Capture Linear tool results to extract IDs
-            if (event.name === 'mcp__linear__create_project' || event.name === 'mcp__linear__create_issue') {
+            if (
+              event.name === 'mcp__linear__create_project' ||
+              event.name === 'mcp__linear__create_issue' ||
+              event.name === 'mcp__linear__update_issue'
+            ) {
               debugLog('ConversationWatcher', 'Linear tool result', {
                 toolName: event.name,
                 toolId: event.id,

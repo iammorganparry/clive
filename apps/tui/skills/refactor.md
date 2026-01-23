@@ -210,6 +210,47 @@ class OrderService {
 - **DRY** - Eliminate duplication (see DRY Principles below)
 - **Type safety** - No `any` or unnarrowed `unknown` (see Type Safety below)
 
+### 2.3 Document Refactoring Patterns (Global Learnings)
+
+**If you discover effective refactoring patterns during this work:**
+
+1. **Check global learnings first:**
+   - Review `.claude/learnings/success-patterns.md` for established refactoring patterns
+   - Check `.claude/learnings/gotchas.md` for codebase quirks affecting refactoring
+
+2. **If you discover a reusable refactoring pattern:**
+   ```bash
+   cat >> .claude/learnings/success-patterns.md << 'EOF'
+
+   ### [Refactoring Pattern Name]
+   **Use Case:** [When to apply this refactoring pattern]
+   **Implementation:** [Step-by-step approach with code examples]
+   **Benefits:** [What this improves - readability, maintainability, testability]
+   **Examples:** [File references where this was successfully applied]
+   **First Used:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Task: [TASK_IDENTIFIER]
+   **Reused In:** [Will be updated when pattern is reused]
+
+   ---
+   EOF
+   ```
+
+3. **For codebase-specific refactoring gotchas:**
+   ```bash
+   cat >> .claude/learnings/gotchas.md << 'EOF'
+
+   ### [Refactoring Gotcha Name]
+   **What Happens:** [Problem that occurs during refactoring]
+   **Why:** [Reason or design constraint]
+   **How to Handle:** [Correct refactoring approach]
+   **Files Affected:** [Where this applies]
+   **Discovered:** $(date '+%Y-%m-%d') - Epic: $EPIC_FILTER - Iteration: $ITERATION
+
+   ---
+   EOF
+   ```
+
+**Document patterns that future agents can reuse when refactoring similar code.**
+
 ---
 
 ## DRY Principles (Don't Repeat Yourself)
@@ -396,6 +437,71 @@ npm run build
 ```
 
 **If ANY DoD item is incomplete, DO NOT mark complete. Finish it first.**
+
+### 3.7 Validate Scratchpad Documentation (MANDATORY)
+
+**Before marking task complete, verify you've documented learnings.**
+
+**Check scratchpad was updated:**
+```bash
+# Verify scratchpad has entry for this iteration
+ITERATION=$(cat .claude/.build-iteration)
+
+if [ -f "$SCRATCHPAD_FILE" ]; then
+    if ! grep -q "## Iteration $ITERATION" "$SCRATCHPAD_FILE"; then
+        echo "ERROR: Scratchpad not updated for iteration $ITERATION"
+        echo "You MUST document learnings in scratchpad before completion"
+        echo "See scratchpad template in prompt above"
+        exit 1
+    fi
+else
+    echo "ERROR: Scratchpad file not found at $SCRATCHPAD_FILE"
+    exit 1
+fi
+```
+
+**Scratchpad checklist:**
+- [ ] "What Worked" section documents the refactoring approach
+- [ ] "Key Decisions" section explains refactoring choices
+- [ ] "Files Modified" section lists all changed files
+- [ ] "Success Patterns" section documents reusable techniques
+- [ ] Date/time stamp is current
+
+**If scratchpad is incomplete:**
+- Fill it out NOW before proceeding
+- Use the structured template provided in the prompt
+- Be specific about refactoring rationale and patterns discovered
+
+### 3.8 Post-Task Reflection (MANDATORY)
+
+**Before outputting TASK_COMPLETE, reflect on this refactoring:**
+
+**Answer these questions in scratchpad:**
+
+1. **Clarity Improvement:** How much clearer is the code now? (quantify if possible)
+2. **Maintainability:** What specific aspects are now easier to maintain?
+3. **Pattern Discovery:** Did you establish a reusable refactoring pattern?
+4. **Test Insights:** Did tests reveal implementation coupling? Should tests change?
+5. **Scope Control:** Did you stay focused or drift into feature work?
+6. **Knowledge Gap:** What would have made this refactoring smoother?
+
+**Append reflection to scratchpad:**
+```bash
+cat >> $SCRATCHPAD_FILE << 'REFLECTION'
+
+### 🔄 Post-Task Reflection
+
+**Clarity Improvement:** [measurable improvement - e.g., "reduced function from 80 to 20 lines"]
+**Maintainability:** [what's now easier]
+**Pattern Discovered:** [reusable refactoring technique]
+**Test Insights:** [what tests revealed about coupling]
+**Stayed Focused:** [yes/no - did scope creep occur]
+**Learned:** [key insight for future refactoring]
+
+REFLECTION
+```
+
+**This reflection helps future agents refactor more effectively.**
 
 ---
 

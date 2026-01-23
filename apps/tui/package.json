@@ -12,6 +12,9 @@
     "build": "echo 'No build step needed - noEmit: true'",
     "start": "bun run src/main.tsx",
     "start:debug": "bun run src/main.tsx --debug",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test": "vitest run",
     "postinstall": "cd ../../node_modules/node-pty && npx node-gyp rebuild 2>/dev/null || echo 'Warning: node-pty rebuild failed. PTY features may not work.'"
   },
   "dependencies": {
@@ -27,11 +30,15 @@
     "xstate": "^5.25.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
+    "@vitest/ui": "^4.0.16",
+    "happy-dom": "^16.6.0",
     "react-devtools-core": "7",
     "ts-node": "^10.9.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

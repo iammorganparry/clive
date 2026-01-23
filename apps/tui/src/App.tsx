@@ -20,7 +20,7 @@ import { HelpView } from './components/HelpView';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
 import { type Conversation } from './services/ConversationService';
-import { useConversations } from './hooks/useConversations';
+import { useConversations, useAllConversations } from './hooks/useConversations';
 import { useSelectionState } from './hooks/useSelectionState';
 import type { Session } from './types';
 
@@ -62,6 +62,10 @@ function AppContent() {
   // Output panel ref for scroll control
   const outputPanelRef = useRef<OutputPanelRef>(null);
 
+  // User scroll intent tracking
+  const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
+  const lastScrollHeight = useRef(0);
+
   // Clear preFillValue after it's been used
   useEffect(() => {
     if (preFillValue && inputFocused) {
@@ -85,11 +89,12 @@ function AppContent() {
     }
   }, [workspaceRoot]);
 
-  // Fetch conversations using React Query
+  // Fetch ALL conversations across all projects (not just current workspace)
+  // This ensures "Other Conversations" shows all Claude Code conversations
   const {
     data: conversations = [],
     isLoading: conversationsLoading,
-  } = useConversations(workspaceRoot, 20);
+  } = useAllConversations(100);
 
   const {
     outputLines,
@@ -99,6 +104,7 @@ function AppContent() {
     agentSessionActive,
     sessions,
     sessionsLoading,
+    sessionsError,
     tasks,
     tasksLoading,
     activeSession,
@@ -108,6 +114,49 @@ function AppContent() {
     interrupt,
     cleanup,
   } = useAppState(workspaceRoot, config?.issueTracker);
+
+  // Detect when user manually scrolls up
+  useEffect(() => {
+    const panel = outputPanelRef.current;
+    if (!panel) return;
+
+    // Check if at bottom whenever output changes
+    const checkScrollPosition = () => {
+      // Get scroll metrics (OpenTUI may not have all properties)
+      const scrollMetrics = panel.getScrollMetrics?.() || {
+        scrollTop: panel.scrollTop || 0,
+        scrollHeight: panel.scrollHeight || 0,
+        clientHeight: panel.clientHeight || 0,
+      };
+
+      const { scrollTop, scrollHeight, clientHeight } = scrollMetrics;
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
+
+      // User scrolled up if not at bottom and content hasn't changed
+      if (!isAtBottom && scrollHeight === lastScrollHeight.current) {
+        setUserHasScrolledUp(true);
+      }
+      // User scrolled back to bottom
+      else if (isAtBottom) {
+        setUserHasScrolledUp(false);
+      }
+
+      lastScrollHeight.current = scrollHeight;
+    };
+
+    checkScrollPosition();
+  }, [outputLines.length]);
+
+  // Auto-scroll to bottom when new output lines arrive (only if user hasn't scrolled up)
+  useEffect(() => {
+    if (outputPanelRef.current && outputLines.length > 0 && !userHasScrolledUp) {
+      // Small delay to ensure DOM has updated before scrolling
+      const timer = setTimeout(() => {
+        outputPanelRef.current?.scrollToBottom();
+      }, 10);
+      return () => clearTimeout(timer);
+    }
+  }, [outputLines.length, userHasScrolledUp]);
 
   // Selection state using XState machine
   const selectionState = useSelectionState(sessions, conversations);
@@ -277,14 +326,29 @@ function AppContent() {
             return;
           }
 
+          // Include "Other Conversations" group in the list (at the TOP to match SelectionView)
+          const issuesWithOther: Session[] = [];
+          const unattachedCount = conversations.filter(c => !c.linearProjectId && !c.linearTaskId).length;
+          if (unattachedCount > 0) {
+            // Add "Other Conversations" at the TOP
+            issuesWithOther.push({
+              id: '__unattached__',
+              name: `Other Conversations (${unattachedCount})`,
+              createdAt: new Date(),
+              source: 'linear' as const,
+            });
+          }
+          // Add all Linear sessions after
+          issuesWithOther.push(...sessions);
+
           const filteredSessions = selectionState.searchQuery
-            ? sessions.filter(s => {
+            ? issuesWithOther.filter(s => {
                 const query = selectionState.searchQuery.toLowerCase();
                 const identifier = s.linearData?.identifier?.toLowerCase() || '';
                 const title = s.name.toLowerCase();
                 return identifier.includes(query) || title.includes(query);
               })
-            : sessions;
+            : issuesWithOther;
 
           const displayIssues = filteredSessions.slice(0, 10);
           const issue = displayIssues[selectionState.selectedIndex];
@@ -304,10 +368,16 @@ function AppContent() {
 
           if (!selectionState.selectedIssue) return;
 
-          const issueLinearId = selectionState.selectedIssue.linearData?.id;
-          const conversationsForIssue = conversations.filter(c =>
-            c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId
-          );
+          // Check if this is the "Other Conversations" group
+          const selectedIssue = selectionState.selectedIssue;
+          const isUnattachedGroup = selectedIssue.id === '__unattached__';
+
+          const conversationsForIssue = isUnattachedGroup
+            ? conversations.filter(c => !c.linearProjectId && !c.linearTaskId)
+            : conversations.filter(c => {
+                const issueLinearId = selectedIssue.linearData?.id;
+                return c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId;
+              });
 
           const filteredConversations = selectionState.searchQuery
             ? conversationsForIssue.filter(c => {
@@ -451,6 +521,8 @@ function AppContent() {
         conversations={conversations}
         sessionsLoading={sessionsLoading}
         conversationsLoading={conversationsLoading}
+        sessionsError={sessionsError}
+        conversationsError={null}
         selectedIndex={selectionState.selectedIndex}
         searchQuery={selectionState.searchQuery}
         selectedIssue={selectionState.selectedIssue}

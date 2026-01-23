@@ -545,13 +545,13 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             //   logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
             // }
 
-            // Use bypassPermissions mode to prevent permission prompts
-            // REMOVED --dangerously-skip-permissions because it causes the CLI to not wait for tool_results
-            // properly, resulting in turns ending before the user can answer AskUserQuestion
+            // Use bypassPermissions mode since we're only allowing MCP tools
+            // AskUserQuestion is disabled - Claude will ask questions in text instead
             args.push("--permission-mode", "bypassPermissions");
 
-            // Allow AskUserQuestion explicitly so the CLI waits for tool_results
-            args.push("--allowedTools", "AskUserQuestion,mcp__clive-tools__*");
+            // Only allow MCP tools - AskUserQuestion disabled to avoid permission bugs
+            // Claude will ask questions in text format instead
+            args.push("--allowedTools", "mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
             if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
@@ -651,18 +651,14 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
                 for (const line of lines) {
-                  // DISABLED: Auto-approval code was creating duplicate tool_results
-                  // We use --dangerously-skip-permissions which should prevent permission denials entirely
-                  // If permission denials still occur, they should fail rather than auto-approve
+                  // AskUserQuestion is disabled - permission denials should not occur
+                  // If they do, log them for debugging but don't auto-approve
                   const event = parseCliOutput(line, (toolUseId, isAskUserQuestion) => {
-                    // Log permission denials but DO NOT auto-approve
-                    // Auto-approval was causing duplicate tool_results that led to 400 errors
                     if (isAskUserQuestion) {
-                      logToOutput(`[ClaudeCliService] Permission denial for AskUserQuestion detected: ${toolUseId} - NOT auto-approving`);
+                      logToOutput(`[ClaudeCliService] Unexpected permission denial for AskUserQuestion: ${toolUseId} (tool should be disabled)`);
                     } else {
-                      logToOutput(`[ClaudeCliService] Permission denial detected for tool: ${toolUseId} - NOT auto-approving (using skip-permissions mode)`);
+                      logToOutput(`[ClaudeCliService] Permission denial for tool: ${toolUseId}`);
                     }
-                    // DO NOT send approval - let it fail if it's a real permission issue
                   });
 
                   if (event) {

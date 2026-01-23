@@ -7,14 +7,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { Effect } from 'effect';
+import { Effect, Runtime } from 'effect';
+import { useQueryClient } from '@tanstack/react-query';
 import { CliManager } from '../services/CliManager';
 import { ConversationWatcher } from '../services/ConversationWatcher';
 import { SessionMetadataService } from '../services/SessionMetadataService';
+import { PromptService, PromptServiceLive } from '../services/prompts';
+import type { BuildConfig } from '../services/prompts';
 import type { OutputLine, QuestionData, Session, Task } from '../types';
-import { useSessions, useSessionTasks } from './useTaskQueries';
+import { useSessions, useSessionTasks, taskQueryKeys } from './useTaskQueries';
 import { debugLog } from '../utils/debug-logger';
-import { loadCommand } from '../utils/command-loader';
 
 /**
  * TUI State Machine
@@ -238,6 +240,8 @@ export interface AppState {
   activeSession: Session | null;
   sessionsLoading: boolean;
   tasksLoading: boolean;
+  sessionsError: Error | null;
+  tasksError: Error | null;
 
   // Actions
   executeCommand: (cmd: string) => void;
@@ -253,6 +257,9 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   // Use XState machine
   const [state, send] = useMachine(tuiMachine);
 
+  // React Query client for cache invalidation
+  const queryClient = useQueryClient();
+
   // CLI Manager and Conversation Watcher instances
   const cliManager = useRef<CliManager | null>(null);
   const conversationWatcher = useRef<ConversationWatcher | null>(null);
@@ -264,11 +271,13 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   const {
     data: sessions = [],
     isLoading: sessionsLoading,
+    error: sessionsError,
   } = useSessions();
 
   const {
     data: tasks = [],
     isLoading: tasksLoading,
+    error: tasksError,
   } = useSessionTasks(activeSession?.id ?? null);
 
   // Initialize CLI Manager and Conversation Watcher
@@ -389,6 +398,12 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
                   projectIdentifier,
                 });
                 yield* service.setLinearProject(sessionId, projectId, projectIdentifier);
+
+                // Trigger refetch of sessions (epics/projects)
+                yield* Effect.sync(() => {
+                  debugLog('useAppState', 'Invalidating sessions query after project creation');
+                  queryClient.invalidateQueries({ queryKey: taskQueryKeys.sessions() });
+                });
               }
             } else if (event.name === 'mcp__linear__create_issue') {
               // Extract issue ID and identifier
@@ -402,7 +417,24 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
                   taskIdentifier,
                 });
                 yield* service.setLinearTask(sessionId, taskId, taskIdentifier);
+
+                // Trigger refetch of tasks for this session
+                yield* Effect.sync(() => {
+                  debugLog('useAppState', 'Invalidating task queries after issue creation', {
+                    sessionId,
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: taskQueryKeys.sessionTasks(sessionId),
+                  });
+                  queryClient.invalidateQueries({ queryKey: taskQueryKeys.readyTasks() });
+                });
               }
+            } else if (event.name === 'mcp__linear__update_issue') {
+              // Trigger refetch on issue updates
+              yield* Effect.sync(() => {
+                debugLog('useAppState', 'Invalidating task queries after issue update');
+                queryClient.invalidateQueries({ queryKey: taskQueryKeys.all });
+              });
             }
           });
 
@@ -598,7 +630,7 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
   /**
    * Start CLI execution with a prompt
    */
-  const startExecution = (
+  const startExecution = async (
     prompt: string,
     mode: 'plan' | 'build',
     userMessage?: string,
@@ -633,33 +665,33 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
       promptLength: prompt.length,
     });
 
-    // Build system prompt with issue tracker context
-    let systemPrompt: string | undefined;
-    const terminalFormatting = `\n\nIMPORTANT OUTPUT FORMATTING: You are outputting to a terminal interface. DO NOT use markdown formatting (no **, __, \`\`\`, ##, etc.). Use only plain text with:\n- Line breaks for structure\n- Indentation with spaces\n- Simple ASCII characters (-, *, •) for lists\n- UPPERCASE or "Quotes" for emphasis\nNever use markdown syntax as it will be displayed literally in the terminal.`;
-
-    // Get conversation context if continuing a session
-    const conversationContext = continuingSession && cliManager.current
+    // Build system prompt using PromptService (single source of truth)
+    const previousContext = continuingSession && cliManager.current
       ? cliManager.current.getConversationContext()
-      : '';
+      : undefined;
 
-    if (mode === 'plan') {
-      const issueTrackerContext = issueTracker
-        ? `\n\nIMPORTANT: This project uses ${issueTracker === 'linear' ? 'Linear' : 'Beads'} for issue tracking. When creating tasks or issues in your plan, use the ${issueTracker} CLI commands and tools.`
-        : '';
+    const buildConfig: BuildConfig = {
+      workspaceRoot,
+      mode,
+      issueTracker,
+      previousContext,
+    };
 
-      const workspaceContext = `\n\nWORKSPACE CONTEXT: You are working in the directory: ${workspaceRoot}\nAll file paths and operations should be relative to this workspace root. Use tools like Read, Glob, and Grep to explore the codebase structure.`;
+    // Use Effect to build the prompt
+    const promptProgram = Effect.gen(function* () {
+      const promptService = yield* PromptService;
+      return yield* promptService.buildPrompt(buildConfig);
+    });
 
-      // Load plan command from file
-      const planCommand = loadCommand('plan', workspaceRoot);
-      if (!planCommand) {
-        throw new Error('Plan command file not found');
-      }
-
-      systemPrompt = planCommand.content + workspaceContext + issueTrackerContext + terminalFormatting + conversationContext;
-    } else if (mode === 'build') {
-      const workspaceContext = `\n\nWORKSPACE CONTEXT: You are working in the directory: ${workspaceRoot}\nAll file paths and operations should be relative to this workspace root.`;
-      systemPrompt = `You are a task execution assistant. Execute tasks and provide clear updates.${workspaceContext}${terminalFormatting}${conversationContext}`;
-    }
+    const systemPrompt = await Runtime.runPromise(
+      Runtime.defaultRuntime
+    )(
+      promptProgram.pipe(
+        Effect.provide(PromptServiceLive)
+      )
+    ).catch((error: Error) => {
+      throw new Error(`Failed to build prompt: ${error.message}`);
+    });
 
     // Execute via CLI Manager
     // Use Opus for planning (comprehensive research), Sonnet for building (faster execution)
@@ -787,6 +819,8 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     activeSession,
     sessionsLoading,
     tasksLoading,
+    sessionsError: sessionsError || null,
+    tasksError: tasksError || null,
 
     // Actions
     executeCommand,
