@@ -3,7 +3,12 @@
  * Parses @annotations embedded in %% comments.
  */
 
-import type { ContractSchema, EndpointExposure, ErrorContract, Invariant } from "../graph/contract.js";
+import type {
+  ContractSchema,
+  EndpointExposure,
+  ErrorContract,
+  Invariant,
+} from "../graph/contract.js";
 
 /**
  * Raw metadata extracted from a Mermaid comment block
@@ -125,12 +130,22 @@ export function parseSchema(schemaStr: string): ContractSchema | undefined {
 /**
  * Parse an endpoint exposure string like "POST /api/users"
  */
-export function parseEndpointExposure(exposeStr: string): EndpointExposure | undefined {
+export function parseEndpointExposure(
+  exposeStr: string,
+): EndpointExposure | undefined {
   const parts = exposeStr.split(/\s+/);
   if (parts.length < 2) return undefined;
 
   const method = parts[0].toUpperCase() as EndpointExposure["method"];
-  const validMethods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
+  const validMethods = [
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "PATCH",
+    "HEAD",
+    "OPTIONS",
+  ];
   if (!validMethods.includes(method)) return undefined;
 
   const path = parts.slice(1).join(" ");
@@ -177,7 +192,7 @@ export function parseErrors(errorStrs: string[]): ErrorContract[] {
  * Group consecutive comment lines that belong to the same contract
  */
 export function groupCommentBlocks(
-  lines: string[]
+  lines: string[],
 ): Array<{ comments: string[]; nodeLineIndex: number }> {
   const blocks: Array<{ comments: string[]; nodeLineIndex: number }> = [];
   let currentComments: string[] = [];
@@ -189,7 +204,12 @@ export function groupCommentBlocks(
       currentComments.push(line);
     } else if (currentComments.length > 0) {
       // Check if this line contains a node definition
-      if (line && !line.startsWith("%%") && !line.startsWith("subgraph") && !line.startsWith("end")) {
+      if (
+        line &&
+        !line.startsWith("%%") &&
+        !line.startsWith("subgraph") &&
+        !line.startsWith("end")
+      ) {
         blocks.push({
           comments: [...currentComments],
           nodeLineIndex: i,

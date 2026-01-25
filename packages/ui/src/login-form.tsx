@@ -11,6 +11,9 @@ export interface LoginFormProps {
   className?: string;
   title?: string;
   description?: string;
+  signUpLink?: string;
+  signUpText?: string;
+  onSubmit?: (email: string) => void | Promise<void>;
   onGitHubClick?: () => void | Promise<void>;
   isLoading?: boolean;
   error?: string | null;

@@ -3,6 +3,7 @@
  * Verifies config loading, field normalization, and validation
  */
 
+import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,10 +12,18 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-// Mock fs, os, and path modules
-vi.mock('fs/promises');
-vi.mock('os');
-vi.mock('path');
+// Mock fs, os, and path modules with vi.fn() implementations
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+}));
+
+vi.mock('os', () => ({
+  homedir: vi.fn(),
+}));
+
+vi.mock('path', () => ({
+  join: vi.fn(),
+}));
 
 // Helper to create wrapper with QueryClient
 function createWrapper() {
@@ -49,7 +58,7 @@ describe('useConfig', () => {
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     delete process.env.CLIVE_WORKSPACE;
     delete process.env.LINEAR_API_KEY;
   });

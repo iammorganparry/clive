@@ -15,7 +15,9 @@ import HTTPReceiverModule from "@slack/bolt/dist/receivers/HTTPReceiver.js";
 import { loadConfig, type SlackConfig } from "./config";
 
 // Handle CommonJS default export in ESM
-const HTTPReceiver = (HTTPReceiverModule as { default: typeof HTTPReceiverModule }).default || HTTPReceiverModule;
+const HTTPReceiver =
+  (HTTPReceiverModule as unknown as { default: typeof HTTPReceiverModule })
+    .default ?? HTTPReceiverModule;
 import { TunnelService, TunnelServiceError } from "./services/tunnel-service";
 import { SlackService, SlackServiceError } from "./services/slack-service";
 import { InterviewStore } from "./store/interview-store";
@@ -24,9 +26,18 @@ import { WorkerRegistry } from "./services/worker-registry";
 import { SessionRouter } from "./services/session-router";
 import { WorkerProxy } from "./services/worker-proxy";
 import { EventServer } from "./websocket/event-server";
-import { registerMentionHandler, registerMentionHandlerDistributed } from "./handlers/mention-handler";
-import { registerMessageHandler, registerMessageHandlerDistributed } from "./handlers/message-handler";
-import { registerActionHandler, registerActionHandlerDistributed } from "./handlers/action-handler";
+import {
+  registerMentionHandler,
+  registerMentionHandlerDistributed,
+} from "./handlers/mention-handler";
+import {
+  registerMessageHandler,
+  registerMessageHandlerDistributed,
+} from "./handlers/message-handler";
+import {
+  registerActionHandler,
+  registerActionHandlerDistributed,
+} from "./handlers/action-handler";
 
 /**
  * Start local mode (single-user with ngrok tunnel)
@@ -40,16 +51,18 @@ async function startLocalMode(config: SlackConfig): Promise<void> {
       TunnelService.connect(config.port),
       Effect.map((url) => ({ success: true as const, url })),
       Effect.catchAll((error) =>
-        Effect.succeed({ success: false as const, error: String(error) })
-      )
-    )
+        Effect.succeed({ success: false as const, error: String(error) }),
+      ),
+    ),
   );
 
   if (!tunnelResult.success) {
     console.error("Failed to start ngrok tunnel:", tunnelResult.error);
     console.log("\nTo fix this:");
     console.log("1. Sign up at https://ngrok.com");
-    console.log("2. Get your auth token from https://dashboard.ngrok.com/get-started/your-authtoken");
+    console.log(
+      "2. Get your auth token from https://dashboard.ngrok.com/get-started/your-authtoken",
+    );
     console.log("3. Set NGROK_AUTH_TOKEN environment variable");
     process.exit(1);
   }
@@ -90,8 +103,8 @@ async function startLocalMode(config: SlackConfig): Promise<void> {
     await Effect.runPromise(
       pipe(
         TunnelService.disconnect(),
-        Effect.catchAll(() => Effect.succeed(undefined))
-      )
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      ),
     );
 
     // Close all interview sessions
@@ -162,9 +175,24 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
   const workerProxy = new WorkerProxy(workerRegistry, sessionRouter);
 
   // Register handlers (distributed mode)
-  registerMentionHandlerDistributed(slackApp, interviewStore, workerProxy, slackService);
-  registerMessageHandlerDistributed(slackApp, interviewStore, workerProxy, slackService);
-  registerActionHandlerDistributed(slackApp, interviewStore, workerProxy, slackService);
+  registerMentionHandlerDistributed(
+    slackApp,
+    interviewStore,
+    workerProxy,
+    slackService,
+  );
+  registerMessageHandlerDistributed(
+    slackApp,
+    interviewStore,
+    workerProxy,
+    slackService,
+  );
+  registerActionHandlerDistributed(
+    slackApp,
+    interviewStore,
+    workerProxy,
+    slackService,
+  );
 
   // Handle worker disconnection - notify users
   sessionRouter.on("sessionUnassigned", async (sessionId, workerId, reason) => {
@@ -175,17 +203,19 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
           channel: session.channel,
           text: `Interview interrupted: Worker disconnected (${reason}). Please @mention Clive again to restart.`,
           threadTs: session.threadTs,
-        })
+        }),
       );
       interviewStore.setError(sessionId, `Worker disconnected: ${reason}`);
     }
   });
 
   // Start the Slack app and get the HTTP server
-  const httpServer = await slackApp.start() as Server;
+  const httpServer = (await slackApp.start()) as Server;
 
   console.log(`HTTP server listening on port ${config.port}`);
-  console.log(`WebSocket endpoint: ws://localhost:${config.port}${config.wsPath}`);
+  console.log(
+    `WebSocket endpoint: ws://localhost:${config.port}${config.wsPath}`,
+  );
 
   // Initialize WebSocket server after HTTP server is running
   const eventServer = new EventServer(
@@ -195,7 +225,7 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
       apiToken: config.workerApiToken,
     },
     workerRegistry,
-    workerProxy
+    workerProxy,
   );
 
   console.log(`\nWaiting for workers to connect...`);

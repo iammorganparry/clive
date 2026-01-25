@@ -85,7 +85,7 @@ export class ImpactAnalyzer {
    */
   detectBreakingChanges(
     contractId: string,
-    proposedChanges: Partial<Contract>
+    proposedChanges: Partial<Contract>,
   ): BreakingChange[] {
     const contract = this.graph.getContract(contractId);
     if (!contract) return [];
@@ -96,7 +96,10 @@ export class ImpactAnalyzer {
 
     // Check schema changes
     if (proposedChanges.schema && contract.schema) {
-      const schemaChange = this.analyzeSchemaChange(contract, proposedChanges.schema);
+      const schemaChange = this.analyzeSchemaChange(
+        contract,
+        proposedChanges.schema,
+      );
       if (schemaChange) {
         breakingChanges.push({
           type: "schema_change",
@@ -114,8 +117,8 @@ export class ImpactAnalyzer {
       const removedEndpoints = contract.exposes.filter(
         (e) =>
           !proposedChanges.exposes?.some(
-            (pe) => pe.method === e.method && pe.path === e.path
-          )
+            (pe) => pe.method === e.method && pe.path === e.path,
+          ),
       );
 
       if (removedEndpoints.length > 0) {
@@ -139,11 +142,13 @@ export class ImpactAnalyzer {
     if (proposedChanges.invariants) {
       const newInvariants = proposedChanges.invariants.filter(
         (inv) =>
-          !contract.invariants.some((ci) => ci.description === inv.description)
+          !contract.invariants.some((ci) => ci.description === inv.description),
       );
 
       if (newInvariants.length > 0) {
-        const errorInvariants = newInvariants.filter((i) => i.severity === "error");
+        const errorInvariants = newInvariants.filter(
+          (i) => i.severity === "error",
+        );
         if (errorInvariants.length > 0) {
           breakingChanges.push({
             type: "invariant_violation",
@@ -169,7 +174,7 @@ export class ImpactAnalyzer {
    */
   private analyzeSchemaChange(
     contract: Contract,
-    newSchema: Contract["schema"]
+    newSchema: Contract["schema"],
   ): {
     severity: BreakingSeverity;
     description: string;
@@ -215,7 +220,8 @@ export class ImpactAnalyzer {
    */
   calculateDeploymentOrder(contractIds: string[]): DeploymentOrder {
     const phases: DeploymentOrder["phases"] = [];
-    const coordinatedDeployments: DeploymentOrder["coordinatedDeployments"] = [];
+    const coordinatedDeployments: DeploymentOrder["coordinatedDeployments"] =
+      [];
 
     // Build dependency levels
     const levels = new Map<string, number>();
@@ -302,8 +308,12 @@ export class ImpactAnalyzer {
    * Compare two contract graphs and find differences
    */
   static diffGraphs(before: ContractGraph, after: ContractGraph): GraphDiff {
-    const beforeContracts = new Map(before.getAllContracts().map((c) => [c.id, c]));
-    const afterContracts = new Map(after.getAllContracts().map((c) => [c.id, c]));
+    const beforeContracts = new Map(
+      before.getAllContracts().map((c) => [c.id, c]),
+    );
+    const afterContracts = new Map(
+      after.getAllContracts().map((c) => [c.id, c]),
+    );
 
     const added: Contract[] = [];
     const removed: Contract[] = [];
@@ -315,7 +325,10 @@ export class ImpactAnalyzer {
       if (!beforeContract) {
         added.push(afterContract);
       } else {
-        const changes = ImpactAnalyzer.detectContractChanges(beforeContract, afterContract);
+        const changes = ImpactAnalyzer.detectContractChanges(
+          beforeContract,
+          afterContract,
+        );
         if (changes.length > 0) {
           modified.push({
             before: beforeContract,
@@ -335,10 +348,10 @@ export class ImpactAnalyzer {
 
     // Compare relationships
     const beforeRels = new Set(
-      before.getAllRelationships().map((r) => `${r.from}:${r.to}:${r.type}`)
+      before.getAllRelationships().map((r) => `${r.from}:${r.to}:${r.type}`),
     );
     const afterRels = new Set(
-      after.getAllRelationships().map((r) => `${r.from}:${r.to}:${r.type}`)
+      after.getAllRelationships().map((r) => `${r.from}:${r.to}:${r.type}`),
     );
 
     const addedRelationships = after
@@ -374,23 +387,25 @@ export class ImpactAnalyzer {
 
     if (before.invariants.length !== after.invariants.length) {
       changes.push(
-        `Invariants: ${before.invariants.length} → ${after.invariants.length}`
+        `Invariants: ${before.invariants.length} → ${after.invariants.length}`,
       );
     }
 
     if (before.exposes.length !== after.exposes.length) {
-      changes.push(`Endpoints: ${before.exposes.length} → ${after.exposes.length}`);
+      changes.push(
+        `Endpoints: ${before.exposes.length} → ${after.exposes.length}`,
+      );
     }
 
     if (before.publishes.length !== after.publishes.length) {
       changes.push(
-        `Published events: ${before.publishes.length} → ${after.publishes.length}`
+        `Published events: ${before.publishes.length} → ${after.publishes.length}`,
       );
     }
 
     if (before.consumes.length !== after.consumes.length) {
       changes.push(
-        `Consumed events: ${before.consumes.length} → ${after.consumes.length}`
+        `Consumed events: ${before.consumes.length} → ${after.consumes.length}`,
       );
     }
 
@@ -420,7 +435,9 @@ export class ImpactAnalyzer {
         lines.push("");
         lines.push("**Affected:**");
         for (const affected of change.affectedContracts) {
-          const loc = affected.location ? ` (${formatLocation(affected.location)})` : "";
+          const loc = affected.location
+            ? ` (${formatLocation(affected.location)})`
+            : "";
           lines.push(`- ${affected.id}${loc}`);
         }
         lines.push("");

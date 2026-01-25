@@ -7,7 +7,11 @@ import type { Command } from "commander";
 import pc from "picocolors";
 import { loadContracts } from "../loader.js";
 import { validateContracts } from "../../validators/contract-validator.js";
-import { detectBreakingChanges, formatBreakingChange, type BreakingChange } from "../../validators/breaking-changes.js";
+import {
+  detectBreakingChanges,
+  formatBreakingChange,
+  type BreakingChange,
+} from "../../validators/breaking-changes.js";
 
 export function validateCommand(program: Command): void {
   program
@@ -16,7 +20,10 @@ export function validateCommand(program: Command): void {
     .option("-d, --dir <path>", "Directory containing contract files", ".")
     .option("--strict", "Fail on warnings as well as errors")
     .option("--check-locations", "Verify that @location file paths exist")
-    .option("--base <ref>", "Git ref to compare against for breaking change detection")
+    .option(
+      "--base <ref>",
+      "Git ref to compare against for breaking change detection",
+    )
     .option("--json", "Output as JSON")
     .option("--github-actions", "Output annotations for GitHub Actions")
     .action(async (options) => {
@@ -42,7 +49,10 @@ export function validateCommand(program: Command): void {
       let breakingChanges: BreakingChange[] = [];
       if (options.base) {
         try {
-          breakingChanges = await detectBreakingChanges(options.dir, options.base);
+          breakingChanges = await detectBreakingChanges(
+            options.dir,
+            options.base,
+          );
         } catch (err) {
           allErrors.push({
             type: "breaking",
@@ -63,22 +73,26 @@ export function validateCommand(program: Command): void {
               summary: validationResult.summary,
             },
             null,
-            2
-          )
+            2,
+          ),
         );
       } else if (options.githubActions) {
         // GitHub Actions annotation format
         for (const error of allErrors) {
           const level = error.severity === "error" ? "error" : "warning";
-          const file = "file" in error ? (error as { file?: string }).file : undefined;
-          const line = "line" in error ? (error as { line?: number }).line : undefined;
+          const file =
+            "file" in error ? (error as { file?: string }).file : undefined;
+          const line =
+            "line" in error ? (error as { line?: number }).line : undefined;
           const fileRef = file ? `file=${file}` : "";
           const lineRef = line ? `,line=${line}` : "";
           console.log(`::${level} ${fileRef}${lineRef}::${error.message}`);
         }
 
         for (const breaking of breakingChanges) {
-          console.log(`::error ::BREAKING CHANGE: ${formatBreakingChange(breaking)}`);
+          console.log(
+            `::error ::BREAKING CHANGE: ${formatBreakingChange(breaking)}`,
+          );
         }
       } else {
         // Human-readable output
@@ -89,8 +103,12 @@ export function validateCommand(program: Command): void {
         // Summary
         console.log(pc.bold("Summary:"));
         console.log(`  Contracts: ${validationResult.summary.totalContracts}`);
-        console.log(`  Relationships: ${validationResult.summary.totalRelationships}`);
-        console.log(`  With invariants: ${validationResult.summary.contractsWithInvariants}`);
+        console.log(
+          `  Relationships: ${validationResult.summary.totalRelationships}`,
+        );
+        console.log(
+          `  With invariants: ${validationResult.summary.contractsWithInvariants}`,
+        );
         console.log();
 
         // Errors
@@ -100,7 +118,10 @@ export function validateCommand(program: Command): void {
         if (errors.length > 0) {
           console.log(pc.bold(pc.red(`Errors (${errors.length}):`)));
           for (const error of errors) {
-            const file = "file" in error ? pc.gray(` [${(error as { file?: string }).file}]`) : "";
+            const file =
+              "file" in error
+                ? pc.gray(` [${(error as { file?: string }).file}]`)
+                : "";
             console.log(`  ${pc.red("✗")} ${error.message}${file}`);
           }
           console.log();
@@ -116,7 +137,9 @@ export function validateCommand(program: Command): void {
 
         // Breaking changes
         if (breakingChanges.length > 0) {
-          console.log(pc.bold(pc.red(`Breaking Changes (${breakingChanges.length}):`)));
+          console.log(
+            pc.bold(pc.red(`Breaking Changes (${breakingChanges.length}):`)),
+          );
           for (const breaking of breakingChanges) {
             console.log(`  ${pc.red("⚠")} ${formatBreakingChange(breaking)}`);
           }
@@ -129,7 +152,11 @@ export function validateCommand(program: Command): void {
           if (warnings.length === 0 || !options.strict) {
             console.log(pc.green(pc.bold("✓ Validation passed")));
           } else {
-            console.log(pc.yellow(pc.bold("⚠ Validation passed with warnings (strict mode)")));
+            console.log(
+              pc.yellow(
+                pc.bold("⚠ Validation passed with warnings (strict mode)"),
+              ),
+            );
           }
         } else {
           console.log(pc.red(pc.bold("✗ Validation failed")));
@@ -137,7 +164,9 @@ export function validateCommand(program: Command): void {
       }
 
       // Exit code
-      const hasErrors = allErrors.some((e) => e.severity === "error") || breakingChanges.length > 0;
+      const hasErrors =
+        allErrors.some((e) => e.severity === "error") ||
+        breakingChanges.length > 0;
       const hasWarnings = allErrors.some((e) => e.severity === "warning");
 
       if (hasErrors) {

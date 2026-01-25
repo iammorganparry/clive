@@ -97,11 +97,15 @@ export function initCommand(program: Command): void {
         await writeFile(
           contractsFile,
           `# System Contracts\n\nThis directory contains contract definitions for the system.\n\n## Example Contract\n\n${EXAMPLE_CONTRACT}`,
-          "utf-8"
+          "utf-8",
         );
         console.log(pc.green("✓ Created contracts/README.md with example"));
       } else {
-        console.log(pc.yellow("⚠ contracts/README.md already exists, use --force to overwrite"));
+        console.log(
+          pc.yellow(
+            "⚠ contracts/README.md already exists, use --force to overwrite",
+          ),
+        );
       }
 
       // Add to .gitignore
@@ -110,7 +114,11 @@ export function initCommand(program: Command): void {
         const { readFile } = await import("node:fs/promises");
         const content = await readFile(gitignorePath, "utf-8");
         if (!content.includes(".contract-graph/cache/")) {
-          await writeFile(gitignorePath, content + GITIGNORE_ADDITIONS, "utf-8");
+          await writeFile(
+            gitignorePath,
+            content + GITIGNORE_ADDITIONS,
+            "utf-8",
+          );
           console.log(pc.green("✓ Updated .gitignore"));
         }
       }
@@ -119,10 +127,14 @@ export function initCommand(program: Command): void {
       console.log(pc.bold("Contract Graph initialized!"));
       console.log();
       console.log("Next steps:");
-      console.log("  1. Define your contracts in contracts/*.md using Mermaid diagrams");
+      console.log(
+        "  1. Define your contracts in contracts/*.md using Mermaid diagrams",
+      );
       console.log("  2. Run 'contract-graph validate' to check your contracts");
       console.log("  3. Run 'contract-graph docs' to generate documentation");
       console.log();
-      console.log("For more information, see: https://github.com/your-org/contract-graph");
+      console.log(
+        "For more information, see: https://github.com/your-org/contract-graph",
+      );
     });
 }

@@ -45,7 +45,7 @@ export function createRelationship(
   from: string,
   to: string,
   type: RelationshipType,
-  label?: string
+  label?: string,
 ): Relationship {
   return { from, to, type, label };
 }
@@ -53,7 +53,9 @@ export function createRelationship(
 /**
  * Get the inverse relationship type (for bidirectional queries)
  */
-export function inverseRelationship(type: RelationshipType): RelationshipType | null {
+export function inverseRelationship(
+  type: RelationshipType,
+): RelationshipType | null {
   switch (type) {
     case "publishes":
       return "consumes";

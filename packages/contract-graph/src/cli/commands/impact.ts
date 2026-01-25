@@ -54,13 +54,17 @@ export function impactCommand(program: Command): void {
       // Contract info
       console.log(`${pc.bold("Type:")} ${impact.contract.type}`);
       if (impact.contract.location) {
-        console.log(`${pc.bold("Location:")} ${formatLocation(impact.contract.location)}`);
+        console.log(
+          `${pc.bold("Location:")} ${formatLocation(impact.contract.location)}`,
+        );
       }
       if (impact.contract.repo) {
         console.log(`${pc.bold("Repository:")} ${impact.contract.repo}`);
       }
       if (impact.contract.schema) {
-        console.log(`${pc.bold("Schema:")} ${JSON.stringify(impact.contract.schema)}`);
+        console.log(
+          `${pc.bold("Schema:")} ${JSON.stringify(impact.contract.schema)}`,
+        );
       }
       console.log();
 
@@ -77,7 +81,9 @@ export function impactCommand(program: Command): void {
       if (impact.producers.length > 0) {
         console.log(pc.bold(`Producers (${impact.producers.length}):`));
         for (const producer of impact.producers) {
-          const loc = producer.location ? pc.gray(` @ ${formatLocation(producer.location)}`) : "";
+          const loc = producer.location
+            ? pc.gray(` @ ${formatLocation(producer.location)}`)
+            : "";
           const repo = producer.repo ? pc.blue(` [${producer.repo}]`) : "";
           console.log(`  - ${producer.id}${loc}${repo}`);
         }
@@ -88,12 +94,15 @@ export function impactCommand(program: Command): void {
       if (impact.consumers.length > 0) {
         console.log(pc.bold(`Consumers (${impact.consumers.length}):`));
         for (const consumer of impact.consumers) {
-          const loc = consumer.location ? pc.gray(` @ ${formatLocation(consumer.location)}`) : "";
+          const loc = consumer.location
+            ? pc.gray(` @ ${formatLocation(consumer.location)}`)
+            : "";
           const repo = consumer.repo ? pc.blue(` [${consumer.repo}]`) : "";
           console.log(`  - ${consumer.id}${loc}${repo}`);
 
           for (const inv of consumer.invariants) {
-            const icon = inv.severity === "error" ? pc.red("●") : pc.yellow("●");
+            const icon =
+              inv.severity === "error" ? pc.red("●") : pc.yellow("●");
             console.log(`    ${icon} ${inv.description}`);
           }
         }
@@ -102,9 +111,13 @@ export function impactCommand(program: Command): void {
 
       // Direct dependents
       if (impact.directDependents.length > 0) {
-        console.log(pc.bold(`Direct Dependents (${impact.directDependents.length}):`));
+        console.log(
+          pc.bold(`Direct Dependents (${impact.directDependents.length}):`),
+        );
         for (const dep of impact.directDependents) {
-          const loc = dep.location ? pc.gray(` @ ${formatLocation(dep.location)}`) : "";
+          const loc = dep.location
+            ? pc.gray(` @ ${formatLocation(dep.location)}`)
+            : "";
           console.log(`  - ${dep.id}${loc}`);
         }
         console.log();
@@ -112,10 +125,12 @@ export function impactCommand(program: Command): void {
 
       // Transitive dependents (excluding direct)
       const transitiveOnly = impact.transitiveDependents.filter(
-        (t) => !impact.directDependents.some((d) => d.id === t.id)
+        (t) => !impact.directDependents.some((d) => d.id === t.id),
       );
       if (transitiveOnly.length > 0) {
-        console.log(pc.bold(`Transitive Dependents (${transitiveOnly.length}):`));
+        console.log(
+          pc.bold(`Transitive Dependents (${transitiveOnly.length}):`),
+        );
         for (const dep of transitiveOnly.slice(0, 10)) {
           console.log(`  - ${dep.id}`);
         }
@@ -158,7 +173,7 @@ export function impactCommand(program: Command): void {
         pc.bold("Summary:"),
         `${impact.directDependents.length} direct,`,
         `${impact.transitiveDependents.length} total dependents,`,
-        `${impact.crossRepoImpacts.size} cross-repo impacts`
+        `${impact.crossRepoImpacts.size} cross-repo impacts`,
       );
     });
 }

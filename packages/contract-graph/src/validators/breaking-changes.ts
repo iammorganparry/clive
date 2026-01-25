@@ -46,7 +46,7 @@ export interface BreakingChange {
  */
 export async function detectBreakingChanges(
   currentDir: string,
-  baseRef: string
+  baseRef: string,
 ): Promise<BreakingChange[]> {
   const breakingChanges: BreakingChange[] = [];
 
@@ -77,7 +77,8 @@ export async function detectBreakingChanges(
       description: `Contract ${removed.id} was removed`,
       affectedConsumers: affected.map((c) => c.id),
       crossRepoImpact: affected.some((c) => c.repo !== removed.repo),
-      migrationHint: "Ensure all consumers are migrated before removing this contract",
+      migrationHint:
+        "Ensure all consumers are migrated before removing this contract",
     });
   }
 
@@ -87,7 +88,7 @@ export async function detectBreakingChanges(
     if (before.exposes.length > 0) {
       for (const endpoint of before.exposes) {
         const stillExists = after.exposes.some(
-          (e) => e.method === endpoint.method && e.path === endpoint.path
+          (e) => e.method === endpoint.method && e.path === endpoint.path,
         );
         if (!stillExists) {
           const dependents = currentGraph.findDependents(after.id);
@@ -98,7 +99,8 @@ export async function detectBreakingChanges(
             description: `Endpoint ${endpoint.method} ${endpoint.path} was removed from ${after.id}`,
             affectedConsumers: dependents.map((c) => c.id),
             crossRepoImpact: dependents.some((c) => c.repo !== after.repo),
-            migrationHint: "Deprecate endpoint before removing, or provide a migration path",
+            migrationHint:
+              "Deprecate endpoint before removing, or provide a migration path",
           });
         }
       }
@@ -124,7 +126,9 @@ export async function detectBreakingChanges(
 
     // Check for new strict invariants
     const newInvariants = after.invariants.filter(
-      (inv) => inv.severity === "error" && !before.invariants.some((bi) => bi.description === inv.description)
+      (inv) =>
+        inv.severity === "error" &&
+        !before.invariants.some((bi) => bi.description === inv.description),
     );
 
     if (newInvariants.length > 0) {
@@ -133,9 +137,12 @@ export async function detectBreakingChanges(
         severity: "major",
         contractId: after.id,
         description: `New error-level invariants added to ${after.id}: ${newInvariants.map((i) => i.description).join(", ")}`,
-        affectedConsumers: currentGraph.findDependents(after.id).map((c) => c.id),
+        affectedConsumers: currentGraph
+          .findDependents(after.id)
+          .map((c) => c.id),
         crossRepoImpact: false,
-        migrationHint: "Ensure existing data complies with new invariants before deploying",
+        migrationHint:
+          "Ensure existing data complies with new invariants before deploying",
       });
     }
   }
@@ -155,7 +162,7 @@ export async function detectBreakingChanges(
  */
 async function loadContractsFromGitRef(
   repoDir: string,
-  ref: string
+  ref: string,
 ): Promise<ContractGraph | null> {
   // Create a temp directory
   const tempDir = mkdtempSync(join(tmpdir(), "contract-graph-"));
@@ -164,7 +171,7 @@ async function loadContractsFromGitRef(
     // Get the list of contract files at the base ref
     const contractFiles = execSync(
       `git ls-tree -r --name-only ${ref} -- "**/contracts/**/*.md" "**/*.contracts.md" "**/CONTRACTS.md"`,
-      { cwd: repoDir, encoding: "utf-8" }
+      { cwd: repoDir, encoding: "utf-8" },
     )
       .trim()
       .split("\n")
@@ -209,7 +216,11 @@ async function loadContractsFromGitRef(
  */
 export function formatBreakingChange(change: BreakingChange): string {
   const severity =
-    change.severity === "critical" ? "🔴" : change.severity === "major" ? "🟠" : "🟡";
+    change.severity === "critical"
+      ? "🔴"
+      : change.severity === "major"
+        ? "🟠"
+        : "🟡";
 
   let result = `${severity} [${change.type}] ${change.description}`;
 
@@ -238,7 +249,9 @@ export function hasCriticalBreakingChanges(changes: BreakingChange[]): boolean {
 /**
  * Generate a breaking changes report
  */
-export function generateBreakingChangesReport(changes: BreakingChange[]): string {
+export function generateBreakingChangesReport(
+  changes: BreakingChange[],
+): string {
   const lines: string[] = [];
 
   lines.push("# Breaking Changes Report");

@@ -17,7 +17,9 @@ const program = new Command();
 
 program
   .name("contract-graph")
-  .description("AI-aware contract testing framework using Mermaid-based contract definitions")
+  .description(
+    "AI-aware contract testing framework using Mermaid-based contract definitions",
+  )
   .version("0.1.0");
 
 // Register commands
@@ -37,6 +39,9 @@ try {
     // Commander error (help requested, version, etc.)
     process.exit(0);
   }
-  console.error(pc.red("Error:"), err instanceof Error ? err.message : String(err));
+  console.error(
+    pc.red("Error:"),
+    err instanceof Error ? err.message : String(err),
+  );
   process.exit(1);
 }

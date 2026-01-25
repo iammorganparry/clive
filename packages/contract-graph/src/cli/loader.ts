@@ -53,7 +53,7 @@ export interface LoadOptions {
  */
 export async function loadContracts(
   dir: string,
-  options: LoadOptions = {}
+  options: LoadOptions = {},
 ): Promise<LoadResult> {
   const patterns = options.patterns || CONTRACT_PATTERNS;
   const ignore = options.ignore || IGNORE_PATTERNS;
@@ -100,7 +100,7 @@ export async function loadContracts(
         ...result.errors.map((e) => ({
           ...e,
           message: `[${relativePath}] ${e.message}`,
-        }))
+        })),
       );
     } catch (err) {
       allErrors.push({
@@ -123,7 +123,7 @@ export async function loadContracts(
 export async function watchContracts(
   dir: string,
   onChange: (result: LoadResult) => void,
-  options: LoadOptions = {}
+  options: LoadOptions = {},
 ): Promise<() => void> {
   const { watch } = await import("node:fs");
 
@@ -161,7 +161,7 @@ export async function watchContracts(
  */
 export async function loadContractsFromFile(
   filePath: string,
-  options: Omit<LoadOptions, "patterns"> = {}
+  options: Omit<LoadOptions, "patterns"> = {},
 ): Promise<LoadResult> {
   const content = await readFile(filePath, "utf-8");
 

@@ -54,9 +54,13 @@ export interface AnnotationResult {
  */
 export async function annotateSourceFiles(
   graph: ContractGraph,
-  options: AnnotateOptions = {}
+  options: AnnotateOptions = {},
 ): Promise<AnnotationResult[]> {
-  const { contractsFile = "contracts/system.md", dryRun = false, baseDir = process.cwd() } = options;
+  const {
+    contractsFile = "contracts/system.md",
+    dryRun = false,
+    baseDir = process.cwd(),
+  } = options;
 
   const results: AnnotationResult[] = [];
   const contracts = graph.getAllContracts();
@@ -82,7 +86,9 @@ export async function annotateSourceFiles(
 
   // Process each file
   for (const [filePath, locatedContracts] of contractsByFile) {
-    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(baseDir, filePath);
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(baseDir, filePath);
 
     // Check if file exists
     if (!fs.existsSync(absolutePath)) {
@@ -102,7 +108,9 @@ export async function annotateSourceFiles(
     let content = fs.readFileSync(absolutePath, "utf-8");
 
     // Sort contracts by line number descending to avoid offset issues
-    const sortedContracts = [...locatedContracts].sort((a, b) => b.line - a.line);
+    const sortedContracts = [...locatedContracts].sort(
+      (a, b) => b.line - a.line,
+    );
 
     // Process each contract in this file
     for (const { contract, line } of sortedContracts) {
@@ -111,7 +119,7 @@ export async function annotateSourceFiles(
         line,
         contract.id,
         contractsFile,
-        filePath
+        filePath,
       );
 
       results.push({
@@ -130,7 +138,9 @@ export async function annotateSourceFiles(
     // Write the modified content if not dry run
     if (!dryRun) {
       const hasModifications = sortedContracts.some(({ contract }) => {
-        const r = results.find((r) => r.contractId === contract.id && r.file === filePath);
+        const r = results.find(
+          (r) => r.contractId === contract.id && r.file === filePath,
+        );
         return r && r.action !== "skipped";
       });
 
@@ -167,7 +177,7 @@ function injectAnnotationIntoContent(
   lineNumber: number,
   contractId: string,
   contractsFile: string,
-  _filePath: string
+  _filePath: string,
 ): InjectionResult {
   // Handle empty file
   if (fileContent.trim() === "") {
@@ -214,19 +224,19 @@ function injectAnnotationIntoContent(
       // Update existing contract annotation
       const updatedJsDoc = jsDocInfo.content.replace(
         /@contract\s+\S+/,
-        `@contract ${contractId}`
+        `@contract ${contractId}`,
       );
       // Also update @see if present
       const finalJsDoc = updatedJsDoc.replace(
         /@see\s+contracts\/\S+/,
-        `@see ${contractsFile}#${contractId}`
+        `@see ${contractsFile}#${contractId}`,
       );
 
       // Replace the JSDoc in lines
       lines.splice(
         jsDocInfo.startLine,
         jsDocInfo.endLine - jsDocInfo.startLine + 1,
-        ...finalJsDoc.split("\n")
+        ...finalJsDoc.split("\n"),
       );
 
       return {
@@ -240,14 +250,18 @@ function injectAnnotationIntoContent(
 
     if (isSingleLine) {
       // Expand single-line JSDoc to multi-line with contract tags
-      const singleLineMatch = jsDocInfo.content.match(/^(\s*)\/\*\*\s*(.*?)\s*\*\/$/);
+      const singleLineMatch = jsDocInfo.content.match(
+        /^(\s*)\/\*\*\s*(.*?)\s*\*\/$/,
+      );
       if (singleLineMatch) {
         const jsDocIndent = singleLineMatch[1];
         const description = singleLineMatch[2];
 
         const expandedLines = [
           `${jsDocIndent}/**`,
-          ...(description ? [`${jsDocIndent} * ${description}`, `${jsDocIndent} *`] : []),
+          ...(description
+            ? [`${jsDocIndent} * ${description}`, `${jsDocIndent} *`]
+            : []),
           `${jsDocIndent} * @contract ${contractId}`,
           `${jsDocIndent} * @see ${contractsFile}#${contractId}`,
           `${jsDocIndent} */`,
@@ -300,7 +314,7 @@ function injectAnnotationIntoContent(
     lines.splice(
       jsDocInfo.startLine,
       jsDocInfo.endLine - jsDocInfo.startLine + 1,
-      ...updatedJsDoc.split("\n")
+      ...updatedJsDoc.split("\n"),
     );
 
     return {
@@ -344,7 +358,10 @@ interface JsDocInfo {
  * Scans backwards from the target line to find a JSDoc block.
  * Skips blank lines and decorators.
  */
-function findExistingJsDoc(lines: string[], targetLineIndex: number): JsDocInfo | null {
+function findExistingJsDoc(
+  lines: string[],
+  targetLineIndex: number,
+): JsDocInfo | null {
   let currentIndex = targetLineIndex - 1;
 
   // Skip blank lines and decorators
@@ -415,14 +432,14 @@ export function injectAnnotation(
   fileContent: string,
   lineNumber: number,
   contractId: string,
-  contractsFile: string = "contracts/system.md"
+  contractsFile: string = "contracts/system.md",
 ): string {
   const result = injectAnnotationIntoContent(
     fileContent,
     lineNumber,
     contractId,
     contractsFile,
-    "<inline>"
+    "<inline>",
   );
   return result.content;
 }
@@ -443,19 +460,27 @@ export function formatAnnotationResults(results: AnnotationResult[]): string {
   };
 
   for (const result of byAction.added) {
-    lines.push(`- ${result.file}:${result.line} - ${result.contractId} (added)`);
+    lines.push(
+      `- ${result.file}:${result.line} - ${result.contractId} (added)`,
+    );
   }
 
   for (const result of byAction.updated) {
-    lines.push(`- ${result.file}:${result.line} - ${result.contractId} (updated)`);
+    lines.push(
+      `- ${result.file}:${result.line} - ${result.contractId} (updated)`,
+    );
   }
 
   for (const result of byAction.skipped) {
-    lines.push(`- ${result.file}:${result.line} - ${result.contractId} (skipped - ${result.reason})`);
+    lines.push(
+      `- ${result.file}:${result.line} - ${result.contractId} (skipped - ${result.reason})`,
+    );
   }
 
   lines.push("");
-  lines.push(`Summary: ${byAction.added.length} added, ${byAction.updated.length} updated, ${byAction.skipped.length} skipped`);
+  lines.push(
+    `Summary: ${byAction.added.length} added, ${byAction.updated.length} updated, ${byAction.skipped.length} skipped`,
+  );
 
   return lines.join("\n");
 }

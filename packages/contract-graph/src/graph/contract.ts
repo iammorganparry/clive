@@ -119,7 +119,10 @@ export interface Contract {
 /**
  * Create a new contract with default values
  */
-export function createContract(id: string, partial?: Partial<Contract>): Contract {
+export function createContract(
+  id: string,
+  partial?: Partial<Contract>,
+): Contract {
   return {
     id,
     type: "function",
@@ -138,7 +141,10 @@ export function createContract(id: string, partial?: Partial<Contract>): Contrac
 /**
  * Parse a location string like "src/file.ts:42:10" into a CodeLocation
  */
-export function parseLocation(locationStr: string, repo?: string): CodeLocation {
+export function parseLocation(
+  locationStr: string,
+  repo?: string,
+): CodeLocation {
   const parts = locationStr.split(":");
   const file = parts[0];
   const line = parts[1] ? parseInt(parts[1], 10) : undefined;

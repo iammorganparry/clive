@@ -5,7 +5,10 @@
 import type { Command } from "commander";
 import pc from "picocolors";
 import { loadContracts } from "../loader.js";
-import { generateMarkdownDocs, generateClaudeMd } from "../../generators/markdown.js";
+import {
+  generateMarkdownDocs,
+  generateClaudeMd,
+} from "../../generators/markdown.js";
 import { writeFile } from "node:fs/promises";
 
 export function docsCommand(program: Command): void {

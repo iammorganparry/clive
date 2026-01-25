@@ -55,7 +55,11 @@ export {
   describeRelationship,
 } from "./graph/relationship.js";
 
-export { ContractGraph, type TraversalResult, type TraversalOptions } from "./graph/graph.js";
+export {
+  ContractGraph,
+  type TraversalResult,
+  type TraversalOptions,
+} from "./graph/graph.js";
 
 // Parser
 export {
@@ -121,7 +125,10 @@ export {
 } from "./validators/breaking-changes.js";
 
 // Generators
-export { generateMarkdownDocs, generateClaudeMd } from "./generators/markdown.js";
+export {
+  generateMarkdownDocs,
+  generateClaudeMd,
+} from "./generators/markdown.js";
 
 export {
   annotateSourceFiles,

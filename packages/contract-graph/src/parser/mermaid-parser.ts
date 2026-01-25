@@ -191,7 +191,10 @@ function parseNode(line: string, lineNum: number): MermaidNode | null {
   }
 
   // Skip lines that are only edges (contain --> or similar but no node def)
-  if (/^\s*\w+\s*--/.test(trimmed) && !/\[|\(|\{|>/.test(trimmed.split("-->")[0])) {
+  if (
+    /^\s*\w+\s*--/.test(trimmed) &&
+    !/\[|\(|\{|>/.test(trimmed.split("-->")[0])
+  ) {
     return null;
   }
 
@@ -277,7 +280,7 @@ function getEdgeStyle(arrow: string): "solid" | "dotted" | "thick" {
  */
 function parseSubgraph(
   lines: string[],
-  startIndex: number
+  startIndex: number,
 ): { subgraph: MermaidSubgraph; endIndex: number } | null {
   const line = lines[startIndex].trim();
   const match = line.match(/^\s*subgraph\s+(\w+)(?:\[([^\]]+)\])?/);
@@ -375,7 +378,7 @@ export function parseMermaid(source: string): ParsedMermaid {
  */
 export function findNodeAfterComments(
   lines: string[],
-  commentEndLine: number
+  commentEndLine: number,
 ): MermaidNode | null {
   for (let i = commentEndLine; i < lines.length; i++) {
     const node = parseNode(lines[i], i + 1);

@@ -69,7 +69,7 @@ export interface ValidationOptions {
  */
 export async function validateContracts(
   graph: ContractGraph,
-  options: ValidationOptions = {}
+  options: ValidationOptions = {},
 ): Promise<ValidationResult> {
   const errors: ValidationError[] = [];
   const contracts = graph.getAllContracts();
@@ -173,7 +173,9 @@ export async function validateContracts(
   }
 
   // Calculate summary
-  const contractsWithInvariants = contracts.filter((c) => c.invariants.length > 0).length;
+  const contractsWithInvariants = contracts.filter(
+    (c) => c.invariants.length > 0,
+  ).length;
   const contractsWithLocations = contracts.filter((c) => c.location).length;
   const crossRepoContracts = contracts.filter((c) => c.repo).length;
 

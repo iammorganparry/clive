@@ -67,7 +67,12 @@ export function generateMarkdownDocs(graph: ContractGraph): string {
       if (contract.invariants.length > 0) {
         lines.push("**Invariants**:");
         for (const inv of contract.invariants) {
-          const icon = inv.severity === "error" ? "🔴" : inv.severity === "warning" ? "🟡" : "🔵";
+          const icon =
+            inv.severity === "error"
+              ? "🔴"
+              : inv.severity === "warning"
+                ? "🟡"
+                : "🔵";
           lines.push(`- ${icon} ${inv.description}`);
         }
         lines.push("");
@@ -76,7 +81,9 @@ export function generateMarkdownDocs(graph: ContractGraph): string {
       if (contract.errors.length > 0) {
         lines.push("**Possible Errors**:");
         for (const err of contract.errors) {
-          lines.push(`- \`${err.name}\`${err.description ? `: ${err.description}` : ""}`);
+          lines.push(
+            `- \`${err.name}\`${err.description ? `: ${err.description}` : ""}`,
+          );
         }
         lines.push("");
       }
@@ -96,7 +103,9 @@ export function generateMarkdownDocs(graph: ContractGraph): string {
       if (incoming.length > 0) {
         lines.push("**Dependents**:");
         for (const rel of incoming) {
-          lines.push(`- \`${rel.from}\` ${describeRelationship(rel.type)} this`);
+          lines.push(
+            `- \`${rel.from}\` ${describeRelationship(rel.type)} this`,
+          );
         }
         lines.push("");
       }
@@ -119,7 +128,9 @@ export function generateClaudeMd(graph: ContractGraph): string {
 
   lines.push("# Contract Definitions");
   lines.push("");
-  lines.push("This section describes the contracts in the system that AI agents should be aware of when making changes.");
+  lines.push(
+    "This section describes the contracts in the system that AI agents should be aware of when making changes.",
+  );
   lines.push("");
 
   // Quick reference table
@@ -135,7 +146,9 @@ export function generateClaudeMd(graph: ContractGraph): string {
       .map((i) => i.description)
       .slice(0, 2)
       .join("; ");
-    lines.push(`| ${contract.id} | ${contract.type} | ${location} | ${invariants || "-"} |`);
+    lines.push(
+      `| ${contract.id} | ${contract.type} | ${location} | ${invariants || "-"} |`,
+    );
   }
   lines.push("");
 
@@ -186,8 +199,12 @@ export function generateClaudeMd(graph: ContractGraph): string {
 
       if (contract.reads.length > 0 || contract.writes.length > 0) {
         const ops = [
-          ...(contract.reads.length > 0 ? [`reads: ${contract.reads.join(", ")}`] : []),
-          ...(contract.writes.length > 0 ? [`writes: ${contract.writes.join(", ")}`] : []),
+          ...(contract.reads.length > 0
+            ? [`reads: ${contract.reads.join(", ")}`]
+            : []),
+          ...(contract.writes.length > 0
+            ? [`writes: ${contract.writes.join(", ")}`]
+            : []),
         ];
         lines.push(`- **Database**: ${ops.join("; ")}`);
       }
@@ -219,24 +236,38 @@ export function generateClaudeMd(graph: ContractGraph): string {
   }
 
   // Event contracts (important for distributed systems)
-  const events = contracts.filter((c) => c.type === "event" || c.publishes.length > 0 || c.consumes.length > 0);
+  const events = contracts.filter(
+    (c) =>
+      c.type === "event" || c.publishes.length > 0 || c.consumes.length > 0,
+  );
 
   if (events.length > 0) {
     lines.push("## Event Contracts");
     lines.push("");
-    lines.push("These events connect different parts of the system. Schema changes require coordination.");
+    lines.push(
+      "These events connect different parts of the system. Schema changes require coordination.",
+    );
     lines.push("");
 
-    const eventMap = new Map<string, { producers: Contract[]; consumers: Contract[] }>();
+    const eventMap = new Map<
+      string,
+      { producers: Contract[]; consumers: Contract[] }
+    >();
 
     for (const contract of contracts) {
       for (const event of contract.publishes) {
-        const existing = eventMap.get(event) || { producers: [], consumers: [] };
+        const existing = eventMap.get(event) || {
+          producers: [],
+          consumers: [],
+        };
         existing.producers.push(contract);
         eventMap.set(event, existing);
       }
       for (const event of contract.consumes) {
-        const existing = eventMap.get(event) || { producers: [], consumers: [] };
+        const existing = eventMap.get(event) || {
+          producers: [],
+          consumers: [],
+        };
         existing.consumers.push(contract);
         eventMap.set(event, existing);
       }
@@ -245,8 +276,12 @@ export function generateClaudeMd(graph: ContractGraph): string {
     for (const [event, { producers, consumers }] of eventMap) {
       lines.push(`### ${event}`);
       lines.push("");
-      lines.push(`- **Producers**: ${producers.map((p) => p.id).join(", ") || "none"}`);
-      lines.push(`- **Consumers**: ${consumers.map((c) => c.id).join(", ") || "none"}`);
+      lines.push(
+        `- **Producers**: ${producers.map((p) => p.id).join(", ") || "none"}`,
+      );
+      lines.push(
+        `- **Consumers**: ${consumers.map((c) => c.id).join(", ") || "none"}`,
+      );
 
       const repos = new Set([
         ...producers.filter((p) => p.repo).map((p) => p.repo!),
@@ -254,7 +289,9 @@ export function generateClaudeMd(graph: ContractGraph): string {
       ]);
 
       if (repos.size > 1) {
-        lines.push(`- **⚠️ Spans repositories**: ${Array.from(repos).join(", ")}`);
+        lines.push(
+          `- **⚠️ Spans repositories**: ${Array.from(repos).join(", ")}`,
+        );
       }
 
       lines.push("");
@@ -267,7 +304,10 @@ export function generateClaudeMd(graph: ContractGraph): string {
 /**
  * Group an array by a key function
  */
-function groupBy<T>(array: T[], keyFn: (item: T) => string): Record<string, T[]> {
+function groupBy<T>(
+  array: T[],
+  keyFn: (item: T) => string,
+): Record<string, T[]> {
   const result: Record<string, T[]> = {};
   for (const item of array) {
     const key = keyFn(item);

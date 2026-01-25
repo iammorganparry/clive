@@ -3,7 +3,12 @@
  * Provides methods for contract lookup, impact analysis, and dependency traversal
  */
 
-import type { Contract, CodeLocation, Invariant, ErrorContract } from "../graph/contract.js";
+import type {
+  Contract,
+  CodeLocation,
+  Invariant,
+  ErrorContract,
+} from "../graph/contract.js";
 import { formatLocation } from "../graph/contract.js";
 import type { ContractGraph } from "../graph/graph.js";
 import type { RelationshipType } from "../graph/relationship.js";
@@ -97,11 +102,18 @@ export class QueryEngine {
   /**
    * Analyze the impact of changing a contract
    */
-  impactOf(contractId: string, options: ImpactOptions = {}): ImpactAnalysis | null {
+  impactOf(
+    contractId: string,
+    options: ImpactOptions = {},
+  ): ImpactAnalysis | null {
     const contract = this.graph.getContract(contractId);
     if (!contract) return null;
 
-    const { maxDepth = Infinity, includeInvariants = true, includeCrossRepo = true } = options;
+    const {
+      maxDepth = Infinity,
+      includeInvariants = true,
+      includeCrossRepo = true,
+    } = options;
 
     // Find direct dependents
     const directDependents = this.graph.findDependents(contractId);
@@ -111,7 +123,9 @@ export class QueryEngine {
       direction: "incoming",
       maxDepth,
     });
-    const transitiveDependents = traversalResult.contracts.filter((c) => c.id !== contractId);
+    const transitiveDependents = traversalResult.contracts.filter(
+      (c) => c.id !== contractId,
+    );
 
     // Find producers and consumers
     const producers = this.graph.findProducers(contractId);
@@ -144,19 +158,19 @@ export class QueryEngine {
 
     if (crossRepoImpacts.size > 0) {
       warnings.push(
-        `⚠️  CROSS-SERVICE IMPACT: Changes affect ${crossRepoImpacts.size} other repositories`
+        `⚠️  CROSS-SERVICE IMPACT: Changes affect ${crossRepoImpacts.size} other repositories`,
       );
     }
 
     if (consumers.length > 0 && contract.type === "event") {
       warnings.push(
-        `⚠️  EVENT SCHEMA CHANGE: ${consumers.length} consumers depend on this event's schema`
+        `⚠️  EVENT SCHEMA CHANGE: ${consumers.length} consumers depend on this event's schema`,
       );
     }
 
     if (contract.exposes.length > 0) {
       warnings.push(
-        `⚠️  PUBLIC API: This contract exposes ${contract.exposes.length} public endpoint(s)`
+        `⚠️  PUBLIC API: This contract exposes ${contract.exposes.length} public endpoint(s)`,
       );
     }
 
@@ -191,7 +205,10 @@ export class QueryEngine {
   /**
    * Get the full dependency graph for a contract
    */
-  dependencyGraph(contractId: string, options: { maxDepth?: number } = {}): {
+  dependencyGraph(
+    contractId: string,
+    options: { maxDepth?: number } = {},
+  ): {
     contracts: Contract[];
     relationships: Array<{
       from: string;
@@ -240,7 +257,9 @@ export class QueryEngine {
     }
 
     if (query.publishes) {
-      contracts = contracts.filter((c) => c.publishes.includes(query.publishes!));
+      contracts = contracts.filter((c) =>
+        c.publishes.includes(query.publishes!),
+      );
     }
 
     if (query.consumes) {
@@ -273,7 +292,7 @@ export class QueryEngine {
     const allContracts = this.graph.getAllContracts();
 
     const contractsWithInvariants = allContracts.filter(
-      (c) => c.invariants.length > 0
+      (c) => c.invariants.length > 0,
     ).length;
 
     // Count cross-repo relationships
@@ -281,7 +300,11 @@ export class QueryEngine {
     for (const rel of this.graph.getAllRelationships()) {
       const fromContract = this.graph.getContract(rel.from);
       const toContract = this.graph.getContract(rel.to);
-      if (fromContract?.repo && toContract?.repo && fromContract.repo !== toContract.repo) {
+      if (
+        fromContract?.repo &&
+        toContract?.repo &&
+        fromContract.repo !== toContract.repo
+      ) {
         crossRepoRelationships++;
       }
     }
@@ -327,7 +350,9 @@ export class QueryEngine {
     if (impact.producers.length > 0) {
       lines.push(`Producers (${impact.producers.length}):`);
       for (const producer of impact.producers) {
-        const loc = producer.location ? ` @ ${formatLocation(producer.location)}` : "";
+        const loc = producer.location
+          ? ` @ ${formatLocation(producer.location)}`
+          : "";
         lines.push(`  - ${producer.id}${loc}`);
       }
       lines.push("");
@@ -337,7 +362,9 @@ export class QueryEngine {
     if (impact.consumers.length > 0) {
       lines.push(`Consumers (${impact.consumers.length}):`);
       for (const consumer of impact.consumers) {
-        const loc = consumer.location ? ` @ ${formatLocation(consumer.location)}` : "";
+        const loc = consumer.location
+          ? ` @ ${formatLocation(consumer.location)}`
+          : "";
         lines.push(`  - ${consumer.id}${loc}`);
         for (const inv of consumer.invariants) {
           lines.push(`    Invariant: ${inv.description}`);
@@ -372,7 +399,12 @@ export class QueryEngine {
     if (impact.invariantsToMaintain.length > 0) {
       lines.push(`Invariants to Maintain:`);
       for (const inv of impact.invariantsToMaintain) {
-        const severity = inv.severity === "error" ? "🔴" : inv.severity === "warning" ? "🟡" : "🔵";
+        const severity =
+          inv.severity === "error"
+            ? "🔴"
+            : inv.severity === "warning"
+              ? "🟡"
+              : "🔵";
         lines.push(`  ${severity} ${inv.description}`);
       }
       lines.push("");

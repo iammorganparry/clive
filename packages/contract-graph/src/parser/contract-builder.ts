@@ -10,7 +10,10 @@ import {
   parseLocation,
 } from "../graph/contract.js";
 import { ContractGraph } from "../graph/graph.js";
-import { createRelationship, type RelationshipType } from "../graph/relationship.js";
+import {
+  createRelationship,
+  type RelationshipType,
+} from "../graph/relationship.js";
 import {
   extractAnnotations,
   groupCommentBlocks,
@@ -57,11 +60,12 @@ export interface BuildOptions {
  */
 function inferContractType(
   nodeShape: string,
-  metadata: ReturnType<typeof extractAnnotations>
+  metadata: ReturnType<typeof extractAnnotations>,
 ): ContractType {
   // Check for explicit type indicators in metadata
   if (metadata.exposes.length > 0) return "endpoint";
-  if (metadata.publishes.length > 0 || metadata.consumes.length > 0) return "event";
+  if (metadata.publishes.length > 0 || metadata.consumes.length > 0)
+    return "event";
   if (metadata.queue) return "queue";
 
   // Check for calls to external services
@@ -89,7 +93,7 @@ function buildContract(
   nodeId: string,
   nodeShape: string,
   _lineNum: number,
-  options: BuildOptions
+  options: BuildOptions,
 ): Contract {
   const contractId = metadata.contract || nodeId;
   const type = inferContractType(nodeShape, metadata);
@@ -102,7 +106,10 @@ function buildContract(
 
   // Parse location
   if (metadata.location) {
-    contract.location = parseLocation(metadata.location, metadata.repo || options.defaultRepo);
+    contract.location = parseLocation(
+      metadata.location,
+      metadata.repo || options.defaultRepo,
+    );
   }
 
   // Parse schema
@@ -147,19 +154,39 @@ function inferRelationshipType(label?: string): RelationshipType {
 
   const normalized = label.toLowerCase().trim();
 
-  if (normalized.includes("write") || normalized.includes("insert") || normalized.includes("update")) {
+  if (
+    normalized.includes("write") ||
+    normalized.includes("insert") ||
+    normalized.includes("update")
+  ) {
     return "writes";
   }
-  if (normalized.includes("read") || normalized.includes("select") || normalized.includes("query")) {
+  if (
+    normalized.includes("read") ||
+    normalized.includes("select") ||
+    normalized.includes("query")
+  ) {
     return "reads";
   }
-  if (normalized.includes("publish") || normalized.includes("emit") || normalized.includes("send")) {
+  if (
+    normalized.includes("publish") ||
+    normalized.includes("emit") ||
+    normalized.includes("send")
+  ) {
     return "publishes";
   }
-  if (normalized.includes("consume") || normalized.includes("subscribe") || normalized.includes("receive")) {
+  if (
+    normalized.includes("consume") ||
+    normalized.includes("subscribe") ||
+    normalized.includes("receive")
+  ) {
     return "consumes";
   }
-  if (normalized.includes("call") || normalized.includes("invoke") || normalized.includes("request")) {
+  if (
+    normalized.includes("call") ||
+    normalized.includes("invoke") ||
+    normalized.includes("request")
+  ) {
     return "calls";
   }
   if (normalized.includes("expose")) {
@@ -174,7 +201,7 @@ function inferRelationshipType(label?: string): RelationshipType {
  */
 function buildRelationships(
   edges: MermaidEdge[],
-  nodeToContract: Map<string, string>
+  nodeToContract: Map<string, string>,
 ): Array<{
   relationship: ReturnType<typeof createRelationship>;
   errors: BuildError[];
@@ -207,7 +234,12 @@ function buildRelationships(
 
     if (fromContract && toContract) {
       const type = inferRelationshipType(edge.label);
-      const relationship = createRelationship(fromContract, toContract, type, edge.label);
+      const relationship = createRelationship(
+        fromContract,
+        toContract,
+        type,
+        edge.label,
+      );
       results.push({ relationship, errors });
     } else {
       results.push({
@@ -223,7 +255,10 @@ function buildRelationships(
 /**
  * Build contracts from a single Mermaid source
  */
-export function buildFromMermaid(source: string, options: BuildOptions = {}): BuildResult {
+export function buildFromMermaid(
+  source: string,
+  options: BuildOptions = {},
+): BuildResult {
   const graph = new ContractGraph();
   const errors: BuildError[] = [];
   const sourceFile = options.sourceFile || "unknown";
@@ -267,7 +302,7 @@ export function buildFromMermaid(source: string, options: BuildOptions = {}): Bu
       nodeId,
       nodeShape,
       block.nodeLineIndex + 1,
-      options
+      options,
     );
 
     graph.addContract(contract);
@@ -300,7 +335,10 @@ export function buildFromMermaid(source: string, options: BuildOptions = {}): Bu
     errors.push(...relErrors);
 
     // Only add relationship if both contracts exist
-    if (graph.hasContract(relationship.from) && graph.hasContract(relationship.to)) {
+    if (
+      graph.hasContract(relationship.from) &&
+      graph.hasContract(relationship.to)
+    ) {
       graph.addRelationship(relationship);
     }
   }
@@ -321,18 +359,24 @@ export function buildFromMermaid(source: string, options: BuildOptions = {}): Bu
     // Create relationships for publishes/consumes
     for (const event of contract.publishes) {
       if (graph.hasContract(event)) {
-        graph.addRelationship(createRelationship(contract.id, event, "publishes"));
+        graph.addRelationship(
+          createRelationship(contract.id, event, "publishes"),
+        );
       }
     }
     for (const event of contract.consumes) {
       if (graph.hasContract(event)) {
-        graph.addRelationship(createRelationship(contract.id, event, "consumes"));
+        graph.addRelationship(
+          createRelationship(contract.id, event, "consumes"),
+        );
       }
     }
     // Create relationships for calls
     for (const service of contract.calls) {
       if (graph.hasContract(service)) {
-        graph.addRelationship(createRelationship(contract.id, service, "calls"));
+        graph.addRelationship(
+          createRelationship(contract.id, service, "calls"),
+        );
       }
     }
   }
@@ -345,7 +389,7 @@ export function buildFromMermaid(source: string, options: BuildOptions = {}): Bu
  */
 export function buildFromMultipleSources(
   sources: Array<{ content: string; file: string }>,
-  options: BuildOptions = {}
+  options: BuildOptions = {},
 ): BuildResult {
   const combinedGraph = new ContractGraph();
   const allErrors: BuildError[] = [];
@@ -357,7 +401,7 @@ export function buildFromMultipleSources(
       ...result.errors.map((e) => ({
         ...e,
         message: `[${file}] ${e.message}`,
-      }))
+      })),
     );
   }
 
@@ -386,19 +430,26 @@ export function extractMermaidFromMarkdown(markdown: string): string[] {
 /**
  * Build contracts from a markdown file containing Mermaid blocks
  */
-export function buildFromMarkdown(markdown: string, options: BuildOptions = {}): BuildResult {
+export function buildFromMarkdown(
+  markdown: string,
+  options: BuildOptions = {},
+): BuildResult {
   const mermaidBlocks = extractMermaidFromMarkdown(markdown);
 
   if (mermaidBlocks.length === 0) {
     return {
       graph: new ContractGraph(),
-      errors: [{ message: "No Mermaid blocks found in markdown", severity: "warning" }],
+      errors: [
+        { message: "No Mermaid blocks found in markdown", severity: "warning" },
+      ],
       sourceFile: options.sourceFile || "unknown",
     };
   }
 
   // Build from each block and merge
-  const results = mermaidBlocks.map((block) => buildFromMermaid(block, options));
+  const results = mermaidBlocks.map((block) =>
+    buildFromMermaid(block, options),
+  );
 
   const combinedGraph = new ContractGraph();
   const allErrors: BuildError[] = [];

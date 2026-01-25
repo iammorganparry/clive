@@ -18,9 +18,7 @@ import type {
   InterviewEvent,
   NgrokConfig,
 } from "@clive/worker-protocol";
-import {
-  CentralToWorkerMessageSchema,
-} from "@clive/worker-protocol";
+import { CentralToWorkerMessageSchema } from "@clive/worker-protocol";
 import { LocalExecutor } from "./local-executor.js";
 import { TunnelManager } from "./tunnel-manager.js";
 import type { WorkerConfig } from "./config.js";
@@ -62,7 +60,9 @@ export class WorkerClient extends EventEmitter {
     this.config = config;
     this.workerId = generateWorkerId();
     // Use default project path for executor, will be overridden per-interview
-    const defaultProject = config.projects.find(p => p.id === config.defaultProject) || config.projects[0];
+    const defaultProject =
+      config.projects.find((p) => p.id === config.defaultProject) ||
+      config.projects[0];
     this.executor = new LocalExecutor(defaultProject.path);
     this.tunnelManager = new TunnelManager();
 
@@ -84,7 +84,9 @@ export class WorkerClient extends EventEmitter {
       return;
     }
 
-    console.log(`[WorkerClient] Connecting to ${this.config.centralServiceUrl}...`);
+    console.log(
+      `[WorkerClient] Connecting to ${this.config.centralServiceUrl}...`,
+    );
     this.status = "connecting";
 
     return new Promise((resolve, reject) => {
@@ -141,8 +143,10 @@ export class WorkerClient extends EventEmitter {
       payload: registration,
     });
 
-    const projectNames = this.config.projects.map(p => p.name).join(", ");
-    console.log(`[WorkerClient] Registration sent for ${this.workerId} with projects: [${projectNames}]`);
+    const projectNames = this.config.projects.map((p) => p.name).join(", ");
+    console.log(
+      `[WorkerClient] Registration sent for ${this.workerId} with projects: [${projectNames}]`,
+    );
   }
 
   /**
@@ -196,7 +200,7 @@ export class WorkerClient extends EventEmitter {
         return;
       }
 
-      const message = result.data;
+      const message = result.data as CentralToWorkerMessage;
       console.log(`[WorkerClient] Received: ${message.type}`);
 
       switch (message.type) {
@@ -205,21 +209,25 @@ export class WorkerClient extends EventEmitter {
           break;
 
         case "answer": {
-          const answerPayload = message.payload as { sessionId: string; toolUseId: string; answers: Record<string, string> };
+          const answerPayload = message.payload as {
+            sessionId: string;
+            toolUseId: string;
+            answers: Record<string, string>;
+          };
           this.executor.sendAnswer(
             answerPayload.sessionId,
             answerPayload.toolUseId,
-            answerPayload.answers
+            answerPayload.answers,
           );
           break;
         }
 
         case "message": {
-          const msgPayload = message.payload as { sessionId: string; message: string };
-          this.executor.sendMessage(
-            msgPayload.sessionId,
-            msgPayload.message
-          );
+          const msgPayload = message.payload as {
+            sessionId: string;
+            message: string;
+          };
+          this.executor.sendMessage(msgPayload.sessionId, msgPayload.message);
           break;
         }
 
@@ -234,7 +242,9 @@ export class WorkerClient extends EventEmitter {
           break;
 
         case "config_update": {
-          const configPayload = message.payload as { ngrokConfig?: NgrokConfig };
+          const configPayload = message.payload as {
+            ngrokConfig?: NgrokConfig;
+          };
           this.emit("configUpdate", configPayload);
           // Set up tunnel if ngrok config is provided
           if (configPayload.ngrokConfig) {
@@ -251,31 +261,43 @@ export class WorkerClient extends EventEmitter {
   /**
    * Handle start_interview request
    */
-  private async handleStartInterview(
-    request: InterviewRequest
-  ): Promise<void> {
-    console.log(`[WorkerClient] Starting interview ${request.sessionId}${request.projectId ? ` for project "${request.projectId}"` : ""}`);
+  private async handleStartInterview(request: InterviewRequest): Promise<void> {
+    console.log(
+      `[WorkerClient] Starting interview ${request.sessionId}${request.projectId ? ` for project "${request.projectId}"` : ""}`,
+    );
     this.status = "busy";
 
     // Find the appropriate project path
     let workspacePath: string;
     if (request.projectId) {
-      const project = this.config.projects.find(p =>
-        p.id === request.projectId ||
-        p.name.toLowerCase() === request.projectId?.toLowerCase() ||
-        p.aliases?.some((a: string) => a.toLowerCase() === request.projectId?.toLowerCase())
+      const project = this.config.projects.find(
+        (p) =>
+          p.id === request.projectId ||
+          p.name.toLowerCase() === request.projectId?.toLowerCase() ||
+          p.aliases?.some(
+            (a: string) => a.toLowerCase() === request.projectId?.toLowerCase(),
+          ),
       );
       if (project) {
         workspacePath = project.path;
-        console.log(`[WorkerClient] Using project "${project.name}" at ${workspacePath}`);
+        console.log(
+          `[WorkerClient] Using project "${project.name}" at ${workspacePath}`,
+        );
       } else {
         // Fall back to default
-        const defaultProject = this.config.projects.find(p => p.id === this.config.defaultProject) || this.config.projects[0];
+        const defaultProject =
+          this.config.projects.find(
+            (p) => p.id === this.config.defaultProject,
+          ) || this.config.projects[0];
         workspacePath = defaultProject.path;
-        console.log(`[WorkerClient] Project "${request.projectId}" not found, using default: ${workspacePath}`);
+        console.log(
+          `[WorkerClient] Project "${request.projectId}" not found, using default: ${workspacePath}`,
+        );
       }
     } else {
-      const defaultProject = this.config.projects.find(p => p.id === this.config.defaultProject) || this.config.projects[0];
+      const defaultProject =
+        this.config.projects.find((p) => p.id === this.config.defaultProject) ||
+        this.config.projects[0];
       workspacePath = defaultProject.path;
     }
 
@@ -339,9 +361,10 @@ export class WorkerClient extends EventEmitter {
     // Attempt reconnection
     if (this.reconnectAttempts < this.config.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      const delay = this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+      const delay =
+        this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
       console.log(
-        `[WorkerClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`
+        `[WorkerClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`,
       );
 
       setTimeout(() => {

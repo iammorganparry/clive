@@ -14,7 +14,10 @@ export function queryCommand(program: Command): void {
     .description("Query contracts by file path or contract ID")
     .option("-f, --file <path>", "Query contracts for a specific file")
     .option("-c, --contract <id>", "Get details for a specific contract")
-    .option("-t, --type <type>", "Filter by contract type (function, event, table, etc.)")
+    .option(
+      "-t, --type <type>",
+      "Filter by contract type (function, event, table, etc.)",
+    )
     .option("-r, --repo <repo>", "Filter by repository")
     .option("--invariants", "Show only contracts with invariants")
     .option("--json", "Output as JSON")
@@ -54,7 +57,12 @@ export function queryCommand(program: Command): void {
         if (result.invariants.length > 0) {
           console.log(pc.bold("Invariants:"));
           for (const inv of result.invariants) {
-            const icon = inv.severity === "error" ? "🔴" : inv.severity === "warning" ? "🟡" : "🔵";
+            const icon =
+              inv.severity === "error"
+                ? "🔴"
+                : inv.severity === "warning"
+                  ? "🟡"
+                  : "🔵";
             console.log(`  ${icon} ${inv.description}`);
           }
           console.log();
@@ -63,7 +71,9 @@ export function queryCommand(program: Command): void {
         if (result.errors.length > 0) {
           console.log(pc.bold("Possible Errors:"));
           for (const err of result.errors) {
-            console.log(`  - ${err.name}${err.description ? `: ${err.description}` : ""}`);
+            console.log(
+              `  - ${err.name}${err.description ? `: ${err.description}` : ""}`,
+            );
           }
           console.log();
         }
@@ -132,7 +142,10 @@ export function queryCommand(program: Command): void {
     });
 }
 
-function printContract(contract: ReturnType<typeof import("../../graph/contract.js").createContract>, detailed = false): void {
+function printContract(
+  contract: ReturnType<typeof import("../../graph/contract.js").createContract>,
+  detailed = false,
+): void {
   console.log(pc.cyan(pc.bold(contract.id)));
   console.log(`  Type: ${contract.type}`);
 
@@ -152,7 +165,12 @@ function printContract(contract: ReturnType<typeof import("../../graph/contract.
     if (contract.invariants.length > 0) {
       console.log(`  Invariants:`);
       for (const inv of contract.invariants) {
-        const icon = inv.severity === "error" ? "🔴" : inv.severity === "warning" ? "🟡" : "🔵";
+        const icon =
+          inv.severity === "error"
+            ? "🔴"
+            : inv.severity === "warning"
+              ? "🟡"
+              : "🔵";
         console.log(`    ${icon} ${inv.description}`);
       }
     }
@@ -162,7 +180,9 @@ function printContract(contract: ReturnType<typeof import("../../graph/contract.
     }
 
     if (contract.exposes.length > 0) {
-      console.log(`  Exposes: ${contract.exposes.map((e) => `${e.method} ${e.path}`).join(", ")}`);
+      console.log(
+        `  Exposes: ${contract.exposes.map((e) => `${e.method} ${e.path}`).join(", ")}`,
+      );
     }
 
     if (contract.publishes.length > 0) {

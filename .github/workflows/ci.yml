@@ -32,7 +32,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Lint
-        run: pnpm lint && pnpm lint:ws
+        run: yarn lint && yarn lint:ws
 
   format:
     runs-on: ubuntu-latest
@@ -43,7 +43,7 @@ jobs:
         uses: ./tooling/github/setup
 
       - name: Format
-        run: pnpm format
+        run: yarn format
 
   typecheck:
     runs-on: ubuntu-latest
@@ -54,32 +54,19 @@ jobs:
         uses: ./tooling/github/setup
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: yarn typecheck
 
-  test-go:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+      - name: Setup
+        uses: ./tooling/github/setup
 
-      - name: Run Go Tests
-        working-directory: ./apps/tui-go
-        run: go test ./... -v
+      - name: Copy env
+        shell: bash
+        run: cp .env.example .env
 
-      - name: Run Permission Approval Tests
-        working-directory: ./apps/tui-go
-        run: |
-          # Run permission approval tests specifically to ensure no regression
-          go test ./internal/process -run TestPermissionApproval -v
-
-          # Verify all tests passed
-          if [ $? -ne 0 ]; then
-            echo "❌ Permission approval tests failed - regression detected!"
-            exit 1
-          else
-            echo "✅ Permission approval tests passed - no regression"
-          fi
+      - name: Run Tests
+        run: yarn test

@@ -138,7 +138,9 @@ export class ContractGraph {
     const contracts: Contract[] = [];
     const relationships: Relationship[] = [];
 
-    const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+    const queue: Array<{ id: string; depth: number }> = [
+      { id: startId, depth: 0 },
+    ];
 
     while (queue.length > 0) {
       const { id, depth } = queue.shift()!;
@@ -207,7 +209,8 @@ export class ContractGraph {
    */
   findByFile(filePath: string): Contract[] {
     return this.getAllContracts().filter(
-      (c) => c.location?.file === filePath || c.location?.file.endsWith(filePath)
+      (c) =>
+        c.location?.file === filePath || c.location?.file.endsWith(filePath),
     );
   }
 
