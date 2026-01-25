@@ -1,30 +1,25 @@
 /**
  * useWorkerConnection Hook
  * Manages WebSocket connection to central Slack service as a worker.
- * Allows the TUI to receive and process interview requests from Slack.
+ * Uses XState for state management and WorkerConnectionManager for WebSocket lifecycle.
+ *
+ * The WebSocket connection is managed OUTSIDE React's render cycle to prevent
+ * infinite reconnection loops caused by useEffect dependency changes.
  */
 
-import { randomUUID } from "node:crypto";
-import * as os from "node:os";
-import * as path from "node:path";
 import type {
-  CentralToWorkerMessage,
   InterviewEvent,
   InterviewRequest,
-  WorkerHeartbeat,
-  WorkerProject,
-  WorkerRegistration,
   WorkerStatus,
-  WorkerToCentralMessage,
 } from "@clive/worker-protocol";
-import { useCallback, useEffect, useRef, useState } from "react";
-import WebSocket from "ws";
+import { useMachine } from "@xstate/react";
+import { useEffect, useRef } from "react";
+import { assign, setup } from "xstate";
+import { WorkerConnectionManager } from "../services/WorkerConnectionManager";
 import type { WorkerConfig } from "../types/views";
 
 // Re-export InterviewRequest for use in App.tsx
 export type { InterviewRequest };
-
-import { CentralToWorkerMessageSchema } from "@clive/worker-protocol";
 
 /**
  * Connection state for the worker
@@ -65,7 +60,7 @@ export interface WorkerCallbacks {
  */
 export interface UseWorkerConnectionResult extends WorkerConnectionState {
   /** Manually connect to the central service */
-  connect: () => Promise<void>;
+  connect: () => void;
   /** Disconnect from the central service */
   disconnect: () => void;
   /** Send an event to the central service */
@@ -75,387 +70,218 @@ export interface UseWorkerConnectionResult extends WorkerConnectionState {
 }
 
 /**
- * Generate a unique worker ID
+ * XState machine for worker connection state
+ * Mirrors the state from WorkerConnectionManager but provides React-friendly state updates
  */
-function generateWorkerId(): string {
-  return `worker-${randomUUID().slice(0, 8)}`;
-}
+const workerConnectionMachine = setup({
+  types: {
+    context: {} as {
+      status: WorkerStatus;
+      workerId: string | null;
+      activeSessions: string[];
+      error: string | null;
+    },
+    events: {} as
+      | { type: "STATUS_CHANGE"; status: WorkerStatus }
+      | { type: "ERROR"; error: string }
+      | { type: "CLEAR_ERROR" }
+      | { type: "SET_WORKER_ID"; workerId: string }
+      | { type: "SESSION_ADDED"; sessionId: string }
+      | { type: "SESSION_REMOVED"; sessionId: string },
+  },
+  actions: {
+    updateStatus: assign({
+      status: ({ event }) => {
+        if (event.type !== "STATUS_CHANGE") return "disconnected";
+        return event.status;
+      },
+    }),
+    setError: assign({
+      error: ({ event }) => {
+        if (event.type !== "ERROR") return null;
+        return event.error;
+      },
+    }),
+    clearError: assign({
+      error: null,
+    }),
+    setWorkerId: assign({
+      workerId: ({ event }) => {
+        if (event.type !== "SET_WORKER_ID") return null;
+        return event.workerId;
+      },
+    }),
+    addSession: assign({
+      activeSessions: ({ context, event }) => {
+        if (event.type !== "SESSION_ADDED") return context.activeSessions;
+        return [...context.activeSessions, event.sessionId];
+      },
+    }),
+    removeSession: assign({
+      activeSessions: ({ context, event }) => {
+        if (event.type !== "SESSION_REMOVED") return context.activeSessions;
+        return context.activeSessions.filter((id) => id !== event.sessionId);
+      },
+    }),
+  },
+}).createMachine({
+  id: "workerConnection",
+  initial: "idle",
+  context: {
+    status: "disconnected",
+    workerId: null,
+    activeSessions: [],
+    error: null,
+  },
+  states: {
+    idle: {
+      on: {
+        STATUS_CHANGE: { actions: "updateStatus" },
+        ERROR: { actions: "setError" },
+        CLEAR_ERROR: { actions: "clearError" },
+        SET_WORKER_ID: { actions: "setWorkerId" },
+        SESSION_ADDED: { actions: "addSession" },
+        SESSION_REMOVED: { actions: "removeSession" },
+      },
+    },
+  },
+});
 
 /**
  * Hook for managing worker connection to central Slack service
+ *
+ * The connection is managed outside React via WorkerConnectionManager.
+ * This hook just syncs state and provides actions.
  */
 export function useWorkerConnection(
   config: WorkerConfig | undefined,
   workspaceRoot: string,
   callbacks?: WorkerCallbacks,
 ): UseWorkerConnectionResult {
-  const [status, setStatus] = useState<WorkerStatus>("disconnected");
-  const [workerId, setWorkerId] = useState<string | null>(null);
-  const [activeSessions, setActiveSessions] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // XState machine for React state
+  const [state, send] = useMachine(workerConnectionMachine);
 
-  // Refs for WebSocket and intervals
-  const wsRef = useRef<WebSocket | null>(null);
-  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const isShuttingDownRef = useRef(false);
-  const workerIdRef = useRef<string>(generateWorkerId());
+  // Manager instance - created ONCE outside React render cycle
+  const managerRef = useRef<WorkerConnectionManager | null>(null);
 
-  // Constants
-  const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-  const RECONNECT_DELAY = 5000; // 5 seconds
-  const MAX_RECONNECT_ATTEMPTS = 10;
+  // Store callbacks in ref to avoid re-subscriptions
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
-  /**
-   * Get project info from workspace root
-   */
-  const getProject = useCallback((): WorkerProject => {
-    const projectName = path.basename(workspaceRoot);
-    return {
-      id: projectName,
-      name: projectName,
-      path: workspaceRoot,
-    };
-  }, [workspaceRoot]);
+  // Track if we've initialized to prevent double-init in StrictMode
+  const initializedRef = useRef(false);
 
-  /**
-   * Send a message to the central service
-   */
-  const send = useCallback((message: WorkerToCentralMessage): void => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error("[WorkerConnection] Cannot send - not connected");
+  // Initialize manager ONCE on mount
+  useEffect(() => {
+    if (initializedRef.current) {
       return;
     }
-    wsRef.current.send(JSON.stringify(message));
-  }, []);
+    initializedRef.current = true;
 
-  /**
-   * Send registration message
-   */
-  const register = useCallback((): void => {
-    if (!config) return;
+    // Create manager
+    const manager = new WorkerConnectionManager(workspaceRoot);
+    managerRef.current = manager;
 
-    const registration: WorkerRegistration = {
-      workerId: workerIdRef.current,
-      apiToken: config.token,
-      projects: [getProject()],
-      defaultProject: getProject().id,
-      hostname: os.hostname(),
-    };
-
-    send({
-      type: "register",
-      payload: registration,
-    });
-
-    console.log(
-      `[WorkerConnection] Registration sent for ${workerIdRef.current}`,
-    );
-  }, [config, getProject, send]);
-
-  /**
-   * Send heartbeat message
-   */
-  const sendHeartbeat = useCallback((): void => {
-    const heartbeat: WorkerHeartbeat = {
-      workerId: workerIdRef.current,
-      status,
-      activeSessions,
-      stats: {
-        cpuUsage: process.cpuUsage().user / 1000000,
-        memoryUsage: process.memoryUsage().heapUsed / 1024 / 1024,
-        uptime: process.uptime(),
-      },
-    };
-
-    send({
-      type: "heartbeat",
-      payload: heartbeat,
-    });
-  }, [status, activeSessions, send]);
-
-  /**
-   * Start heartbeat interval
-   */
-  const startHeartbeat = useCallback((): void => {
-    if (heartbeatTimerRef.current) {
-      clearInterval(heartbeatTimerRef.current);
-    }
-    heartbeatTimerRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
-  }, [sendHeartbeat]);
-
-  /**
-   * Stop heartbeat interval
-   */
-  const stopHeartbeat = useCallback((): void => {
-    if (heartbeatTimerRef.current) {
-      clearInterval(heartbeatTimerRef.current);
-      heartbeatTimerRef.current = null;
-    }
-  }, []);
-
-  // Store callbacks in a ref to avoid triggering reconnects
-  const callbacksRef = useRef<WorkerCallbacks | undefined>(callbacks);
-  useEffect(() => {
-    callbacksRef.current = callbacks;
-  }, [callbacks]);
-
-  // Ref to store connectToService to break circular dependency with handleDisconnect
-  const connectToServiceRef = useRef<(() => Promise<void>) | null>(null);
-
-  /**
-   * Handle incoming message from central service
-   */
-  const handleMessage = useCallback(
-    (data: string): void => {
-      try {
-        const parsed = JSON.parse(data);
-        const result = CentralToWorkerMessageSchema.safeParse(parsed);
-
-        if (!result.success) {
-          console.error("[WorkerConnection] Invalid message:", result.error);
-          return;
-        }
-
-        const message = result.data as CentralToWorkerMessage;
-        console.log(`[WorkerConnection] Received: ${message.type}`);
-
-        switch (message.type) {
-          case "start_interview": {
-            const request = message.payload as InterviewRequest;
-            console.log(
-              `[WorkerConnection] Interview request: ${request.sessionId}`,
-            );
-            setActiveSessions((prev) => [...prev, request.sessionId]);
-            setStatus("busy");
-            // Call the callback to trigger interview execution
-            callbacksRef.current?.onInterviewRequest?.(request);
-            break;
-          }
-
-          case "answer": {
-            const answerPayload = message.payload as {
-              sessionId: string;
-              toolUseId: string;
-              answers: Record<string, string>;
-            };
-            console.log(
-              `[WorkerConnection] Answer for session: ${answerPayload.sessionId}`,
-            );
-            callbacksRef.current?.onAnswer?.(
-              answerPayload.sessionId,
-              answerPayload.toolUseId,
-              answerPayload.answers,
-            );
-            break;
-          }
-
-          case "message": {
-            const msgPayload = message.payload as {
-              sessionId: string;
-              message: string;
-            };
-            console.log(
-              `[WorkerConnection] Message for session: ${msgPayload.sessionId}`,
-            );
-            callbacksRef.current?.onMessage?.(
-              msgPayload.sessionId,
-              msgPayload.message,
-            );
-            break;
-          }
-
-          case "cancel": {
-            const cancelPayload = message.payload as { sessionId: string };
-            console.log(
-              `[WorkerConnection] Cancel session: ${cancelPayload.sessionId}`,
-            );
-            setActiveSessions((prev) =>
-              prev.filter((id) => id !== cancelPayload.sessionId),
-            );
-            if (activeSessions.length <= 1) {
-              setStatus("ready");
-            }
-            callbacksRef.current?.onCancel?.(cancelPayload.sessionId);
-            break;
-          }
-
-          case "ping":
-            send({ type: "pong" });
-            break;
-        }
-      } catch (err) {
-        console.error("[WorkerConnection] Failed to parse message:", err);
-      }
-    },
-    [activeSessions.length, send],
-  );
-
-  /**
-   * Handle disconnection with reconnection logic
-   */
-  const handleDisconnect = useCallback(
-    (reason: string): void => {
-      setStatus("disconnected");
-      stopHeartbeat();
-
-      if (isShuttingDownRef.current) {
-        return;
-      }
-
-      setError(`Disconnected: ${reason}`);
-
-      // Attempt reconnection with exponential backoff
-      if (
-        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS &&
-        config?.enabled
-      ) {
-        reconnectAttemptsRef.current++;
-        const delay = RECONNECT_DELAY * 2 ** (reconnectAttemptsRef.current - 1);
-        console.log(
-          `[WorkerConnection] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`,
-        );
-
-        setTimeout(() => {
-          if (!isShuttingDownRef.current && config?.enabled) {
-            connectToServiceRef.current?.();
-          }
-        }, delay);
-      } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        setError("Max reconnect attempts reached");
-      }
-    },
-    [config?.enabled, stopHeartbeat],
-  );
-
-  /**
-   * Connect to the central service
-   */
-  const connectToService = useCallback(async (): Promise<void> => {
-    if (!config || !config.enabled || !config.centralUrl || !config.token) {
-      return;
-    }
-
-    if (isShuttingDownRef.current) {
-      return;
-    }
-
-    console.log(`[WorkerConnection] Connecting to ${config.centralUrl}...`);
-    setStatus("connecting");
-    setError(null);
-
-    return new Promise((resolve, reject) => {
-      try {
-        const ws = new WebSocket(config.centralUrl, {
-          headers: {
-            Authorization: `Bearer ${config.token}`,
-          },
-        });
-
-        ws.on("open", () => {
-          console.log("[WorkerConnection] WebSocket connected");
-          wsRef.current = ws;
-          reconnectAttemptsRef.current = 0;
-          setStatus("ready");
-          setWorkerId(workerIdRef.current);
-          register();
-          startHeartbeat();
-          resolve();
-        });
-
-        ws.on("message", (data) => {
-          handleMessage(data.toString());
-        });
-
-        ws.on("close", (code, reason) => {
-          console.log(`[WorkerConnection] WebSocket closed: ${code} ${reason}`);
-          wsRef.current = null;
-          handleDisconnect(reason.toString() || `Code: ${code}`);
-        });
-
-        ws.on("error", (err) => {
-          console.error("[WorkerConnection] WebSocket error:", err);
-          setError(err.message);
-          reject(err);
-        });
-      } catch (err) {
-        const error = err as Error;
-        setError(error.message);
-        reject(err);
+    // Set up event listeners (these sync manager state to React state)
+    manager.on("status", (status: WorkerStatus) => {
+      send({ type: "STATUS_CHANGE", status });
+      if (status === "ready" || status === "busy") {
+        send({ type: "SET_WORKER_ID", workerId: manager.workerId });
       }
     });
-  }, [config, register, startHeartbeat, handleMessage, handleDisconnect]);
 
-  // Keep the ref updated with the latest connectToService function
-  useEffect(() => {
-    connectToServiceRef.current = connectToService;
-  }, [connectToService]);
-
-  /**
-   * Disconnect from the central service
-   */
-  const disconnect = useCallback((): void => {
-    console.log("[WorkerConnection] Disconnecting...");
-    isShuttingDownRef.current = true;
-    stopHeartbeat();
-
-    if (wsRef.current) {
-      wsRef.current.close(1000, "Worker shutting down");
-      wsRef.current = null;
-    }
-
-    setStatus("disconnected");
-    setWorkerId(null);
-    setActiveSessions([]);
-  }, [stopHeartbeat]);
-
-  /**
-   * Send an event to the central service
-   */
-  const sendEvent = useCallback(
-    (event: InterviewEvent): void => {
-      send({
-        type: "event",
-        payload: event,
-      });
-    },
-    [send],
-  );
-
-  /**
-   * Mark a session as complete and remove from active sessions
-   */
-  const completeSession = useCallback((sessionId: string): void => {
-    setActiveSessions((prev) => {
-      const updated = prev.filter((id) => id !== sessionId);
-      if (updated.length === 0) {
-        setStatus("ready");
-      }
-      return updated;
+    manager.on("error", (error: string) => {
+      send({ type: "ERROR", error });
     });
-  }, []);
 
-  // Auto-connect on mount if configured
-  useEffect(() => {
+    manager.on("sessionAdded", (sessionId: string) => {
+      send({ type: "SESSION_ADDED", sessionId });
+    });
+
+    manager.on("sessionRemoved", (sessionId: string) => {
+      send({ type: "SESSION_REMOVED", sessionId });
+    });
+
+    // Forward events to callbacks
+    manager.on("interviewRequest", (request: InterviewRequest) => {
+      callbacksRef.current?.onInterviewRequest?.(request);
+    });
+
+    manager.on("answer", (sessionId: string, toolUseId: string, answers: Record<string, string>) => {
+      callbacksRef.current?.onAnswer?.(sessionId, toolUseId, answers);
+    });
+
+    manager.on("message", (sessionId: string, message: string) => {
+      callbacksRef.current?.onMessage?.(sessionId, message);
+    });
+
+    manager.on("cancel", (sessionId: string) => {
+      callbacksRef.current?.onCancel?.(sessionId);
+    });
+
+    // Configure and auto-connect if enabled
+    manager.configure(config);
     if (config?.enabled && config?.autoConnect !== false) {
-      isShuttingDownRef.current = false;
-      connectToService().catch((err) => {
-        console.error("[WorkerConnection] Auto-connect failed:", err);
-      });
+      manager.connect();
     }
 
+    // Cleanup on unmount
     return () => {
-      disconnect();
+      manager.destroy();
+      managerRef.current = null;
+      initializedRef.current = false;
     };
-  }, [config?.enabled, config?.autoConnect, connectToService, disconnect]);
+    // Only run on mount/unmount - config changes handled separately
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle config changes (separate from initialization)
+  useEffect(() => {
+    const manager = managerRef.current;
+    if (!manager || !initializedRef.current) return;
+
+    manager.configure(config);
+
+    // If config becomes enabled and we're disconnected, connect
+    if (config?.enabled && config?.autoConnect !== false && !manager.isConnected) {
+      manager.reset();
+      manager.connect();
+    }
+
+    // If config becomes disabled, disconnect
+    if (!config?.enabled && manager.isConnected) {
+      manager.disconnect();
+    }
+  }, [config?.enabled, config?.autoConnect, config?.centralUrl, config?.token]);
+
+  // Actions that delegate to manager
+  const connect = () => {
+    const manager = managerRef.current;
+    if (manager) {
+      manager.reset();
+      manager.connect();
+    }
+  };
+
+  const disconnect = () => {
+    managerRef.current?.disconnect();
+  };
+
+  const sendEvent = (event: InterviewEvent) => {
+    managerRef.current?.sendEvent(event);
+  };
+
+  const completeSession = (sessionId: string) => {
+    managerRef.current?.completeSession(sessionId);
+  };
 
   return {
-    status,
-    workerId,
-    activeSessions,
-    error,
-    isConnected: status === "ready" || status === "busy",
-    connect: connectToService,
+    status: state.context.status,
+    workerId: state.context.workerId,
+    activeSessions: state.context.activeSessions,
+    error: state.context.error,
+    isConnected: state.context.status === "ready" || state.context.status === "busy",
+    connect,
     disconnect,
     sendEvent,
     completeSession,

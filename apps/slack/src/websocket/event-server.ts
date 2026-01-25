@@ -79,17 +79,6 @@ export class EventServer {
       this.handleMessage(socket, data.toString());
     });
 
-    // Set up close handler
-    socket.on("close", (code, reason) => {
-      console.log(`[EventServer] Worker disconnected: ${code} ${reason}`);
-      this.registry.unregisterBySocket(socket, reason.toString());
-    });
-
-    // Set up error handler
-    socket.on("error", (error) => {
-      console.error("[EventServer] Socket error:", error);
-    });
-
     // Send ping every 30 seconds
     const pingInterval = setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -97,8 +86,16 @@ export class EventServer {
       }
     }, 30000);
 
-    socket.on("close", () => {
+    // Set up close handler (single consolidated handler)
+    socket.on("close", (code, reason) => {
+      console.log(`[EventServer] Worker disconnected: ${code} ${reason}`);
       clearInterval(pingInterval);
+      this.registry.unregisterBySocket(socket, reason.toString());
+    });
+
+    // Set up error handler
+    socket.on("error", (error) => {
+      console.error("[EventServer] Socket error:", error);
     });
   }
 
