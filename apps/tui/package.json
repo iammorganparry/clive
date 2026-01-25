@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@clive/claude-services": "*",
+    "@clive/worker-protocol": "*",
+    "ws": "^8.18.0",
     "@opentui/core": "^0.1.74",
     "@opentui/react": "^0.1.74",
     "@tanstack/react-query": "^5.90.12",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.1",
+    "@types/ws": "^8.18.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@vitest/ui": "^4.0.16",

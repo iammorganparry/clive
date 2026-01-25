@@ -1,66 +1,54 @@
 /**
  * ModeSelectionView Component
- * Mode selection screen for Plan vs Build
- * Shows after selecting an issue/conversation, before launching Claude Code PTY
+ * Allows users to choose between Worker Mode and Interactive Mode
+ * Worker Mode: Receives and processes Slack interview requests
+ * Interactive Mode: Full TUI experience with issue tracking
  */
 
 import { OneDarkPro } from '../styles/theme';
-import type { Session } from '../types';
-import type { CliveMode } from '../types/views';
 
 interface ModeSelectionViewProps {
   width: number;
   height: number;
-  selectedIndex: number; // 0 = Plan, 1 = Build
-  sessionContext?: Session | null;
-  onSelectMode: (mode: CliveMode) => void;
-  onBack: () => void;
+  selectedIndex: number;
+  onNavigate: (index: number) => void;
+  onSelectWorker: () => void;
+  onSelectInteractive: () => void;
+  /** Whether worker config exists and is enabled */
+  workerConfigured?: boolean;
 }
-
-interface ModeOption {
-  id: CliveMode;
-  icon: string;
-  title: string;
-  description: string;
-  shortcut: string;
-}
-
-const MODE_OPTIONS: ModeOption[] = [
-  {
-    id: 'plan',
-    icon: '📋',
-    title: 'Plan Mode',
-    description: 'Research and create a plan',
-    shortcut: '1',
-  },
-  {
-    id: 'build',
-    icon: '🔨',
-    title: 'Build Mode',
-    description: 'Execute tasks and implement',
-    shortcut: '2',
-  },
-  {
-    id: 'review',
-    icon: '🔍',
-    title: 'Review Mode',
-    description: 'Verify work and test in browser',
-    shortcut: '3',
-  },
-];
 
 export function ModeSelectionView({
   width,
   height,
   selectedIndex,
-  sessionContext,
-  onSelectMode,
-  onBack,
+  onNavigate,
+  onSelectWorker,
+  onSelectInteractive,
+  workerConfigured = false,
 }: ModeSelectionViewProps) {
-  // Get session identifier for display
-  const sessionIdentifier = sessionContext?.linearData?.identifier
-    || sessionContext?.name?.substring(0, 20)
-    || null;
+  const options = [
+    {
+      id: 'interactive',
+      name: 'Interactive Mode',
+      description: 'Full TUI with issue tracking and planning',
+      detail: 'Browse issues, resume conversations, plan features locally',
+      icon: '> ',
+      color: OneDarkPro.syntax.blue,
+    },
+    {
+      id: 'worker',
+      name: 'Worker Mode',
+      description: workerConfigured
+        ? 'Connect to Slack as a worker'
+        : 'Set up Slack worker connection',
+      detail: workerConfigured
+        ? 'Receive @clive mentions and process requests from Slack'
+        : 'Configure connection to central Slack service',
+      icon: '< ',
+      color: OneDarkPro.syntax.green,
+    },
+  ];
 
   return (
     <box
@@ -71,28 +59,25 @@ export function ModeSelectionView({
       justifyContent="center"
       flexDirection="column"
     >
-      <box flexDirection="column" alignItems="center" width={50}>
-        {/* Header */}
-        <box flexDirection="row">
+      <box flexDirection="column" alignItems="center">
+        {/* Logo */}
+        <box flexDirection="row" marginBottom={2}>
           <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
           </text>
           <text fg={OneDarkPro.foreground.muted}>
             {' · Select Mode'}
           </text>
-          {sessionIdentifier && (
-            <>
-              <text fg={OneDarkPro.foreground.muted}>{' · '}</text>
-              <text fg={OneDarkPro.syntax.magenta}>[{sessionIdentifier}]</text>
-            </>
-          )}
         </box>
 
-        {/* Mode options */}
-        <box marginTop={3} flexDirection="column" width={45}>
-          {MODE_OPTIONS.map((option, i) => {
-            const isSelected = i === selectedIndex;
+        <text fg={OneDarkPro.foreground.secondary} marginTop={1}>
+          How would you like to use Clive?
+        </text>
 
+        {/* Options */}
+        <box marginTop={4} flexDirection="column" width={70}>
+          {options.map((option, i) => {
+            const isSelected = i === selectedIndex;
             return (
               <box
                 key={option.id}
@@ -101,58 +86,41 @@ export function ModeSelectionView({
                     ? OneDarkPro.background.highlight
                     : OneDarkPro.background.secondary
                 }
-                borderStyle="rounded"
-                borderColor={
-                  isSelected
-                    ? option.id === 'plan'
-                      ? OneDarkPro.syntax.blue
-                      : option.id === 'build'
-                        ? OneDarkPro.syntax.yellow
-                        : OneDarkPro.syntax.green
-                    : OneDarkPro.ui.border
-                }
-                paddingLeft={2}
-                paddingRight={2}
-                paddingTop={1}
-                paddingBottom={1}
-                marginBottom={1}
-                flexDirection="column"
+                padding={2}
+                marginBottom={2}
+                borderStyle={isSelected ? 'rounded' : undefined}
+                borderColor={isSelected ? option.color : undefined}
               >
-                <box flexDirection="row">
-                  <text
-                    fg={
-                      isSelected
-                        ? option.id === 'plan'
-                          ? OneDarkPro.syntax.blue
-                          : option.id === 'build'
-                            ? OneDarkPro.syntax.yellow
-                            : OneDarkPro.syntax.green
-                        : OneDarkPro.foreground.primary
-                    }
-                    bold
-                  >
-                    {isSelected ? '▸ ' : '  '}
-                    {option.icon} {option.title}
-                  </text>
-                  <text fg={OneDarkPro.foreground.comment}>
-                    {' '}[{option.shortcut}]
+                <box flexDirection="row" alignItems="center">
+                  <text fg={option.color} bold={isSelected}>
+                    {isSelected ? option.icon : '  '}
+                    {option.name}
                   </text>
                 </box>
-                <text
-                  fg={OneDarkPro.foreground.muted}
-                  marginLeft={4}
-                >
+                <text fg={OneDarkPro.foreground.primary} marginTop={1}>
                   {option.description}
+                </text>
+                <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+                  {option.detail}
                 </text>
               </box>
             );
           })}
         </box>
 
-        {/* Keyboard hints */}
+        {/* Worker status indicator */}
+        {workerConfigured && (
+          <box marginTop={2} padding={1} backgroundColor={OneDarkPro.background.secondary}>
+            <text fg={OneDarkPro.syntax.green}>
+              Worker connection configured
+            </text>
+          </box>
+        )}
+
+        {/* Shortcuts */}
         <box marginTop={4} flexDirection="column" alignItems="center">
-          <text fg={OneDarkPro.foreground.muted}>
-            ↑↓ Navigate  •  1/2/3 Quick Select  •  Enter Select  •  Esc Back
+          <text fg={OneDarkPro.foreground.secondary}>
+            1-2 Select  |  Up/Down Navigate  |  Enter Confirm  |  Esc Back
           </text>
         </box>
       </box>

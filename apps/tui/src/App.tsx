@@ -1,15 +1,16 @@
 /**
  * Root App component for Clive TUI
  * Integrates state management, components, and keyboard handling
- * View flow: Setup -> Selection -> Main <-> Help
+ * View flow: Setup -> Mode Selection -> (Worker | Selection -> Main) <-> Help
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTerminalDimensions, useKeyboard } from '@opentui/react';
 import { OneDarkPro } from './styles/theme';
 import { useAppState } from './hooks/useAppState';
 import { useViewMode } from './hooks/useViewMode';
+import { useWorkerConnection, type InterviewRequest } from './hooks/useWorkerConnection';
 import { Sidebar } from './components/Sidebar';
 import { OutputPanel, type OutputPanelRef } from './components/OutputPanel';
 import { DynamicInput } from './components/DynamicInput';
@@ -19,10 +20,15 @@ import { SelectionView } from './components/SelectionView';
 import { HelpView } from './components/HelpView';
 import { LinearConfigFlow } from './components/LinearConfigFlow';
 import { GitHubConfigFlow } from './components/GitHubConfigFlow';
+import { ModeSelectionView } from './components/ModeSelectionView';
+import { WorkerConfigFlow } from './components/WorkerConfigFlow';
+import { WorkerView } from './components/WorkerView';
 import { type Conversation } from './services/ConversationService';
 import { useConversations, useAllConversations } from './hooks/useConversations';
 import { useSelectionState } from './hooks/useSelectionState';
-import type { Session } from './types';
+import { WorkerSessionManager, type ChatMessage } from './services/WorkerSessionManager';
+import type { Session, OutputLine } from './types';
+import type { WorkerConfig } from './types/views';
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -34,6 +40,43 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Convert ChatMessage from WorkerSessionManager to OutputLine for display
+ */
+function convertChatMessageToOutputLine(msg: ChatMessage): OutputLine {
+  switch (msg.type) {
+    case 'user':
+      return { type: 'user', text: msg.content };
+    case 'assistant':
+      return { type: 'assistant', text: msg.content };
+    case 'question':
+      return {
+        type: 'question',
+        text: msg.content,
+        question: msg.questionData
+          ? {
+              toolUseID: msg.questionData.toolUseID,
+              questions: msg.questionData.questions.map((q) => ({
+                header: q.header,
+                question: q.question,
+                options: q.options.map((o) => ({
+                  label: o.label,
+                  description: o.description,
+                })),
+                multiSelect: q.multiSelect,
+              })),
+            }
+          : undefined,
+        toolUseID: msg.questionData?.toolUseID,
+      };
+    case 'error':
+      return { type: 'stderr', text: msg.content };
+    case 'system':
+    default:
+      return { type: 'system', text: msg.content };
+  }
+}
+
 function AppContent() {
   // Terminal dimensions (responsive to terminal size)
   const { width, height } = useTerminalDimensions();
@@ -43,12 +86,19 @@ function AppContent() {
     viewMode,
     config,
     goToSetup,
+    goToModeSelection,
+    goToWorkerSetup,
+    goToWorker,
     goToSelection,
     goToMain,
     goToHelp,
     goBack,
     updateConfig,
   } = useViewMode();
+
+  // Mode selection state
+  const [modeSelectedIndex, setModeSelectedIndex] = useState(0);
+  const modeOptions = ['interactive', 'worker'];
 
   // Setup view state
   const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
@@ -66,6 +116,11 @@ function AppContent() {
   const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
   const lastScrollHeight = useRef(0);
 
+  // Worker mode state
+  const [workerOutputLines, setWorkerOutputLines] = useState<OutputLine[]>([]);
+  const [workerIsRunning, setWorkerIsRunning] = useState(false);
+  const sessionManagerRef = useRef<WorkerSessionManager | null>(null);
+
   // Clear preFillValue after it's been used
   useEffect(() => {
     if (preFillValue && inputFocused) {
@@ -79,6 +134,82 @@ function AppContent() {
   // Get workspace root from user's current terminal directory
   // In development, this can be overridden via --workspace flag
   const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
+
+  // Worker callbacks for handling messages from central service
+  const handleWorkerInterviewRequest = useCallback((request: InterviewRequest) => {
+    setWorkerIsRunning(true);
+    setWorkerOutputLines([]); // Clear previous output
+    sessionManagerRef.current?.startInterview(request, (event) => {
+      workerConnectionRef.current?.sendEvent(event);
+    });
+  }, []);
+
+  const handleWorkerAnswer = useCallback((sessionId: string, toolUseId: string, answers: Record<string, string>) => {
+    sessionManagerRef.current?.sendAnswer(sessionId, toolUseId, answers);
+  }, []);
+
+  const handleWorkerMessage = useCallback((sessionId: string, message: string) => {
+    sessionManagerRef.current?.sendMessage(sessionId, message);
+  }, []);
+
+  const handleWorkerCancel = useCallback((sessionId: string) => {
+    sessionManagerRef.current?.cancelSession(sessionId);
+    setWorkerIsRunning(false);
+  }, []);
+
+  // Worker connection (only active when in worker mode or when config.worker.enabled)
+  const workerConnection = useWorkerConnection(
+    viewMode === 'worker' ? config?.worker : undefined,
+    workspaceRoot,
+    {
+      onInterviewRequest: handleWorkerInterviewRequest,
+      onAnswer: handleWorkerAnswer,
+      onMessage: handleWorkerMessage,
+      onCancel: handleWorkerCancel,
+    }
+  );
+
+  // Ref to access workerConnection in callbacks (avoid circular dependency)
+  const workerConnectionRef = useRef(workerConnection);
+  useEffect(() => {
+    workerConnectionRef.current = workerConnection;
+  }, [workerConnection]);
+
+  // Initialize WorkerSessionManager when in worker mode
+  useEffect(() => {
+    if (viewMode === 'worker') {
+      const sessionManager = new WorkerSessionManager(workspaceRoot);
+      sessionManagerRef.current = sessionManager;
+
+      // Listen for messages from session manager
+      const handleMessage = (_sessionId: string, msg: ChatMessage) => {
+        const outputLine = convertChatMessageToOutputLine(msg);
+        setWorkerOutputLines((prev) => [...prev, outputLine]);
+      };
+
+      const handleComplete = (sessionId: string) => {
+        setWorkerIsRunning(false);
+        workerConnectionRef.current?.completeSession(sessionId);
+      };
+
+      const handleError = (_sessionId: string, error: string) => {
+        setWorkerOutputLines((prev) => [...prev, { type: 'stderr', text: error }]);
+      };
+
+      sessionManager.on('message', handleMessage);
+      sessionManager.on('complete', handleComplete);
+      sessionManager.on('error', handleError);
+
+      return () => {
+        sessionManager.off('message', handleMessage);
+        sessionManager.off('complete', handleComplete);
+        sessionManager.off('error', handleError);
+        sessionManager.closeAll();
+        sessionManagerRef.current = null;
+      };
+    }
+    return undefined;
+  }, [viewMode, workspaceRoot]);
 
   // Log workspace context on startup
   useEffect(() => {
@@ -207,12 +338,12 @@ function AppContent() {
     }
 
     // Skip keyboard handling in config flows
-    if (configFlow === 'linear' || configFlow === 'beads') {
+    if (configFlow === 'linear' || configFlow === 'beads' || viewMode === 'worker_setup') {
       return;
     }
 
     // Global shortcuts
-    if (event.sequence === 'q' && viewMode !== 'main') {
+    if (event.sequence === 'q' && viewMode !== 'main' && viewMode !== 'worker') {
       process.exit(0);
     }
 
@@ -264,6 +395,40 @@ function AppContent() {
         } else if (selectedOption === 'beads') {
           setConfigFlow('beads');
         }
+      }
+    } else if (viewMode === 'mode_selection') {
+      if (event.name === 'escape') {
+        goBack();
+        return;
+      }
+      // Arrow key navigation
+      if (event.name === 'up' || event.sequence === 'k') {
+        setModeSelectedIndex((prev) => (prev > 0 ? prev - 1 : modeOptions.length - 1));
+      }
+      if (event.name === 'down' || event.sequence === 'j') {
+        setModeSelectedIndex((prev) => (prev < modeOptions.length - 1 ? prev + 1 : 0));
+      }
+      // Number key selection
+      if (event.sequence && /^[1-2]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence) - 1;
+        handleModeSelect(modeOptions[index]);
+      }
+      if (event.name === 'return') {
+        handleModeSelect(modeOptions[modeSelectedIndex]);
+      }
+    } else if (viewMode === 'worker') {
+      if (event.name === 'escape' || event.sequence === 'q') {
+        goToModeSelection();
+        return;
+      }
+      if (event.sequence === 'r' && workerConnection.status === 'disconnected') {
+        workerConnection.connect();
+        return;
+      }
+      if (event.ctrl && event.name === 'c') {
+        cleanup();
+        workerConnection.disconnect();
+        process.exit(0);
       }
     } else if (viewMode === 'selection') {
       // Escape - clear search, go back to level 1, or go back
@@ -429,6 +594,33 @@ function AppContent() {
     }
   });
 
+  // Handler for mode selection
+  const handleModeSelect = (mode: string) => {
+    if (mode === 'interactive') {
+      goToSelection();
+    } else if (mode === 'worker') {
+      // Check if worker is already configured
+      if (config?.worker?.enabled && config?.worker?.token) {
+        goToWorker();
+      } else {
+        goToWorkerSetup();
+      }
+    }
+  };
+
+  // Handler for worker config completion
+  const handleWorkerConfigComplete = (workerConfig: WorkerConfig) => {
+    updateConfig({
+      ...config!,
+      worker: workerConfig,
+    });
+    if (workerConfig.enabled) {
+      goToWorker();
+    } else {
+      goToModeSelection();
+    }
+  };
+
   // Handler for creating new session without issue
   const handleCreateNewWithoutIssue = () => {
     goToMain();
@@ -465,13 +657,13 @@ function AppContent() {
 
 
   // Handler for config flow completion
-  const handleConfigComplete = (config: { apiKey: string; teamID: string }) => {
+  const handleConfigComplete = (configData: { apiKey: string; teamID: string }) => {
     updateConfig({
       issueTracker: configFlow as 'linear' | 'beads',
-      [configFlow as string]: config,
+      [configFlow as string]: configData,
     });
     setConfigFlow(null);
-    goToSelection();
+    goToModeSelection();
   };
 
   // Render appropriate view based on viewMode
@@ -489,13 +681,13 @@ function AppContent() {
     }
 
     if (configFlow === 'beads') {
-      // Beads doesn't need configuration, just update config and go to selection
+      // Beads doesn't need configuration, just update config and go to mode selection
       updateConfig({
         issueTracker: 'beads',
         beads: {},
       });
       setConfigFlow(null);
-      goToSelection();
+      goToModeSelection();
       return null;
     }
 
@@ -508,6 +700,59 @@ function AppContent() {
         onCancel={() => process.exit(0)}
         selectedIndex={setupSelectedIndex}
         onNavigate={setSetupSelectedIndex}
+      />
+    );
+  }
+
+  // Mode selection view
+  if (viewMode === 'mode_selection') {
+    return (
+      <ModeSelectionView
+        width={width}
+        height={height}
+        selectedIndex={modeSelectedIndex}
+        onNavigate={setModeSelectedIndex}
+        onSelectWorker={() => {
+          if (config?.worker?.enabled && config?.worker?.token) {
+            goToWorker();
+          } else {
+            goToWorkerSetup();
+          }
+        }}
+        onSelectInteractive={goToSelection}
+        workerConfigured={!!(config?.worker?.enabled && config?.worker?.token)}
+      />
+    );
+  }
+
+  // Worker setup view
+  if (viewMode === 'worker_setup') {
+    return (
+      <WorkerConfigFlow
+        width={width}
+        height={height}
+        existingConfig={config?.worker}
+        onComplete={handleWorkerConfigComplete}
+        onCancel={goToModeSelection}
+      />
+    );
+  }
+
+  // Worker view
+  if (viewMode === 'worker') {
+    return (
+      <WorkerView
+        width={width}
+        height={height}
+        workerStatus={workerConnection.status}
+        workerId={workerConnection.workerId}
+        activeSessions={workerConnection.activeSessions}
+        error={workerConnection.error}
+        outputLines={workerOutputLines}
+        isRunning={workerIsRunning}
+        workspaceRoot={workspaceRoot}
+        onExit={goToModeSelection}
+        onReconnect={workerConnection.connect}
       />
     );
   }

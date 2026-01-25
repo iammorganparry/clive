@@ -119,7 +119,7 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     process.exit(1);
   }
 
-  // Create HTTP receiver with custom routes for health checks
+  // Create HTTP receiver with custom routes for health checks and worker token
   const receiver = new HTTPReceiver({
     signingSecret: config.slackSigningSecret,
     port: config.port,
@@ -130,6 +130,16 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
         handler: (_req, res) => {
           res.writeHead(200);
           res.end("OK");
+        },
+      },
+      {
+        path: "/api/worker-token",
+        method: "GET",
+        handler: (_req, res) => {
+          // Return the worker token for seamless TUI setup
+          // This allows workers to auto-configure without manual token entry
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ token: config.workerApiToken }));
         },
       },
     ],
