@@ -122,3 +122,11 @@ export {
 
 // Generators
 export { generateMarkdownDocs, generateClaudeMd } from "./generators/markdown.js";
+
+export {
+  annotateSourceFiles,
+  injectAnnotation,
+  formatAnnotationResults,
+  type AnnotateOptions,
+  type AnnotationResult,
+} from "./generators/code-annotator.js";

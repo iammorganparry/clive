@@ -46,6 +46,10 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  /**
+   * @contract BetterAuth.github
+   * @see contracts/system.md#BetterAuth.github
+   */
   socialProviders: {
     github: {
       clientId: githubClientId,
@@ -53,14 +57,26 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    /**
+     * @contract BetterAuth.jwt
+     * @see contracts/system.md#BetterAuth.jwt
+     */
     nextCookies(),
     jwt(),
     bearer(),
+    /**
+     * @contract BetterAuth.organization
+     * @see contracts/system.md#BetterAuth.organization
+     */
     organization({
       allowUserToCreateOrganization: true,
       creatorRole: "owner",
       membershipLimit: 100,
     }),
+    /**
+     * @contract BetterAuth.deviceAuthorization
+     * @see contracts/system.md#BetterAuth.deviceAuthorization
+     */
     deviceAuthorization({
       verificationUri: "/device",
     }),

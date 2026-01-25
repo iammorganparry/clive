@@ -10,6 +10,9 @@ const runtime = Runtime.defaultRuntime;
 export const repositoryRouter = {
   /**
    * Upsert a repository (create or update)
+   *
+   * @contract repository.upsert
+   * @see contracts/system.md#repository.upsert
    */
   upsert: protectedProcedure
     .input(
@@ -45,6 +48,9 @@ export const repositoryRouter = {
 
   /**
    * Get repository by root path
+   *
+   * @contract repository.get
+   * @see contracts/system.md#repository.get
    */
   get: protectedProcedure
     .input(
@@ -78,6 +84,9 @@ export const repositoryRouter = {
 
   /**
    * Get indexing status for a repository
+   *
+   * @contract repository.getStatus
+   * @see contracts/system.md#repository.getStatus
    */
   getStatus: protectedProcedure
     .input(
@@ -111,6 +120,9 @@ export const repositoryRouter = {
 
   /**
    * Upsert a file with embedding
+   *
+   * @contract repository.upsertFile
+   * @see contracts/system.md#repository.upsertFile
    */
   upsertFile: protectedProcedure
     .input(
@@ -147,6 +159,9 @@ export const repositoryRouter = {
 
   /**
    * Delete a file from the index
+   *
+   * @contract repository.deleteFile
+   * @see contracts/system.md#repository.deleteFile
    */
   deleteFile: protectedProcedure
     .input(
@@ -177,6 +192,9 @@ export const repositoryRouter = {
 
   /**
    * Delete multiple files from the index (bulk)
+   *
+   * @contract repository.deleteFiles
+   * @see contracts/system.md#repository.deleteFiles
    */
   deleteFiles: protectedProcedure
     .input(
@@ -207,6 +225,9 @@ export const repositoryRouter = {
 
   /**
    * Get file by path
+   *
+   * @contract repository.getFileByPath
+   * @see contracts/system.md#repository.getFileByPath
    */
   getFileByPath: protectedProcedure
     .input(
@@ -239,6 +260,9 @@ export const repositoryRouter = {
 
   /**
    * Get all file hashes for a repository (for incremental sync)
+   *
+   * @contract repository.getFileHashes
+   * @see contracts/system.md#repository.getFileHashes
    */
   getFileHashes: protectedProcedure
     .input(
@@ -267,6 +291,9 @@ export const repositoryRouter = {
 
   /**
    * Semantic search using vector embeddings
+   *
+   * @contract repository.searchFiles
+   * @see contracts/system.md#repository.searchFiles
    */
   searchFiles: protectedProcedure
     .input(

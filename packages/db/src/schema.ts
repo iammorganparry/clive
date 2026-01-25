@@ -33,6 +33,10 @@ export const CreatePostSchema = createInsertSchema(Post, {
 });
 
 // Better Auth tables
+/**
+ * @contract DB.user
+ * @see contracts/system.md#DB.user
+ */
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -46,6 +50,10 @@ export const user = pgTable("user", {
     .$onUpdateFn(() => sql`now()`),
 });
 
+/**
+ * @contract DB.session
+ * @see contracts/system.md#DB.session
+ */
 export const session = pgTable("session", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -63,6 +71,10 @@ export const session = pgTable("session", {
     .$onUpdateFn(() => sql`now()`),
 });
 
+/**
+ * @contract DB.account
+ * @see contracts/system.md#DB.account
+ */
 export const account = pgTable("account", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -106,6 +118,10 @@ export const jwks = pgTable("jwks", {
 });
 
 // Better Auth Organization plugin tables
+/**
+ * @contract DB.organization
+ * @see contracts/system.md#DB.organization
+ */
 export const organization = pgTable("organization", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -115,6 +131,10 @@ export const organization = pgTable("organization", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/**
+ * @contract DB.member
+ * @see contracts/system.md#DB.member
+ */
 export const member = pgTable("member", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id")
@@ -189,6 +209,10 @@ export const knowledgeBaseCategoryEnum = pgEnum("knowledge_base_category", [
   "improvements",
 ]);
 
+/**
+ * @contract DB.conversation
+ * @see contracts/system.md#DB.conversation
+ */
 export const conversation = pgTable("conversation", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -210,6 +234,10 @@ export const conversation = pgTable("conversation", {
     .$onUpdateFn(() => sql`now()`),
 });
 
+/**
+ * @contract DB.conversationMessage
+ * @see contracts/system.md#DB.conversationMessage
+ */
 export const conversationMessage = pgTable("conversation_message", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id")
@@ -222,6 +250,10 @@ export const conversationMessage = pgTable("conversation_message", {
 });
 
 // Codebase indexing tables
+/**
+ * @contract DB.repositories
+ * @see contracts/system.md#DB.repositories
+ */
 export const repositories = pgTable("repositories", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -240,6 +272,10 @@ export const repositories = pgTable("repositories", {
     .$onUpdateFn(() => sql`now()`),
 });
 
+/**
+ * @contract DB.files
+ * @see contracts/system.md#DB.files
+ */
 export const files = pgTable(
   "files",
   {
@@ -269,6 +305,10 @@ export const files = pgTable(
 );
 
 // Testing knowledge base table
+/**
+ * @contract DB.knowledgeBase
+ * @see contracts/system.md#DB.knowledgeBase
+ */
 export const knowledgeBase = pgTable(
   "knowledge_base",
   {
