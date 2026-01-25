@@ -35,7 +35,7 @@ describe("createProcedureBuilder", () => {
       const handler = ({
         ctx,
       }: {
-        input: undefined;
+        input: void;
         ctx: { userId: string };
       }) => Effect.succeed({ result: "Query result" });
 
