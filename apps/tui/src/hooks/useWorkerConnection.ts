@@ -200,6 +200,9 @@ export function useWorkerConnection(
     callbacksRef.current = callbacks;
   }, [callbacks]);
 
+  // Ref to store connectToService to break circular dependency with handleDisconnect
+  const connectToServiceRef = useRef<(() => Promise<void>) | null>(null);
+
   /**
    * Handle incoming message from central service
    */
@@ -315,14 +318,14 @@ export function useWorkerConnection(
 
         setTimeout(() => {
           if (!isShuttingDownRef.current && config?.enabled) {
-            connectToService();
+            connectToServiceRef.current?.();
           }
         }, delay);
       } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
         setError("Max reconnect attempts reached");
       }
     },
-    [config?.enabled, stopHeartbeat, connectToService],
+    [config?.enabled, stopHeartbeat],
   );
 
   /**
@@ -382,6 +385,11 @@ export function useWorkerConnection(
       }
     });
   }, [config, register, startHeartbeat, handleMessage, handleDisconnect]);
+
+  // Keep the ref updated with the latest connectToService function
+  useEffect(() => {
+    connectToServiceRef.current = connectToService;
+  }, [connectToService]);
 
   /**
    * Disconnect from the central service

@@ -314,6 +314,16 @@ function AppContent() {
   // Selection state using XState machine
   const selectionState = useSelectionState(sessions, conversations);
 
+  // Handler for conversation resume (defined early for auto-resume useEffect)
+  const handleConversationResume = useCallback(
+    (conversation: Conversation) => {
+      console.log("[Clive TUI] Resuming conversation:", conversation.sessionId);
+      executeCommand(`/plan --resume=${conversation.sessionId}`);
+      goToMain();
+    },
+    [executeCommand, goToMain],
+  );
+
   // Auto-resume if exactly 1 conversation
   useEffect(() => {
     // Only auto-resume when in selection view and conversations are loaded
@@ -692,13 +702,6 @@ function AppContent() {
     goToMain();
     setInputFocused(true);
     setPreFillValue("/plan");
-  };
-
-  // Handler for conversation resume
-  const handleConversationResume = (conversation: Conversation) => {
-    console.log("[Clive TUI] Resuming conversation:", conversation.sessionId);
-    executeCommand(`/plan --resume=${conversation.sessionId}`);
-    goToMain();
   };
 
   // Wrapper for executeCommand to handle special commands

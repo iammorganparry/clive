@@ -1,5 +1,7 @@
 [build]
-builder = "railpack"
+builder = "DOCKERFILE"
+dockerfilePath = "apps/slack/Dockerfile"
+watchPatterns = ["apps/slack/**", "packages/core/**", "packages/worker-protocol/**", "packages/claude-services/**"]
 
 [deploy]
 startCommand = "yarn start"
