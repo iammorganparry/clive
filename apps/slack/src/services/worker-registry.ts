@@ -63,7 +63,11 @@ export class WorkerRegistry extends EventEmitter {
     if (this.workers.has(workerId)) {
       const existing = this.workers.get(workerId)!;
       if (existing.socket !== socket) {
-        return { success: false, error: "Worker ID already registered" };
+        // Force unregister old worker to allow reconnection with same ID
+        console.log(
+          `[WorkerRegistry] Replacing existing worker ${workerId} (reconnection)`,
+        );
+        this.unregister(workerId, "replaced by new connection");
       }
       // Same socket - just update
     }

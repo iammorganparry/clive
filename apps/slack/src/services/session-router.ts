@@ -43,12 +43,10 @@ export class SessionRouter extends EventEmitter {
     this.registry = registry;
 
     // Handle worker disconnection - reassign orphaned sessions
+    // Note: We only listen to workerDisconnected because unregister() (called on timeout)
+    // already emits workerDisconnected. Listening to both would cause double handling.
     this.registry.on("workerDisconnected", (workerId, reason) => {
       this.handleWorkerDisconnected(workerId, reason);
-    });
-
-    this.registry.on("workerTimeout", (workerId) => {
-      this.handleWorkerDisconnected(workerId, "timeout");
     });
   }
 

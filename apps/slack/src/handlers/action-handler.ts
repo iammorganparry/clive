@@ -10,8 +10,10 @@ import { Effect } from "effect";
 import { otherInputModal, section } from "../formatters/block-builder";
 import {
   ACTION_IDS,
+  formatErrorMessage,
   formatNonInitiatorNotice,
 } from "../formatters/question-formatter";
+import { extractProjectName } from "./mention-handler";
 import type { ClaudeManager } from "../services/claude-manager";
 import type { SlackService } from "../services/slack-service";
 import type { WorkerProxy } from "../services/worker-proxy";

@@ -54,6 +54,7 @@ export class WorkerClient extends EventEmitter {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempts = 0;
   private isShuttingDown = false;
+  private isConnecting = false;
 
   constructor(config: WorkerConfig) {
     super();
@@ -84,6 +85,27 @@ export class WorkerClient extends EventEmitter {
       return;
     }
 
+    // Prevent parallel connection attempts
+    if (this.isConnecting) {
+      console.log("[WorkerClient] Connection already in progress, skipping");
+      return;
+    }
+
+    // Clean up existing connection before creating new one
+    if (this.ws) {
+      console.log("[WorkerClient] Cleaning up existing connection");
+      this.ws.removeAllListeners();
+      if (
+        this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING
+      ) {
+        this.ws.close(1000, "Reconnecting");
+      }
+      this.ws = null;
+    }
+
+    this.isConnecting = true;
+
     console.log(
       `[WorkerClient] Connecting to ${this.config.centralServiceUrl}...`,
     );
@@ -99,6 +121,7 @@ export class WorkerClient extends EventEmitter {
 
         this.ws.on("open", () => {
           console.log("[WorkerClient] WebSocket connected");
+          this.isConnecting = false;
           this.reconnectAttempts = 0;
           this.register();
           this.startHeartbeat();
@@ -112,15 +135,18 @@ export class WorkerClient extends EventEmitter {
 
         this.ws.on("close", (code, reason) => {
           console.log(`[WorkerClient] WebSocket closed: ${code} ${reason}`);
+          this.isConnecting = false;
           this.handleDisconnect(reason.toString());
         });
 
         this.ws.on("error", (error) => {
           console.error("[WorkerClient] WebSocket error:", error);
+          this.isConnecting = false;
           this.emit("error", error);
           reject(error);
         });
       } catch (error) {
+        this.isConnecting = false;
         reject(error);
       }
     });

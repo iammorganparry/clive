@@ -13,6 +13,7 @@ import type {
   InterviewEvent,
   InterviewRequest,
   MessageRequest,
+  SessionMode,
 } from "@clive/worker-protocol";
 import type { WebSocket } from "ws";
 import type { AnswerPayload } from "../store/types";
@@ -80,6 +81,8 @@ export class WorkerProxy extends EventEmitter {
     initialPrompt: string,
     onEvent: InterviewEventCallback,
     projectId?: string,
+    mode?: SessionMode,
+    linearIssueUrls?: string[],
   ): Promise<{ workerId: string } | { error: string }> {
     console.log(
       `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
@@ -109,7 +112,8 @@ export class WorkerProxy extends EventEmitter {
       : undefined;
 
     // Get model based on mode (build uses sonnet, others use opus)
-    const model = mode === "build" ? "sonnet" : "opus";
+    const effectiveMode = mode ?? "plan";
+    const model = effectiveMode === "build" ? "sonnet" : "opus";
 
     // Create interview request
     const request: InterviewRequest = {
@@ -120,7 +124,7 @@ export class WorkerProxy extends EventEmitter {
       initialPrompt,
       model,
       projectId,
-      mode,
+      mode: effectiveMode,
       linearIssueUrls,
     };
 

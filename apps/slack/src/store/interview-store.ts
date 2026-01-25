@@ -10,6 +10,7 @@ import type {
   InterviewPhase,
   InterviewSession,
   QuestionData,
+  SessionMode,
 } from "./types";
 
 /**
@@ -46,7 +47,7 @@ export class InterviewStore {
       channel,
       initiatorId,
       phase: "starting",
-      mode,
+      mode: "plan",
       initialDescription,
       answers: {},
       createdAt: now,

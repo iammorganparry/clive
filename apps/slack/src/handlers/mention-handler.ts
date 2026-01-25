@@ -627,7 +627,7 @@ async function handleWorkerInterviewEvent(
               channel,
               text: "Build complete! Ready for review?",
               threadTs,
-              blocks: formatCompletionMessage(session.linearIssueUrls),
+              blocks: formatCompletionMessage(session.linearIssueUrls ?? []),
             }),
           );
           // Don't close session yet - wait for user choice
@@ -651,7 +651,7 @@ async function handleWorkerInterviewEvent(
                 text: "Planning complete!",
                 threadTs,
                 blocks: [
-                  ...formatCompletionMessage(session.linearIssueUrls),
+                  ...formatCompletionMessage(session.linearIssueUrls ?? []),
                   {
                     type: "actions",
                     block_id: `mode_transition_${threadTs}`,

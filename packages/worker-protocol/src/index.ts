@@ -49,6 +49,7 @@ export type {
   RegisterWorkerRequest,
   RegisterWorkerResponse,
   SessionInfo,
+  SessionMode,
   WorkerHeartbeat,
   WorkerInfo,
   WorkerProject,
