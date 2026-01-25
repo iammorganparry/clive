@@ -1,5 +1,6 @@
 [build]
 builder = "railpack"
+buildCommand = "yarn turbo run build --filter=@clive/slack..."
 
 [deploy]
 startCommand = "yarn workspace @clive/slack start"
