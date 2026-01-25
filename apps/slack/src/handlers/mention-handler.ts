@@ -54,7 +54,7 @@ const PROJECT_PATTERNS = [
  * Extract potential project name from description
  * Returns the first project-like match or undefined if none found
  */
-function extractProjectName(description: string): string | undefined {
+export function extractProjectName(description: string): string | undefined {
   if (!description) return undefined;
 
   for (const pattern of PROJECT_PATTERNS) {
@@ -311,7 +311,7 @@ async function handleInterviewEvent(
       ) {
         store.setPhase(threadTs, "completed");
 
-        // If we have Linear URLs, show them
+        // If we have Linear URLs, show them with build transition
         if (session.linearIssueUrls && session.linearIssueUrls.length > 0) {
           await Effect.runPromise(
             slackService.postMessage({
@@ -321,9 +321,10 @@ async function handleInterviewEvent(
               blocks: formatCompletionMessage(session.linearIssueUrls),
             }),
           );
+          // Don't close - wait for user choice
+        } else {
+          store.close(threadTs);
         }
-
-        store.close(threadTs);
       }
       break;
     }
@@ -558,7 +559,7 @@ async function handleWorkerInterviewEvent(
         store.addLinearIssueUrl(threadTs, url);
       }
 
-      // Post completion message with links
+      // Post completion message with mode transition buttons
       await Effect.runPromise(
         slackService.postMessage({
           channel,
@@ -568,8 +569,26 @@ async function handleWorkerInterviewEvent(
         }),
       );
 
-      // Close session
-      store.close(threadTs);
+      // Don't close session yet - wait for user to choose mode
+      break;
+    }
+
+    case "pr_created": {
+      // Store the PR URL
+      store.setPrUrl(threadTs, payload.url);
+
+      // Post PR link to Slack
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          text: `PR created: ${payload.url}`,
+          threadTs,
+          blocks: [
+            section(`:rocket: *Pull Request Created*`),
+            section(`<${payload.url}|View PR on GitHub>`),
+          ],
+        })
+      );
       break;
     }
 
@@ -596,19 +615,70 @@ async function handleWorkerInterviewEvent(
       ) {
         store.setPhase(threadTs, "completed");
 
-        // If we have Linear URLs, show them
-        if (session.linearIssueUrls && session.linearIssueUrls.length > 0) {
+        if (session.mode === "build") {
+          // Build PR info block if we have a PR
+          const prBlock = session.prUrl
+            ? section(`:white_check_mark: *PR:* <${session.prUrl}|View on GitHub>`)
+            : section(`:information_source: No PR was created (possibly working on branch)`);
+
+          // Offer review mode after build completes
           await Effect.runPromise(
             slackService.postMessage({
               channel,
-              text: "Planning complete!",
+              text: "Build complete! Ready for review?",
               threadTs,
               blocks: formatCompletionMessage(session.linearIssueUrls),
             }),
           );
+          // Don't close session yet - wait for user choice
+        } else if (session.mode === "review") {
+          // Review complete - show summary and close
+          await Effect.runPromise(
+            slackService.postMessage({
+              channel,
+              text: "Review complete!",
+              threadTs,
+              blocks: [section("*Review Complete*\nAll verification phases finished. Check Linear for any created tasks.")],
+            })
+          );
+          store.close(threadTs);
+        } else {
+          // Plan complete - if we have Linear URLs, show them with transition buttons
+          if (session.linearIssueUrls && session.linearIssueUrls.length > 0) {
+            await Effect.runPromise(
+              slackService.postMessage({
+                channel,
+                text: "Planning complete!",
+                threadTs,
+                blocks: [
+                  ...formatCompletionMessage(session.linearIssueUrls),
+                  {
+                    type: "actions",
+                    block_id: `mode_transition_${threadTs}`,
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Start Building", emoji: true },
+                        style: "primary",
+                        action_id: "start_build_mode",
+                        value: JSON.stringify({ threadTs, channel, urls: session.linearIssueUrls }),
+                      },
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Done for Now", emoji: true },
+                        action_id: "session_done",
+                        value: threadTs,
+                      },
+                    ],
+                  },
+                ],
+              })
+            );
+            // Don't close - wait for user choice
+          } else {
+            store.close(threadTs);
+          }
         }
-
-        store.close(threadTs);
       }
       break;
     }

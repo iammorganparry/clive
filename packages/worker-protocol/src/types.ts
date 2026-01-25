@@ -12,6 +12,11 @@
 export type WorkerStatus = "connecting" | "ready" | "busy" | "disconnected";
 
 /**
+ * Session mode for different workflow phases
+ */
+export type SessionMode = "plan" | "build" | "review";
+
+/**
  * Project/workspace that a worker has access to
  */
 export interface WorkerProject {
@@ -135,6 +140,10 @@ export interface InterviewRequest {
   model?: string;
   /** Target project ID for routing to appropriate worker */
   projectId?: string;
+  /** Session mode: plan, build, or review (defaults to 'plan') */
+  mode?: SessionMode;
+  /** Linear issue URLs for context in build/review modes */
+  linearIssueUrls?: string[];
 }
 
 /**
@@ -163,6 +172,7 @@ export type InterviewEventType =
   | "text"
   | "plan_ready"
   | "issues_created"
+  | "pr_created"
   | "error"
   | "timeout"
   | "complete";
@@ -190,6 +200,7 @@ export type InterviewEventPayload =
   | { type: "text"; content: string }
   | { type: "plan_ready"; content: string }
   | { type: "issues_created"; urls: string[] }
+  | { type: "pr_created"; url: string }
   | { type: "error"; message: string }
   | { type: "timeout" }
   | { type: "complete" };

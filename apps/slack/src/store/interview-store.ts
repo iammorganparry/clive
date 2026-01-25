@@ -46,6 +46,7 @@ export class InterviewStore {
       channel,
       initiatorId,
       phase: "starting",
+      mode,
       initialDescription,
       answers: {},
       createdAt: now,
@@ -61,6 +62,26 @@ export class InterviewStore {
     );
 
     return session;
+  }
+
+  /**
+   * Set session mode
+   */
+  setMode(threadTs: string, mode: SessionMode): void {
+    const session = this.sessions.get(threadTs);
+    if (session) {
+      session.mode = mode;
+      this.touch(threadTs);
+      console.log(`[InterviewStore] Session ${threadTs} mode: ${mode}`);
+    }
+  }
+
+  /**
+   * Get session mode
+   */
+  getMode(threadTs: string): SessionMode | undefined {
+    const session = this.sessions.get(threadTs);
+    return session?.mode;
   }
 
   /**
@@ -207,6 +228,18 @@ export class InterviewStore {
       }
       session.linearIssueUrls.push(url);
       this.touch(threadTs);
+    }
+  }
+
+  /**
+   * Set PR URL created during build
+   */
+  setPrUrl(threadTs: string, url: string): void {
+    const session = this.sessions.get(threadTs);
+    if (session) {
+      session.prUrl = url;
+      this.touch(threadTs);
+      console.log(`[InterviewStore] Session ${threadTs} PR: ${url}`);
     }
   }
 

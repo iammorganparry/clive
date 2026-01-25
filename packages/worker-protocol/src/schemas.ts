@@ -18,6 +18,12 @@ export const WorkerStatusSchema = z.enum([
   "disconnected",
 ]);
 
+export const SessionModeSchema = z.enum([
+  "plan",
+  "build",
+  "review",
+]);
+
 export const InterviewPhaseSchema = z.enum([
   "starting",
   "problem",
@@ -111,6 +117,10 @@ export const InterviewRequestSchema = z.object({
   model: z.string().optional(),
   /** Target project ID for routing */
   projectId: z.string().optional(),
+  /** Session mode: plan, build, or review */
+  mode: SessionModeSchema.optional().default("plan"),
+  /** Linear issue URLs for context in build/review modes */
+  linearIssueUrls: z.array(z.string()).optional(),
 });
 
 export const InterviewEventPayloadSchema = z.discriminatedUnion("type", [
@@ -119,6 +129,7 @@ export const InterviewEventPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), content: z.string() }),
   z.object({ type: z.literal("plan_ready"), content: z.string() }),
   z.object({ type: z.literal("issues_created"), urls: z.array(z.string()) }),
+  z.object({ type: z.literal("pr_created"), url: z.string() }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("timeout") }),
   z.object({ type: z.literal("complete") }),
@@ -132,6 +143,7 @@ export const InterviewEventSchema = z.object({
     "text",
     "plan_ready",
     "issues_created",
+    "pr_created",
     "error",
     "timeout",
     "complete",

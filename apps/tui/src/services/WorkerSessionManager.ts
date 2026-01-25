@@ -21,19 +21,24 @@ import type {
 import { Effect, type Runtime, Stream } from "effect";
 
 /**
+ * Session mode type
+ */
+export type SessionMode = 'plan' | 'build' | 'review';
+
+/**
  * Planning skill system prompt
- * Invokes the /clive:plan skill for conducting interviews
+ * Invokes the /clive-plan skill for conducting interviews
  */
 const PLANNING_SKILL_PROMPT = `# Clive Plan Mode
 
 You are the plan mode wrapper for Clive.
 
-**CRITICAL INSTRUCTION:** You MUST immediately invoke the /clive:plan skill.
+**CRITICAL INSTRUCTION:** You MUST immediately invoke the /clive-plan skill.
 DO NOT implement planning yourself. The skill handles all planning logic.
 
 ## Your Only Action
 
-Use the Skill tool NOW to invoke /clive:plan with the user's request.
+Use the Skill tool NOW to invoke /clive-plan with the user's request.
 
 Let the skill handle:
 - Stakeholder interviews (4 phases, one question at a time)
@@ -47,6 +52,82 @@ DO NOT:
 - Research the codebase yourself
 - Create Linear issues directly
 - Write plans without using the skill`;
+
+/**
+ * Build skill system prompt
+ * Invokes the /clive-build skill for task execution
+ */
+const BUILD_SKILL_PROMPT = `# Clive Build Mode
+
+You are the build mode wrapper for Clive.
+
+**CRITICAL INSTRUCTION:** You MUST immediately invoke the /clive-build skill.
+DO NOT implement tasks yourself. The skill handles all execution logic.
+
+## Your Only Action
+
+Use the Skill tool NOW to invoke /clive-build.
+
+Let the skill handle:
+- Fetching next pending task from Claude Tasks
+- Reading and applying global learnings
+- Executing the task with proper patterns
+- Updating Linear issue status
+- Committing code with appropriate messages
+
+DO NOT:
+- Implement code yourself
+- Manage tasks yourself
+- Create commits directly`;
+
+/**
+ * Review skill system prompt
+ * Invokes the /clive-review skill for work verification
+ */
+const REVIEW_SKILL_PROMPT = `# Clive Review Mode
+
+You are the review mode wrapper for Clive.
+
+**CRITICAL INSTRUCTION:** You MUST immediately invoke the /clive-review skill.
+DO NOT review code yourself. The skill handles all verification logic.
+
+## Your Only Action
+
+Use the Skill tool NOW to invoke /clive-review.
+
+Let the skill handle:
+- Loading context from session files
+- Code review against standards
+- Acceptance criteria verification
+- Browser testing with Playwright
+- Gap analysis and task creation
+- Comprehensive reporting
+
+DO NOT:
+- Review code yourself
+- Create tasks directly
+- Skip any verification phases`;
+
+/**
+ * Get system prompt for the given session mode
+ */
+function getSystemPromptForMode(mode: SessionMode): string {
+  switch (mode) {
+    case 'plan': return PLANNING_SKILL_PROMPT;
+    case 'build': return BUILD_SKILL_PROMPT;
+    case 'review': return REVIEW_SKILL_PROMPT;
+  }
+}
+
+/**
+ * Get default model for the given session mode
+ * Plan uses opus for comprehensive research
+ * Build uses sonnet for efficient execution
+ * Review uses opus for thorough verification
+ */
+function getModelForMode(mode: SessionMode): string {
+  return mode === 'build' ? 'sonnet' : 'opus';
+}
 
 /**
  * Chat message type for UI display
@@ -107,13 +188,20 @@ export class WorkerSessionManager extends EventEmitter {
     request: InterviewRequest,
     onEvent: (event: InterviewEvent) => void,
   ): Promise<void> {
-    const { sessionId, initialPrompt } = request;
+    const { sessionId, initialPrompt, mode = 'plan' } = request;
 
-    console.log(`[WorkerSessionManager] Starting interview ${sessionId}`);
+    console.log(`[WorkerSessionManager] Starting ${mode} session ${sessionId}`);
 
     if (this.activeSessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already exists`);
     }
+
+    // Build the user prompt based on mode
+    const userPromptContent = mode === 'build'
+      ? 'Execute the next pending task from Claude Tasks.'
+      : mode === 'review'
+      ? 'Review the completed work against acceptance criteria.'
+      : initialPrompt || 'Help me plan a new feature.';
 
     // Initialize session with user message
     const userMessage: ChatMessage = {
@@ -123,7 +211,12 @@ export class WorkerSessionManager extends EventEmitter {
       timestamp: new Date(),
     };
 
-    const prompt = initialPrompt
+    // Get the prompt to send to Claude based on mode
+    const prompt = mode === 'build'
+      ? 'Execute the next pending task from Claude Tasks.'
+      : mode === 'review'
+      ? 'Review the completed work against acceptance criteria.'
+      : initialPrompt
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
@@ -175,7 +268,7 @@ export class WorkerSessionManager extends EventEmitter {
 
       const handle = yield* cliService.execute({
         prompt,
-        systemPrompt: PLANNING_SKILL_PROMPT,
+        systemPrompt,
         workspaceRoot: self.workspaceRoot,
         model,
       });
@@ -321,6 +414,15 @@ export class WorkerSessionManager extends EventEmitter {
               onEvent,
             );
           }
+        }
+
+        // Detect GitHub PR URLs
+        const prMatch = content.match(/https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+/g);
+        if (prMatch && prMatch.length > 0) {
+          this.emitInterviewEvent(sessionId, {
+            type: 'pr_created',
+            url: prMatch[0],
+          }, onEvent);
         }
         break;
       }

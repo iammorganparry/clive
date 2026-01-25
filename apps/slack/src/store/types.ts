@@ -7,6 +7,11 @@
 import type { CliExecutionHandle } from "@clive/claude-services";
 
 /**
+ * Session mode for different workflow phases
+ */
+export type SessionMode = "plan" | "build" | "review";
+
+/**
  * Question data from AskUserQuestion tool
  */
 export interface QuestionData {
@@ -61,6 +66,8 @@ export interface InterviewSession {
   initiatorId: string;
   /** Current interview phase */
   phase: InterviewPhase;
+  /** Session mode: plan, build, or review */
+  mode: SessionMode;
   /** Initial description provided with @mention */
   initialDescription?: string;
   /** Currently pending question data */
@@ -83,6 +90,8 @@ export interface InterviewSession {
   planContent?: string;
   /** Created Linear issue URLs */
   linearIssueUrls?: string[];
+  /** PR created during build */
+  prUrl?: string;
   /** Error message if any */
   errorMessage?: string;
 }
@@ -103,6 +112,7 @@ export type InterviewEvent =
   | { type: "text"; content: string }
   | { type: "plan_ready"; content: string }
   | { type: "issues_created"; urls: string[] }
+  | { type: "pr_created"; url: string }
   | { type: "error"; message: string }
   | { type: "timeout" }
   | { type: "complete" };

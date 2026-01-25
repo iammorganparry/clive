@@ -70,6 +70,8 @@ export class WorkerProxy extends EventEmitter {
    * @param initialPrompt - Initial user request/description
    * @param onEvent - Callback for interview events
    * @param projectId - Optional project ID/name for routing to specific worker
+   * @param mode - Session mode: plan, build, or review (defaults to 'plan')
+   * @param linearIssueUrls - Linear issue URLs for context in build/review modes
    */
   async startInterview(
     threadTs: string,
@@ -106,6 +108,9 @@ export class WorkerProxy extends EventEmitter {
       ? this.router.getProjectPathForSession(threadTs)
       : undefined;
 
+    // Get model based on mode (build uses sonnet, others use opus)
+    const model = mode === "build" ? "sonnet" : "opus";
+
     // Create interview request
     const request: InterviewRequest = {
       sessionId: threadTs,
@@ -113,8 +118,10 @@ export class WorkerProxy extends EventEmitter {
       channel,
       initiatorId,
       initialPrompt,
-      model: "opus",
+      model,
       projectId,
+      mode,
+      linearIssueUrls,
     };
 
     // Track pending interview

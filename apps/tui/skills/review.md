@@ -1,5 +1,5 @@
 ---
-name: review
+name: clive-review
 description: Systematically verify completed work, test in browser, and create tasks for gaps
 category: review
 model: opus

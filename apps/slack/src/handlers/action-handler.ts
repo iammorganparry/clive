@@ -767,4 +767,242 @@ export function registerActionHandlerDistributed(
       `Please revise the plan with these changes: ${changeRequest}`,
     );
   });
+
+  // Handle "Start Building" button click for mode transition
+  app.action("start_build_mode", async ({ body, ack, respond }) => {
+    await ack();
+
+    const action = (body as BlockAction).actions[0] as ButtonAction;
+    const userId = body.user.id;
+    const actionValue = parseActionValue(action.value);
+
+    if (!actionValue) {
+      console.error("[ActionHandler] Invalid action value for start_build_mode");
+      return;
+    }
+
+    const { threadTs, channel, urls } = actionValue as {
+      threadTs: string;
+      channel: string;
+      urls: string[];
+    };
+
+    // Check if user is initiator
+    if (!store.isInitiator(threadTs, userId)) {
+      const session = store.get(threadTs);
+      if (session) {
+        await Effect.runPromise(
+          slackService.postEphemeral({
+            channel,
+            user: userId,
+            text: "Only the interview initiator can start build mode.",
+            threadTs,
+            blocks: formatNonInitiatorNotice(session.initiatorId),
+          })
+        );
+      }
+      return;
+    }
+
+    console.log(`[ActionHandler] Starting build mode for thread ${threadTs}`);
+
+    // Update session mode
+    store.setMode(threadTs, "build");
+    store.setPhase(threadTs, "starting");
+
+    // Extract parent issue (first URL, typically the epic)
+    const parentIssueUrl = urls[0];
+
+    // Build transition message blocks
+    const transitionBlocks = [
+      section(":hammer_and_wrench: *Starting Build Mode*"),
+    ];
+
+    // Show parent issue if we have one
+    if (parentIssueUrl) {
+      transitionBlocks.push(section(`:link: *Parent Issue:* <${parentIssueUrl}|View in Linear>`));
+    }
+
+    transitionBlocks.push(section("Executing tasks from Linear..."));
+
+    // Update the message to show transition with parent issue
+    if (respond) {
+      await respond({
+        replace_original: true,
+        text: "Starting build mode...",
+        blocks: transitionBlocks,
+      });
+    }
+
+    // Start build session via worker
+    try {
+      const session = store.get(threadTs);
+      const result = await workerProxy.startInterview(
+        `${threadTs}-build`,
+        channel,
+        userId,
+        "Execute the next pending task from Claude Tasks.",
+        async (event) => {
+          // Forward events through existing handler - events will be handled by mention handler
+          const pending = store.get(threadTs);
+          if (pending) {
+            store.touch(threadTs);
+          }
+        },
+        session?.initialDescription ? extractProjectName(session.initialDescription) : undefined,
+        "build",
+        urls
+      );
+
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
+
+      store.setWorkerId(threadTs, result.workerId);
+    } catch (error) {
+      console.error(`[ActionHandler] Failed to start build mode:`, error);
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          text: `Failed to start build mode: ${error}`,
+          threadTs,
+          blocks: formatErrorMessage(String(error)),
+        })
+      );
+    }
+  });
+
+  // Handle "Start Review" button click for mode transition
+  app.action("start_review_mode", async ({ body, ack, respond }) => {
+    await ack();
+
+    const action = (body as BlockAction).actions[0] as ButtonAction;
+    const userId = body.user.id;
+    const actionValue = parseActionValue(action.value);
+
+    if (!actionValue) {
+      console.error("[ActionHandler] Invalid action value for start_review_mode");
+      return;
+    }
+
+    const { threadTs, channel, urls } = actionValue as {
+      threadTs: string;
+      channel: string;
+      urls: string[];
+    };
+
+    // Check if user is initiator
+    if (!store.isInitiator(threadTs, userId)) {
+      const session = store.get(threadTs);
+      if (session) {
+        await Effect.runPromise(
+          slackService.postEphemeral({
+            channel,
+            user: userId,
+            text: "Only the interview initiator can start review mode.",
+            threadTs,
+            blocks: formatNonInitiatorNotice(session.initiatorId),
+          })
+        );
+      }
+      return;
+    }
+
+    console.log(`[ActionHandler] Starting review mode for thread ${threadTs}`);
+
+    // Update session mode
+    store.setMode(threadTs, "review");
+    store.setPhase(threadTs, "starting");
+
+    // Update the message to show transition
+    if (respond) {
+      await respond({
+        replace_original: true,
+        text: "Starting review mode...",
+        blocks: [section(":mag: *Starting Review Mode*\nVerifying completed work...")],
+      });
+    }
+
+    // Start review session via worker
+    try {
+      const session = store.get(threadTs);
+      const result = await workerProxy.startInterview(
+        `${threadTs}-review`,
+        channel,
+        userId,
+        "Review the completed work against acceptance criteria.",
+        async (event) => {
+          // Forward events through existing handler
+          const pending = store.get(threadTs);
+          if (pending) {
+            store.touch(threadTs);
+          }
+        },
+        session?.initialDescription ? extractProjectName(session.initialDescription) : undefined,
+        "review",
+        urls
+      );
+
+      if ("error" in result) {
+        throw new Error(result.error);
+      }
+
+      store.setWorkerId(threadTs, result.workerId);
+    } catch (error) {
+      console.error(`[ActionHandler] Failed to start review mode:`, error);
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          text: `Failed to start review mode: ${error}`,
+          threadTs,
+          blocks: formatErrorMessage(String(error)),
+        })
+      );
+    }
+  });
+
+  // Handle "Done for Now" / "Done" button click to close session
+  app.action("session_done", async ({ body, ack, respond }) => {
+    await ack();
+
+    const action = (body as BlockAction).actions[0] as ButtonAction;
+    const threadTs = action.value;
+    const userId = body.user.id;
+    const channel = (body as BlockAction).channel?.id;
+
+    if (!threadTs || !channel) {
+      return;
+    }
+
+    // Check if user is initiator
+    if (!store.isInitiator(threadTs, userId)) {
+      const session = store.get(threadTs);
+      if (session) {
+        await Effect.runPromise(
+          slackService.postEphemeral({
+            channel,
+            user: userId,
+            text: "Only the interview initiator can close this session.",
+            threadTs,
+            blocks: formatNonInitiatorNotice(session.initiatorId),
+          })
+        );
+      }
+      return;
+    }
+
+    console.log(`[ActionHandler] Closing session ${threadTs}`);
+
+    // Update the message
+    if (respond) {
+      await respond({
+        replace_original: true,
+        text: "Session complete.",
+        blocks: [section(":white_check_mark: *Session Complete*\nThanks for using Clive!")],
+      });
+    }
+
+    // Close the session
+    store.close(threadTs);
+  });
 }
