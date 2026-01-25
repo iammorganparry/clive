@@ -722,6 +722,7 @@ function AppContent() {
     teamID: string;
   }) => {
     updateConfig({
+      ...config,
       issueTracker: configFlow as "linear" | "beads",
       [configFlow as string]: configData,
     });
@@ -746,6 +747,7 @@ function AppContent() {
     if (configFlow === "beads") {
       // Beads doesn't need configuration, just update config and go to mode selection
       updateConfig({
+        ...config,
         issueTracker: "beads",
         beads: {},
       });
