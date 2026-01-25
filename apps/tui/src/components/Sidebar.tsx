@@ -3,9 +3,9 @@
  * Shows task list grouped by status with modern, fun design
  */
 
-import { OneDarkPro } from '../styles/theme';
-import type { Task, Session } from '../types';
-import { getTaskStatus } from '../utils/taskHelpers';
+import { OneDarkPro } from "../styles/theme";
+import type { Session, Task } from "../types";
+import { getTaskStatus } from "../utils/taskHelpers";
 
 interface SidebarProps {
   width: number;
@@ -16,23 +16,31 @@ interface SidebarProps {
   y?: number;
 }
 
-export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: SidebarProps) {
+export function Sidebar({
+  width,
+  height,
+  tasks,
+  activeSession,
+  x = 0,
+  y = 0,
+}: SidebarProps) {
   // Group tasks by status
-  const inProgress = tasks.filter(t => getTaskStatus(t) === 'in_progress');
-  const pending = tasks.filter(t => getTaskStatus(t) === 'pending');
-  const completed = tasks.filter(t => getTaskStatus(t) === 'completed');
-  const blocked = tasks.filter(t => getTaskStatus(t) === 'blocked');
+  const inProgress = tasks.filter((t) => getTaskStatus(t) === "in_progress");
+  const pending = tasks.filter((t) => getTaskStatus(t) === "pending");
+  const completed = tasks.filter((t) => getTaskStatus(t) === "completed");
+  const blocked = tasks.filter((t) => getTaskStatus(t) === "blocked");
 
   const maxDisplay = 8;
 
   const truncate = (text: string, maxLen: number) => {
-    return text.length > maxLen ? text.substring(0, maxLen - 1) + '…' : text;
+    return text.length > maxLen ? `${text.substring(0, maxLen - 1)}…` : text;
   };
 
   // Calculate total tasks and progress
   const totalTasks = tasks.length;
   const completedCount = completed.length;
-  const progressPercent = totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
+  const progressPercent =
+    totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
 
   return (
     <box
@@ -62,7 +70,12 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
       </box>
 
       {/* Tasks Header */}
-      <box flexDirection="row" alignItems="center" marginBottom={0} marginTop={1}>
+      <box
+        flexDirection="row"
+        alignItems="center"
+        marginBottom={0}
+        marginTop={1}
+      >
         <text fg={OneDarkPro.syntax.blue}>📋 Tasks</text>
       </box>
 
@@ -76,10 +89,12 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
           </box>
           <box flexDirection="row" width={width - 2}>
             <text fg={OneDarkPro.syntax.green}>
-              {'█'.repeat(Math.floor((width - 2) * (progressPercent / 100)))}
+              {"█".repeat(Math.floor((width - 2) * (progressPercent / 100)))}
             </text>
             <text fg={OneDarkPro.ui.border}>
-              {'░'.repeat(Math.ceil((width - 2) * ((100 - progressPercent) / 100)))}
+              {"░".repeat(
+                Math.ceil((width - 2) * ((100 - progressPercent) / 100)),
+              )}
             </text>
           </box>
         </box>
@@ -88,9 +103,7 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
       {/* No tasks message */}
       {tasks.length === 0 && (
         <box marginTop={2} flexDirection="column" alignItems="center">
-          <text fg={OneDarkPro.foreground.muted}>
-            🎯 No tasks yet
-          </text>
+          <text fg={OneDarkPro.foreground.muted}>🎯 No tasks yet</text>
           <text fg={OneDarkPro.foreground.comment} marginTop={1}>
             Run /plan to start
           </text>
@@ -113,7 +126,11 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
             </box>
           ))}
           {inProgress.length > maxDisplay && (
-            <text fg={OneDarkPro.foreground.comment} paddingLeft={1} marginTop={0}>
+            <text
+              fg={OneDarkPro.foreground.comment}
+              paddingLeft={1}
+              marginTop={0}
+            >
               … {inProgress.length - maxDisplay} more
             </text>
           )}
@@ -136,7 +153,11 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
             </box>
           ))}
           {blocked.length > maxDisplay && (
-            <text fg={OneDarkPro.foreground.comment} paddingLeft={1} marginTop={0}>
+            <text
+              fg={OneDarkPro.foreground.comment}
+              paddingLeft={1}
+              marginTop={0}
+            >
               … {blocked.length - maxDisplay} more
             </text>
           )}
@@ -159,7 +180,11 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
             </box>
           ))}
           {pending.length > maxDisplay && (
-            <text fg={OneDarkPro.foreground.comment} paddingLeft={1} marginTop={0}>
+            <text
+              fg={OneDarkPro.foreground.comment}
+              paddingLeft={1}
+              marginTop={0}
+            >
               … {pending.length - maxDisplay} more
             </text>
           )}
@@ -182,7 +207,11 @@ export function Sidebar({ width, height, tasks, activeSession, x = 0, y = 0 }: S
             </box>
           ))}
           {completed.length > maxDisplay && (
-            <text fg={OneDarkPro.foreground.comment} paddingLeft={1} marginTop={0}>
+            <text
+              fg={OneDarkPro.foreground.comment}
+              paddingLeft={1}
+              marginTop={0}
+            >
               … {completed.length - maxDisplay} more
             </text>
           )}

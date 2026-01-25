@@ -1,16 +1,16 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.js";
 import "./index.css";
-import { initializeTheme, updateTheme } from "./services/theme-service.js";
 import { WebviewMessages } from "../constants.js";
-import { initLogger } from "./services/logger.js";
-import { getVSCodeAPI } from "./services/vscode.js";
 import { AuthProvider } from "./contexts/auth-context.js";
 import { ComparisonModeProvider } from "./contexts/comparison-mode-context.js";
 import { RouterProvider } from "./router/index.js";
 import { RpcProvider } from "./rpc/provider.js";
+import { initLogger } from "./services/logger.js";
+import { initializeTheme, updateTheme } from "./services/theme-service.js";
+import { getVSCodeAPI } from "./services/vscode.js";
 
 // Only load react-grab in development
 if (import.meta.env.DEV) {

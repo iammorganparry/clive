@@ -1,6 +1,6 @@
+import type { LanguageModel } from "ai";
 import { describe, expect, it } from "vitest";
 import { addCacheControlToMessages } from "../cache-control.js";
-import type { LanguageModel } from "ai";
 
 describe("cache-control", () => {
   describe("addCacheControlToMessages", () => {

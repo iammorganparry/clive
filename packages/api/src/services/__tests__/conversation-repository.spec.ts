@@ -1,17 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Runtime } from "effect";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  ConversationRepository,
-  type Conversation,
-} from "../conversation-repository.js";
-import {
-  createMockDrizzleClient,
   createConversationRepositoryTestLayer,
-  mockInsertChain,
-  mockUpdateChain,
+  createMockDrizzleClient,
   mockDeleteChain,
+  mockInsertChain,
   mockReset,
+  mockUpdateChain,
 } from "../../__tests__/test-layer-factory.js";
+import {
+  type Conversation,
+  ConversationRepository,
+} from "../conversation-repository.js";
 
 describe("ConversationRepository", () => {
   const runtime = Runtime.defaultRuntime;
@@ -218,7 +218,6 @@ describe("ConversationRepository", () => {
       expect(mockDb.query.conversation.findFirst).toHaveBeenCalled();
     });
   });
-
 
   describe("updateStatus", () => {
     it("should update and return conversation", async () => {

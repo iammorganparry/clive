@@ -14,16 +14,16 @@ import {
   createRelationship,
   type RelationshipType,
 } from "../graph/relationship.js";
+import { type MermaidEdge, parseMermaid } from "./mermaid-parser.js";
 import {
   extractAnnotations,
-  groupCommentBlocks,
   extractNodeId,
-  parseSchema,
+  groupCommentBlocks,
   parseEndpointExposure,
-  parseInvariants,
   parseErrors,
+  parseInvariants,
+  parseSchema,
 } from "./metadata-extractor.js";
-import { parseMermaid, type MermaidEdge } from "./mermaid-parser.js";
 
 /**
  * Result of building contracts from a file

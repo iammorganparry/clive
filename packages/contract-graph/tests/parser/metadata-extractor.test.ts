@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   extractAnnotations,
-  parseSchema,
-  parseEndpointExposure,
-  parseInvariants,
-  parseErrors,
-  groupCommentBlocks,
   extractNodeId,
+  groupCommentBlocks,
+  parseEndpointExposure,
+  parseErrors,
+  parseInvariants,
+  parseSchema,
 } from "../../src/parser/metadata-extractor.js";
 
 describe("extractAnnotations", () => {
@@ -71,7 +71,7 @@ describe("extractAnnotations", () => {
     const lines = [
       "%% @contract Order.place",
       "%% @location src/orders/place.ts:15",
-      "%% @schema {\"input\": \"PlaceOrderDTO\"}",
+      '%% @schema {"input": "PlaceOrderDTO"}',
       "%% @invariant cannot order out of stock items",
       "%% @publishes OrderPlaced",
     ];
@@ -158,7 +158,10 @@ describe("parseErrors", () => {
       "UserNotFound: The specified user does not exist",
     ]);
     expect(errors).toEqual([
-      { name: "UserNotFound", description: "The specified user does not exist" },
+      {
+        name: "UserNotFound",
+        description: "The specified user does not exist",
+      },
     ]);
   });
 });

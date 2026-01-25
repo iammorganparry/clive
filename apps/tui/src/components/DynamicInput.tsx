@@ -1,23 +1,23 @@
-import { useState, useRef, useEffect } from 'react';
-import { useKeyboard } from '@opentui/react';
-import { SuggestionsPanel, type CommandSuggestion } from './SuggestionsPanel';
-import { QuestionPanel } from './QuestionPanel';
-import { useCommandHistory } from '../hooks/useCommandHistory';
-import { usePaste } from '../hooks/usePaste';
-import { OneDarkPro } from '../styles/theme';
-import type { QuestionData } from '../types';
+import { useKeyboard } from "@opentui/react";
+import { useEffect, useRef, useState } from "react";
+import { useCommandHistory } from "../hooks/useCommandHistory";
+import { usePaste } from "../hooks/usePaste";
+import { OneDarkPro } from "../styles/theme";
+import type { QuestionData } from "../types";
+import { QuestionPanel } from "./QuestionPanel";
+import { type CommandSuggestion, SuggestionsPanel } from "./SuggestionsPanel";
 
 // Available commands
 const COMMANDS: CommandSuggestion[] = [
-  { cmd: '/plan', desc: 'Create a work plan (enter plan mode)' },
-  { cmd: '/build', desc: 'Execute work plan (enter build mode)' },
-  { cmd: '/resume', desc: 'Resume a previous conversation' },
-  { cmd: '/exit', desc: 'Exit current mode' },
-  { cmd: '/add', desc: 'Add task to epic (build mode)' },
-  { cmd: '/cancel', desc: 'Cancel running process' },
-  { cmd: '/clear', desc: 'Clear output' },
-  { cmd: '/status', desc: 'Show current status' },
-  { cmd: '/help', desc: 'Show help' },
+  { cmd: "/plan", desc: "Create a work plan (enter plan mode)" },
+  { cmd: "/build", desc: "Execute work plan (enter build mode)" },
+  { cmd: "/resume", desc: "Resume a previous conversation" },
+  { cmd: "/exit", desc: "Exit current mode" },
+  { cmd: "/add", desc: "Add task to epic (build mode)" },
+  { cmd: "/cancel", desc: "Cancel running process" },
+  { cmd: "/clear", desc: "Clear output" },
+  { cmd: "/status", desc: "Show current status" },
+  { cmd: "/help", desc: "Show help" },
 ];
 
 interface DynamicInputProps {
@@ -49,7 +49,7 @@ export function DynamicInput({
   rawInputMode = false,
   onRawKeyPress,
 }: DynamicInputProps) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const inputRef = useRef<any>(null);
@@ -64,9 +64,10 @@ export function DynamicInput({
   }, [preFillValue, inputFocused]);
 
   // Filter suggestions based on input (disabled in raw input mode)
-  const filteredSuggestions = !rawInputMode && value.startsWith('/') && !value.includes(' ')
-    ? COMMANDS.filter((c) => c.cmd.startsWith(value))
-    : [];
+  const filteredSuggestions =
+    !rawInputMode && value.startsWith("/") && !value.includes(" ")
+      ? COMMANDS.filter((c) => c.cmd.startsWith(value))
+      : [];
 
   // Show suggestions when typing "/" commands (disabled in raw input mode)
   useEffect(() => {
@@ -99,15 +100,15 @@ export function DynamicInput({
     if (rawInputMode && onRawKeyPress) {
       // Map keys to appropriate sequences
       const keyMap: Record<string, string> = {
-        'up': '\x1b[A',
-        'down': '\x1b[B',
-        'right': '\x1b[C',
-        'left': '\x1b[D',
-        'return': '\r',
-        'escape': '\x1b',
-        'tab': '\t',
-        'backspace': '\x7f',
-        'delete': '\x1b[3~',
+        up: "\x1b[A",
+        down: "\x1b[B",
+        right: "\x1b[C",
+        left: "\x1b[D",
+        return: "\r",
+        escape: "\x1b",
+        tab: "\t",
+        backspace: "\x7f",
+        delete: "\x1b[3~",
       };
 
       const mappedKey = keyMap[event.name];
@@ -126,13 +127,16 @@ export function DynamicInput({
     }
 
     // Select all functionality (Ctrl+A / Cmd+A)
-    if ((event.ctrl || event.meta) && event.name === 'a') {
+    if ((event.ctrl || event.meta) && event.name === "a") {
       // Try to select all text if the input ref supports it
       if (inputRef.current) {
         // OpenTUI may support selectAll or setSelectionRange
-        if (typeof inputRef.current.selectAll === 'function') {
+        if (typeof inputRef.current.selectAll === "function") {
           inputRef.current.selectAll();
-        } else if (typeof inputRef.current.setSelectionRange === 'function' && value) {
+        } else if (
+          typeof inputRef.current.setSelectionRange === "function" &&
+          value
+        ) {
           inputRef.current.setSelectionRange(0, value.length);
         }
       }
@@ -142,25 +146,25 @@ export function DynamicInput({
     // Handle suggestion navigation when showing suggestions
     if (showSuggestions && filteredSuggestions.length > 0) {
       // Arrow up - previous suggestion
-      if (event.name === 'up') {
+      if (event.name === "up") {
         setSelectedSuggestion(Math.max(0, selectedSuggestion - 1));
         return;
       }
 
       // Arrow down - next suggestion
-      if (event.name === 'down') {
+      if (event.name === "down") {
         setSelectedSuggestion(
-          Math.min(filteredSuggestions.length - 1, selectedSuggestion + 1)
+          Math.min(filteredSuggestions.length - 1, selectedSuggestion + 1),
         );
         return;
       }
 
       // Tab or Enter to accept suggestion when suggestions are showing
-      if (event.name === 'tab' || event.name === 'return') {
+      if (event.name === "tab" || event.name === "return") {
         event.preventDefault?.(); // Prevent default behavior
         const suggestion = filteredSuggestions[selectedSuggestion];
         if (suggestion) {
-          setValue(suggestion.cmd + ' ');
+          setValue(`${suggestion.cmd} `);
           setShowSuggestions(false);
           setSelectedSuggestion(0);
           commandHistory.reset();
@@ -172,7 +176,7 @@ export function DynamicInput({
     // Handle command history navigation when NOT showing suggestions
     if (!showSuggestions) {
       // Arrow up - previous command in history
-      if (event.name === 'up') {
+      if (event.name === "up") {
         const prev = commandHistory.getPrevious();
         if (prev !== null) {
           setValue(prev);
@@ -181,7 +185,7 @@ export function DynamicInput({
       }
 
       // Arrow down - next command in history
-      if (event.name === 'down') {
+      if (event.name === "down") {
         const next = commandHistory.getNext();
         if (next !== null) {
           setValue(next);
@@ -193,7 +197,7 @@ export function DynamicInput({
     // Ctrl+C - handled at App level for two-stage exit
     // In raw mode: First Ctrl+C kills TTY, second Ctrl+C exits Clive
     // In normal mode: Ctrl+C exits Clive immediately (no active session)
-    if (event.ctrl && event.name === 'c') {
+    if (event.ctrl && event.name === "c") {
       // Don't send to PTY, let App.tsx handle it
       return;
     }
@@ -210,7 +214,7 @@ export function DynamicInput({
     const cmd = submittedValue.trim();
     commandHistory.add(cmd);
     onSubmit(cmd);
-    setValue('');
+    setValue("");
     commandHistory.reset();
     setShowSuggestions(false);
     setSelectedSuggestion(0);
@@ -226,16 +230,18 @@ export function DynamicInput({
   // Calculate dynamic height
   const baseHeight = 3;
   const questionHeight = pendingQuestion ? Math.min(25, 20) : 0; // Cap at 25, typical height ~20
-  const suggestionsHeight = showSuggestions ? Math.min(filteredSuggestions.length + 2, 8) : 0;
+  const suggestionsHeight = showSuggestions
+    ? Math.min(filteredSuggestions.length + 2, 8)
+    : 0;
   const totalHeight = baseHeight + questionHeight + suggestionsHeight;
 
   const placeholder = disabled
-    ? 'Input disabled during question'
+    ? "Input disabled during question"
     : rawInputMode
-      ? 'Interactive mode: Use arrow keys, Enter, Esc...'
+      ? "Interactive mode: Use arrow keys, Enter, Esc..."
       : isRunning
-        ? 'Type message or /add task...'
-        : 'Type / for commands or enter prompt...';
+        ? "Type message or /add task..."
+        : "Type / for commands or enter prompt...";
 
   return (
     <box width={width} height={totalHeight} flexDirection="column">
@@ -277,12 +283,14 @@ export function DynamicInput({
         opacity={rawInputMode ? 0.5 : 1.0}
       >
         <box flexDirection="row" width="100%">
-          <text fg={rawInputMode ? OneDarkPro.ui.border : OneDarkPro.syntax.green}>
-            {rawInputMode ? '⊙ ' : '❯ '}
+          <text
+            fg={rawInputMode ? OneDarkPro.ui.border : OneDarkPro.syntax.green}
+          >
+            {rawInputMode ? "⊙ " : "❯ "}
           </text>
           <input
             ref={inputRef}
-            value={rawInputMode ? '' : value}
+            value={rawInputMode ? "" : value}
             placeholder={placeholder}
             focused={inputFocused && !disabled && !rawInputMode}
             disabled={disabled || rawInputMode}

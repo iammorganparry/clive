@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
+import { Effect, Layer, Runtime } from "effect";
 import * as vscode from "vscode";
-import { Effect, Runtime, Layer } from "effect";
+import type { ExtensionExports } from "../extension.js";
 import {
   ApiKeyService,
   InvalidApiKeyError,
@@ -9,7 +10,6 @@ import {
   createSecretStorageLayer,
   type SecretStorageService,
 } from "../services/vs-code.js";
-import type { ExtensionExports } from "../extension.js";
 
 suite("ApiKeyService Integration Tests", () => {
   let context: vscode.ExtensionContext;

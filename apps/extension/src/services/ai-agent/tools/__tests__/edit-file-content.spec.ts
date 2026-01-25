@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { createEditFileContentTool } from "../edit-file-content";
+import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 import type {
   EditFileContentInput,
   EditFileContentOutput,
 } from "../edit-file-content";
+import { createEditFileContentTool } from "../edit-file-content";
 import { executeTool } from "./test-helpers";
-import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 
 // Mock vscode globally for tools that use VSCodeService.Default internally
 // Use setupVSCodeMock to ensure singleton pattern - same instance used everywhere

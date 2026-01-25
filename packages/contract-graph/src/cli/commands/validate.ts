@@ -5,13 +5,13 @@
 
 import type { Command } from "commander";
 import pc from "picocolors";
-import { loadContracts } from "../loader.js";
-import { validateContracts } from "../../validators/contract-validator.js";
 import {
+  type BreakingChange,
   detectBreakingChanges,
   formatBreakingChange,
-  type BreakingChange,
 } from "../../validators/breaking-changes.js";
+import { validateContracts } from "../../validators/contract-validator.js";
+import { loadContracts } from "../loader.js";
 
 export function validateCommand(program: Command): void {
   program

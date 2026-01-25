@@ -4,8 +4,8 @@
  */
 
 import { Effect } from "effect";
-import type { BuildConfig, Section } from "../types.js";
 import { getToolName } from "../tool-names.js";
+import type { BuildConfig, Section } from "../types.js";
 
 /**
  * Build the rules content with dynamic tool names based on AI provider

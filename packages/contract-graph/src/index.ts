@@ -31,109 +31,99 @@
  * ```
  */
 
+export {
+  type AnnotateOptions,
+  type AnnotationResult,
+  annotateSourceFiles,
+  formatAnnotationResults,
+  injectAnnotation,
+} from "./generators/code-annotator.js";
+// Generators
+export {
+  generateClaudeMd,
+  generateMarkdownDocs,
+} from "./generators/markdown.js";
 // Core graph types and utilities
 export {
-  type Contract,
   type CodeLocation,
+  type Contract,
   type ContractSchema,
-  type Invariant,
-  type ErrorContract,
   type ContractType,
-  type EndpointExposure,
   createContract,
-  parseLocation,
+  type EndpointExposure,
+  type ErrorContract,
   formatLocation,
+  type Invariant,
+  parseLocation,
 } from "./graph/contract.js";
-
 export {
+  ContractGraph,
+  type TraversalOptions,
+  type TraversalResult,
+} from "./graph/graph.js";
+export {
+  createRelationship,
+  describeRelationship,
+  inverseRelationship,
+  isConsumerRelationship,
+  isProducerRelationship,
   type Relationship,
   type RelationshipType,
-  createRelationship,
-  inverseRelationship,
-  isProducerRelationship,
-  isConsumerRelationship,
-  describeRelationship,
 } from "./graph/relationship.js";
 
 export {
-  ContractGraph,
-  type TraversalResult,
-  type TraversalOptions,
-} from "./graph/graph.js";
-
-// Parser
-export {
-  parseMermaid,
-  type ParsedMermaid,
-  type MermaidNode,
-  type MermaidEdge,
-  type MermaidSubgraph,
-} from "./parser/mermaid-parser.js";
-
-export {
-  extractAnnotations,
-  parseSchema,
-  parseEndpointExposure,
-  parseInvariants,
-  parseErrors,
-  type RawContractMetadata,
-} from "./parser/metadata-extractor.js";
-
-export {
-  buildFromMermaid,
-  buildFromMarkdown,
-  buildFromMultipleSources,
-  extractMermaidFromMarkdown,
-  type BuildResult,
   type BuildError,
   type BuildOptions,
+  type BuildResult,
+  buildFromMarkdown,
+  buildFromMermaid,
+  buildFromMultipleSources,
+  extractMermaidFromMarkdown,
 } from "./parser/contract-builder.js";
-
+// Parser
+export {
+  type MermaidEdge,
+  type MermaidNode,
+  type MermaidSubgraph,
+  type ParsedMermaid,
+  parseMermaid,
+} from "./parser/mermaid-parser.js";
+export {
+  extractAnnotations,
+  parseEndpointExposure,
+  parseErrors,
+  parseInvariants,
+  parseSchema,
+  type RawContractMetadata,
+} from "./parser/metadata-extractor.js";
 // Query engine
 export {
-  QueryEngine,
   type ImpactAnalysis,
-  type LocationQueryResult,
   type ImpactOptions,
+  type LocationQueryResult,
+  QueryEngine,
 } from "./query/engine.js";
-
 export {
-  ImpactAnalyzer,
   type BreakingChange,
   type BreakingSeverity,
   type DeploymentOrder,
   type GraphDiff,
+  ImpactAnalyzer,
 } from "./query/impact-analyzer.js";
-
+export {
+  type BreakingChangeSeverity,
+  type BreakingChangeType,
+  detectBreakingChanges,
+  formatBreakingChange,
+  generateBreakingChangesReport,
+  hasCriticalBreakingChanges,
+} from "./validators/breaking-changes.js";
 // Validators
 export {
-  validateContracts,
   quickValidate,
-  type ValidationResult,
   type ValidationError,
   type ValidationErrorType,
   type ValidationOptions,
+  type ValidationResult,
+  validateContracts,
 } from "./validators/contract-validator.js";
-
-export {
-  detectBreakingChanges,
-  formatBreakingChange,
-  hasCriticalBreakingChanges,
-  generateBreakingChangesReport,
-  type BreakingChangeType,
-  type BreakingChangeSeverity,
-} from "./validators/breaking-changes.js";
-
-// Generators
-export {
-  generateMarkdownDocs,
-  generateClaudeMd,
-} from "./generators/markdown.js";
-
-export {
-  annotateSourceFiles,
-  injectAnnotation,
-  formatAnnotationResults,
-  type AnnotateOptions,
-  type AnnotationResult,
-} from "./generators/code-annotator.js";

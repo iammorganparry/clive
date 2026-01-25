@@ -2,7 +2,7 @@ import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
 import { GitBranch, Loader2, RefreshCw } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { ProposedTest } from "../../../../services/ai-agent/types.js";
 import { useComparisonMode } from "../../../contexts/comparison-mode-context.js";
 import { useRouter } from "../../../router/router-context.js";
@@ -131,12 +131,12 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
   const { mode: contextMode } = useComparisonMode();
 
   // When on base branch, force uncommitted mode (no branch changes to compare)
-  const isOnBaseBranch = props.changes?.branchName === props.changes?.baseBranch;
+  const isOnBaseBranch =
+    props.changes?.branchName === props.changes?.baseBranch;
   const mode = isOnBaseBranch ? "uncommitted" : contextMode;
 
   // Get branch name from changes or use fallback
-  const branchName =
-    props.changes?.branchName ?? "Unknown Branch";
+  const branchName = props.changes?.branchName ?? "Unknown Branch";
 
   // Calculate eligible file count
   const eligibleFiles = useMemo(() => {
@@ -157,7 +157,7 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
     rpc.status.currentCommit.useQuery();
   // Convert null to undefined for consistency
   const commitHash = currentCommit?.commitHash ?? undefined;
-  
+
   // Always refetch currentCommit on mount - git commits can happen anytime
   useEffect(() => {
     refetchCurrentCommit();
@@ -173,17 +173,16 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
         commitHash: mode === "uncommitted" ? commitHash : undefined,
       },
       enabled:
-        !!props.changes?.branchName &&
-        (mode === "branch" || !!commitHash),
+        !!props.changes?.branchName && (mode === "branch" || !!commitHash),
     });
 
   const handleGenerateTests = useCallback(async () => {
     if (eligibleFilePaths.length === 0) return;
-    
+
     // Refetch to get fresh commit hash before navigating
     const { data: freshCommit } = await refetchCurrentCommit();
     const freshCommitHash = freshCommit?.commitHash;
-    
+
     const filesJson = JSON.stringify(eligibleFilePaths);
     const params: Record<string, string> = {
       files: filesJson,
@@ -302,7 +301,9 @@ const BranchChanges: React.FC<BranchChangesProps> = (props) => {
           <Button
             onClick={handleGenerateTests}
             className="w-full"
-            disabled={isLoadingConversation || (mode === "uncommitted" && !commitHash)}
+            disabled={
+              isLoadingConversation || (mode === "uncommitted" && !commitHash)
+            }
           >
             {isLoadingConversation ? (
               <>

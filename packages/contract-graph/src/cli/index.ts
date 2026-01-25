@@ -7,11 +7,11 @@
 
 import { Command } from "commander";
 import pc from "picocolors";
-import { queryCommand } from "./commands/query.js";
-import { impactCommand } from "./commands/impact.js";
-import { validateCommand } from "./commands/validate.js";
 import { docsCommand } from "./commands/docs.js";
+import { impactCommand } from "./commands/impact.js";
 import { initCommand } from "./commands/init.js";
+import { queryCommand } from "./commands/query.js";
+import { validateCommand } from "./commands/validate.js";
 
 const program = new Command();
 

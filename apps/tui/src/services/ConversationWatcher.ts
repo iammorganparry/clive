@@ -9,11 +9,11 @@
  * - Handles file rotation and cleanup
  */
 
-import { EventEmitter } from 'events';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { debugLog } from '../utils/debug-logger';
+import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { debugLog } from "../utils/debug-logger";
 
 export interface ClaudeEvent {
   type: string;
@@ -37,11 +37,13 @@ export class ConversationWatcher extends EventEmitter {
    * Otherwise, watch for the most recently created session file
    */
   start(sessionId?: string): void {
-    const sessionsDir = path.join(os.homedir(), '.claude', 'sessions');
+    const sessionsDir = path.join(os.homedir(), ".claude", "sessions");
 
     // Ensure sessions directory exists
     if (!fs.existsSync(sessionsDir)) {
-      debugLog('ConversationWatcher', 'Sessions directory does not exist', { sessionsDir });
+      debugLog("ConversationWatcher", "Sessions directory does not exist", {
+        sessionsDir,
+      });
       return;
     }
 
@@ -51,17 +53,23 @@ export class ConversationWatcher extends EventEmitter {
       if (fs.existsSync(this.sessionFile)) {
         this.watchSessionFile();
       } else {
-        debugLog('ConversationWatcher', 'Session file not found', { sessionFile: this.sessionFile });
+        debugLog("ConversationWatcher", "Session file not found", {
+          sessionFile: this.sessionFile,
+        });
       }
     } else {
       // Watch for newest file in sessions directory
-      debugLog('ConversationWatcher', 'Watching for newest session file', { sessionsDir });
+      debugLog("ConversationWatcher", "Watching for newest session file", {
+        sessionsDir,
+      });
 
       // Start polling for new files (since fs.watch can be unreliable for new files)
       this.checkInterval = setInterval(() => {
         const newestFile = this.findNewestSessionFile(sessionsDir);
         if (newestFile && newestFile !== this.sessionFile) {
-          debugLog('ConversationWatcher', 'Found new session file', { file: newestFile });
+          debugLog("ConversationWatcher", "Found new session file", {
+            file: newestFile,
+          });
           this.sessionFile = newestFile;
           this.lastPosition = 0; // Reset position for new file
           this.watchSessionFile();
@@ -71,7 +79,9 @@ export class ConversationWatcher extends EventEmitter {
       // Also check immediately
       const newestFile = this.findNewestSessionFile(sessionsDir);
       if (newestFile) {
-        debugLog('ConversationWatcher', 'Initial session file', { file: newestFile });
+        debugLog("ConversationWatcher", "Initial session file", {
+          file: newestFile,
+        });
         this.sessionFile = newestFile;
         this.watchSessionFile();
       }
@@ -83,9 +93,10 @@ export class ConversationWatcher extends EventEmitter {
    */
   private findNewestSessionFile(sessionsDir: string): string | null {
     try {
-      const files = fs.readdirSync(sessionsDir)
-        .filter(f => f.endsWith('.jsonl'))
-        .map(f => ({
+      const files = fs
+        .readdirSync(sessionsDir)
+        .filter((f) => f.endsWith(".jsonl"))
+        .map((f) => ({
           path: path.join(sessionsDir, f),
           mtime: fs.statSync(path.join(sessionsDir, f)).mtime,
         }))
@@ -93,7 +104,9 @@ export class ConversationWatcher extends EventEmitter {
 
       return files.length > 0 ? files[0].path : null;
     } catch (error) {
-      debugLog('ConversationWatcher', 'Error finding newest file', { error: String(error) });
+      debugLog("ConversationWatcher", "Error finding newest file", {
+        error: String(error),
+      });
       return null;
     }
   }
@@ -109,12 +122,14 @@ export class ConversationWatcher extends EventEmitter {
       this.fileWatcher.close();
     }
 
-    debugLog('ConversationWatcher', 'Starting file watch', { file: this.sessionFile });
+    debugLog("ConversationWatcher", "Starting file watch", {
+      file: this.sessionFile,
+    });
 
     // Watch for file changes
     try {
       this.fileWatcher = fs.watch(this.sessionFile, (eventType) => {
-        if (eventType === 'change') {
+        if (eventType === "change") {
           this.readNewEvents();
         }
       });
@@ -122,7 +137,9 @@ export class ConversationWatcher extends EventEmitter {
       // Read any existing events
       this.readNewEvents();
     } catch (error) {
-      debugLog('ConversationWatcher', 'Error watching file', { error: String(error) });
+      debugLog("ConversationWatcher", "Error watching file", {
+        error: String(error),
+      });
     }
   }
 
@@ -133,14 +150,14 @@ export class ConversationWatcher extends EventEmitter {
     if (!this.sessionFile) return;
 
     try {
-      const content = fs.readFileSync(this.sessionFile, 'utf-8');
-      const lines = content.split('\n').filter(l => l.trim());
+      const content = fs.readFileSync(this.sessionFile, "utf-8");
+      const lines = content.split("\n").filter((l) => l.trim());
 
       // Read only new lines since last position
       const newLines = lines.slice(this.lastPosition);
       this.lastPosition = lines.length;
 
-      debugLog('ConversationWatcher', 'Reading new events', {
+      debugLog("ConversationWatcher", "Reading new events", {
         newLines: newLines.length,
         totalLines: lines.length,
       });
@@ -148,77 +165,85 @@ export class ConversationWatcher extends EventEmitter {
       for (const line of newLines) {
         try {
           const event = JSON.parse(line) as ClaudeEvent;
-          debugLog('ConversationWatcher', 'Parsed event', {
+          debugLog("ConversationWatcher", "Parsed event", {
             type: event.type,
             name: event.name,
           });
 
-          this.emit('event', event);
+          this.emit("event", event);
 
           // Emit specific event types
-          if (event.type === 'tool_use') {
-            this.emit('tool_use', event);
+          if (event.type === "tool_use") {
+            this.emit("tool_use", event);
 
             // Special handling for Task tool (subagent spawning)
-            if (event.name === 'Task') {
-              debugLog('ConversationWatcher', 'Task spawn detected', {
+            if (event.name === "Task") {
+              debugLog("ConversationWatcher", "Task spawn detected", {
                 subagentType: event.input?.subagent_type,
               });
-              this.emit('task_spawn', event);
+              this.emit("task_spawn", event);
             }
 
             // Special handling for Linear project creation
-            if (event.name === 'mcp__linear__create_project') {
-              debugLog('ConversationWatcher', 'Linear project creation detected', {
-                toolId: event.id,
-              });
-              this.emit('linear_project_create', event);
+            if (event.name === "mcp__linear__create_project") {
+              debugLog(
+                "ConversationWatcher",
+                "Linear project creation detected",
+                {
+                  toolId: event.id,
+                },
+              );
+              this.emit("linear_project_create", event);
             }
 
             // Special handling for Linear issue creation
-            if (event.name === 'mcp__linear__create_issue') {
-              debugLog('ConversationWatcher', 'Linear issue creation detected', {
-                toolId: event.id,
-              });
-              this.emit('linear_issue_create', event);
+            if (event.name === "mcp__linear__create_issue") {
+              debugLog(
+                "ConversationWatcher",
+                "Linear issue creation detected",
+                {
+                  toolId: event.id,
+                },
+              );
+              this.emit("linear_issue_create", event);
             }
 
             // Special handling for Linear issue updates
-            if (event.name === 'mcp__linear__update_issue') {
-              debugLog('ConversationWatcher', 'Linear issue update detected', {
+            if (event.name === "mcp__linear__update_issue") {
+              debugLog("ConversationWatcher", "Linear issue update detected", {
                 toolId: event.id,
               });
-              this.emit('linear_issue_update', event);
+              this.emit("linear_issue_update", event);
             }
-          } else if (event.type === 'tool_result') {
-            this.emit('tool_result', event);
+          } else if (event.type === "tool_result") {
+            this.emit("tool_result", event);
 
             // Capture Linear tool results to extract IDs
             if (
-              event.name === 'mcp__linear__create_project' ||
-              event.name === 'mcp__linear__create_issue' ||
-              event.name === 'mcp__linear__update_issue'
+              event.name === "mcp__linear__create_project" ||
+              event.name === "mcp__linear__create_issue" ||
+              event.name === "mcp__linear__update_issue"
             ) {
-              debugLog('ConversationWatcher', 'Linear tool result', {
+              debugLog("ConversationWatcher", "Linear tool result", {
                 toolName: event.name,
                 toolId: event.id,
               });
-              this.emit('linear_tool_result', event);
+              this.emit("linear_tool_result", event);
             }
-          } else if (event.type === 'text') {
-            this.emit('text', event);
-          } else if (event.type === 'thinking') {
-            this.emit('thinking', event);
+          } else if (event.type === "text") {
+            this.emit("text", event);
+          } else if (event.type === "thinking") {
+            this.emit("thinking", event);
           }
         } catch (err) {
-          debugLog('ConversationWatcher', 'Failed to parse line', {
+          debugLog("ConversationWatcher", "Failed to parse line", {
             error: String(err),
             line: line.substring(0, 100),
           });
         }
       }
     } catch (error) {
-      debugLog('ConversationWatcher', 'Error reading file', {
+      debugLog("ConversationWatcher", "Error reading file", {
         error: String(error),
       });
     }
@@ -231,7 +256,7 @@ export class ConversationWatcher extends EventEmitter {
     if (!this.sessionFile) return null;
 
     // Extract session ID from file path: /path/to/<session-id>.jsonl
-    const fileName = path.basename(this.sessionFile, '.jsonl');
+    const fileName = path.basename(this.sessionFile, ".jsonl");
     return fileName;
   }
 
@@ -239,7 +264,7 @@ export class ConversationWatcher extends EventEmitter {
    * Stop watching and cleanup
    */
   stop(): void {
-    debugLog('ConversationWatcher', 'Stopping watcher');
+    debugLog("ConversationWatcher", "Stopping watcher");
 
     if (this.watcher) {
       this.watcher.close();

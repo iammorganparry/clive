@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
-import { createApprovePlanTool } from "../approve-plan";
+import { describe, expect, it, vi } from "vitest";
 import type { ApprovePlanInput, ApprovePlanOutput } from "../approve-plan";
+import { createApprovePlanTool } from "../approve-plan";
 import { executeTool } from "./test-helpers";
 
 describe("approvePlanTool", () => {

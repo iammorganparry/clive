@@ -4,8 +4,8 @@
  * Extracted from DiffViewProvider for reuse across file tools
  */
 
-import * as vscode from "vscode";
 import { Effect } from "effect";
+import * as vscode from "vscode";
 
 /**
  * Get diagnostics for a URI with a delay to allow diagnostics to settle
@@ -75,4 +75,3 @@ export function formatDiagnosticsMessage(
 
   return `New diagnostic problems introduced:\n${messages.join("\n")}`;
 }
-

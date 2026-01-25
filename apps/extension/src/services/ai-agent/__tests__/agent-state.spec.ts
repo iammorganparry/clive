@@ -1,29 +1,29 @@
-import { expect, } from "vitest";
-import { it, describe } from "@effect/vitest";
-import { Effect, Ref, HashMap } from "effect";
+import { describe, it } from "@effect/vitest";
+import { Effect, HashMap, Ref } from "effect";
+import { expect } from "vitest";
 import {
+  addExecution,
   createAgentState,
   createStreamingState,
-  setMessages,
-  addExecution,
-  setToolRejected,
-  setTaskCompleted,
+  deletePlanToolCall,
+  deleteStreamingArgs,
+  getFilePathForPlan,
+  getPlanInitStatus,
+  getStreamingArgs,
+  getToolCallIdForCommand,
+  getToolCallIdForFile,
+  hasPlanToolCall,
+  hasStreamingArgs,
   incrementMistakes,
   resetMistakes,
-  trackCommandToolCall,
-  getToolCallIdForCommand,
-  trackFileToolCall,
-  getToolCallIdForFile,
-  trackPlanToolCall,
-  getFilePathForPlan,
-  hasPlanToolCall,
-  deletePlanToolCall,
-  setStreamingArgs,
-  getStreamingArgs,
-  hasStreamingArgs,
-  deleteStreamingArgs,
+  setMessages,
   setPlanInitStatus,
-  getPlanInitStatus,
+  setStreamingArgs,
+  setTaskCompleted,
+  setToolRejected,
+  trackCommandToolCall,
+  trackFileToolCall,
+  trackPlanToolCall,
 } from "../agent-state";
 
 describe("Agent State", () => {
@@ -80,13 +80,25 @@ describe("Agent State", () => {
       Effect.gen(function* () {
         const stateRef = yield* createAgentState();
 
-        yield* addExecution(stateRef, { testId: "test-1", filePath: "/path/to/test.ts" });
-        yield* addExecution(stateRef, { testId: "test-2", filePath: "/path/to/test2.ts" });
+        yield* addExecution(stateRef, {
+          testId: "test-1",
+          filePath: "/path/to/test.ts",
+        });
+        yield* addExecution(stateRef, {
+          testId: "test-2",
+          filePath: "/path/to/test2.ts",
+        });
 
         const state = yield* Ref.get(stateRef);
         expect(state.executions.length).toBe(2);
-        expect(state.executions[0]).toEqual({ testId: "test-1", filePath: "/path/to/test.ts" });
-        expect(state.executions[1]).toEqual({ testId: "test-2", filePath: "/path/to/test2.ts" });
+        expect(state.executions[0]).toEqual({
+          testId: "test-1",
+          filePath: "/path/to/test.ts",
+        });
+        expect(state.executions[1]).toEqual({
+          testId: "test-2",
+          filePath: "/path/to/test2.ts",
+        });
       }),
     );
   });
@@ -182,7 +194,10 @@ describe("Streaming State", () => {
         const stateRef = yield* createStreamingState();
 
         yield* trackCommandToolCall(stateRef, "echo hello", "tool-call-123");
-        const toolCallId = yield* getToolCallIdForCommand(stateRef, "echo hello");
+        const toolCallId = yield* getToolCallIdForCommand(
+          stateRef,
+          "echo hello",
+        );
 
         expect(toolCallId).toBe("tool-call-123");
       }),
@@ -192,7 +207,10 @@ describe("Streaming State", () => {
       Effect.gen(function* () {
         const stateRef = yield* createStreamingState();
 
-        const toolCallId = yield* getToolCallIdForCommand(stateRef, "non-existent");
+        const toolCallId = yield* getToolCallIdForCommand(
+          stateRef,
+          "non-existent",
+        );
 
         expect(toolCallId).toBe("");
       }),
@@ -204,7 +222,10 @@ describe("Streaming State", () => {
 
         yield* trackCommandToolCall(stateRef, "echo hello", "old-id");
         yield* trackCommandToolCall(stateRef, "echo hello", "new-id");
-        const toolCallId = yield* getToolCallIdForCommand(stateRef, "echo hello");
+        const toolCallId = yield* getToolCallIdForCommand(
+          stateRef,
+          "echo hello",
+        );
 
         expect(toolCallId).toBe("new-id");
       }),
@@ -217,7 +238,10 @@ describe("Streaming State", () => {
         const stateRef = yield* createStreamingState();
 
         yield* trackFileToolCall(stateRef, "/path/to/test.ts", "file-tool-456");
-        const toolCallId = yield* getToolCallIdForFile(stateRef, "/path/to/test.ts");
+        const toolCallId = yield* getToolCallIdForFile(
+          stateRef,
+          "/path/to/test.ts",
+        );
 
         expect(toolCallId).toBe("file-tool-456");
       }),
@@ -227,7 +251,10 @@ describe("Streaming State", () => {
       Effect.gen(function* () {
         const stateRef = yield* createStreamingState();
 
-        const toolCallId = yield* getToolCallIdForFile(stateRef, "/non/existent.ts");
+        const toolCallId = yield* getToolCallIdForFile(
+          stateRef,
+          "/non/existent.ts",
+        );
 
         expect(toolCallId).toBe("");
       }),
@@ -239,7 +266,11 @@ describe("Streaming State", () => {
       Effect.gen(function* () {
         const stateRef = yield* createStreamingState();
 
-        yield* trackPlanToolCall(stateRef, "plan-tool-789", "/plans/test-plan.md");
+        yield* trackPlanToolCall(
+          stateRef,
+          "plan-tool-789",
+          "/plans/test-plan.md",
+        );
         const filePath = yield* getFilePathForPlan(stateRef, "plan-tool-789");
 
         expect(filePath).toBe("/plans/test-plan.md");
@@ -253,7 +284,11 @@ describe("Streaming State", () => {
         const hasBeforeAdd = yield* hasPlanToolCall(stateRef, "plan-tool-789");
         expect(hasBeforeAdd).toBe(false);
 
-        yield* trackPlanToolCall(stateRef, "plan-tool-789", "/plans/test-plan.md");
+        yield* trackPlanToolCall(
+          stateRef,
+          "plan-tool-789",
+          "/plans/test-plan.md",
+        );
         const hasAfterAdd = yield* hasPlanToolCall(stateRef, "plan-tool-789");
         expect(hasAfterAdd).toBe(true);
       }),
@@ -263,7 +298,11 @@ describe("Streaming State", () => {
       Effect.gen(function* () {
         const stateRef = yield* createStreamingState();
 
-        yield* trackPlanToolCall(stateRef, "plan-tool-789", "/plans/test-plan.md");
+        yield* trackPlanToolCall(
+          stateRef,
+          "plan-tool-789",
+          "/plans/test-plan.md",
+        );
         yield* deletePlanToolCall(stateRef, "plan-tool-789");
 
         const hasPlan = yield* hasPlanToolCall(stateRef, "plan-tool-789");
@@ -331,7 +370,7 @@ describe("Streaming State", () => {
 
         yield* setStreamingArgs(stateRef, "tool-123", "first");
         const args1 = yield* getStreamingArgs(stateRef, "tool-123");
-        
+
         yield* setStreamingArgs(stateRef, "tool-123", `${args1}second`);
         const args2 = yield* getStreamingArgs(stateRef, "tool-123");
 
@@ -385,4 +424,3 @@ describe("Streaming State", () => {
     );
   });
 });
-

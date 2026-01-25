@@ -1,7 +1,7 @@
 import type React from "react";
 import { AiProviderForm } from "./components/ai-provider-form.js";
-import { KnowledgeBaseCard } from "./components/knowledge-base-card.js";
 import { BaseBranchForm } from "./components/base-branch-form.js";
+import { KnowledgeBaseCard } from "./components/knowledge-base-card.js";
 import { TerminalCommandApprovalForm } from "./components/terminal-command-approval-form.js";
 
 export const SettingsPage: React.FC = () => {

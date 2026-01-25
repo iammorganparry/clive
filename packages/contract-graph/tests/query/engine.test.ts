@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { ContractGraph } from "../../src/graph/graph.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createContract } from "../../src/graph/contract.js";
+import { ContractGraph } from "../../src/graph/graph.js";
 import { createRelationship } from "../../src/graph/relationship.js";
 import { QueryEngine } from "../../src/query/engine.js";
 
@@ -17,9 +17,11 @@ describe("QueryEngine", () => {
       graph.addContract(
         createContract("User.create", {
           location: { file: "src/users/create.ts", line: 10 },
-          invariants: [{ description: "email must be unique", severity: "error" }],
+          invariants: [
+            { description: "email must be unique", severity: "error" },
+          ],
           errors: [{ name: "UserNotFound" }],
-        })
+        }),
       );
       engine = new QueryEngine(graph);
 
@@ -33,10 +35,12 @@ describe("QueryEngine", () => {
       graph.addContract(
         createContract("User.create", {
           location: { file: "src/users/create.ts" },
-        })
+        }),
       );
       graph.addContract(createContract("API.createUser"));
-      graph.addRelationship(createRelationship("API.createUser", "User.create", "calls"));
+      graph.addRelationship(
+        createRelationship("API.createUser", "User.create", "calls"),
+      );
       engine = new QueryEngine(graph);
 
       const result = engine.contractsFor("src/users/create.ts");
@@ -56,56 +60,76 @@ describe("QueryEngine", () => {
         createContract("OrderPlaced", {
           type: "event",
           schema: { orderId: "string" },
-        })
+        }),
       );
       graph.addContract(createContract("Order.place"));
       graph.addContract(createContract("Inventory.reserve"));
       graph.addContract(createContract("Notification.send"));
 
-      graph.addRelationship(createRelationship("Order.place", "OrderPlaced", "publishes"));
-      graph.addRelationship(createRelationship("Inventory.reserve", "OrderPlaced", "consumes"));
-      graph.addRelationship(createRelationship("Notification.send", "OrderPlaced", "consumes"));
+      graph.addRelationship(
+        createRelationship("Order.place", "OrderPlaced", "publishes"),
+      );
+      graph.addRelationship(
+        createRelationship("Inventory.reserve", "OrderPlaced", "consumes"),
+      );
+      graph.addRelationship(
+        createRelationship("Notification.send", "OrderPlaced", "consumes"),
+      );
 
       engine = new QueryEngine(graph);
       const impact = engine.impactOf("OrderPlaced");
 
       expect(impact).not.toBeNull();
-      expect(impact!.contract.id).toBe("OrderPlaced");
-      expect(impact!.producers).toHaveLength(1);
-      expect(impact!.consumers).toHaveLength(2);
+      expect(impact?.contract.id).toBe("OrderPlaced");
+      expect(impact?.producers).toHaveLength(1);
+      expect(impact?.consumers).toHaveLength(2);
     });
 
     it("detects cross-repo impacts", () => {
-      graph.addContract(createContract("OrderPlaced", { type: "event", repo: "order-service" }));
-      graph.addContract(createContract("Inventory.reserve", { repo: "inventory-service" }));
-      graph.addRelationship(createRelationship("Inventory.reserve", "OrderPlaced", "consumes"));
+      graph.addContract(
+        createContract("OrderPlaced", { type: "event", repo: "order-service" }),
+      );
+      graph.addContract(
+        createContract("Inventory.reserve", { repo: "inventory-service" }),
+      );
+      graph.addRelationship(
+        createRelationship("Inventory.reserve", "OrderPlaced", "consumes"),
+      );
 
       engine = new QueryEngine(graph);
       const impact = engine.impactOf("OrderPlaced");
 
-      expect(impact!.crossRepoImpacts.size).toBe(1);
-      expect(impact!.crossRepoImpacts.has("inventory-service")).toBe(true);
-      expect(impact!.warnings.some((w) => w.includes("CROSS-SERVICE"))).toBe(true);
+      expect(impact?.crossRepoImpacts.size).toBe(1);
+      expect(impact?.crossRepoImpacts.has("inventory-service")).toBe(true);
+      expect(impact?.warnings.some((w) => w.includes("CROSS-SERVICE"))).toBe(
+        true,
+      );
     });
 
     it("collects invariants to maintain", () => {
       graph.addContract(
         createContract("DB.users", {
           type: "table",
-          invariants: [{ description: "email must be unique", severity: "error" }],
-        })
+          invariants: [
+            { description: "email must be unique", severity: "error" },
+          ],
+        }),
       );
       graph.addContract(
         createContract("User.create", {
-          invariants: [{ description: "password must be hashed", severity: "error" }],
-        })
+          invariants: [
+            { description: "password must be hashed", severity: "error" },
+          ],
+        }),
       );
-      graph.addRelationship(createRelationship("User.create", "DB.users", "writes"));
+      graph.addRelationship(
+        createRelationship("User.create", "DB.users", "writes"),
+      );
 
       engine = new QueryEngine(graph);
       const impact = engine.impactOf("DB.users");
 
-      expect(impact!.invariantsToMaintain.length).toBeGreaterThanOrEqual(1);
+      expect(impact?.invariantsToMaintain.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -118,7 +142,7 @@ describe("QueryEngine", () => {
             { description: "email must be unique", severity: "error" },
             { description: "password must be hashed", severity: "error" },
           ],
-        })
+        }),
       );
       engine = new QueryEngine(graph);
 
@@ -135,7 +159,7 @@ describe("QueryEngine", () => {
             { name: "UserNotFound" },
             { name: "ValidationError", description: "Invalid input" },
           ],
-        })
+        }),
       );
       engine = new QueryEngine(graph);
 
@@ -161,10 +185,10 @@ describe("QueryEngine", () => {
       const result = engine.dependencyGraph("A");
 
       expect(result).not.toBeNull();
-      expect(result!.contracts).toHaveLength(3);
+      expect(result?.contracts).toHaveLength(3);
       // Relationships are collected from both directions during traversal
       // so we get duplicates when traversing "both" directions
-      expect(result!.relationships.length).toBeGreaterThanOrEqual(2);
+      expect(result?.relationships.length).toBeGreaterThanOrEqual(2);
     });
 
     it("respects maxDepth", () => {
@@ -177,25 +201,27 @@ describe("QueryEngine", () => {
       engine = new QueryEngine(graph);
       const result = engine.dependencyGraph("A", { maxDepth: 1 });
 
-      expect(result!.contracts).toHaveLength(2);
+      expect(result?.contracts).toHaveLength(2);
     });
   });
 
   describe("find", () => {
     beforeEach(() => {
-      graph.addContract(createContract("A", { type: "function", repo: "repo1" }));
+      graph.addContract(
+        createContract("A", { type: "function", repo: "repo1" }),
+      );
       graph.addContract(
         createContract("B", {
           type: "event",
           repo: "repo2",
           publishes: ["EventX"],
-        })
+        }),
       );
       graph.addContract(
         createContract("C", {
           type: "table",
           invariants: [{ description: "test", severity: "error" }],
-        })
+        }),
       );
       engine = new QueryEngine(graph);
     });
@@ -232,7 +258,7 @@ describe("QueryEngine", () => {
           type: "function",
           repo: "repo1",
           invariants: [{ description: "test", severity: "error" }],
-        })
+        }),
       );
       graph.addContract(createContract("B", { type: "table", repo: "repo2" }));
       graph.addRelationship(createRelationship("A", "B", "writes"));

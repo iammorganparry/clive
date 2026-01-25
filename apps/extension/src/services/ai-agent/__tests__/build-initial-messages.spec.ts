@@ -3,14 +3,14 @@
  * Tests mode-aware behavior for plan vs act mode
  */
 
-import { describe, expect, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
-import { buildInitialMessages } from "../testing-agent.js";
+import { beforeEach, describe, expect } from "vitest";
 import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../../__tests__/mock-factories/index.js";
+import { buildInitialMessages } from "../testing-agent.js";
 
 describe("buildInitialMessages", () => {
   let mockVSCodeServiceLayer: ReturnType<

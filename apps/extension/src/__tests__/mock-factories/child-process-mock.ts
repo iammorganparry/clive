@@ -3,9 +3,8 @@
  * Provides reusable mocks for Node.js child_process.spawn operations
  */
 
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { vi } from "vitest";
-import type { ChildProcess } from "node:child_process";
-import type { SpawnOptions } from "node:child_process";
 import type { SpawnFn } from "../../services/ai-agent/tools/bash-execute.js";
 
 export interface MockChildProcess {

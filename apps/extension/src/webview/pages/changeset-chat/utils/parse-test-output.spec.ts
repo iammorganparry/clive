@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  isTestCommand,
   extractTestFilePath,
+  isTestCommand,
   parseTestOutput,
   updateTestExecution,
   updateTestExecutionFromStream,

@@ -1,6 +1,5 @@
-import type { Config } from "drizzle-kit";
 import dotenv from "dotenv";
-
+import type { Config } from "drizzle-kit";
 
 dotenv.config({
   path: "../../.env",
@@ -9,16 +8,19 @@ dotenv.config({
 if (!process.env.POSTGRES_URL) {
   throw new Error(
     "Missing POSTGRES_URL environment variable. " +
-    "Please create a .env file in the root directory with: " +
-    "POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:5432/postgres"
+      "Please create a .env file in the root directory with: " +
+      "POSTGRES_URL=postgresql://supabase_admin:your-super-secret-and-long-postgres-password@localhost:5432/postgres",
   );
 }
 
 // Validate URL format
 const postgresUrl = process.env.POSTGRES_URL.trim();
-if (!postgresUrl.startsWith("postgresql://") && !postgresUrl.startsWith("postgres://")) {
+if (
+  !postgresUrl.startsWith("postgresql://") &&
+  !postgresUrl.startsWith("postgres://")
+) {
   throw new Error(
-    `Invalid POSTGRES_URL format. Expected postgresql:// or postgres://, got: ${postgresUrl.substring(0, 50)}`
+    `Invalid POSTGRES_URL format. Expected postgresql:// or postgres://, got: ${postgresUrl.substring(0, 50)}`,
   );
 }
 
@@ -29,7 +31,7 @@ try {
 } catch (error) {
   throw new Error(
     `Failed to parse POSTGRES_URL: ${error instanceof Error ? error.message : String(error)}. ` +
-    `URL: ${postgresUrl.substring(0, 50)}...`
+      `URL: ${postgresUrl.substring(0, 50)}...`,
   );
 }
 
@@ -37,8 +39,8 @@ try {
 if (!parsedUrl.hostname || parsedUrl.hostname === "base") {
   throw new Error(
     `Invalid hostname in POSTGRES_URL: "${parsedUrl.hostname}". ` +
-    `Expected localhost or a valid hostname. ` +
-    `Full URL: ${postgresUrl.substring(0, 80)}...`
+      `Expected localhost or a valid hostname. ` +
+      `Full URL: ${postgresUrl.substring(0, 80)}...`,
   );
 }
 

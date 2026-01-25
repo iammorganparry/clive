@@ -1,22 +1,9 @@
-import type React from "react";
-import { useMemo, useCallback, type FormEvent } from "react";
-import { useRouter } from "../../router/router-context.js";
 import { Button } from "@clive/ui/button";
-import { GitBranch, Plus, SquareIcon } from "lucide-react";
-import {
-  PromptInputProvider,
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputFooter,
-  PromptInputSubmit,
-  PromptInputContext,
-  PromptInputButton,
-} from "@clive/ui/components/ai-elements/prompt-input";
 import {
   Conversation,
   ConversationContent,
-  ConversationScrollButton,
   ConversationEmptyState,
+  ConversationScrollButton,
 } from "@clive/ui/components/ai-elements/conversation";
 import {
   Message,
@@ -24,20 +11,33 @@ import {
   MessageResponse,
 } from "@clive/ui/components/ai-elements/message";
 import {
+  PromptInput,
+  PromptInputButton,
+  PromptInputContext,
+  PromptInputFooter,
+  PromptInputProvider,
+  PromptInputSubmit,
+  PromptInputTextarea,
+} from "@clive/ui/components/ai-elements/prompt-input";
+import {
   Reasoning,
-  ReasoningTrigger,
   ReasoningContent,
+  ReasoningTrigger,
 } from "@clive/ui/components/ai-elements/reasoning";
-import { useChangesetChat } from "./hooks/use-changeset-chat.js";
-import { ToolCallCard } from "./components/tool-call-card.js";
-import { PlanApprovalCard } from "./components/plan-approval-card.js";
-import { TestPlanPreview } from "./components/test-plan-preview.js";
+import { GitBranch, Plus, SquareIcon } from "lucide-react";
+import type React from "react";
+import { type FormEvent, useCallback, useMemo } from "react";
+import { useRouter } from "../../router/router-context.js";
+import type { MessagePart } from "../../types/chat.js";
+import { AgentStatusIndicator } from "./components/agent-status-indicator.js";
 import { ErrorBanner } from "./components/error-banner.js";
 import { LoopProgressDisplay } from "./components/loop-progress-display.js";
+import { PlanApprovalCard } from "./components/plan-approval-card.js";
+import { TestPlanPreview } from "./components/test-plan-preview.js";
+import { ToolCallCard } from "./components/tool-call-card.js";
 import { UserMessageText } from "./components/user-message-text.js";
-import { AgentStatusIndicator } from "./components/agent-status-indicator.js";
+import { useChangesetChat } from "./hooks/use-changeset-chat.js";
 import { parsePlan } from "./utils/parse-plan.js";
-import type { MessagePart } from "../../types/chat.js";
 
 export const ChangesetChatPage: React.FC = () => {
   const { routeParams, goBack } = useRouter();
@@ -145,9 +145,9 @@ export const ChangesetChatPage: React.FC = () => {
                 // For user messages, use UserMessageText with truncation
                 if (message.role === "user") {
                   return (
-                    <UserMessageText 
-                      key={`${message.id}-text-${index}`} 
-                      text={part.text} 
+                    <UserMessageText
+                      key={`${message.id}-text-${index}`}
+                      text={part.text}
                     />
                   );
                 }
@@ -198,7 +198,14 @@ export const ChangesetChatPage: React.FC = () => {
         </Message>
       );
     });
-  }, [isLoadingHistory, isLoading, messages, files.length, planFilePath, subscriptionId]);
+  }, [
+    isLoadingHistory,
+    isLoading,
+    messages,
+    files.length,
+    planFilePath,
+    subscriptionId,
+  ]);
 
   const handleApprove = (approvalMode: "auto" | "manual" = "auto") => {
     // Dispatch APPROVE_PLAN event with empty suites - agent will read plan from conversation context
@@ -305,17 +312,21 @@ export const ChangesetChatPage: React.FC = () => {
           )}
 
           {/* Plan Approval Card - show when agent completes in plan mode with plan content */}
-          {hasCompletedAnalysis && !isLoading && agentMode === "plan" && approvalMode === null && planContent && (
-            <div className="border-t bg-background p-3">
-              <PlanApprovalCard
-                isStreaming={false}
-                onApprove={handleApprove}
-                onReject={(feedback) => {
-                  send({ type: "SEND_MESSAGE", content: feedback });
-                }}
-              />
-            </div>
-          )}
+          {hasCompletedAnalysis &&
+            !isLoading &&
+            agentMode === "plan" &&
+            approvalMode === null &&
+            planContent && (
+              <div className="border-t bg-background p-3">
+                <PlanApprovalCard
+                  isStreaming={false}
+                  onApprove={handleApprove}
+                  onReject={(feedback) => {
+                    send({ type: "SEND_MESSAGE", content: feedback });
+                  }}
+                />
+              </div>
+            )}
 
           {/* Input Area */}
           <div className="border-t bg-background">

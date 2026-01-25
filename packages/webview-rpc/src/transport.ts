@@ -49,7 +49,7 @@ export class VSCodeMessageTransport implements MessageTransport {
 
   constructor(
     private postMessage: (message: unknown) => void,
-    private onMessage: (handler: (event: MessageEvent) => void) => void,
+    onMessage: (handler: (event: MessageEvent) => void) => void,
     private timeout = 30000,
   ) {
     // Set up message listener

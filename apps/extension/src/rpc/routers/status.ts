@@ -1,8 +1,8 @@
+import { createRouter } from "@clive/webview-rpc";
 import { Effect } from "effect";
 import { z } from "zod";
-import { createRouter } from "@clive/webview-rpc";
-import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
+import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();

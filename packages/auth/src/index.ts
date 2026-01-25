@@ -1,17 +1,17 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { db } from "@clive/db/client";
 import * as schema from "@clive/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import {
-  jwt,
   bearer,
-  organization,
   deviceAuthorization,
+  jwt,
+  organization,
 } from "better-auth/plugins";
 import dotenv from "dotenv";
-import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
 
 // Load environment variables from root .env file
 // From packages/auth/src/index.ts, go up 3 levels to reach root

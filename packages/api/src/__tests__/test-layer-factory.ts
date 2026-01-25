@@ -20,9 +20,9 @@
  */
 
 import { Layer } from "effect";
-import { mockDeep, type DeepMockProxy } from "vitest-mock-extended";
-import { DrizzleDB, type DrizzleClient } from "../services/drizzle-db.js";
+import { type DeepMockProxy, mockDeep } from "vitest-mock-extended";
 import { ConversationRepository } from "../services/conversation-repository.js";
+import { type DrizzleClient, DrizzleDB } from "../services/drizzle-db.js";
 import { MessageRepository } from "../services/message-repository.js";
 import { RepositoryRepository } from "../services/repository-repository.js";
 

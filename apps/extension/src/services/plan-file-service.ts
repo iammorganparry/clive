@@ -1,13 +1,13 @@
-import * as vscode from "vscode";
 import * as path from "node:path";
-import { Effect, Data } from "effect";
-import { VSCodeService } from "./vs-code.js";
+import { Data, Effect } from "effect";
+import * as vscode from "vscode";
+import { extractErrorMessage } from "../utils/error-utils.js";
 import {
-  parseFrontmatter,
   generateFrontmatter,
   isPlanStatus,
+  parseFrontmatter,
 } from "../utils/frontmatter-utils.js";
-import { extractErrorMessage } from "../utils/error-utils.js";
+import { VSCodeService } from "./vs-code.js";
 
 /**
  * Error types for plan file operations

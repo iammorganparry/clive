@@ -4,9 +4,8 @@
  * Flow: Tracker Selection -> Configuration -> Save
  */
 
-import { useState } from 'react';
-import { OneDarkPro } from '../styles/theme';
-import { IssueTrackerConfig } from '../types/views';
+import { OneDarkPro } from "../styles/theme";
+import type { IssueTrackerConfig } from "../types/views";
 
 interface SetupViewProps {
   width: number;
@@ -26,8 +25,18 @@ export function SetupView({
   onNavigate,
 }: SetupViewProps) {
   const options = [
-    { id: 'linear', name: 'Linear', description: '(Recommended for teams)', color: OneDarkPro.syntax.blue },
-    { id: 'beads', name: 'Beads', description: '(Local issue tracking)', color: OneDarkPro.syntax.green },
+    {
+      id: "linear",
+      name: "Linear",
+      description: "(Recommended for teams)",
+      color: OneDarkPro.syntax.blue,
+    },
+    {
+      id: "beads",
+      name: "Beads",
+      description: "(Local issue tracking)",
+      color: OneDarkPro.syntax.green,
+    },
   ];
 
   return (
@@ -46,7 +55,7 @@ export function SetupView({
             CLIVE
           </text>
           <text fg={OneDarkPro.foreground.muted}>
-            {' · Issue Tracker Setup'}
+            {" · Issue Tracker Setup"}
           </text>
         </box>
 
@@ -74,11 +83,11 @@ export function SetupView({
                 marginBottom={1}
               >
                 <text fg={option.color} bold={isSelected}>
-                  {isSelected ? '▸ ' : '  '}
+                  {isSelected ? "▸ " : "  "}
                   {option.name}
                 </text>
                 <text fg={OneDarkPro.foreground.muted}>
-                  {'  '}
+                  {"  "}
                   {option.description}
                 </text>
               </box>
@@ -99,7 +108,7 @@ export function SetupView({
         {/* Shortcuts */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.secondary}>
-            1-{options.length} Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Quit
+            1-{options.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Quit
           </text>
         </box>
       </box>

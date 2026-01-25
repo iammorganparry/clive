@@ -5,27 +5,27 @@
 
 export const OneDarkPro = {
   background: {
-    primary: '#282C34',
-    secondary: '#21252B',
-    highlight: '#2C313C',
+    primary: "#282C34",
+    secondary: "#21252B",
+    highlight: "#2C313C",
   },
   foreground: {
-    primary: '#ABB2BF',
-    secondary: '#828997',
-    muted: '#5C6370',
-    comment: '#4B5263',
+    primary: "#ABB2BF",
+    secondary: "#828997",
+    muted: "#5C6370",
+    comment: "#4B5263",
   },
   syntax: {
-    red: '#E06C75',
-    green: '#98C379',
-    yellow: '#E5C07B',
-    blue: '#61AFEF',
-    magenta: '#C678DD',
-    cyan: '#56B6C2',
-    orange: '#D19A66',
+    red: "#E06C75",
+    green: "#98C379",
+    yellow: "#E5C07B",
+    blue: "#61AFEF",
+    magenta: "#C678DD",
+    cyan: "#56B6C2",
+    orange: "#D19A66",
   },
   ui: {
-    border: '#3F4451',
+    border: "#3F4451",
   },
 };
 

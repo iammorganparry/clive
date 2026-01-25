@@ -4,7 +4,15 @@
  * Utilities for building Slack Block Kit messages.
  */
 
-import type { KnownBlock, Button, SectionBlock, ActionsBlock, DividerBlock, HeaderBlock, ContextBlock } from "@slack/types";
+import type {
+  ActionsBlock,
+  Button,
+  ContextBlock,
+  DividerBlock,
+  HeaderBlock,
+  KnownBlock,
+  SectionBlock,
+} from "@slack/types";
 
 /**
  * Create a header block
@@ -40,7 +48,7 @@ export function sectionWithButton(
   text: string,
   buttonText: string,
   actionId: string,
-  value?: string
+  value?: string,
 ): SectionBlock {
   return {
     type: "section",
@@ -90,7 +98,7 @@ export function button(
   text: string,
   actionId: string,
   value?: string,
-  style?: "primary" | "danger"
+  style?: "primary" | "danger",
 ): Button {
   const btn: Button = {
     type: "button",
@@ -117,10 +125,7 @@ export function button(
  * Create an actions block with buttons
  * Slack limits: max 25 elements, max 5 buttons per row typically
  */
-export function actions(
-  buttons: Button[],
-  blockId?: string
-): ActionsBlock {
+export function actions(buttons: Button[], blockId?: string): ActionsBlock {
   return {
     type: "actions",
     block_id: blockId,
@@ -133,7 +138,7 @@ export function actions(
  */
 export function actionsRows(
   buttons: Button[],
-  blockIdPrefix?: string
+  blockIdPrefix?: string,
 ): ActionsBlock[] {
   const rows: ActionsBlock[] = [];
   const maxPerRow = 5;
@@ -142,7 +147,9 @@ export function actionsRows(
     const rowButtons = buttons.slice(i, i + maxPerRow);
     rows.push({
       type: "actions",
-      block_id: blockIdPrefix ? `${blockIdPrefix}_${Math.floor(i / maxPerRow)}` : undefined,
+      block_id: blockIdPrefix
+        ? `${blockIdPrefix}_${Math.floor(i / maxPerRow)}`
+        : undefined,
       elements: rowButtons,
     });
   }
@@ -199,7 +206,7 @@ export function otherInputModal(
   questionHeader: string,
   questionText: string,
   threadTs: string,
-  toolUseId: string
+  toolUseId: string,
 ): Record<string, unknown> {
   return {
     type: "modal",
@@ -248,19 +255,21 @@ export function otherInputModal(
  * Format markdown for Slack (convert GitHub-flavored to Slack mrkdwn)
  */
 export function formatMarkdown(md: string): string {
-  return md
-    // Convert headers
-    .replace(/^### (.+)$/gm, "*$1*")
-    .replace(/^## (.+)$/gm, "*$1*")
-    .replace(/^# (.+)$/gm, "*$1*")
-    // Convert bold
-    .replace(/\*\*(.+?)\*\*/g, "*$1*")
-    // Convert italic (single underscore/asterisk to Slack italic)
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "_$1_")
-    // Convert code blocks
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, "```$2```")
-    // Convert inline code
-    .replace(/`([^`]+)`/g, "`$1`")
-    // Convert links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>");
+  return (
+    md
+      // Convert headers
+      .replace(/^### (.+)$/gm, "*$1*")
+      .replace(/^## (.+)$/gm, "*$1*")
+      .replace(/^# (.+)$/gm, "*$1*")
+      // Convert bold
+      .replace(/\*\*(.+?)\*\*/g, "*$1*")
+      // Convert italic (single underscore/asterisk to Slack italic)
+      .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "_$1_")
+      // Convert code blocks
+      .replace(/```(\w+)?\n([\s\S]*?)```/g, "```$2```")
+      // Convert inline code
+      .replace(/`([^`]+)`/g, "`$1`")
+      // Convert links
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>")
+  );
 }

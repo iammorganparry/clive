@@ -235,7 +235,7 @@ export function extractNodeId(line: string): string | undefined {
   // - nodeName((label))
   // - nodeName>label]
   // - nodeName
-  const nodeMatch = line.match(/^\s*(\w+)[\s\[\(\{<>]/);
+  const nodeMatch = line.match(/^\s*(\w+)[\s[({<>]/);
   if (nodeMatch) {
     return nodeMatch[1];
   }

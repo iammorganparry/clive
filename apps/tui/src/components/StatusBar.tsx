@@ -3,8 +3,8 @@
  * Shows execution status, worker connection status, and helpful hints
  */
 
-import { OneDarkPro } from '../styles/theme';
-import type { WorkerStatus } from '@clive/worker-protocol';
+import type { WorkerStatus } from "@clive/worker-protocol";
+import { OneDarkPro } from "../styles/theme";
 
 interface StatusBarProps {
   width: number;
@@ -27,33 +27,38 @@ export function StatusBar({
   workerStatus,
   workerSessions = 0,
 }: StatusBarProps) {
-  const statusText = isRunning ? '⏳ Executing...' : '✓ Ready';
-  const statusColor = isRunning ? OneDarkPro.syntax.yellow : OneDarkPro.syntax.green;
+  const statusText = isRunning ? "⏳ Executing..." : "✓ Ready";
+  const statusColor = isRunning
+    ? OneDarkPro.syntax.yellow
+    : OneDarkPro.syntax.green;
 
   // Get directory name from workspace root (show last part of path)
   const workspaceName = workspaceRoot
-    ? workspaceRoot.split('/').filter(Boolean).pop() || workspaceRoot
-    : 'unknown';
+    ? workspaceRoot.split("/").filter(Boolean).pop() || workspaceRoot
+    : "unknown";
 
   // Worker status display
   const getWorkerStatusDisplay = (): { text: string; color: string } | null => {
     if (!workerStatus) return null;
 
     switch (workerStatus) {
-      case 'ready':
+      case "ready":
         return {
-          text: workerSessions > 0 ? `W: ${workerSessions} session${workerSessions > 1 ? 's' : ''}` : 'W: Connected',
+          text:
+            workerSessions > 0
+              ? `W: ${workerSessions} session${workerSessions > 1 ? "s" : ""}`
+              : "W: Connected",
           color: OneDarkPro.syntax.green,
         };
-      case 'busy':
+      case "busy":
         return {
-          text: `W: ${workerSessions} session${workerSessions > 1 ? 's' : ''}`,
+          text: `W: ${workerSessions} session${workerSessions > 1 ? "s" : ""}`,
           color: OneDarkPro.syntax.yellow,
         };
-      case 'connecting':
-        return { text: 'W: Connecting...', color: OneDarkPro.syntax.yellow };
-      case 'disconnected':
-        return { text: 'W: Disconnected', color: OneDarkPro.syntax.red };
+      case "connecting":
+        return { text: "W: Connecting...", color: OneDarkPro.syntax.yellow };
+      case "disconnected":
+        return { text: "W: Disconnected", color: OneDarkPro.syntax.red };
       default:
         return null;
     }
@@ -62,13 +67,13 @@ export function StatusBar({
   const workerDisplay = getWorkerStatusDisplay();
 
   // Context-sensitive help hints
-  let helpHint = '';
+  let helpHint = "";
   if (inputFocused) {
-    helpHint = 'Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit';
+    helpHint = "Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit";
   } else if (isRunning) {
-    helpHint = 'Ctrl+G scroll bottom  •  Ctrl+C quit';
+    helpHint = "Ctrl+G scroll bottom  •  Ctrl+C quit";
   } else {
-    helpHint = '/ input  •  ? help  •  Esc back  •  Ctrl+C quit';
+    helpHint = "/ input  •  ? help  •  Esc back  •  Ctrl+C quit";
   }
 
   return (
@@ -83,9 +88,7 @@ export function StatusBar({
     >
       {/* Left: Status, workspace, and worker status */}
       <box flexDirection="row">
-        <text fg={statusColor}>
-          {statusText}
-        </text>
+        <text fg={statusColor}>{statusText}</text>
         {workspaceRoot && (
           <>
             <text fg={OneDarkPro.foreground.muted}> • </text>

@@ -4,17 +4,15 @@
  * Handles WebSocket connections from worker clients.
  */
 
-import { WebSocketServer, WebSocket } from "ws";
-import type { Server } from "http";
+import type { Server } from "node:http";
 import type {
-  WorkerToCentralMessage,
   CentralToWorkerMessage,
+  WorkerToCentralMessage,
 } from "@clive/worker-protocol";
-import {
-  WorkerToCentralMessageSchema,
-} from "@clive/worker-protocol";
-import type { WorkerRegistry } from "../services/worker-registry";
+import { WorkerToCentralMessageSchema } from "@clive/worker-protocol";
+import { WebSocket, WebSocketServer } from "ws";
 import type { WorkerProxy } from "../services/worker-proxy";
+import type { WorkerRegistry } from "../services/worker-registry";
 
 /**
  * WebSocket event server configuration
@@ -40,7 +38,7 @@ export class EventServer {
   constructor(
     config: EventServerConfig,
     registry: WorkerRegistry,
-    proxy: WorkerProxy
+    proxy: WorkerProxy,
   ) {
     this.registry = registry;
     this.proxy = proxy;
@@ -56,7 +54,9 @@ export class EventServer {
       this.handleConnection(socket, request);
     });
 
-    console.log(`[EventServer] WebSocket server started on ${config.path || "/ws"}`);
+    console.log(
+      `[EventServer] WebSocket server started on ${config.path || "/ws"}`,
+    );
   }
 
   /**
@@ -135,13 +135,20 @@ export class EventServer {
       console.log(`[EventServer] Received: ${message.type}`);
 
       switch (message.type) {
-        case "register":
-          const registerResult = this.registry.register(message.payload, socket);
+        case "register": {
+          const registerResult = this.registry.register(
+            message.payload,
+            socket,
+          );
           if (!registerResult.success) {
-            console.error("[EventServer] Registration failed:", registerResult.error);
+            console.error(
+              "[EventServer] Registration failed:",
+              registerResult.error,
+            );
             socket.close(4002, registerResult.error);
           }
           break;
+        }
 
         case "heartbeat":
           this.registry.handleHeartbeat(message.payload);
@@ -167,7 +174,10 @@ export class EventServer {
   /**
    * Send message to socket
    */
-  private sendToSocket(socket: WebSocket, message: CentralToWorkerMessage): void {
+  private sendToSocket(
+    socket: WebSocket,
+    message: CentralToWorkerMessage,
+  ): void {
     if (socket.readyState !== WebSocket.OPEN) {
       return;
     }

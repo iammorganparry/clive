@@ -5,15 +5,18 @@
  * Handles spawning CLI, streaming events, and routing answers.
  */
 
-import { EventEmitter } from "events";
-import { Effect, Runtime, Stream } from "effect";
+import { EventEmitter } from "node:events";
 import {
-  ClaudeCliService,
   type ClaudeCliEvent,
+  ClaudeCliService,
   type CliExecutionHandle,
-  ClaudeCliExecutionError,
 } from "@clive/claude-services";
-import type { QuestionData, InterviewEvent, AnswerPayload } from "../store/types";
+import { Effect, type Runtime, Stream } from "effect";
+import type {
+  AnswerPayload,
+  InterviewEvent,
+  QuestionData,
+} from "../store/types";
 
 /**
  * Planning skill system prompt
@@ -60,7 +63,7 @@ export class ClaudeManager extends EventEmitter {
     this.runtime = Effect.runSync(
       Effect.gen(function* () {
         return yield* Effect.runtime<ClaudeCliService>();
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(layer)),
     );
   }
 
@@ -75,7 +78,7 @@ export class ClaudeManager extends EventEmitter {
   async startInterview(
     threadTs: string,
     initialPrompt: string,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): Promise<CliExecutionHandle> {
     console.log(`[ClaudeManager] Starting interview for thread ${threadTs}`);
 
@@ -84,15 +87,13 @@ export class ClaudeManager extends EventEmitter {
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
-    const program = Effect.gen(this.createExecutionProgram(
-      threadTs,
-      prompt,
-      onEvent
-    ));
+    const program = Effect.gen(
+      this.createExecutionProgram(threadTs, prompt, onEvent),
+    );
 
     try {
       const handle = await Effect.runPromise(
-        program.pipe(Effect.provide(ClaudeCliService.Default))
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
       );
       this.activeHandles.set(threadTs, handle);
       return handle;
@@ -112,7 +113,7 @@ export class ClaudeManager extends EventEmitter {
   private createExecutionProgram(
     threadTs: string,
     prompt: string,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ) {
     const self = this;
 
@@ -134,8 +135,8 @@ export class ClaudeManager extends EventEmitter {
         Stream.runForEach((event) =>
           Effect.sync(() => {
             self.processEvent(event, onEvent);
-          })
-        )
+          }),
+        ),
       );
 
       return handle;
@@ -147,7 +148,7 @@ export class ClaudeManager extends EventEmitter {
    */
   private processEvent(
     event: ClaudeCliEvent,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): void {
     console.log(`[ClaudeManager] Processing event: ${event.type}`);
 
@@ -175,7 +176,7 @@ export class ClaudeManager extends EventEmitter {
           };
 
           console.log(
-            `[ClaudeManager] Question received: ${questionData.toolUseID}`
+            `[ClaudeManager] Question received: ${questionData.toolUseID}`,
           );
           onEvent({ type: "question", data: questionData });
         }
@@ -184,7 +185,10 @@ export class ClaudeManager extends EventEmitter {
 
       case "text": {
         // Check for plan content markers
-        if (event.content.includes("## Plan") || event.content.includes("# Plan")) {
+        if (
+          event.content.includes("## Plan") ||
+          event.content.includes("# Plan")
+        ) {
           onEvent({ type: "plan_ready", content: event.content });
         } else {
           onEvent({ type: "text", content: event.content });
@@ -195,7 +199,10 @@ export class ClaudeManager extends EventEmitter {
       case "tool_result": {
         // Check for Linear issue creation results
         const content = event.content;
-        if (content.includes("linear.app") || content.includes("Issue created")) {
+        if (
+          content.includes("linear.app") ||
+          content.includes("Issue created")
+        ) {
           // Extract URLs from content
           const urlMatch = content.match(/https:\/\/linear\.app\/[^\s]+/g);
           if (urlMatch) {
@@ -227,13 +234,11 @@ export class ClaudeManager extends EventEmitter {
   sendAnswer(
     threadTs: string,
     toolUseId: string,
-    answers: AnswerPayload
+    answers: AnswerPayload,
   ): void {
     const handle = this.activeHandles.get(threadTs);
     if (!handle) {
-      console.error(
-        `[ClaudeManager] No active handle for thread ${threadTs}`
-      );
+      console.error(`[ClaudeManager] No active handle for thread ${threadTs}`);
       return;
     }
 
@@ -253,13 +258,13 @@ export class ClaudeManager extends EventEmitter {
   sendMessage(threadTs: string, message: string): void {
     const handle = this.activeHandles.get(threadTs);
     if (!handle) {
-      console.error(
-        `[ClaudeManager] No active handle for thread ${threadTs}`
-      );
+      console.error(`[ClaudeManager] No active handle for thread ${threadTs}`);
       return;
     }
 
-    console.log(`[ClaudeManager] Sending message: ${message.substring(0, 100)}`);
+    console.log(
+      `[ClaudeManager] Sending message: ${message.substring(0, 100)}`,
+    );
     handle.sendMessage(message);
   }
 

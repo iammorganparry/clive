@@ -5,19 +5,16 @@
 
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-
-// Step 1: Just React (baseline - should work)
-import { useEffect } from 'react';
-
-// Step 2: Add theme
-import { OneDarkPro } from './styles/theme';
-
 // Step 3: Add React Query
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useMachine } from "@xstate/react";
+// Step 1: Just React (baseline - should work)
+import { useEffect } from "react";
 
 // Step 4: Add XState
-import { setup, assign } from 'xstate';
-import { useMachine } from '@xstate/react';
+import { assign, setup } from "xstate";
+// Step 2: Add theme
+import { OneDarkPro } from "./styles/theme";
 
 // Step 5a: Test Header inline (no border)
 // import { Header } from './components/Header';
@@ -34,11 +31,11 @@ const queryClient = new QueryClient({
 const testMachine = setup({
   types: {
     context: {} as { count: number },
-    events: {} as { type: 'INCREMENT' },
+    events: {} as { type: "INCREMENT" },
   },
 }).createMachine({
-  id: 'test',
-  initial: 'idle',
+  id: "test",
+  initial: "idle",
   context: { count: 0 },
   states: {
     idle: {
@@ -56,7 +53,7 @@ function TestApp() {
   console.log("✅ Theme imported:", OneDarkPro.syntax.blue);
   console.log("✅ QueryClient created");
 
-  const [state, send] = useMachine(testMachine);
+  const [state, _send] = useMachine(testMachine);
   console.log("✅ XState machine initialized:", state.context.count);
 
   useEffect(() => {
@@ -97,6 +94,6 @@ console.log("✅ Root created");
 root.render(
   <QueryClientProvider client={queryClient}>
     <TestApp />
-  </QueryClientProvider>
+  </QueryClientProvider>,
 );
 console.log("✅ App rendered");

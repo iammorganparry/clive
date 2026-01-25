@@ -3,35 +3,34 @@
  * Provides reusable mocks for non-Effect services used in AI agent tools
  */
 
+import { Data, Effect, Layer, Option, pipe, Stream } from "effect";
 import { vi } from "vitest";
-import { Effect, Layer, Data, Option, pipe } from "effect";
 import type * as vscode from "vscode";
-import type { TokenBudgetService } from "../../services/ai-agent/token-budget.js";
-import type { SummaryService } from "../../services/ai-agent/summary-service.js";
-import type { KnowledgeFileService } from "../../services/knowledge-file-service.js";
-import type { DiffContentProvider } from "../../services/diff-content-provider.js";
-import type { Message } from "../../services/ai-agent/context-tracker.js";
-import { SettingsService } from "../../services/settings-service.js";
 import { GlobalStateKeys } from "../../constants.js";
+import type { Message } from "../../services/ai-agent/context-tracker.js";
+import type { SummaryService } from "../../services/ai-agent/summary-service.js";
+import type { TokenBudgetService } from "../../services/ai-agent/token-budget.js";
 import {
-  VSCodeService,
-  NoWorkspaceError,
-  FileSystemError,
+  type ClaudeCliEvent,
+  type ClaudeCliExecuteOptions,
+  ClaudeCliService,
+  type ClaudeCliStatus,
+  type CliExecutionHandle,
+} from "../../services/claude-cli-service.js";
+import type { DiffContentProvider } from "../../services/diff-content-provider.js";
+import type { KnowledgeFileService } from "../../services/knowledge-file-service.js";
+import { SettingsService } from "../../services/settings-service.js";
+import {
   DocumentError,
+  FileSystemError,
+  NoWorkspaceError,
+  VSCodeService,
 } from "../../services/vs-code.js";
 import {
   createVSCodeMock,
   getVSCodeMock,
   type VSCodeMockOverrides,
 } from "./vscode-mock.js";
-import {
-  ClaudeCliService,
-  type ClaudeCliStatus,
-  type ClaudeCliExecuteOptions,
-  type ClaudeCliEvent,
-  type CliExecutionHandle,
-} from "../../services/claude-cli-service.js";
-import { Stream } from "effect";
 
 class SettingsError extends Data.TaggedError("SettingsError")<{
   message: string;
@@ -375,7 +374,8 @@ export function createMockSettingsServiceLayer(): {
           return (
             (mockGlobalState.get<"anthropic" | "gateway" | "claude-cli">(
               GlobalStateKeys.aiProvider,
-            ) as "anthropic" | "gateway" | "claude-cli" | undefined) ?? "gateway"
+            ) as "anthropic" | "gateway" | "claude-cli" | undefined) ??
+            "gateway"
           );
         }),
       setAiProvider: (provider: "anthropic" | "gateway" | "claude-cli") =>

@@ -5,14 +5,14 @@
  */
 
 import type { KnownBlock } from "@slack/types";
-import type { QuestionData, Question } from "../store/types";
+import type { Question, QuestionData } from "../store/types";
 import {
-  section,
-  divider,
-  button,
   actionsRows,
-  context,
   blocks,
+  button,
+  context,
+  divider,
+  section,
 } from "./block-builder";
 
 /**
@@ -32,7 +32,7 @@ export const ACTION_IDS = {
 export function formatQuestion(
   question: Question,
   questionIndex: number,
-  toolUseId: string
+  toolUseId: string,
 ): KnownBlock[] {
   const questionBlocks: KnownBlock[] = [];
 
@@ -50,8 +50,8 @@ export function formatQuestion(
         optionIndex,
         header: question.header,
         label: option.label,
-      })
-    )
+      }),
+    ),
   );
 
   // Add "Other..." button for custom input
@@ -64,8 +64,8 @@ export function formatQuestion(
         questionIndex,
         header: question.header,
         question: question.question,
-      })
-    )
+      }),
+    ),
   );
 
   // Split into rows (max 5 per row)
@@ -87,7 +87,9 @@ export function formatQuestion(
   // Multi-select indicator
   if (question.multiSelect) {
     questionBlocks.push(
-      context(["_You can select multiple options. Click 'Done' when finished._"])
+      context([
+        "_You can select multiple options. Click 'Done' when finished._",
+      ]),
     );
   }
 
@@ -116,7 +118,7 @@ export function formatQuestionData(questionData: QuestionData): KnownBlock[] {
  */
 export function formatSelectedOption(
   question: Question,
-  selectedLabel: string
+  selectedLabel: string,
 ): KnownBlock[] {
   return [
     section(`*${question.header}*\n${question.question}`),
@@ -137,7 +139,12 @@ export function formatPlanApproval(planPreview: string): KnownBlock[] {
       type: "actions",
       block_id: "plan_approval",
       elements: [
-        button("Approve & Create Issues", ACTION_IDS.APPROVE_PLAN, undefined, "primary"),
+        button(
+          "Approve & Create Issues",
+          ACTION_IDS.APPROVE_PLAN,
+          undefined,
+          "primary",
+        ),
         button("Request Changes", ACTION_IDS.REQUEST_CHANGES),
       ],
     },
@@ -164,7 +171,9 @@ export function formatPhaseIndicator(phase: string): KnownBlock[] {
   };
 
   const emoji = phaseEmojis[phase] || ":question:";
-  const phaseText = phase.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const phaseText = phase
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
   return [context([`${emoji} *Phase:* ${phaseText}`])];
 }
@@ -177,7 +186,7 @@ export function formatTimeoutMessage(): KnownBlock[] {
     section(":hourglass: *Interview Timed Out*"),
     section(
       "This planning interview has been inactive for 30 minutes and has been closed.\n\n" +
-      "To start a new interview, mention @clive again."
+        "To start a new interview, mention @clive again.",
     ),
   );
 }
@@ -201,8 +210,8 @@ export function formatWelcomeMessage(hasDescription: boolean): KnownBlock[] {
     return [
       section(
         ":wave: *Starting Planning Interview*\n\n" +
-        "I'll guide you through a structured interview to understand your requirements. " +
-        "Please answer each question to help me create a detailed plan."
+          "I'll guide you through a structured interview to understand your requirements. " +
+          "Please answer each question to help me create a detailed plan.",
       ),
     ];
   }
@@ -210,8 +219,8 @@ export function formatWelcomeMessage(hasDescription: boolean): KnownBlock[] {
   return [
     section(
       ":wave: *Hi! I'm Clive, your planning assistant.*\n\n" +
-      "I'll help you plan your next feature or project through a structured interview. " +
-      "What would you like to build?"
+        "I'll help you plan your next feature or project through a structured interview. " +
+        "What would you like to build?",
     ),
   ];
 }
@@ -226,7 +235,7 @@ export function formatCompletionMessage(linearUrls: string[]): KnownBlock[] {
     section(":white_check_mark: *Planning Complete!*"),
     section(
       "Your plan has been created and Linear issues have been generated:\n\n" +
-      urlList
+        urlList,
     ),
     context(["Start a new planning session anytime by mentioning @clive."]),
   );
@@ -239,7 +248,7 @@ export function formatNonInitiatorNotice(initiatorId: string): KnownBlock[] {
   return [
     section(
       `:lock: This interview can only be answered by <@${initiatorId}>.\n\n` +
-      "To start your own planning session, mention @clive in a new message."
+        "To start your own planning session, mention @clive in a new message.",
     ),
   ];
 }

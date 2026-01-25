@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Runtime } from "effect";
-import { MessageRepository, type Message } from "../message-repository.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  createMockDrizzleClient,
   createMessageRepositoryTestLayer,
+  createMockDrizzleClient,
   mockInsertChain,
   mockReset,
 } from "../../__tests__/test-layer-factory.js";
+import { type Message, MessageRepository } from "../message-repository.js";
 
 describe("MessageRepository", () => {
   const runtime = Runtime.defaultRuntime;

@@ -4,8 +4,8 @@
  */
 
 import { Effect } from "effect";
-import type { Section } from "../types.js";
 import { getToolName } from "../tool-names.js";
+import type { Section } from "../types.js";
 
 export const workflow: Section = (config) => {
   const isActMode = config.mode === "act";

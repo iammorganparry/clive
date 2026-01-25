@@ -1,7 +1,7 @@
-import { setup, assign, fromPromise } from "xstate";
+import { assign, fromPromise, setup } from "xstate";
 import type {
-  KnowledgeBaseStatus,
   KnowledgeBasePhase,
+  KnowledgeBaseStatus,
 } from "../../../../services/knowledge-base-types.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import {

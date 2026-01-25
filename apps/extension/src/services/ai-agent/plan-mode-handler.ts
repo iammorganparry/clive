@@ -10,10 +10,10 @@
  * 2. Read plan file content
  */
 
-import { Effect } from "effect";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Effect } from "effect";
 
 /**
  * State tracking for native plan mode
@@ -80,9 +80,7 @@ export const discoverPlanFilePath = (
       // Check if directory exists
       const dirExists = yield* Effect.sync(() => {
         try {
-          return (
-            fs.existsSync(plansDir) && fs.statSync(plansDir).isDirectory()
-          );
+          return fs.existsSync(plansDir) && fs.statSync(plansDir).isDirectory();
         } catch {
           return false;
         }

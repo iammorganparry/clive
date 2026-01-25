@@ -13,12 +13,9 @@
     "**/pnpm-lock.yaml": true
   },
   "editor.codeActionsOnSave": {
-    "quickfix.biome": "explicit"
+    "source.fixAll.biome": "explicit"
   },
   "typescript.tsdk": "node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
-  "eslint.workingDirectories": [
-    "apps/extension",
-    "packages/ui"
-  ]
+  "eslint.workingDirectories": ["apps/extension", "packages/ui"]
 }

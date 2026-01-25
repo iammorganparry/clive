@@ -1,9 +1,9 @@
+import { createRouter } from "@clive/webview-rpc";
 import { Effect, Runtime } from "effect";
 import { z } from "zod";
-import { createRouter } from "@clive/webview-rpc";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import { createAuthServiceLayer } from "../../services/layer-factory.js";
 import { DeviceAuthService } from "../../services/device-auth-service.js";
+import { createAuthServiceLayer } from "../../services/layer-factory.js";
 import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();

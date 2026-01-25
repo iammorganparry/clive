@@ -1,12 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Runtime } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import * as vscodeModule from "vscode";
-import { Runtime } from "effect";
-import {
-  getDiagnostics,
-  getNewProblems,
-  formatDiagnosticsMessage,
-} from "../diagnostics-service";
 import {
   createMockDiagnostic,
   createMockDiagnosticWithRange,
@@ -16,6 +11,11 @@ import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../__tests__/mock-factories/index.js";
+import {
+  formatDiagnosticsMessage,
+  getDiagnostics,
+  getNewProblems,
+} from "../diagnostics-service";
 
 // Mock vscode globally for diagnostics-service which uses vscode.* directly
 vi.mock("vscode", async () => {

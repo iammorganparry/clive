@@ -7,10 +7,9 @@
  * - Other AI-powered testing tools
  */
 
+export { PromptBuildError } from "./errors.js";
+// Re-export all sections
+export * from "./sections/index.js";
 // Re-export all types
 export type { BuildConfig, Section } from "./types.js";
 export { SectionId } from "./types.js";
-export { PromptBuildError } from "./errors.js";
-
-// Re-export all sections
-export * from "./sections/index.js";

@@ -34,4 +34,3 @@ You have unlimited steps to complete your task. When you have finished ALL work:
 - Verification is still in progress
 </completion_signal>`,
   );
-

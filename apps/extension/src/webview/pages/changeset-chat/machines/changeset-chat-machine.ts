@@ -1,23 +1,23 @@
-import { setup, assign } from "xstate";
+import type { LanguageModelUsage } from "ai";
+import { assign, setup } from "xstate";
 import type {
-  ToolEvent,
   ChatMessage,
   MessagePart,
+  ToolEvent,
   ToolState,
 } from "../../../types/chat.js";
+import { parsePlan } from "../utils/parse-plan.js";
 import {
   parseScratchpad,
   type ScratchpadTodo,
 } from "../utils/parse-scratchpad.js";
-import { parsePlan } from "../utils/parse-plan.js";
 import {
+  extractTestFilePath,
   isTestCommand,
+  type TestFileExecution,
   updateTestExecution,
   updateTestExecutionFromStream,
-  extractTestFilePath,
-  type TestFileExecution,
 } from "../utils/parse-test-output.js";
-import type { LanguageModelUsage } from "ai";
 
 // Type guards for bash execute operations
 interface BashExecuteArgs {
@@ -227,7 +227,11 @@ export type ChangesetChatEvent =
   | { type: "SEND_MESSAGE"; content: string }
   | { type: "CANCEL_STREAM" }
   | { type: "CLOSE_TEST_DRAWER" }
-  | { type: "APPROVE_PLAN"; suites: TestSuiteQueueItem[]; approvalMode: "auto" | "manual" }
+  | {
+      type: "APPROVE_PLAN";
+      suites: TestSuiteQueueItem[];
+      approvalMode: "auto" | "manual";
+    }
   | { type: "SET_SUBSCRIPTION_ID"; subscriptionId: string | null }
   // Ralph Wiggum loop events (from stream-events.ts)
   | {
@@ -243,7 +247,12 @@ export type ChangesetChatEvent =
     }
   | {
       type: "LOOP_COMPLETE";
-      reason: "complete" | "max_iterations" | "max_time" | "error" | "cancelled";
+      reason:
+        | "complete"
+        | "max_iterations"
+        | "max_time"
+        | "error"
+        | "cancelled";
       iteration: number;
       todos: LoopTodoItem[];
       progress: LoopProgress;
@@ -454,7 +463,10 @@ export const changesetChatMachine = setup({
           ),
         };
       }
-      return { isTextStreaming: false, toolEvents: [...context.toolEvents, toolEvent] };
+      return {
+        isTextStreaming: false,
+        toolEvents: [...context.toolEvents, toolEvent],
+      };
     }),
     updateToolEvent: assign(({ context, event }) => {
       if (event.type !== "RESPONSE_CHUNK" || event.chunkType !== "tool-result")

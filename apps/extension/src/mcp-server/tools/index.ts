@@ -4,10 +4,13 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerSearchKnowledge } from "./search-knowledge.js";
-import { registerCompleteTask } from "./complete-task.js";
-import { registerProposePlan, registerProposeTestPlan } from "./propose-plan.js";
 import { registerApprovePlan } from "./approve-plan.js";
+import { registerCompleteTask } from "./complete-task.js";
+import {
+  registerProposePlan,
+  registerProposeTestPlan,
+} from "./propose-plan.js";
+import { registerSearchKnowledge } from "./search-knowledge.js";
 import { registerSummarizeContext } from "./summarize-context.js";
 
 /**

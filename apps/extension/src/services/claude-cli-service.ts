@@ -1,9 +1,9 @@
-import { Data, Effect, Stream } from "effect";
 import { exec, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as fs from "node:fs";
+import { promisify } from "node:util";
+import { Data, Effect, Stream } from "effect";
 import { logToOutput } from "../utils/logger.js";
 
 const execAsync = promisify(exec);
@@ -261,7 +261,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               };
             }
             if (data.content_block?.type === "thinking") {
-              return { type: "thinking", content: data.content_block.thinking || "" };
+              return {
+                type: "thinking",
+                content: data.content_block.thinking || "",
+              };
             }
           }
 
@@ -287,7 +290,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
           // Handle message_delta - contains stop reason
           if (data.type === "message_delta") {
-            if (data.delta?.stop_reason === "end_turn" || data.delta?.stop_reason === "tool_use") {
+            if (
+              data.delta?.stop_reason === "end_turn" ||
+              data.delta?.stop_reason === "tool_use"
+            ) {
               return { type: "done" };
             }
             return null;
@@ -342,9 +348,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                   return {
                     type: "tool_result" as const,
                     id: block.tool_use_id,
-                    content: typeof block.content === "string"
-                      ? block.content
-                      : JSON.stringify(block.content),
+                    content:
+                      typeof block.content === "string"
+                        ? block.content
+                        : JSON.stringify(block.content),
                   };
                 }
               }
@@ -353,7 +360,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
           }
 
           // Unknown event type - log it for debugging
-          logToOutput(`[ClaudeCliService] Unknown event type: ${data.type} ${JSON.stringify(data).substring(0, 200)}`);
+          logToOutput(
+            `[ClaudeCliService] Unknown event type: ${data.type} ${JSON.stringify(data).substring(0, 200)}`,
+          );
           return null;
         } catch {
           // Not valid JSON, might be plain text output
@@ -488,7 +497,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // Sandbox file access to workspace directory only
             if (options.workspaceRoot) {
               args.push("--add-dir", options.workspaceRoot);
-              logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
+              logToOutput(
+                `[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`,
+              );
             }
 
             // Auto-accept edit permissions within allowed directories
@@ -499,7 +510,11 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             args.push("--allowedTools", "mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
-            if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
+            if (
+              options.mcpSocketPath &&
+              options.mcpServerPath &&
+              options.workspaceRoot
+            ) {
               const mcpConfig = {
                 mcpServers: {
                   "clive-tools": {
@@ -514,12 +529,18 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 },
               };
               args.push("--mcp-config", JSON.stringify(mcpConfig));
-              logToOutput(`[ClaudeCliService] MCP config added: ${JSON.stringify(mcpConfig)}`);
+              logToOutput(
+                `[ClaudeCliService] MCP config added: ${JSON.stringify(mcpConfig)}`,
+              );
             }
 
             // Debug: Log the prompt being passed
-            logToOutput(`[ClaudeCliService] Prompt length: ${options.prompt?.length ?? 0}`);
-            logToOutput(`[ClaudeCliService] Prompt preview: ${options.prompt?.substring(0, 100) ?? "(empty)"}`);
+            logToOutput(
+              `[ClaudeCliService] Prompt length: ${options.prompt?.length ?? 0}`,
+            );
+            logToOutput(
+              `[ClaudeCliService] Prompt preview: ${options.prompt?.substring(0, 100) ?? "(empty)"}`,
+            );
 
             // Debug: Log the command being executed
             logToOutput(`[ClaudeCliService] Spawning CLI: ${cliPath}`);
@@ -540,7 +561,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // Add beta features if specified
             if (options.betas && options.betas.length > 0) {
               args.push("--betas", ...options.betas);
-              logToOutput(`[ClaudeCliService] Betas enabled: ${options.betas.join(", ")}`);
+              logToOutput(
+                `[ClaudeCliService] Betas enabled: ${options.betas.join(", ")}`,
+              );
             }
 
             // Note: Prompt is NOT passed via CLI args when using --input-format stream-json
@@ -553,8 +576,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               cwd: options.workspaceRoot || process.cwd(),
             });
 
-            logToOutput(`[ClaudeCliService] Process spawned with PID: ${child.pid}`);
-            logToOutput(`[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`);
+            logToOutput(
+              `[ClaudeCliService] Process spawned with PID: ${child.pid}`,
+            );
+            logToOutput(
+              `[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`,
+            );
 
             // Listen for spawn event to confirm process started and send prompt
             child.on("spawn", () => {
@@ -570,7 +597,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 },
               });
               child.stdin.write(`${userMessage}\n`);
-              logToOutput(`[ClaudeCliService] Sent prompt via stdin (${options.prompt.length} chars)`);
+              logToOutput(
+                `[ClaudeCliService] Sent prompt via stdin (${options.prompt.length} chars)`,
+              );
             });
 
             // Note: Do NOT close stdin here - we need it open for bidirectional
@@ -586,7 +615,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
               child.stdout.on("data", (data: Buffer) => {
                 const chunk = data.toString();
-                logToOutput(`[ClaudeCliService] stdout chunk (${chunk.length} bytes): ${chunk.substring(0, 100)}`);
+                logToOutput(
+                  `[ClaudeCliService] stdout chunk (${chunk.length} bytes): ${chunk.substring(0, 100)}`,
+                );
                 buffer += chunk;
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
@@ -594,7 +625,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 for (const line of lines) {
                   const event = parseCliOutput(line);
                   if (event) {
-                    logToOutput(`[ClaudeCliService] Emitting event: ${event.type}`);
+                    logToOutput(
+                      `[ClaudeCliService] Emitting event: ${event.type}`,
+                    );
                     emit.single(event);
                   }
                 }
@@ -612,7 +645,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               });
 
               child.on("error", (error) => {
-                logToOutput(`[ClaudeCliService] Process error: ${error.message}`);
+                logToOutput(
+                  `[ClaudeCliService] Process error: ${error.message}`,
+                );
                 emit.fail(
                   new ClaudeCliExecutionError({
                     message: `CLI process error: ${error.message}`,
@@ -621,7 +656,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               });
 
               child.on("close", (code) => {
-                logToOutput(`[ClaudeCliService] Process closed with code: ${code}`);
+                logToOutput(
+                  `[ClaudeCliService] Process closed with code: ${code}`,
+                );
                 // Process any remaining buffer
                 if (buffer.trim()) {
                   const event = parseCliOutput(buffer);
@@ -682,7 +719,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                   },
                 });
 
-                logToOutput(`[ClaudeCliService] Sending tool result for ${toolCallId}`);
+                logToOutput(
+                  `[ClaudeCliService] Sending tool result for ${toolCallId}`,
+                );
                 child.stdin.write(`${message}\n`);
               },
 
@@ -692,7 +731,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                */
               close: () => {
                 if (child.stdin?.writable) {
-                  logToOutput("[ClaudeCliService] Closing stdin to signal completion");
+                  logToOutput(
+                    "[ClaudeCliService] Closing stdin to signal completion",
+                  );
                   child.stdin.end();
                 }
               },

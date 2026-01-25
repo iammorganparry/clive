@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   ErrorCode,
-  getErrorMessage,
   getErrorCodeFromStatus,
   getErrorCodeFromTrpc,
+  getErrorMessage,
   parseTrpcError,
 } from "../error-messages.js";
 

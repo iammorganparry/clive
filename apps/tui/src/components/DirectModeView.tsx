@@ -11,10 +11,9 @@
  * - Native scrolling and interaction handled by Claude Code
  */
 
-import { useEffect } from 'react';
-import { OneDarkPro } from '../styles/theme';
-import type { CliveMode } from '../types/views';
-import type { Task, Session } from '../types';
+import { OneDarkPro } from "../styles/theme";
+import type { Session, Task } from "../types";
+import type { CliveMode } from "../types/views";
 
 interface DirectModeViewProps {
   /** Terminal width */
@@ -43,31 +42,28 @@ export function DirectModeView({
   onExit,
 }: DirectModeViewProps) {
   // Mode color for status bar
-  const modeColor = mode === 'plan'
-    ? OneDarkPro.syntax.blue
-    : mode === 'build'
-    ? OneDarkPro.syntax.yellow
-    : OneDarkPro.foreground.muted;
+  const modeColor =
+    mode === "plan"
+      ? OneDarkPro.syntax.blue
+      : mode === "build"
+        ? OneDarkPro.syntax.yellow
+        : OneDarkPro.foreground.muted;
 
   // Task summary for status bar
   // Tasks are LinearIssue | BeadsIssue - check state.type for completion
-  const completedTasks = tasks.filter(t => {
-    const stateType = 'state' in t ? t.state?.type : undefined;
-    return stateType === 'completed' || stateType === 'canceled';
+  const completedTasks = tasks.filter((t) => {
+    const stateType = "state" in t ? t.state?.type : undefined;
+    return stateType === "completed" || stateType === "canceled";
   }).length;
   const totalTasks = tasks.length;
-  const taskProgress = totalTasks > 0 ? `${completedTasks}/${totalTasks}` : '';
+  const taskProgress = totalTasks > 0 ? `${completedTasks}/${totalTasks}` : "";
 
   // In direct mode, Claude Code renders above this component via stdout
   // We only render a minimal status bar at the very bottom
   // The status bar uses absolute positioning to avoid interfering with Claude
 
   return (
-    <box
-      width={width}
-      height={height}
-      backgroundColor="transparent"
-    >
+    <box width={width} height={height} backgroundColor="transparent">
       {/*
         Main area is transparent - Claude Code renders here directly.
         We don't draw anything to avoid flickering/conflicts.
@@ -87,32 +83,27 @@ export function DirectModeView({
       >
         <box flexDirection="row">
           <text fg={modeColor} bold>
-            {mode === 'plan' ? 'PLAN' : mode === 'build' ? 'BUILD' : ''}
+            {mode === "plan" ? "PLAN" : mode === "build" ? "BUILD" : ""}
           </text>
           {taskProgress && (
-            <text fg={OneDarkPro.foreground.muted}>
-              {' '} Tasks: {taskProgress}
-            </text>
+            <text fg={OneDarkPro.foreground.muted}> Tasks: {taskProgress}</text>
           )}
           {activeSession?.name && (
             <text fg={OneDarkPro.foreground.comment}>
-              {' '} • {activeSession.linearData?.identifier || activeSession.name.slice(0, 20)}
+              {" "}
+              •{" "}
+              {activeSession.linearData?.identifier ||
+                activeSession.name.slice(0, 20)}
             </text>
           )}
         </box>
         <box flexDirection="row">
           {isRunning ? (
-            <text fg={OneDarkPro.syntax.green}>
-              Running
-            </text>
+            <text fg={OneDarkPro.syntax.green}>Running</text>
           ) : (
-            <text fg={OneDarkPro.foreground.muted}>
-              Done
-            </text>
+            <text fg={OneDarkPro.foreground.muted}>Done</text>
           )}
-          <text fg={OneDarkPro.foreground.comment}>
-            {' '} • Ctrl+C: Stop
-          </text>
+          <text fg={OneDarkPro.foreground.comment}> • Ctrl+C: Stop</text>
         </box>
       </box>
     </box>

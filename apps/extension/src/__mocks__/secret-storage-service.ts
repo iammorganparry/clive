@@ -1,6 +1,6 @@
 import { Layer } from "effect";
-import { SecretStorageService } from "../services/vs-code.js";
 import type * as vscode from "vscode";
+import { SecretStorageService } from "../services/vs-code.js";
 
 /**
  * Create a mock SecretStorageService layer for testing

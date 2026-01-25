@@ -1,5 +1,5 @@
-import type { RouterRecord } from "./types.js";
 import { createProcedureBuilder } from "./procedure.js";
+import type { RouterRecord } from "./types.js";
 
 /**
  * Create a router with type-safe procedures
@@ -17,4 +17,3 @@ export function createRouter<TContext>() {
     procedure: createProcedureBuilder<TContext>(),
   };
 }
-

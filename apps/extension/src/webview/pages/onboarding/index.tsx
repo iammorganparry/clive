@@ -1,5 +1,4 @@
-import type React from "react";
-import { useState } from "react";
+import { FeatureList } from "@clive/ui";
 import { Button } from "@clive/ui/button";
 import {
   Card,
@@ -8,10 +7,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { FeatureList } from "@clive/ui";
-import { Search, Shield, Settings, Zap } from "lucide-react";
-import { useRpc } from "../../rpc/provider.js";
+import { Search, Settings, Shield, Zap } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
 import { useRouter } from "../../router/index.js";
+import { useRpc } from "../../rpc/provider.js";
 
 export const OnboardingPage: React.FC = () => {
   const rpc = useRpc();

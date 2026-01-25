@@ -1,23 +1,23 @@
+import type { RpcSubscriptionMessage } from "@clive/webview-rpc";
+import { Effect, Layer, pipe, Runtime } from "effect";
 import * as vscode from "vscode";
-import type { DiffContentProvider } from "../services/diff-content-provider.js";
-import { getWebviewHtml } from "./webview-html.js";
 import { Views, WebviewMessages } from "../constants.js";
-import { Effect, Layer, Runtime, pipe } from "effect";
-import { GitService as GitServiceEffect } from "../services/git-service.js";
-import { VSCodeService } from "../services/vs-code.js";
+import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
+import type { RpcContext } from "../rpc/context.js";
 import {
   handleRpcMessage,
   handleSubscriptionMessage,
   isRpcMessage,
 } from "../rpc/handler.js";
-import type { RpcSubscriptionMessage } from "@clive/webview-rpc";
-import type { RpcContext } from "../rpc/context.js";
+import type { DiffContentProvider } from "../services/diff-content-provider.js";
+import { GitService as GitServiceEffect } from "../services/git-service.js";
 import {
+  type CachedLayers,
   createCachedLayers,
   toLayerContext,
-  type CachedLayers,
 } from "../services/layer-factory.js";
-import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
+import { VSCodeService } from "../services/vs-code.js";
+import { getWebviewHtml } from "./webview-html.js";
 
 /**
  * Message type for opening a file

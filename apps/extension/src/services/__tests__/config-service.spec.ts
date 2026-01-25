@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Effect, Runtime } from "effect";
-import { ConfigService } from "../config-service.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createBaseTestLayer,
-  setAuthToken,
   setAnthropicApiKey,
+  setAuthToken,
 } from "../../__tests__/test-layer-factory.js";
 import { SecretKeys } from "../../constants.js";
+import { ConfigService } from "../config-service.js";
 
 describe("ConfigService", () => {
   const runtime = Runtime.defaultRuntime;
@@ -335,7 +335,11 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: gatewayToken, isGateway: true, isCli: false });
+      expect(result).toEqual({
+        token: gatewayToken,
+        isGateway: true,
+        isCli: false,
+      });
     });
   });
 
@@ -355,7 +359,11 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: storedApiKey, isGateway: false, isCli: false });
+      expect(result).toEqual({
+        token: storedApiKey,
+        isGateway: false,
+        isCli: false,
+      });
       expect(global.fetch).not.toHaveBeenCalled(); // Should not call gateway
     });
 
@@ -377,7 +385,11 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: gatewayToken, isGateway: true, isCli: false });
+      expect(result).toEqual({
+        token: gatewayToken,
+        isGateway: true,
+        isCli: false,
+      });
       expect(global.fetch).toHaveBeenCalled();
     });
 
@@ -393,7 +405,11 @@ describe("ConfigService", () => {
         return yield* configService.getAiApiKey();
       }).pipe(Effect.provide(layer), Runtime.runPromise(runtime));
 
-      expect(result).toEqual({ token: storedApiKey, isGateway: false, isCli: false });
+      expect(result).toEqual({
+        token: storedApiKey,
+        isGateway: false,
+        isCli: false,
+      });
       expect(global.fetch).not.toHaveBeenCalled();
     });
   });

@@ -1,10 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 
 export type ComparisonMode = "branch" | "uncommitted";
 
@@ -51,4 +46,3 @@ export const useComparisonMode = (): ComparisonModeContextType => {
   }
   return context;
 };
-

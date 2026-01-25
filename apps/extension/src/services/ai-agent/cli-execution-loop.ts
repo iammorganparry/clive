@@ -9,35 +9,35 @@
  * 4. Emitting progress events for UI display
  */
 
-import * as vscode from "vscode";
 import { Effect, Ref, Stream } from "effect";
+import * as vscode from "vscode";
+import { buildFullPlanContent } from "../../utils/frontmatter-utils.js";
+import { logToOutput } from "../../utils/logger.js";
 import type {
-  CliExecutionHandle,
   ClaudeCliEvent,
   ClaudeCliExecuteOptions,
+  ClaudeCliService,
+  CliExecutionHandle,
 } from "../claude-cli-service.js";
-import type { ClaudeCliService } from "../claude-cli-service.js";
 import type { CliToolExecutor } from "./cli-tool-executor.js";
 import type { ProgressCallback } from "./event-handlers.js";
 import {
-  type LoopState,
-  shouldContinueLoop,
+  buildIterationPrompt,
   getExitReason,
+  getProgressSummary,
   incrementIteration,
+  type LoopState,
   recordFailedIteration,
   resetFailures,
   setExitReason,
-  buildIterationPrompt,
-  getProgressSummary,
+  shouldContinueLoop,
 } from "./loop-state.js";
-import type { TodoDisplayItem } from "./stream-events.js";
-import { logToOutput } from "../../utils/logger.js";
-import { buildFullPlanContent } from "../../utils/frontmatter-utils.js";
-import { emit } from "./stream-event-emitter.js";
 import {
   discoverPlanFilePath,
   readPlanContentWithRetry,
 } from "./plan-mode-handler.js";
+import { emit } from "./stream-event-emitter.js";
+import type { TodoDisplayItem } from "./stream-events.js";
 
 /**
  * Options for running the CLI execution loop
@@ -83,8 +83,14 @@ export const runCliExecutionLoop = (
   options: CliExecutionLoopOptions,
 ): Effect.Effect<CliExecutionResult, Error> =>
   Effect.gen(function* () {
-    const { cliHandle, toolExecutor, progressCallback, signal, correlationId, workspaceRoot } =
-      options;
+    const {
+      cliHandle,
+      toolExecutor,
+      progressCallback,
+      signal,
+      correlationId,
+      workspaceRoot,
+    } = options;
 
     let accumulatedResponse = "";
     let taskCompleted = false;
@@ -206,7 +212,13 @@ const handleCliEvent = (
           );
           emit.nativePlanModeEntered(progressCallback, event.id);
           // Also emit as a tool call for UI visibility
-          emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
+          emit.toolCall(
+            progressCallback,
+            event.id,
+            event.name,
+            event.input,
+            "input-available",
+          );
           break;
         }
 
@@ -214,7 +226,13 @@ const handleCliEvent = (
           logToOutput(
             `[CliExecutionLoop:${correlationId}] Native ExitPlanMode detected`,
           );
-          emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
+          emit.toolCall(
+            progressCallback,
+            event.id,
+            event.name,
+            event.input,
+            "input-available",
+          );
 
           // Discover and read the plan file
           if (workspaceRoot) {
@@ -226,10 +244,15 @@ const handleCliEvent = (
               );
 
               // Read plan content with retry (file may still be written)
-              const planContentResult = yield* readPlanContentWithRetry(planFilePath).pipe(
+              const planContentResult = yield* readPlanContentWithRetry(
+                planFilePath,
+              ).pipe(
                 Effect.map((content) => ({ success: true as const, content })),
                 Effect.catchAll((error) =>
-                  Effect.succeed({ success: false as const, error: error.message }),
+                  Effect.succeed({
+                    success: false as const,
+                    error: error.message,
+                  }),
                 ),
               );
 
@@ -277,7 +300,10 @@ const handleCliEvent = (
                 logToOutput(
                   `[CliExecutionLoop:${correlationId}] Failed to read plan file: ${planContentResult.error}`,
                 );
-                emit.error(progressCallback, `Failed to read plan file: ${planContentResult.error}`);
+                emit.error(
+                  progressCallback,
+                  `Failed to read plan file: ${planContentResult.error}`,
+                );
               }
             } else {
               logToOutput(
@@ -309,7 +335,14 @@ const handleCliEvent = (
 
           // Emit tool-call event for UI (input available)
           // The MCP server subprocess handles execution via the bridge
-          emit.toolCall(progressCallback, event.id, toolName, event.input, "input-available", true);
+          emit.toolCall(
+            progressCallback,
+            event.id,
+            toolName,
+            event.input,
+            "input-available",
+            true,
+          );
 
           // For proposeTestPlan, emit plan content from the input for floating approval bar
           if (toolName === "proposeTestPlan") {
@@ -328,7 +361,11 @@ const handleCliEvent = (
             };
             if (input.planContent && input.name) {
               const fullContent = buildFullPlanContent(
-                { name: input.name, overview: input.overview, suites: input.suites },
+                {
+                  name: input.name,
+                  overview: input.overview,
+                  suites: input.suites,
+                },
                 input.planContent,
               );
               emit.planContent(progressCallback, event.id, fullContent, true);
@@ -349,7 +386,13 @@ const handleCliEvent = (
         );
 
         // Emit tool-call event for UI (input available)
-        emit.toolCall(progressCallback, event.id, event.name, event.input, "input-available");
+        emit.toolCall(
+          progressCallback,
+          event.id,
+          event.name,
+          event.input,
+          "input-available",
+        );
 
         // DON'T execute locally or send tool_result - Claude CLI handles it
         // The result will be echoed in CLI stdout as a 'user' message with tool_result
@@ -475,9 +518,7 @@ export const runRalphWiggumCliLoop = (
     while (true) {
       // Check abort signal
       if (signal?.aborted) {
-        logToOutput(
-          `[RalphWiggumCliLoop:${correlationId}] Aborted by signal`,
-        );
+        logToOutput(`[RalphWiggumCliLoop:${correlationId}] Aborted by signal`);
         yield* Ref.update(loopStateRef, (s) => setExitReason(s, "cancelled"));
         break;
       }
@@ -598,7 +639,8 @@ export const runRalphWiggumCliLoop = (
       success: finalState.allTestsPassed || lastIterationSuccess,
       response: accumulatedResponse,
       taskCompleted: finalState.allTestsPassed,
-      error: finalState.exitReason === "error" ? "Max failures reached" : undefined,
+      error:
+        finalState.exitReason === "error" ? "Max failures reached" : undefined,
     };
   }).pipe(
     Effect.catchAll((error) => {

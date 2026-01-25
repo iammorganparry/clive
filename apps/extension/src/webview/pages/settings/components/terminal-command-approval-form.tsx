@@ -1,6 +1,3 @@
-import { useState, useCallback, useEffect } from "react";
-import type React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@clive/ui/button";
 import {
   Card,
@@ -16,6 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@clive/ui/select";
+import { useQueryClient } from "@tanstack/react-query";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 
 export const TerminalCommandApprovalForm: React.FC = () => {

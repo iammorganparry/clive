@@ -76,10 +76,7 @@ export const ToolCallAbortRegistry = {
     );
 
     for (const [toolCallId, abortController] of runningToolCalls) {
-      console.log(
-        "[ToolCallAbortRegistry] Aborting toolCallId:",
-        toolCallId,
-      );
+      console.log("[ToolCallAbortRegistry] Aborting toolCallId:", toolCallId);
       abortController.abort();
     }
 

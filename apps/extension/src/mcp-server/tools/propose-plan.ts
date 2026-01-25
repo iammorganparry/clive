@@ -4,15 +4,17 @@
  * Requires extension bridge for VSCode editor streaming
  */
 
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { ensureBridgeConnected } from "../bridge/extension-bridge.js";
 
 /**
  * User Story schema
  */
 const UserStorySchema = z.object({
-  role: z.string().describe("Type of user (e.g., 'developer', 'user', 'admin')"),
+  role: z
+    .string()
+    .describe("Type of user (e.g., 'developer', 'user', 'admin')"),
   capability: z.string().describe("What they want to do"),
   benefit: z.string().describe("Why they want it / value delivered"),
 });
@@ -22,10 +24,12 @@ const UserStorySchema = z.object({
  */
 const TaskSchema = z.object({
   id: z.string().describe("Unique identifier (e.g., 'task-1')"),
-  title: z.string().describe("User-facing capability (not implementation detail)"),
+  title: z
+    .string()
+    .describe("User-facing capability (not implementation detail)"),
 
   userStory: UserStorySchema.optional().describe(
-    "User story for this task (optional if covered by epic user story)"
+    "User story for this task (optional if covered by epic user story)",
   ),
 
   acceptanceCriteria: z
@@ -59,7 +63,7 @@ const TaskSchema = z.object({
   technicalNotes: z
     .string()
     .describe(
-      "REQUIRED: Must include files affected, existing patterns (file:line), code examples, testing strategy, all based on codebase research"
+      "REQUIRED: Must include files affected, existing patterns (file:line), code examples, testing strategy, all based on codebase research",
     ),
 
   outOfScope: z
@@ -91,7 +95,7 @@ const ProposePlanInputSchema = z.object({
     .describe("Overall category of work"),
 
   epicUserStory: UserStorySchema.describe(
-    "Primary user story driving this epic"
+    "Primary user story driving this epic",
   ),
 
   scope: z
@@ -107,7 +111,9 @@ const ProposePlanInputSchema = z.object({
     .optional()
     .describe("Measurable criteria for epic completion"),
 
-  tasks: z.array(TaskSchema).describe("Tasks with user stories and acceptance criteria"),
+  tasks: z
+    .array(TaskSchema)
+    .describe("Tasks with user stories and acceptance criteria"),
 
   risks: z
     .array(RiskSchema)
@@ -155,7 +161,7 @@ function isLegacyTestPlan(input: any): boolean {
  */
 function convertLegacyToNew(legacy: z.infer<typeof LegacyTestPlanSchema>) {
   console.warn(
-    "[DEPRECATED] Legacy test plan format detected. Please update to new user story format."
+    "[DEPRECATED] Legacy test plan format detected. Please update to new user story format.",
   );
 
   // Basic conversion - wrap in a single task
@@ -173,7 +179,7 @@ function convertLegacyToNew(legacy: z.infer<typeof LegacyTestPlanSchema>) {
         id: "task-1",
         title: "Add test coverage",
         acceptanceCriteria: legacy.suites.map(
-          (suite: any) => `${suite.testType} tests for ${suite.name}`
+          (suite: any) => `${suite.testType} tests for ${suite.name}`,
         ),
         definitionOfDone: [
           "All test suites created",
@@ -197,14 +203,20 @@ export function registerProposePlan(server: McpServer): void {
     "proposePlan",
     "Output a structured plan proposal with user stories, acceptance criteria, and Definition of Done. This tool should be used in PLAN MODE to present a comprehensive plan for user review before implementation. Plans must be based on codebase research with specific file references, code examples, and pattern analysis.",
     ProposePlanInputSchema.shape,
-    async (input: z.infer<typeof ProposePlanInputSchema> | z.infer<typeof LegacyTestPlanSchema>) => {
+    async (
+      input:
+        | z.infer<typeof ProposePlanInputSchema>
+        | z.infer<typeof LegacyTestPlanSchema>,
+    ) => {
       try {
         const bridge = await ensureBridgeConnected();
 
         // Handle legacy format
         let planInput = input;
         if (isLegacyTestPlan(input)) {
-          planInput = convertLegacyToNew(input as z.infer<typeof LegacyTestPlanSchema>);
+          planInput = convertLegacyToNew(
+            input as z.infer<typeof LegacyTestPlanSchema>,
+          );
         }
 
         // Validate against new schema
@@ -271,7 +283,7 @@ export function registerProposePlan(server: McpServer): void {
  */
 export function registerProposeTestPlan(server: McpServer): void {
   console.warn(
-    "[DEPRECATED] proposeTestPlan is deprecated. Use proposePlan instead."
+    "[DEPRECATED] proposeTestPlan is deprecated. Use proposePlan instead.",
   );
 
   server.tool(

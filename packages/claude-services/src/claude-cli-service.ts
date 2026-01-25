@@ -1,9 +1,9 @@
-import { Data, Effect, Stream } from "effect";
 import { exec, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as fs from "node:fs";
+import { promisify } from "node:util";
+import { Data, Effect, Stream } from "effect";
 
 const execAsync = promisify(exec);
 
@@ -259,7 +259,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
        */
       const parseCliOutput = (
         line: string,
-        onPermissionDenial?: (toolUseId: string, isAskUserQuestion: boolean) => void
+        onPermissionDenial?: (
+          toolUseId: string,
+          isAskUserQuestion: boolean,
+        ) => void,
       ): ClaudeCliEvent | null => {
         if (!line.trim()) return null;
 
@@ -279,7 +282,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               // Track AskUserQuestion tool uses to prevent auto-approval
               if (data.content_block.name === "AskUserQuestion") {
                 pendingQuestionIds.add(data.content_block.id);
-                logToOutput(`[ClaudeCliService] Tracking AskUserQuestion: ${data.content_block.id}`);
+                logToOutput(
+                  `[ClaudeCliService] Tracking AskUserQuestion: ${data.content_block.id}`,
+                );
               }
 
               return {
@@ -290,7 +295,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               };
             }
             if (data.content_block?.type === "thinking") {
-              return { type: "thinking", content: data.content_block.thinking || "" };
+              return {
+                type: "thinking",
+                content: data.content_block.thinking || "",
+              };
             }
           }
 
@@ -316,7 +324,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
           // Handle message_delta - contains stop reason
           if (data.type === "message_delta") {
-            if (data.delta?.stop_reason === "end_turn" || data.delta?.stop_reason === "tool_use") {
+            if (
+              data.delta?.stop_reason === "end_turn" ||
+              data.delta?.stop_reason === "tool_use"
+            ) {
               return { type: "done" };
             }
             return null;
@@ -368,9 +379,15 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               for (const block of content) {
                 // Check for permission denials (tool_result with is_error: true)
                 // Auto-approve permission denials EXCEPT for AskUserQuestion
-                if (block.type === "tool_result" && block.is_error === true && block.tool_use_id) {
+                if (
+                  block.type === "tool_result" &&
+                  block.is_error === true &&
+                  block.tool_use_id
+                ) {
                   // Check if this is an AskUserQuestion - if so, don't auto-approve
-                  const isAskUserQuestion = pendingQuestionIds.has(block.tool_use_id);
+                  const isAskUserQuestion = pendingQuestionIds.has(
+                    block.tool_use_id,
+                  );
 
                   // Call the permission denial callback
                   if (onPermissionDenial) {
@@ -386,9 +403,10 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                   return {
                     type: "tool_result" as const,
                     id: block.tool_use_id,
-                    content: typeof block.content === "string"
-                      ? block.content
-                      : JSON.stringify(block.content),
+                    content:
+                      typeof block.content === "string"
+                        ? block.content
+                        : JSON.stringify(block.content),
                   };
                 }
               }
@@ -397,7 +415,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
           }
 
           // Unknown event type - log it for debugging
-          logToOutput(`[ClaudeCliService] Unknown event type: ${data.type} ${JSON.stringify(data).substring(0, 200)}`);
+          logToOutput(
+            `[ClaudeCliService] Unknown event type: ${data.type} ${JSON.stringify(data).substring(0, 200)}`,
+          );
           return null;
         } catch {
           // Not valid JSON, might be plain text output
@@ -533,14 +553,18 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // Sandbox file access to workspace directory only
             if (options.workspaceRoot) {
               args.push("--add-dir", options.workspaceRoot);
-              logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
+              logToOutput(
+                `[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`,
+              );
             }
 
             // NOTE: --resume was previously disabled due to tool_use/tool_result bugs
             // These were fixed in Claude CLI v2.1.0 and v2.1.9
             if (options.resumeSessionId) {
               args.push("--resume", options.resumeSessionId);
-              logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
+              logToOutput(
+                `[ClaudeCliService] Resuming session: ${options.resumeSessionId}`,
+              );
             }
 
             // Use bypassPermissions mode since we're only allowing MCP tools
@@ -552,7 +576,11 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             args.push("--allowedTools", "mcp__clive-tools__*");
 
             // Add MCP server configuration if provided
-            if (options.mcpSocketPath && options.mcpServerPath && options.workspaceRoot) {
+            if (
+              options.mcpSocketPath &&
+              options.mcpServerPath &&
+              options.workspaceRoot
+            ) {
               const mcpConfig = {
                 mcpServers: {
                   "clive-tools": {
@@ -567,12 +595,18 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 },
               };
               args.push("--mcp-config", JSON.stringify(mcpConfig));
-              logToOutput(`[ClaudeCliService] MCP config added: ${JSON.stringify(mcpConfig)}`);
+              logToOutput(
+                `[ClaudeCliService] MCP config added: ${JSON.stringify(mcpConfig)}`,
+              );
             }
 
             // Debug: Log the prompt being passed
-            logToOutput(`[ClaudeCliService] Prompt length: ${options.prompt?.length ?? 0}`);
-            logToOutput(`[ClaudeCliService] Prompt preview: ${options.prompt?.substring(0, 100) ?? "(empty)"}`);
+            logToOutput(
+              `[ClaudeCliService] Prompt length: ${options.prompt?.length ?? 0}`,
+            );
+            logToOutput(
+              `[ClaudeCliService] Prompt preview: ${options.prompt?.substring(0, 100) ?? "(empty)"}`,
+            );
 
             // Debug: Log the command being executed
             logToOutput(`[ClaudeCliService] Spawning CLI: ${cliPath}`);
@@ -593,7 +627,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // Add beta features if specified
             if (options.betas && options.betas.length > 0) {
               args.push("--betas", ...options.betas);
-              logToOutput(`[ClaudeCliService] Betas enabled: ${options.betas.join(", ")}`);
+              logToOutput(
+                `[ClaudeCliService] Betas enabled: ${options.betas.join(", ")}`,
+              );
             }
 
             // Note: Prompt is NOT passed via CLI args when using --input-format stream-json
@@ -606,8 +642,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               cwd: options.workspaceRoot || process.cwd(),
             });
 
-            logToOutput(`[ClaudeCliService] Process spawned with PID: ${child.pid}`);
-            logToOutput(`[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`);
+            logToOutput(
+              `[ClaudeCliService] Process spawned with PID: ${child.pid}`,
+            );
+            logToOutput(
+              `[ClaudeCliService] stdout readable: ${child.stdout?.readable}, stderr readable: ${child.stderr?.readable}`,
+            );
 
             // Track tool_result messages sent to stdin to prevent duplicates (upstream CLI bug workaround)
             // See: https://github.com/anthropics/claude-code/issues/14110
@@ -627,7 +667,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 },
               });
               child.stdin.write(`${userMessage}\n`);
-              logToOutput(`[ClaudeCliService] Sent prompt via stdin (${options.prompt.length} chars)`);
+              logToOutput(
+                `[ClaudeCliService] Sent prompt via stdin (${options.prompt.length} chars)`,
+              );
             });
 
             // Note: Do NOT close stdin here - we need it open for bidirectional
@@ -643,7 +685,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
               child.stdout.on("data", (data: Buffer) => {
                 const chunk = data.toString();
-                logToOutput(`[ClaudeCliService] stdout chunk (${chunk.length} bytes): ${chunk.substring(0, 100)}`);
+                logToOutput(
+                  `[ClaudeCliService] stdout chunk (${chunk.length} bytes): ${chunk.substring(0, 100)}`,
+                );
                 buffer += chunk;
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
@@ -651,16 +695,25 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 for (const line of lines) {
                   // AskUserQuestion is disabled - permission denials should not occur
                   // If they do, log them for debugging but don't auto-approve
-                  const event = parseCliOutput(line, (toolUseId, isAskUserQuestion) => {
-                    if (isAskUserQuestion) {
-                      logToOutput(`[ClaudeCliService] Unexpected permission denial for AskUserQuestion: ${toolUseId} (tool should be disabled)`);
-                    } else {
-                      logToOutput(`[ClaudeCliService] Permission denial for tool: ${toolUseId}`);
-                    }
-                  });
+                  const event = parseCliOutput(
+                    line,
+                    (toolUseId, isAskUserQuestion) => {
+                      if (isAskUserQuestion) {
+                        logToOutput(
+                          `[ClaudeCliService] Unexpected permission denial for AskUserQuestion: ${toolUseId} (tool should be disabled)`,
+                        );
+                      } else {
+                        logToOutput(
+                          `[ClaudeCliService] Permission denial for tool: ${toolUseId}`,
+                        );
+                      }
+                    },
+                  );
 
                   if (event) {
-                    logToOutput(`[ClaudeCliService] Emitting event: ${event.type}`);
+                    logToOutput(
+                      `[ClaudeCliService] Emitting event: ${event.type}`,
+                    );
                     emit.single(event);
                   }
                 }
@@ -678,7 +731,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               });
 
               child.on("error", (error) => {
-                logToOutput(`[ClaudeCliService] Process error: ${error.message}`);
+                logToOutput(
+                  `[ClaudeCliService] Process error: ${error.message}`,
+                );
                 emit.fail(
                   new ClaudeCliExecutionError({
                     message: `CLI process error: ${error.message}`,
@@ -687,7 +742,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               });
 
               child.on("close", (code) => {
-                logToOutput(`[ClaudeCliService] Process closed with code: ${code}`);
+                logToOutput(
+                  `[ClaudeCliService] Process closed with code: ${code}`,
+                );
 
                 // Clear sent tool results for next execution
                 sentToolResultMessages.clear();
@@ -731,14 +788,22 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                * The CLI expects a 'user' message containing tool_result content blocks
                */
               sendToolResult: (toolCallId: string, result: string) => {
-                logToOutput(`[ClaudeCliService] sendToolResult called - toolCallId=${toolCallId}`);
-                logToOutput(`[ClaudeCliService] Current sentToolResultMessages size: ${sentToolResultMessages.size}`);
-                logToOutput(`[ClaudeCliService] sentToolResultMessages contents: ${JSON.stringify(Array.from(sentToolResultMessages))}`);
+                logToOutput(
+                  `[ClaudeCliService] sendToolResult called - toolCallId=${toolCallId}`,
+                );
+                logToOutput(
+                  `[ClaudeCliService] Current sentToolResultMessages size: ${sentToolResultMessages.size}`,
+                );
+                logToOutput(
+                  `[ClaudeCliService] sentToolResultMessages contents: ${JSON.stringify(Array.from(sentToolResultMessages))}`,
+                );
 
                 // Create unique key for this tool_result (tool_use_id + result preview)
                 // This prevents the upstream CLI bug where duplicate tool_results cause 400 errors
                 const resultKey = `${toolCallId}:${result.substring(0, 100)}`;
-                logToOutput(`[ClaudeCliService] Generated resultKey: ${resultKey}`);
+                logToOutput(
+                  `[ClaudeCliService] Generated resultKey: ${resultKey}`,
+                );
 
                 // Check if we've already sent this exact tool_result
                 if (sentToolResultMessages.has(resultKey)) {
@@ -754,7 +819,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
                 // Mark this tool_result as sent
                 sentToolResultMessages.add(resultKey);
-                logToOutput(`[ClaudeCliService] Added to sentToolResultMessages. New size: ${sentToolResultMessages.size}`);
+                logToOutput(
+                  `[ClaudeCliService] Added to sentToolResultMessages. New size: ${sentToolResultMessages.size}`,
+                );
 
                 if (!child.stdin?.writable) {
                   console.error(
@@ -783,12 +850,16 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 logToOutput(`  result preview: ${result.substring(0, 100)}`);
 
                 child.stdin.write(`${message}\n`);
-                logToOutput(`[ClaudeCliService] Successfully wrote tool_result to stdin`);
+                logToOutput(
+                  `[ClaudeCliService] Successfully wrote tool_result to stdin`,
+                );
 
                 // Clean up tracked question IDs after sending result
                 if (pendingQuestionIds.has(toolCallId)) {
                   pendingQuestionIds.delete(toolCallId);
-                  logToOutput(`[ClaudeCliService] Cleaned up AskUserQuestion tracking for ${toolCallId}`);
+                  logToOutput(
+                    `[ClaudeCliService] Cleaned up AskUserQuestion tracking for ${toolCallId}`,
+                  );
                 }
               },
 
@@ -817,7 +888,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 logToOutput(`  message preview: ${message.substring(0, 100)}`);
 
                 child.stdin.write(`${userMessage}\n`);
-                logToOutput(`[ClaudeCliService] Successfully wrote user message to stdin`);
+                logToOutput(
+                  `[ClaudeCliService] Successfully wrote user message to stdin`,
+                );
               },
 
               /**
@@ -826,7 +899,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                */
               close: () => {
                 if (child.stdin?.writable) {
-                  logToOutput("[ClaudeCliService] Closing stdin to signal completion");
+                  logToOutput(
+                    "[ClaudeCliService] Closing stdin to signal completion",
+                  );
                   child.stdin.end();
                 }
               },

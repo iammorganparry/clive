@@ -27,4 +27,3 @@ Commands execute from workspace root automatically. Use relative paths for best 
 - Create test files in locations that match the project's existing patterns
 </workspace_context>`,
   );
-

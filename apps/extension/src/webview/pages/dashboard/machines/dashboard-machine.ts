@@ -1,4 +1,4 @@
-import { setup, assign } from "xstate";
+import { assign, setup } from "xstate";
 import type { BranchChangesData } from "../components/branch-changes.js";
 
 export interface DashboardContext {

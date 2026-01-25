@@ -2,11 +2,11 @@
  * Init command - Initialize contract-graph in a project
  */
 
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { writeFile, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 const EXAMPLE_CONTRACT = `\`\`\`mermaid
 graph TB

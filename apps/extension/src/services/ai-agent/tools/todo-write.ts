@@ -13,13 +13,13 @@
 import { tool } from "ai";
 import { Effect, Ref, Runtime } from "effect";
 import { z } from "zod";
+import { logToOutput } from "../../../utils/logger.js";
+import type { ProgressCallback } from "../event-handlers.js";
 import {
-  updateTodosFromInput,
   type LoopState,
   type TodoItem,
+  updateTodosFromInput,
 } from "../loop-state.js";
-import type { ProgressCallback } from "../event-handlers.js";
-import { logToOutput } from "../../../utils/logger.js";
 
 /**
  * Input schema for TodoWrite tool
@@ -32,17 +32,23 @@ const TodoWriteInputSchema = z.object({
         content: z
           .string()
           .min(1)
-          .describe("What needs to be done (imperative form, e.g., 'Write unit tests for auth.ts')"),
+          .describe(
+            "What needs to be done (imperative form, e.g., 'Write unit tests for auth.ts')",
+          ),
         status: z
           .enum(["pending", "in_progress", "completed"])
           .describe("Current status of this task"),
         activeForm: z
           .string()
           .min(1)
-          .describe("Present continuous form shown during execution (e.g., 'Writing unit tests for auth.ts')"),
+          .describe(
+            "Present continuous form shown during execution (e.g., 'Writing unit tests for auth.ts')",
+          ),
       }),
     )
-    .describe("The updated todo list. IMPORTANT: Include ALL todos, not just changed ones."),
+    .describe(
+      "The updated todo list. IMPORTANT: Include ALL todos, not just changed ones.",
+    ),
 });
 
 export type TodoWriteInput = z.infer<typeof TodoWriteInputSchema>;
@@ -83,7 +89,12 @@ const todosToDisplayFormat = (
  */
 const calculateProgress = (
   todos: TodoItem[],
-): { completed: number; pending: number; total: number; percentComplete: number } => {
+): {
+  completed: number;
+  pending: number;
+  total: number;
+  percentComplete: number;
+} => {
   const completed = todos.filter((t) => t.status === "completed").length;
   const pending = todos.filter(
     (t) => t.status === "pending" || t.status === "in_progress",
@@ -137,9 +148,7 @@ Completing a task:
     inputSchema: TodoWriteInputSchema,
     execute: async (input: TodoWriteInput): Promise<TodoWriteOutput> => {
       const program = Effect.gen(function* () {
-        logToOutput(
-          `[TodoWrite] Updating ${input.todos.length} todos`,
-        );
+        logToOutput(`[TodoWrite] Updating ${input.todos.length} todos`);
 
         // Validate: only one in_progress at a time
         const inProgressCount = input.todos.filter(

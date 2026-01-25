@@ -102,9 +102,7 @@
       "type": "shell",
       "command": "yarn",
       "args": ["workspace", "clive", "watch"],
-      "problemMatcher": [
-        "$tsc-watch"
-      ],
+      "problemMatcher": ["$tsc-watch"],
       "isBackground": true,
       "group": {
         "kind": "build",

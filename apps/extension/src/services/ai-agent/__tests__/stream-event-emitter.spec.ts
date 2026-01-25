@@ -3,9 +3,9 @@
  * Tests for event emission helper functions
  */
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { emitStreamEvent, emit } from "../stream-event-emitter.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProgressCallback } from "../event-handlers.js";
+import { emit, emitStreamEvent } from "../stream-event-emitter.js";
 
 describe("stream-event-emitter", () => {
   let mockCallback: ProgressCallback;

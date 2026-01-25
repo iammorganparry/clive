@@ -3,7 +3,7 @@
  */
 
 import { Context, type Effect } from "effect";
-import type { FileSystemError, EditorError } from "../diff/errors.js";
+import type { EditorError, FileSystemError } from "../diff/errors.js";
 
 /**
  * Disposable resource that can be cleaned up

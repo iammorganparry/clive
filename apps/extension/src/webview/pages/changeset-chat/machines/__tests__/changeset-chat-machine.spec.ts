@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import type { ChangesetChatContext } from "../changeset-chat-machine.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  isTestCommand,
   extractTestFilePath,
+  isTestCommand,
   parseTestOutput,
   updateTestExecutionFromStream,
 } from "../../utils/parse-test-output.js";
+import type { ChangesetChatContext } from "../changeset-chat-machine.js";
 
 // Mock the state machine actions by testing the logic directly
 // Since XState actions are pure functions, we can test them in isolation
@@ -62,7 +62,8 @@ describe("changeset-chat-machine test execution actions", () => {
       });
 
       // Simulate streaming output
-      const currentAccumulated = mockContext.accumulatedTestOutput.get(toolCallId) || "";
+      const currentAccumulated =
+        mockContext.accumulatedTestOutput.get(toolCallId) || "";
       const newAccumulated = currentAccumulated + output;
       mockContext.accumulatedTestOutput.set(toolCallId, newAccumulated);
 
@@ -96,7 +97,8 @@ describe("changeset-chat-machine test execution actions", () => {
         mockContext.accumulatedTestOutput.set(toolCallId, current + chunk);
       });
 
-      const finalAccumulated = mockContext.accumulatedTestOutput.get(toolCallId);
+      const finalAccumulated =
+        mockContext.accumulatedTestOutput.get(toolCallId);
       expect(finalAccumulated).toBe("✓ test1 (100ms)\n✓ test2 (200ms)");
     });
 
@@ -171,10 +173,7 @@ describe("changeset-chat-machine test execution actions", () => {
     });
 
     it("should handle test command with multiple files", () => {
-      const commands = [
-        "vitest run test1.spec.ts",
-        "vitest run test2.spec.ts",
-      ];
+      const commands = ["vitest run test1.spec.ts", "vitest run test2.spec.ts"];
 
       commands.forEach((command, index) => {
         const toolCallId = `test-tool-call-${index}`;
@@ -240,10 +239,7 @@ describe("changeset-chat-machine test execution actions", () => {
     });
 
     it("should detect playwright commands correctly", () => {
-      const commands = [
-        "playwright test",
-        "npx playwright test auth.spec.ts",
-      ];
+      const commands = ["playwright test", "npx playwright test auth.spec.ts"];
 
       commands.forEach((command) => {
         expect(isTestCommand(command)).toBe(true);
@@ -251,12 +247,7 @@ describe("changeset-chat-machine test execution actions", () => {
     });
 
     it("should not detect non-test commands", () => {
-      const commands = [
-        "ls -la",
-        "git status",
-        "npm install",
-        "echo hello",
-      ];
+      const commands = ["ls -la", "git status", "npm install", "echo hello"];
 
       commands.forEach((command) => {
         expect(isTestCommand(command)).toBe(false);
@@ -284,11 +275,7 @@ describe("changeset-chat-machine test execution actions", () => {
     });
 
     it("should return null for commands without file paths", () => {
-      const commands = [
-        "vitest run",
-        "npm test",
-        "yarn test",
-      ];
+      const commands = ["vitest run", "npm test", "yarn test"];
 
       commands.forEach((command) => {
         const filePath = extractTestFilePath(command);
@@ -365,7 +352,8 @@ describe("changeset-chat-machine test execution actions", () => {
 
       // Simulate streaming output
       const output = "✓ test1";
-      const currentAccumulated = mockContext.accumulatedTestOutput.get(toolCallId) || "";
+      const currentAccumulated =
+        mockContext.accumulatedTestOutput.get(toolCallId) || "";
       const newAccumulated = currentAccumulated + output;
       mockContext.accumulatedTestOutput.set(toolCallId, newAccumulated);
 
@@ -416,7 +404,11 @@ describe("changeset-chat-machine test execution actions", () => {
         status: "failed" as const,
         tests: [
           { testName: "test1", status: "pass" as const },
-          { testName: "test2", status: "fail" as const, error: "Assertion failed" },
+          {
+            testName: "test2",
+            status: "fail" as const,
+            error: "Assertion failed",
+          },
         ],
         startedAt: new Date(),
         completedAt: new Date(),
@@ -635,7 +627,8 @@ describe("changeset-chat-machine test execution actions", () => {
       });
 
       // Simulate streaming with failures
-      const output = "✓ test1 (100ms)\n✗ test2 (50ms)\n  Error: Expected true but got false\n";
+      const output =
+        "✓ test1 (100ms)\n✗ test2 (50ms)\n  Error: Expected true but got false\n";
       mockContext.accumulatedTestOutput.set(toolCallId, output);
 
       const updated = updateTestExecutionFromStream(
@@ -689,7 +682,7 @@ describe("changeset-chat-machine test execution actions", () => {
 
       expect(updated).toBeDefined();
       expect(updated?.tests.length).toBeGreaterThanOrEqual(2);
-      
+
       const testNames = updated?.tests.map((t) => t.testName) || [];
       expect(testNames.some((name) => name.includes("login"))).toBe(true);
       expect(testNames.some((name) => name.includes("logout"))).toBe(true);
@@ -755,8 +748,16 @@ describe("changeset-chat-machine test execution actions", () => {
 
     it("should handle multiple test files streaming in parallel", () => {
       const commands = [
-        { id: "tool-1", cmd: "vitest run test1.spec.ts", file: "test1.spec.ts" },
-        { id: "tool-2", cmd: "vitest run test2.spec.ts", file: "test2.spec.ts" },
+        {
+          id: "tool-1",
+          cmd: "vitest run test1.spec.ts",
+          file: "test1.spec.ts",
+        },
+        {
+          id: "tool-2",
+          cmd: "vitest run test2.spec.ts",
+          file: "test2.spec.ts",
+        },
       ];
 
       commands.forEach(({ id, cmd, file }) => {
@@ -771,7 +772,12 @@ describe("changeset-chat-machine test execution actions", () => {
         const output = `✓ test from ${file} (100ms)\n`;
         mockContext.accumulatedTestOutput.set(id, output);
 
-        const updated = updateTestExecutionFromStream(null, cmd, output, output);
+        const updated = updateTestExecutionFromStream(
+          null,
+          cmd,
+          output,
+          output,
+        );
         if (updated) {
           mockContext.testExecutions.push(updated);
         }
@@ -859,8 +865,9 @@ describe("changeset-chat-machine plan content actions", () => {
 
   describe("updatePlanContent", () => {
     it("should update planContent from plan-content-streaming event", () => {
-      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
-      
+      const planContent =
+        "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+
       // Simulate updatePlanContent action logic
       const updates = {
         planContent: planContent || null,
@@ -870,7 +877,8 @@ describe("changeset-chat-machine plan content actions", () => {
     });
 
     it("should update planFilePath when filePath is provided in streaming event", () => {
-      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+      const planContent =
+        "# Test Plan\n\n## Problem Summary\n\nTest plan content";
       const filePath = ".clive/plans/test-plan-auth-1234567890.md";
 
       // Simulate updatePlanContent action logic with filePath
@@ -884,7 +892,8 @@ describe("changeset-chat-machine plan content actions", () => {
     });
 
     it("should not update planFilePath when filePath is not provided", () => {
-      const planContent = "# Test Plan\n\n## Problem Summary\n\nTest plan content";
+      const planContent =
+        "# Test Plan\n\n## Problem Summary\n\nTest plan content";
 
       // Simulate updatePlanContent action logic without filePath
       const updates: Record<string, string | null> = {
@@ -910,7 +919,7 @@ describe("changeset-chat-machine plan content actions", () => {
   describe("reset action", () => {
     it("should reset planContent to null", () => {
       mockContext.planContent = "# Test Plan\n\nSome content";
-      
+
       // Simulate reset action
       const resetContext = {
         ...mockContext,
@@ -922,7 +931,7 @@ describe("changeset-chat-machine plan content actions", () => {
 
     it("should reset planFilePath to null", () => {
       mockContext.planFilePath = ".clive/plans/test-plan-123.md";
-      
+
       // Simulate reset action
       const resetContext = {
         ...mockContext,
@@ -935,7 +944,8 @@ describe("changeset-chat-machine plan content actions", () => {
 
   describe("plan content streaming flow", () => {
     it("should capture plan content and file path from streaming events", () => {
-      const planContent = "# Test Plan for Authentication\n\n## Problem Summary\n\nTesting gaps identified";
+      const planContent =
+        "# Test Plan for Authentication\n\n## Problem Summary\n\nTesting gaps identified";
       const filePath = ".clive/plans/test-plan-authentication-1234567890.md";
 
       // Initial state
@@ -953,8 +963,14 @@ describe("changeset-chat-machine plan content actions", () => {
     it("should handle multiple streaming chunks with incremental content", () => {
       const chunks = [
         { content: "# Test Plan\n", filePath: ".clive/plans/test-plan-123.md" },
-        { content: "# Test Plan\n\n## Problem", filePath: ".clive/plans/test-plan-123.md" },
-        { content: "# Test Plan\n\n## Problem Summary\n\nComplete", filePath: ".clive/plans/test-plan-123.md" },
+        {
+          content: "# Test Plan\n\n## Problem",
+          filePath: ".clive/plans/test-plan-123.md",
+        },
+        {
+          content: "# Test Plan\n\n## Problem Summary\n\nComplete",
+          filePath: ".clive/plans/test-plan-123.md",
+        },
       ];
 
       // Simulate incremental streaming

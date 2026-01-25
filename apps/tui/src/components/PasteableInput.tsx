@@ -4,8 +4,8 @@
  * Handles bracketed paste mode for reliable copy/paste
  */
 
-import { useRef, useEffect } from 'react';
-import type { InputRenderable } from '@opentui/core';
+import type { InputRenderable } from "@opentui/core";
+import { useEffect, useRef } from "react";
 
 interface PasteableInputProps {
   placeholder?: string;
@@ -30,12 +30,12 @@ export function PasteableInput({
 
     // Enable bracketed paste mode
     // This makes terminals send pasted text between \x1b[200~ and \x1b[201~
-    process.stdout.write('\x1b[?2004h');
+    process.stdout.write("\x1b[?2004h");
 
     return () => {
       // Disable bracketed paste mode on unmount
       if (process.stdout.isTTY) {
-        process.stdout.write('\x1b[?2004l');
+        process.stdout.write("\x1b[?2004l");
       }
     };
   }, []);
@@ -44,21 +44,21 @@ export function PasteableInput({
   useEffect(() => {
     if (!focused || !inputRef.current) return;
 
-    let pasteBuffer = '';
+    let pasteBuffer = "";
     let inPasteMode = false;
 
     const handleData = (data: Buffer) => {
       const str = data.toString();
 
       // Detect bracketed paste start
-      if (str.includes('\x1b[200~')) {
+      if (str.includes("\x1b[200~")) {
         inPasteMode = true;
-        pasteBuffer = '';
+        pasteBuffer = "";
         return;
       }
 
       // Detect bracketed paste end
-      if (str.includes('\x1b[201~')) {
+      if (str.includes("\x1b[201~")) {
         inPasteMode = false;
         if (pasteBuffer && inputRef.current) {
           // Insert pasted text
@@ -66,7 +66,7 @@ export function PasteableInput({
           const newValue = inputRef.current.value;
           onInput?.(newValue);
         }
-        pasteBuffer = '';
+        pasteBuffer = "";
         return;
       }
 
@@ -76,10 +76,10 @@ export function PasteableInput({
       }
     };
 
-    process.stdin.on('data', handleData);
+    process.stdin.on("data", handleData);
 
     return () => {
-      process.stdin.removeListener('data', handleData);
+      process.stdin.removeListener("data", handleData);
     };
   }, [focused, onInput]);
 

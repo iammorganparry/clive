@@ -1,13 +1,13 @@
-import { Effect, pipe } from "effect";
-import { z } from "zod";
-import * as vscode from "vscode";
 import { createRouter } from "@clive/webview-rpc";
+import { Effect, pipe } from "effect";
+import * as vscode from "vscode";
+import { z } from "zod";
 import { ConfigService as ConfigServiceEffect } from "../../services/config-service.js";
-import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { createSystemServiceLayer } from "../../services/layer-factory.js";
-import type { RpcContext } from "../context.js";
+import { SourceFileFilter as SourceFileFilterService } from "../../services/source-file-filter.js";
 import { VSCodeService } from "../../services/vs-code.js";
 import { ensureDirectoryExists } from "../../utils/fs-effects.js";
+import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
 

@@ -5,23 +5,23 @@
  * Routes messages between central service and local executor.
  */
 
-import { EventEmitter } from "events";
-import { randomUUID } from "crypto";
-import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import type {
-  WorkerRegistration,
-  WorkerHeartbeat,
-  WorkerStatus,
   CentralToWorkerMessage,
-  WorkerToCentralMessage,
-  InterviewRequest,
   InterviewEvent,
+  InterviewRequest,
   NgrokConfig,
+  WorkerHeartbeat,
+  WorkerRegistration,
+  WorkerStatus,
+  WorkerToCentralMessage,
 } from "@clive/worker-protocol";
 import { CentralToWorkerMessageSchema } from "@clive/worker-protocol";
+import WebSocket from "ws";
+import type { WorkerConfig } from "./config.js";
 import { LocalExecutor } from "./local-executor.js";
 import { TunnelManager } from "./tunnel-manager.js";
-import type { WorkerConfig } from "./config.js";
 
 /**
  * Generate a unique worker ID
@@ -362,7 +362,7 @@ export class WorkerClient extends EventEmitter {
     if (this.reconnectAttempts < this.config.maxReconnectAttempts) {
       this.reconnectAttempts++;
       const delay =
-        this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+        this.config.reconnectDelay * 2 ** (this.reconnectAttempts - 1);
       console.log(
         `[WorkerClient] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`,
       );

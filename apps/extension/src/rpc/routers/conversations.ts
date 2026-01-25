@@ -1,16 +1,16 @@
+import { createRouter } from "@clive/webview-rpc";
 import { Effect, Runtime } from "effect";
 import { z } from "zod";
-import { createRouter } from "@clive/webview-rpc";
-import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
-import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
 import { ErrorCode, getErrorMessage } from "../../lib/error-messages.js";
-import { createAgentServiceLayer } from "../../services/layer-factory.js";
 import { APPROVAL } from "../../services/ai-agent/hitl-utils.js";
-import type { RpcContext } from "../context.js";
+import { TestingAgent } from "../../services/ai-agent/testing-agent.js";
 import type {
-  Message,
   Conversation,
+  Message,
 } from "../../services/conversation-service.js";
+import { ConversationService as ConversationServiceEffect } from "../../services/conversation-service.js";
+import { createAgentServiceLayer } from "../../services/layer-factory.js";
+import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
 const runtime = Runtime.defaultRuntime;

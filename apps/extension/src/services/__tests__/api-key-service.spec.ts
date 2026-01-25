@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { Effect, Runtime, Layer } from "effect";
-import { ApiKeyService } from "../api-key-service.js";
+import { Effect, Layer, Runtime } from "effect";
+import { describe, expect, it } from "vitest";
 import {
   createMockSecretStorage,
   createSecretStorageTestLayer,
 } from "../../__tests__/test-layer-factory.js";
 import { SecretKeys } from "../../constants.js";
+import { ApiKeyService } from "../api-key-service.js";
 
 describe("ApiKeyService", () => {
   const runtime = Runtime.defaultRuntime;

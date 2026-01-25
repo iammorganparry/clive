@@ -4,11 +4,11 @@
  * Loads configuration from environment variables.
  */
 
-import { Either } from "effect";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as fs from "node:fs";
 import type { WorkerProject } from "@clive/worker-protocol";
+import { Either } from "effect";
 
 /**
  * Project configuration from config file or env var
@@ -81,14 +81,17 @@ function parseProjects(): WorkerProject[] {
         description: p.description,
       }));
     } catch (error) {
-      console.error(`[Config] Failed to read projects file ${configFile}:`, error);
+      console.error(
+        `[Config] Failed to read projects file ${configFile}:`,
+        error,
+      );
     }
   }
 
   // Method 3: Comma-separated paths
   const workspaceRoots = process.env.CLIVE_WORKSPACE_ROOTS;
   if (workspaceRoots) {
-    return workspaceRoots.split(",").map((p, i) => {
+    return workspaceRoots.split(",").map((p, _i) => {
       const resolvedPath = path.resolve(p.trim());
       const name = path.basename(resolvedPath);
       return {
@@ -135,17 +138,17 @@ export function loadConfig(): Either.Either<WorkerConfig, string> {
 
   const heartbeatInterval = Number.parseInt(
     process.env.CLIVE_HEARTBEAT_INTERVAL || "30000",
-    10
+    10,
   );
 
   const reconnectDelay = Number.parseInt(
     process.env.CLIVE_RECONNECT_DELAY || "5000",
-    10
+    10,
   );
 
   const maxReconnectAttempts = Number.parseInt(
     process.env.CLIVE_MAX_RECONNECT_ATTEMPTS || "10",
-    10
+    10,
   );
 
   return Either.right({

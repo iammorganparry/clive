@@ -1,22 +1,22 @@
-import type React from "react";
-import { useState, useCallback, useMemo } from "react";
-import { Button } from "../../../../components/ui/button.js";
 import {
   Plan,
+  PlanAction,
+  PlanContent,
+  PlanDescription,
+  PlanFooter,
   PlanHeader,
   PlanTitle,
-  PlanDescription,
   PlanTrigger,
-  PlanContent,
-  PlanFooter,
-  PlanAction,
 } from "@clive/ui/components/ai-elements/plan";
-import { Check, X, Play, XCircle } from "lucide-react";
-import TestCard from "./test-card.js";
+import { Check, Play, X, XCircle } from "lucide-react";
+import type React from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Button } from "../../../../components/ui/button.js";
 import type {
   ProposedTest,
   TestExecutionStatus,
 } from "../../../../services/ai-agent/types.js";
+import TestCard from "./test-card.js";
 
 interface TestGenerationPlanProps {
   tests: ProposedTest[];

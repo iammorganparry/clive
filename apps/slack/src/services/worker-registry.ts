@@ -4,13 +4,13 @@
  * Tracks connected workers, manages heartbeats, and handles timeouts.
  */
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import type {
-  WorkerStatus,
-  WorkerRegistration,
   WorkerHeartbeat,
   WorkerInfo,
   WorkerProject,
+  WorkerRegistration,
+  WorkerStatus,
 } from "@clive/worker-protocol";
 import type { WebSocket } from "ws";
 
@@ -55,7 +55,7 @@ export class WorkerRegistry extends EventEmitter {
    */
   register(
     registration: WorkerRegistration,
-    socket: WebSocket
+    socket: WebSocket,
   ): { success: boolean; error?: string } {
     const { workerId, projects, defaultProject, hostname } = registration;
 
@@ -86,8 +86,10 @@ export class WorkerRegistry extends EventEmitter {
     this.workers.set(workerId, worker);
     this.socketToWorkerId.set(socket, workerId);
 
-    const projectNames = projects.map(p => p.name).join(", ");
-    console.log(`[WorkerRegistry] Worker registered: ${workerId} (${hostname}) with projects: [${projectNames}]`);
+    const projectNames = projects.map((p) => p.name).join(", ");
+    console.log(
+      `[WorkerRegistry] Worker registered: ${workerId} (${hostname}) with projects: [${projectNames}]`,
+    );
     this.emit("workerRegistered", workerId);
 
     return { success: true };
@@ -99,7 +101,9 @@ export class WorkerRegistry extends EventEmitter {
   handleHeartbeat(heartbeat: WorkerHeartbeat): void {
     const worker = this.workers.get(heartbeat.workerId);
     if (!worker) {
-      console.warn(`[WorkerRegistry] Heartbeat from unknown worker: ${heartbeat.workerId}`);
+      console.warn(
+        `[WorkerRegistry] Heartbeat from unknown worker: ${heartbeat.workerId}`,
+      );
       return;
     }
 
@@ -123,7 +127,9 @@ export class WorkerRegistry extends EventEmitter {
   /**
    * Create heartbeat timeout timer
    */
-  private createHeartbeatTimer(workerId: string): ReturnType<typeof setTimeout> {
+  private createHeartbeatTimer(
+    workerId: string,
+  ): ReturnType<typeof setTimeout> {
     return setTimeout(() => {
       console.log(`[WorkerRegistry] Worker ${workerId} heartbeat timeout`);
       this.emit("workerTimeout", workerId);
@@ -149,7 +155,9 @@ export class WorkerRegistry extends EventEmitter {
     this.socketToWorkerId.delete(worker.socket);
     this.workers.delete(workerId);
 
-    console.log(`[WorkerRegistry] Worker unregistered: ${workerId} (${reason})`);
+    console.log(
+      `[WorkerRegistry] Worker unregistered: ${workerId} (${reason})`,
+    );
     this.emit("workerDisconnected", workerId, reason);
   }
 
@@ -182,7 +190,7 @@ export class WorkerRegistry extends EventEmitter {
    */
   getAvailableWorkers(): RegisteredWorker[] {
     return Array.from(this.workers.values()).filter(
-      (w) => w.status === "ready"
+      (w) => w.status === "ready",
     );
   }
 
@@ -196,7 +204,7 @@ export class WorkerRegistry extends EventEmitter {
     }
 
     return available.reduce((least, current) =>
-      current.activeSessions.size < least.activeSessions.size ? current : least
+      current.activeSessions.size < least.activeSessions.size ? current : least,
     );
   }
 
@@ -213,7 +221,8 @@ export class WorkerRegistry extends EventEmitter {
         // Match by name
         if (project.name.toLowerCase() === query) return true;
         // Match by aliases
-        if (project.aliases?.some((alias) => alias.toLowerCase() === query)) return true;
+        if (project.aliases?.some((alias) => alias.toLowerCase() === query))
+          return true;
         // Partial match on name (e.g., "marketing" matches "marketing-app")
         if (project.name.toLowerCase().includes(query)) return true;
         return false;
@@ -224,7 +233,9 @@ export class WorkerRegistry extends EventEmitter {
   /**
    * Get least busy worker that has access to a specific project
    */
-  getLeastBusyWorkerForProject(projectQuery: string): RegisteredWorker | undefined {
+  getLeastBusyWorkerForProject(
+    projectQuery: string,
+  ): RegisteredWorker | undefined {
     const workers = this.getWorkersForProject(projectQuery);
     const available = workers.filter((w) => w.status === "ready");
 
@@ -233,7 +244,7 @@ export class WorkerRegistry extends EventEmitter {
     }
 
     return available.reduce((least, current) =>
-      current.activeSessions.size < least.activeSessions.size ? current : least
+      current.activeSessions.size < least.activeSessions.size ? current : least,
     );
   }
 
@@ -248,7 +259,8 @@ export class WorkerRegistry extends EventEmitter {
     const project = worker.projects.find((p) => {
       if (p.id.toLowerCase() === query) return true;
       if (p.name.toLowerCase() === query) return true;
-      if (p.aliases?.some((alias) => alias.toLowerCase() === query)) return true;
+      if (p.aliases?.some((alias) => alias.toLowerCase() === query))
+        return true;
       if (p.name.toLowerCase().includes(query)) return true;
       return false;
     });

@@ -152,7 +152,9 @@ describe("summarizeContext MCP Tool", () => {
         message: "Significant reduction",
       });
 
-      const result = await toolHandler({ summary: "Long conversation summary" });
+      const result = await toolHandler({
+        summary: "Long conversation summary",
+      });
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.tokensBefore).toBe(25000);

@@ -52,7 +52,10 @@ export function useToolAbort(toolCallId?: string, subscriptionId?: string) {
       return;
     }
 
-    console.log("[useToolAbort] Calling abortToolCall.mutate", { toolCallId, subscriptionId });
+    console.log("[useToolAbort] Calling abortToolCall.mutate", {
+      toolCallId,
+      subscriptionId,
+    });
     abortToolCall.mutate({
       subscriptionId: subscriptionId ?? undefined,
       toolCallId,

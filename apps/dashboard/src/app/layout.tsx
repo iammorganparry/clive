@@ -7,28 +7,28 @@ import { ThemeProvider } from "~/components/theme-provider";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
-  title: "Clive",
-  description: "Build with confidence",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+	title: "Clive",
+	description: "Build with confidence",
+	icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
 const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
+	subsets: ["latin"],
+	variable: "--font-geist-sans",
 });
 
 export default function RootLayout({
-  children,
+	children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <TRPCReactProvider>
-      <html lang="en" className={`${geist.variable}`} suppressHydrationWarning>
-        <body>
-          <ThemeProvider>
-            <TRPCReactProvider>{children}</TRPCReactProvider>
-          </ThemeProvider>
-        </body>
-      </html>
-    </TRPCReactProvider>
-  );
+	return (
+		<TRPCReactProvider>
+			<html className={`${geist.variable}`} lang="en" suppressHydrationWarning>
+				<body>
+					<ThemeProvider>
+						<TRPCReactProvider>{children}</TRPCReactProvider>
+					</ThemeProvider>
+				</body>
+			</html>
+		</TRPCReactProvider>
+	);
 }

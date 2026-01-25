@@ -1,6 +1,6 @@
-import { Effect, Data } from "effect";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { Data, Effect } from "effect";
 import { VSCodeService } from "./vs-code.js";
 
 const execAsync = promisify(exec);

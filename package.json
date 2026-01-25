@@ -22,8 +22,8 @@
     "db:studio": "turbo -F @clive/db studio",
     "dev": "turbo watch dev --continue",
     "dev:next": "turbo watch dev -F @clive/nextjs...",
-    "format": "turbo run format --continue",
-    "format:fix": "turbo run format:fix --continue",
+    "format": "biome format .",
+    "format:fix": "biome format --write .",
     "lint": "turbo run lint --continue",
     "lint:fix": "turbo run lint:fix --continue",
     "lint:ws": "npx sherif@latest",
@@ -39,6 +39,7 @@
     "extension:package": "yarn workspace clive package:vsix"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.12",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-conventional": "^20.0.0",
     "@turbo/gen": "^2.5.8",

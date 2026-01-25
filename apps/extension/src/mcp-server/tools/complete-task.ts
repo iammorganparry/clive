@@ -4,8 +4,8 @@
  * This is a standalone tool that doesn't need the VSCode extension bridge
  */
 
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
 /**
  * Input schema for completeTask
@@ -39,7 +39,9 @@ interface CompleteTaskOutput {
 /**
  * Validate completion input
  */
-function validateCompletion(input: z.infer<typeof CompleteTaskInputSchema>): CompleteTaskOutput {
+function validateCompletion(
+  input: z.infer<typeof CompleteTaskInputSchema>,
+): CompleteTaskOutput {
   // Validate that confirmation is true
   if (!input.confirmation) {
     return {

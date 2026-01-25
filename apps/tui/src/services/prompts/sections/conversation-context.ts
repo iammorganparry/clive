@@ -1,6 +1,5 @@
 import { Effect } from "effect";
-import type { BuildConfig } from "../types";
-import type { PromptBuildError } from "../types";
+import type { BuildConfig, PromptBuildError } from "../types";
 
 /**
  * Conversation context section

@@ -3,16 +3,16 @@
  * Manages view mode transitions using XState: Setup -> Selection -> Main <-> Help
  */
 
-import { useEffect } from 'react';
-import { setup, assign } from 'xstate';
-import { useMachine } from '@xstate/react';
-import { ViewMode, IssueTrackerConfig, WorkerConfig } from '../types/views';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { useMachine } from "@xstate/react";
+import { useEffect } from "react";
+import { assign, setup } from "xstate";
+import type { IssueTrackerConfig, ViewMode } from "../types/views";
 
-const CONFIG_PATH = path.join(os.homedir(), '.clive', 'config.json');
-const ENV_PATH = path.join(os.homedir(), '.clive', '.env');
+const CONFIG_PATH = path.join(os.homedir(), ".clive", "config.json");
+const ENV_PATH = path.join(os.homedir(), ".clive", ".env");
 
 /**
  * Load and set environment variables from ~/.clive/.env
@@ -21,23 +21,23 @@ const ENV_PATH = path.join(os.homedir(), '.clive', '.env');
 function loadEnvFile(): void {
   try {
     if (fs.existsSync(ENV_PATH)) {
-      const content = fs.readFileSync(ENV_PATH, 'utf-8');
-      const lines = content.split('\n');
+      const content = fs.readFileSync(ENV_PATH, "utf-8");
+      const lines = content.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('#')) {
-          const [key, ...valueParts] = trimmed.split('=');
+        if (trimmed && !trimmed.startsWith("#")) {
+          const [key, ...valueParts] = trimmed.split("=");
           if (key && valueParts.length > 0) {
-            const value = valueParts.join('=').trim();
+            const value = valueParts.join("=").trim();
             // Remove quotes if present
-            const cleanValue = value.replace(/^["']|["']$/g, '');
+            const cleanValue = value.replace(/^["']|["']$/g, "");
             process.env[key.trim()] = cleanValue;
           }
         }
       }
     }
   } catch (error) {
-    console.error('[useViewMode] Failed to load .env file:', error);
+    console.error("[useViewMode] Failed to load .env file:", error);
   }
 }
 
@@ -51,7 +51,7 @@ function loadConfig(): IssueTrackerConfig | null {
 
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
+      const content = fs.readFileSync(CONFIG_PATH, "utf-8");
       const config = JSON.parse(content) as IssueTrackerConfig;
 
       // Merge API key from env if present
@@ -67,7 +67,7 @@ function loadConfig(): IssueTrackerConfig | null {
       return config;
     }
   } catch (error) {
-    console.error('[useViewMode] Failed to load config:', error);
+    console.error("[useViewMode] Failed to load config:", error);
   }
   return null;
 }
@@ -84,15 +84,15 @@ function saveEnvValue(key: string, value: string): void {
     }
 
     // Read existing .env content
-    let envContent = '';
+    let envContent = "";
     if (fs.existsSync(ENV_PATH)) {
-      envContent = fs.readFileSync(ENV_PATH, 'utf-8');
+      envContent = fs.readFileSync(ENV_PATH, "utf-8");
     }
 
     // Update or add the key
-    const lines = envContent.split('\n');
+    const lines = envContent.split("\n");
     let found = false;
-    const updatedLines = lines.map(line => {
+    const updatedLines = lines.map((line) => {
       if (line.trim().startsWith(`${key}=`)) {
         found = true;
         return `${key}=${value}`;
@@ -102,13 +102,16 @@ function saveEnvValue(key: string, value: string): void {
 
     if (!found) {
       // Filter out empty lines at the end before adding
-      while (updatedLines.length > 0 && updatedLines[updatedLines.length - 1] === '') {
+      while (
+        updatedLines.length > 0 &&
+        updatedLines[updatedLines.length - 1] === ""
+      ) {
         updatedLines.pop();
       }
       updatedLines.push(`${key}=${value}`);
     }
 
-    fs.writeFileSync(ENV_PATH, updatedLines.join('\n'), 'utf-8');
+    fs.writeFileSync(ENV_PATH, updatedLines.join("\n"), "utf-8");
     // Set restrictive permissions (owner read/write only)
     fs.chmodSync(ENV_PATH, 0o600);
 
@@ -123,14 +126,14 @@ function saveEnvValue(key: string, value: string): void {
  * Save API key to ~/.clive/.env file (secure, not committed to git)
  */
 function saveApiKey(apiKey: string): void {
-  saveEnvValue('LINEAR_API_KEY', apiKey);
+  saveEnvValue("LINEAR_API_KEY", apiKey);
 }
 
 /**
  * Save worker token to ~/.clive/.env file (secure, not committed to git)
  */
 function saveWorkerToken(token: string): void {
-  saveEnvValue('CLIVE_WORKER_TOKEN', token);
+  saveEnvValue("CLIVE_WORKER_TOKEN", token);
 }
 
 /**
@@ -145,7 +148,9 @@ function saveConfig(config: IssueTrackerConfig): void {
     }
 
     // Deep clone to avoid mutating the original
-    const configToSave = JSON.parse(JSON.stringify(config)) as IssueTrackerConfig;
+    const configToSave = JSON.parse(
+      JSON.stringify(config),
+    ) as IssueTrackerConfig;
 
     // Extract API key if present and save separately
     if (configToSave.linear?.apiKey) {
@@ -161,9 +166,13 @@ function saveConfig(config: IssueTrackerConfig): void {
       delete (configToSave.worker as { token?: string }).token;
     }
 
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(configToSave, null, 2), 'utf-8');
+    fs.writeFileSync(
+      CONFIG_PATH,
+      JSON.stringify(configToSave, null, 2),
+      "utf-8",
+    );
   } catch (error) {
-    console.error('[useViewMode] Failed to save config:', error);
+    console.error("[useViewMode] Failed to save config:", error);
   }
 }
 
@@ -178,31 +187,32 @@ const viewModeMachine = setup({
       previousView: ViewMode | null;
     },
     events: {} as
-      | { type: 'GO_TO_SETUP' }
-      | { type: 'GO_TO_MODE_SELECTION' }
-      | { type: 'GO_TO_WORKER_SETUP' }
-      | { type: 'GO_TO_WORKER' }
-      | { type: 'GO_TO_SELECTION' }
-      | { type: 'GO_TO_MAIN' }
-      | { type: 'GO_TO_HELP' }
-      | { type: 'GO_BACK' }
-      | { type: 'UPDATE_CONFIG'; config: IssueTrackerConfig },
+      | { type: "GO_TO_SETUP" }
+      | { type: "GO_TO_MODE_SELECTION" }
+      | { type: "GO_TO_WORKER_SETUP" }
+      | { type: "GO_TO_WORKER" }
+      | { type: "GO_TO_SELECTION" }
+      | { type: "GO_TO_MAIN" }
+      | { type: "GO_TO_HELP" }
+      | { type: "GO_BACK" }
+      | { type: "UPDATE_CONFIG"; config: IssueTrackerConfig },
   },
   actions: {
     savePreviousView: assign({
-      previousView: ({ context }, currentState: ViewMode) => currentState as ViewMode,
+      previousView: ({ context }, currentState: ViewMode) =>
+        currentState as ViewMode,
     }),
     updateConfig: assign({
       config: ({ event }) => {
-        if (event.type !== 'UPDATE_CONFIG') return null;
+        if (event.type !== "UPDATE_CONFIG") return null;
         saveConfig(event.config);
         return event.config;
       },
     }),
   },
 }).createMachine({
-  id: 'viewMode',
-  initial: 'setup',
+  id: "viewMode",
+  initial: "setup",
   context: {
     config: null,
     previousView: null,
@@ -210,91 +220,91 @@ const viewModeMachine = setup({
   states: {
     setup: {
       on: {
-        GO_TO_MODE_SELECTION: 'mode_selection',
-        GO_TO_SELECTION: 'selection',
-        GO_TO_MAIN: 'main',
+        GO_TO_MODE_SELECTION: "mode_selection",
+        GO_TO_SELECTION: "selection",
+        GO_TO_MAIN: "main",
         UPDATE_CONFIG: {
-          target: 'mode_selection',
-          actions: 'updateConfig',
+          target: "mode_selection",
+          actions: "updateConfig",
         },
       },
     },
     mode_selection: {
       on: {
-        GO_TO_SETUP: 'setup',
-        GO_TO_WORKER_SETUP: 'worker_setup',
-        GO_TO_WORKER: 'worker',
-        GO_TO_SELECTION: 'selection',
-        GO_BACK: 'setup',
+        GO_TO_SETUP: "setup",
+        GO_TO_WORKER_SETUP: "worker_setup",
+        GO_TO_WORKER: "worker",
+        GO_TO_SELECTION: "selection",
+        GO_BACK: "setup",
       },
     },
     worker_setup: {
       on: {
-        GO_TO_MODE_SELECTION: 'mode_selection',
-        GO_TO_WORKER: 'worker',
-        GO_BACK: 'mode_selection',
+        GO_TO_MODE_SELECTION: "mode_selection",
+        GO_TO_WORKER: "worker",
+        GO_BACK: "mode_selection",
         UPDATE_CONFIG: {
-          target: 'worker',
-          actions: 'updateConfig',
+          target: "worker",
+          actions: "updateConfig",
         },
       },
     },
     worker: {
       on: {
-        GO_TO_MODE_SELECTION: 'mode_selection',
+        GO_TO_MODE_SELECTION: "mode_selection",
         GO_TO_HELP: {
-          target: 'help',
+          target: "help",
           actions: assign({
-            previousView: 'worker',
+            previousView: "worker",
           }),
         },
-        GO_BACK: 'mode_selection',
+        GO_BACK: "mode_selection",
       },
     },
     selection: {
       on: {
-        GO_TO_SETUP: 'setup',
-        GO_TO_MODE_SELECTION: 'mode_selection',
-        GO_TO_MAIN: 'main',
+        GO_TO_SETUP: "setup",
+        GO_TO_MODE_SELECTION: "mode_selection",
+        GO_TO_MAIN: "main",
         GO_TO_HELP: {
-          target: 'help',
+          target: "help",
           actions: assign({
-            previousView: 'selection',
+            previousView: "selection",
           }),
         },
-        GO_BACK: 'mode_selection',
+        GO_BACK: "mode_selection",
       },
     },
     main: {
       on: {
-        GO_TO_SELECTION: 'selection',
+        GO_TO_SELECTION: "selection",
         GO_TO_HELP: {
-          target: 'help',
+          target: "help",
           actions: assign({
-            previousView: 'main',
+            previousView: "main",
           }),
         },
-        GO_BACK: 'selection',
+        GO_BACK: "selection",
       },
     },
     help: {
       on: {
         GO_BACK: [
           {
-            target: 'main',
-            guard: ({ context }) => context.previousView === 'main',
+            target: "main",
+            guard: ({ context }) => context.previousView === "main",
           },
           {
-            target: 'selection',
-            guard: ({ context }) => context.previousView === 'selection',
+            target: "selection",
+            guard: ({ context }) => context.previousView === "selection",
           },
           {
-            target: 'worker',
-            guard: ({ context }) => context.previousView === 'worker',
+            target: "worker",
+            guard: ({ context }) => context.previousView === "worker",
           },
           {
-            target: 'setup',
-            guard: ({ context }) => context.previousView === 'setup',
+            target: "setup",
+            guard: ({ context }) => context.previousView === "setup",
           },
         ],
       },
@@ -331,10 +341,10 @@ export function useViewMode(): ViewModeState {
 
   // Navigate to mode_selection if config exists (issue tracker configured)
   useEffect(() => {
-    if (loadedConfig && loadedConfig.issueTracker && state.value === 'setup') {
-      send({ type: 'GO_TO_MODE_SELECTION' });
+    if (loadedConfig?.issueTracker && state.value === "setup") {
+      send({ type: "GO_TO_MODE_SELECTION" });
     }
-  }, []); // Only run once on mount
+  }, [loadedConfig, send, state.value]); // Only run once on mount
 
   // Determine current view mode from state
   const viewMode = state.value as ViewMode;
@@ -342,14 +352,15 @@ export function useViewMode(): ViewModeState {
   return {
     viewMode,
     config: state.context.config,
-    goToSetup: () => send({ type: 'GO_TO_SETUP' }),
-    goToModeSelection: () => send({ type: 'GO_TO_MODE_SELECTION' }),
-    goToWorkerSetup: () => send({ type: 'GO_TO_WORKER_SETUP' }),
-    goToWorker: () => send({ type: 'GO_TO_WORKER' }),
-    goToSelection: () => send({ type: 'GO_TO_SELECTION' }),
-    goToMain: () => send({ type: 'GO_TO_MAIN' }),
-    goToHelp: () => send({ type: 'GO_TO_HELP' }),
-    goBack: () => send({ type: 'GO_BACK' }),
-    updateConfig: (config: IssueTrackerConfig) => send({ type: 'UPDATE_CONFIG', config }),
+    goToSetup: () => send({ type: "GO_TO_SETUP" }),
+    goToModeSelection: () => send({ type: "GO_TO_MODE_SELECTION" }),
+    goToWorkerSetup: () => send({ type: "GO_TO_WORKER_SETUP" }),
+    goToWorker: () => send({ type: "GO_TO_WORKER" }),
+    goToSelection: () => send({ type: "GO_TO_SELECTION" }),
+    goToMain: () => send({ type: "GO_TO_MAIN" }),
+    goToHelp: () => send({ type: "GO_TO_HELP" }),
+    goBack: () => send({ type: "GO_BACK" }),
+    updateConfig: (config: IssueTrackerConfig) =>
+      send({ type: "UPDATE_CONFIG", config }),
   };
 }

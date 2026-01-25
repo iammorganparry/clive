@@ -4,12 +4,12 @@
  */
 
 import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { loadContracts } from "../cli/loader.js";
 import type { ContractGraph } from "../graph/graph.js";
 import { ImpactAnalyzer } from "../query/impact-analyzer.js";
-import { loadContracts } from "../cli/loader.js";
 
 /**
  * Types of breaking changes
@@ -193,16 +193,13 @@ async function loadContractsFromGitRef(
 
         execSync(`mkdir -p "${targetDir}"`);
         writeFileSync(targetPath, content);
-      } catch {
-        // File might not exist at that ref
-        continue;
-      }
+      } catch {}
     }
 
     // Load contracts from temp directory
     const result = await loadContracts(tempDir);
     return result.graph;
-  } catch (err) {
+  } catch (_err) {
     // Git command failed, likely invalid ref
     return null;
   } finally {

@@ -1,6 +1,6 @@
 import { tool } from "ai";
+import { Effect, pipe, Runtime } from "effect";
 import { z } from "zod";
-import { Effect, Runtime, pipe } from "effect";
 import type { KnowledgeFileService } from "../../knowledge-file-service.js";
 import { VSCodeService } from "../../vs-code.js";
 

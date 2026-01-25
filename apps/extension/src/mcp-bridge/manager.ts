@@ -4,11 +4,20 @@
  * Uses Effect's PubSub for status updates and Ref for state management
  */
 
+import * as fs from "node:fs/promises";
 import type * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as fs from "node:fs/promises";
-import { Context, Effect, Layer, PubSub, type Queue, Ref, type Scope, pipe } from "effect";
+import {
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  pipe,
+  type Queue,
+  Ref,
+  type Scope,
+} from "effect";
 import { startMcpBridgeServer, stopMcpBridgeServer } from "./server.js";
 import type { BridgeHandlers, McpBridgeStatus } from "./types.js";
 
@@ -47,7 +56,11 @@ export class McpBridgeManager extends Context.Tag("McpBridgeManager")<
     readonly start: Effect.Effect<string, Error>;
     readonly stop: Effect.Effect<void>;
     readonly restart: Effect.Effect<string, Error>;
-    readonly subscribe: Effect.Effect<Queue.Dequeue<McpBridgeStatus>, never, Scope.Scope>;
+    readonly subscribe: Effect.Effect<
+      Queue.Dequeue<McpBridgeStatus>,
+      never,
+      Scope.Scope
+    >;
   }
 >() {}
 

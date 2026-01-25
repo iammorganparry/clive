@@ -11,9 +11,9 @@
  * manage its own TUI layout and scrolling behavior.
  */
 
-import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { OneDarkPro } from '../styles/theme';
-import type { CliveMode } from '../types/views';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { OneDarkPro } from "../styles/theme";
+import type { CliveMode } from "../types/views";
 
 interface DirectOutputPanelProps {
   /** X position (column) where this panel starts */
@@ -32,7 +32,12 @@ interface DirectOutputPanelProps {
 
 export interface DirectOutputPanelRef {
   /** Get the scroll region boundaries for the PTY */
-  getScrollRegion: () => { top: number; bottom: number; left: number; right: number };
+  getScrollRegion: () => {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  };
 }
 
 /**
@@ -57,113 +62,111 @@ const ANSI = {
   resetOriginMode: () => `\x1b[?6l`,
 };
 
-export const DirectOutputPanel = forwardRef<DirectOutputPanelRef, DirectOutputPanelProps>(
-  ({ x, y, width, height, mode, isRunning }, ref) => {
-    const initializedRef = useRef(false);
+export const DirectOutputPanel = forwardRef<
+  DirectOutputPanelRef,
+  DirectOutputPanelProps
+>(({ x, y, width, height, mode, isRunning }, ref) => {
+  const initializedRef = useRef(false);
 
-    // Mode indicator color
-    const modeColor = mode === 'plan'
+  // Mode indicator color
+  const modeColor =
+    mode === "plan"
       ? OneDarkPro.syntax.blue
-      : mode === 'build'
-      ? OneDarkPro.syntax.yellow
-      : undefined;
+      : mode === "build"
+        ? OneDarkPro.syntax.yellow
+        : undefined;
 
-    // Calculate scroll region (1-indexed for ANSI)
-    const headerHeight = mode ? 1 : 0;
-    const scrollTop = y + headerHeight + 1; // +1 for 1-indexed
-    const scrollBottom = y + height;
-    const scrollLeft = x + 1; // +1 for 1-indexed
-    const scrollRight = x + width;
+  // Calculate scroll region (1-indexed for ANSI)
+  const headerHeight = mode ? 1 : 0;
+  const scrollTop = y + headerHeight + 1; // +1 for 1-indexed
+  const scrollBottom = y + height;
+  const scrollLeft = x + 1; // +1 for 1-indexed
+  const scrollRight = x + width;
 
-    // Set up scroll region when PTY starts running
-    useEffect(() => {
-      if (isRunning && !initializedRef.current) {
-        initializedRef.current = true;
+  // Set up scroll region when PTY starts running
+  useEffect(() => {
+    if (isRunning && !initializedRef.current) {
+      initializedRef.current = true;
 
-        // Set the scroll region for Claude Code's output
-        // This confines scrolling to just the output area
-        process.stdout.write(ANSI.saveCursor());
-        process.stdout.write(ANSI.setScrollRegion(scrollTop, scrollBottom));
-        process.stdout.write(ANSI.moveTo(scrollTop, scrollLeft));
+      // Set the scroll region for Claude Code's output
+      // This confines scrolling to just the output area
+      process.stdout.write(ANSI.saveCursor());
+      process.stdout.write(ANSI.setScrollRegion(scrollTop, scrollBottom));
+      process.stdout.write(ANSI.moveTo(scrollTop, scrollLeft));
 
-        // Note: We can't truly confine horizontal position with standard ANSI,
-        // but Claude Code respects the PTY dimensions we give it
-      }
+      // Note: We can't truly confine horizontal position with standard ANSI,
+      // but Claude Code respects the PTY dimensions we give it
+    }
 
-      return () => {
-        if (initializedRef.current) {
-          // Reset scroll region when component unmounts or PTY stops
-          process.stdout.write(ANSI.resetScrollRegion());
-          process.stdout.write(ANSI.restoreCursor());
-          initializedRef.current = false;
-        }
-      };
-    }, [isRunning, scrollTop, scrollBottom, scrollLeft]);
-
-    // Reset scroll region when PTY stops
-    useEffect(() => {
-      if (!isRunning && initializedRef.current) {
+    return () => {
+      if (initializedRef.current) {
+        // Reset scroll region when component unmounts or PTY stops
         process.stdout.write(ANSI.resetScrollRegion());
+        process.stdout.write(ANSI.restoreCursor());
         initializedRef.current = false;
       }
-    }, [isRunning]);
+    };
+  }, [isRunning, scrollTop, scrollBottom, scrollLeft]);
 
-    // Expose scroll region info to parent
-    useImperativeHandle(ref, () => ({
-      getScrollRegion: () => ({
-        top: scrollTop,
-        bottom: scrollBottom,
-        left: scrollLeft,
-        right: scrollRight,
-      }),
-    }));
+  // Reset scroll region when PTY stops
+  useEffect(() => {
+    if (!isRunning && initializedRef.current) {
+      process.stdout.write(ANSI.resetScrollRegion());
+      initializedRef.current = false;
+    }
+  }, [isRunning]);
 
-    return (
-      <box
-        width={width}
-        height={height}
-        flexDirection="column"
-        backgroundColor={OneDarkPro.background.primary}
-      >
-        {/* Mode header - rendered by blessed, above the scroll region */}
-        {mode && (
-          <box
-            width={width}
-            height={1}
-            backgroundColor={OneDarkPro.background.secondary}
-            paddingLeft={1}
-            paddingRight={1}
-            flexDirection="row"
-          >
-            <text fg={modeColor} bold>
-              {mode === 'plan' ? '📋 PLAN' : '🔨 BUILD'}
-            </text>
-            <text fg={OneDarkPro.foreground.muted}>
-              {' '} Mode Active
-            </text>
-          </box>
-        )}
+  // Expose scroll region info to parent
+  useImperativeHandle(ref, () => ({
+    getScrollRegion: () => ({
+      top: scrollTop,
+      bottom: scrollBottom,
+      left: scrollLeft,
+      right: scrollRight,
+    }),
+  }));
 
-        {/*
+  return (
+    <box
+      width={width}
+      height={height}
+      flexDirection="column"
+      backgroundColor={OneDarkPro.background.primary}
+    >
+      {/* Mode header - rendered by blessed, above the scroll region */}
+      {mode && (
+        <box
+          width={width}
+          height={1}
+          backgroundColor={OneDarkPro.background.secondary}
+          paddingLeft={1}
+          paddingRight={1}
+          flexDirection="row"
+        >
+          <text fg={modeColor} bold>
+            {mode === "plan" ? "📋 PLAN" : "🔨 BUILD"}
+          </text>
+          <text fg={OneDarkPro.foreground.muted}> Mode Active</text>
+        </box>
+      )}
+
+      {/*
           Output area - this is where Claude Code renders directly.
           We don't render anything here - Claude writes to this region via stdout.
           The box just reserves the space in blessed's layout.
         */}
-        <box
-          width={width}
-          height={height - headerHeight}
-          backgroundColor={OneDarkPro.background.primary}
-        >
-          {!isRunning && (
-            <box padding={2}>
-              <text fg={OneDarkPro.foreground.muted}>
-                Waiting for output...
-              </text>
-            </box>
-          )}
-          {/* When running, Claude Code renders directly here via PTY stdout */}
-        </box>
+      <box
+        width={width}
+        height={height - headerHeight}
+        backgroundColor={OneDarkPro.background.primary}
+      >
+        {!isRunning && (
+          <box padding={2}>
+            <text fg={OneDarkPro.foreground.muted}>Waiting for output...</text>
+          </box>
+        )}
+        {/* When running, Claude Code renders directly here via PTY stdout */}
       </box>
-    );
-  }
-);
+    </box>
+  );
+});

@@ -1,5 +1,5 @@
 import { fromCallback } from "xstate";
-import { subscriptionHandlers, generateId } from "../../../rpc/hooks.js";
+import { generateId, subscriptionHandlers } from "../../../rpc/hooks.js";
 import type { VSCodeAPI } from "../../../services/vscode.js";
 import type { KnowledgeBaseEvent } from "../machines/knowledge-base-machine.js";
 

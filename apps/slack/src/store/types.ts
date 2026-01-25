@@ -4,7 +4,7 @@
  * Reuses types from TUI where applicable.
  */
 
-import type { CliExecutionHandle, ClaudeCliEvent } from "@clive/claude-services";
+import type { CliExecutionHandle } from "@clive/claude-services";
 
 /**
  * Question data from AskUserQuestion tool

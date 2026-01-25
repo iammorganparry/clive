@@ -3,5 +3,5 @@
  */
 
 export * from "./contract.js";
-export * from "./relationship.js";
 export * from "./graph.js";
+export * from "./relationship.js";

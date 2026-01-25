@@ -3,7 +3,15 @@
  * Implementation of bridge method handlers for the VSCode extension side
  */
 
-import { Effect, Runtime, pipe } from "effect";
+import { Effect, pipe, Runtime } from "effect";
+import {
+  appendPlanStreamingContentEffect,
+  finalizePlanStreamingWriteEffect,
+  initializePlanStreamingWriteEffect,
+} from "../services/ai-agent/tools/propose-test-plan.js";
+import { VSCodeService } from "../services/vs-code.js";
+import { buildFullPlanContent } from "../utils/frontmatter-utils.js";
+import type { CliveViewProvider } from "../views/clive-view-provider.js";
 import type {
   ApprovePlanBridgeResponse,
   ProposePlanBridgeResponse,
@@ -11,14 +19,6 @@ import type {
   SummarizeContextBridgeResponse,
   TypedBridgeHandlers,
 } from "./types.js";
-import {
-  initializePlanStreamingWriteEffect,
-  appendPlanStreamingContentEffect,
-  finalizePlanStreamingWriteEffect,
-} from "../services/ai-agent/tools/propose-test-plan.js";
-import { VSCodeService } from "../services/vs-code.js";
-import type { CliveViewProvider } from "../views/clive-view-provider.js";
-import { buildFullPlanContent } from "../utils/frontmatter-utils.js";
 
 /**
  * Create bridge handlers for the extension
@@ -241,7 +241,9 @@ export function createBridgeHandlers(
      * Handle approvePlan requests
      * Switches the agent mode from plan to act by emitting an event to the webview
      */
-    approvePlan: async (params: unknown): Promise<ApprovePlanBridgeResponse> => {
+    approvePlan: async (
+      params: unknown,
+    ): Promise<ApprovePlanBridgeResponse> => {
       const input = params as {
         approved: boolean;
         planId?: string;

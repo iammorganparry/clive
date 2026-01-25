@@ -1,12 +1,12 @@
 import * as path from "node:path";
-import { tool } from "ai";
-import { z } from "zod";
-import { Runtime, Effect, pipe } from "effect";
-import { VSCodeService } from "../../vs-code.js";
-import { processModelContent } from "../../../utils/model-content-processor.js";
-import { formatFileEditError } from "../response-formatter.js";
-import { getDiffTrackerService } from "../../diff-tracker-service.js";
 import type { LineRange } from "@clive/core";
+import { tool } from "ai";
+import { Effect, pipe, Runtime } from "effect";
+import { z } from "zod";
+import { processModelContent } from "../../../utils/model-content-processor.js";
+import { getDiffTrackerService } from "../../diff-tracker-service.js";
+import { VSCodeService } from "../../vs-code.js";
+import { formatFileEditError } from "../response-formatter.js";
 
 /**
  * SEARCH/REPLACE block interface

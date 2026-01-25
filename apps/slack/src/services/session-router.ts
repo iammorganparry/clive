@@ -4,9 +4,8 @@
  * Assigns interview sessions to workers and handles failover.
  */
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import type { WorkerRegistry } from "./worker-registry";
-import type { InterviewSession } from "../store/types";
 
 /**
  * Session assignment info
@@ -24,7 +23,11 @@ interface SessionAssignment {
  */
 export interface SessionRouterEvents {
   sessionAssigned: (sessionId: string, workerId: string) => void;
-  sessionUnassigned: (sessionId: string, workerId: string, reason: string) => void;
+  sessionUnassigned: (
+    sessionId: string,
+    workerId: string,
+    reason: string,
+  ) => void;
   noWorkersAvailable: (sessionId: string) => void;
 }
 
@@ -71,10 +74,17 @@ export class SessionRouter extends EventEmitter {
       // Try to find a worker with the specific project
       worker = this.registry.getLeastBusyWorkerForProject(projectQuery);
       if (worker) {
-        projectPath = this.registry.getProjectPath(worker.workerId, projectQuery);
-        console.log(`[SessionRouter] Found worker ${worker.workerId} with project "${projectQuery}" at ${projectPath}`);
+        projectPath = this.registry.getProjectPath(
+          worker.workerId,
+          projectQuery,
+        );
+        console.log(
+          `[SessionRouter] Found worker ${worker.workerId} with project "${projectQuery}" at ${projectPath}`,
+        );
       } else {
-        console.log(`[SessionRouter] No worker found for project "${projectQuery}", falling back to any available worker`);
+        console.log(
+          `[SessionRouter] No worker found for project "${projectQuery}", falling back to any available worker`,
+        );
         worker = this.registry.getLeastBusyWorker();
       }
     } else {
@@ -83,7 +93,9 @@ export class SessionRouter extends EventEmitter {
     }
 
     if (!worker) {
-      console.log(`[SessionRouter] No workers available for session ${sessionId}`);
+      console.log(
+        `[SessionRouter] No workers available for session ${sessionId}`,
+      );
       this.emit("noWorkersAvailable", sessionId);
       return null;
     }
@@ -100,7 +112,9 @@ export class SessionRouter extends EventEmitter {
     this.assignments.set(sessionId, assignment);
     this.registry.addSessionToWorker(worker.workerId, sessionId);
 
-    console.log(`[SessionRouter] Assigned session ${sessionId} to worker ${worker.workerId}${projectQuery ? ` for project "${projectQuery}"` : ""}`);
+    console.log(
+      `[SessionRouter] Assigned session ${sessionId} to worker ${worker.workerId}${projectQuery ? ` for project "${projectQuery}"` : ""}`,
+    );
     this.emit("sessionAssigned", sessionId, worker.workerId);
 
     return worker.workerId;
@@ -125,7 +139,9 @@ export class SessionRouter extends EventEmitter {
     this.assignments.delete(sessionId);
     this.registry.removeSessionFromWorker(assignment.workerId, sessionId);
 
-    console.log(`[SessionRouter] Unassigned session ${sessionId} from worker ${assignment.workerId} (${reason})`);
+    console.log(
+      `[SessionRouter] Unassigned session ${sessionId} from worker ${assignment.workerId} (${reason})`,
+    );
     this.emit("sessionUnassigned", sessionId, assignment.workerId, reason);
   }
 
@@ -159,7 +175,9 @@ export class SessionRouter extends EventEmitter {
     const orphanedSessions = this.getSessionsForWorker(workerId);
 
     for (const sessionId of orphanedSessions) {
-      console.log(`[SessionRouter] Session ${sessionId} orphaned by worker ${workerId} disconnect`);
+      console.log(
+        `[SessionRouter] Session ${sessionId} orphaned by worker ${workerId} disconnect`,
+      );
       this.unassignSession(sessionId, `worker disconnected: ${reason}`);
       // Note: The interview store will be notified via event and can notify the user
     }

@@ -66,7 +66,9 @@ export function buildFullPlanContent(
   planContent: string,
 ): string {
   const hasFrontmatter = planContent.trim().startsWith("---");
-  return hasFrontmatter ? planContent : buildTestPlanFrontmatter(input) + planContent;
+  return hasFrontmatter
+    ? planContent
+    : buildTestPlanFrontmatter(input) + planContent;
 }
 
 /**

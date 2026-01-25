@@ -12,9 +12,7 @@ const CompleteTaskInputSchema = z.object({
     .describe(
       "Brief summary of what was accomplished (e.g., 'All 5 test files written and verified passing')",
     ),
-  testsWritten: z
-    .number()
-    .describe("Number of test files that were written"),
+  testsWritten: z.number().describe("Number of test files that were written"),
   testsPassed: z
     .number()
     .describe("Number of test files that passed verification"),
@@ -32,7 +30,6 @@ export interface CompleteTaskOutput {
   message: string;
   completed: boolean;
 }
-
 
 /**
  * Validate completion input using Effect
@@ -109,4 +106,3 @@ export const createCompleteTaskTool = () =>
  * Default completeTaskTool
  */
 export const completeTaskTool = createCompleteTaskTool();
-

@@ -4,9 +4,9 @@
 
 import type { Command } from "commander";
 import pc from "picocolors";
-import { loadContracts } from "../loader.js";
-import { QueryEngine } from "../../query/engine.js";
 import { formatLocation } from "../../graph/contract.js";
+import { QueryEngine } from "../../query/engine.js";
+import { loadContracts } from "../loader.js";
 
 export function impactCommand(program: Command): void {
   program

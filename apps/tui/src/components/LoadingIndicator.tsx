@@ -3,16 +3,18 @@
  * Shows an animated loading indicator when the agent is processing
  */
 
-import { useState, useEffect } from 'react';
-import { OneDarkPro } from '../styles/theme';
+import { useEffect, useState } from "react";
+import { OneDarkPro } from "../styles/theme";
 
 interface LoadingIndicatorProps {
   text?: string;
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-export function LoadingIndicator({ text = 'Agent is thinking' }: LoadingIndicatorProps) {
+export function LoadingIndicator({
+  text = "Agent is thinking",
+}: LoadingIndicatorProps) {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {

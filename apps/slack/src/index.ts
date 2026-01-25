@@ -8,24 +8,21 @@
  * - Distributed: Central service with worker swarm for multi-user support
  */
 
-import { createServer, type Server } from "http";
-import { Effect, Console, pipe } from "effect";
-import { App as SlackApp, LogLevel } from "@slack/bolt";
+import type { Server } from "node:http";
+import { LogLevel, App as SlackApp } from "@slack/bolt";
 import HTTPReceiverModule from "@slack/bolt/dist/receivers/HTTPReceiver.js";
+import { Effect, pipe } from "effect";
 import { loadConfig, type SlackConfig } from "./config";
 
 // Handle CommonJS default export in ESM
 const HTTPReceiver =
   (HTTPReceiverModule as unknown as { default: typeof HTTPReceiverModule })
     .default ?? HTTPReceiverModule;
-import { TunnelService, TunnelServiceError } from "./services/tunnel-service";
-import { SlackService, SlackServiceError } from "./services/slack-service";
-import { InterviewStore } from "./store/interview-store";
-import { ClaudeManager } from "./services/claude-manager";
-import { WorkerRegistry } from "./services/worker-registry";
-import { SessionRouter } from "./services/session-router";
-import { WorkerProxy } from "./services/worker-proxy";
-import { EventServer } from "./websocket/event-server";
+
+import {
+  registerActionHandler,
+  registerActionHandlerDistributed,
+} from "./handlers/action-handler";
 import {
   registerMentionHandler,
   registerMentionHandlerDistributed,
@@ -34,10 +31,14 @@ import {
   registerMessageHandler,
   registerMessageHandlerDistributed,
 } from "./handlers/message-handler";
-import {
-  registerActionHandler,
-  registerActionHandlerDistributed,
-} from "./handlers/action-handler";
+import { ClaudeManager } from "./services/claude-manager";
+import { SessionRouter } from "./services/session-router";
+import { SlackService } from "./services/slack-service";
+import { TunnelService } from "./services/tunnel-service";
+import { WorkerProxy } from "./services/worker-proxy";
+import { WorkerRegistry } from "./services/worker-registry";
+import { InterviewStore } from "./store/interview-store";
+import { EventServer } from "./websocket/event-server";
 
 /**
  * Start local mode (single-user with ngrok tunnel)
@@ -195,19 +196,26 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
   );
 
   // Handle worker disconnection - notify users
-  sessionRouter.on("sessionUnassigned", async (sessionId, workerId, reason) => {
-    const session = interviewStore.get(sessionId);
-    if (session && session.phase !== "completed" && session.phase !== "error") {
-      await Effect.runPromise(
-        slackService.postMessage({
-          channel: session.channel,
-          text: `Interview interrupted: Worker disconnected (${reason}). Please @mention Clive again to restart.`,
-          threadTs: session.threadTs,
-        }),
-      );
-      interviewStore.setError(sessionId, `Worker disconnected: ${reason}`);
-    }
-  });
+  sessionRouter.on(
+    "sessionUnassigned",
+    async (sessionId, _workerId, reason) => {
+      const session = interviewStore.get(sessionId);
+      if (
+        session &&
+        session.phase !== "completed" &&
+        session.phase !== "error"
+      ) {
+        await Effect.runPromise(
+          slackService.postMessage({
+            channel: session.channel,
+            text: `Interview interrupted: Worker disconnected (${reason}). Please @mention Clive again to restart.`,
+            threadTs: session.threadTs,
+          }),
+        );
+        interviewStore.setError(sessionId, `Worker disconnected: ${reason}`);
+      }
+    },
+  );
 
   // Start the Slack app and get the HTTP server
   const httpServer = (await slackApp.start()) as Server;

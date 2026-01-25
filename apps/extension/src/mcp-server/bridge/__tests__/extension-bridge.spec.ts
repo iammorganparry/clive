@@ -163,7 +163,9 @@ describe("ExtensionBridge", () => {
       );
       mockSocket.emit(
         "data",
-        Buffer.from(toJsonLine({ id: written.id, error: "Something went wrong" })),
+        Buffer.from(
+          toJsonLine({ id: written.id, error: "Something went wrong" }),
+        ),
       );
 
       await expect(callPromise).rejects.toThrow("Something went wrong");
@@ -198,7 +200,10 @@ describe("ExtensionBridge", () => {
         Buffer.from(toJsonLine({ id: call1.id, result: "result1" })),
       );
 
-      const [result1, result2] = await Promise.all([call1Promise, call2Promise]);
+      const [result1, result2] = await Promise.all([
+        call1Promise,
+        call2Promise,
+      ]);
       expect(result1).toBe("result1");
       expect(result2).toBe("result2");
     });
@@ -220,7 +225,10 @@ describe("ExtensionBridge", () => {
       const written = JSON.parse(
         mockSocket.write.mock.calls[0][0].replace("\n", ""),
       );
-      const fullResponse = JSON.stringify({ id: written.id, result: "buffered" });
+      const fullResponse = JSON.stringify({
+        id: written.id,
+        result: "buffered",
+      });
 
       // Send in chunks
       mockSocket.emit("data", Buffer.from(fullResponse.substring(0, 10)));

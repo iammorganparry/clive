@@ -1,8 +1,8 @@
 import { Data, Effect } from "effect";
-import { SecretStorageService } from "./vs-code.js";
 import { SecretKeys } from "../constants.js";
-import { SecretStorageError } from "./errors.js";
 import { extractErrorMessage } from "../utils/error-utils.js";
+import { SecretStorageError } from "./errors.js";
+import { SecretStorageService } from "./vs-code.js";
 
 export class InvalidApiKeyError extends Data.TaggedError("InvalidApiKeyError")<{
   message: string;

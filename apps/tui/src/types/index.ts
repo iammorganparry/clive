@@ -3,10 +3,10 @@
  * Ported from apps/tui-go/internal/model/
  */
 
-import type { BeadsIssue, LinearIssue } from '@clive/claude-services';
+import type { BeadsIssue, LinearIssue } from "@clive/claude-services";
 
 // Re-export service types
-export type { BeadsIssue, LinearIssue } from '@clive/claude-services';
+export type { BeadsIssue, LinearIssue } from "@clive/claude-services";
 
 /**
  * Unified task representation that can come from either Beads or Linear
@@ -21,7 +21,7 @@ export interface Session {
   name: string;
   description?: string;
   createdAt: Date;
-  source: 'beads' | 'linear';
+  source: "beads" | "linear";
   // Source-specific data
   beadsData?: BeadsIssue;
   linearData?: LinearIssue;
@@ -29,9 +29,20 @@ export interface Session {
 
 export interface OutputLine {
   text: string;
-  type: 'stdout' | 'stderr' | 'tool_call' | 'tool_result' | 'assistant' |
-        'system' | 'user' | 'question' | 'exit' | 'debug' | 'file_diff' |
-        'subagent_spawn' | 'subagent_complete';
+  type:
+    | "stdout"
+    | "stderr"
+    | "tool_call"
+    | "tool_result"
+    | "assistant"
+    | "system"
+    | "user"
+    | "question"
+    | "exit"
+    | "debug"
+    | "file_diff"
+    | "subagent_spawn"
+    | "subagent_complete";
   toolName?: string;
   toolUseID?: string;
   toolInput?: any; // Tool input parameters
@@ -68,7 +79,7 @@ export interface QuestionOption {
 }
 
 export interface Config {
-  issueTracker?: 'linear' | 'beads';
+  issueTracker?: "linear" | "beads";
   linear?: {
     apiKey: string;
     teamID: string;

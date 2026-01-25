@@ -255,7 +255,11 @@ export const setStreamingArgs = (
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (state) => ({
     ...state,
-    streamingArgsText: HashMap.set(state.streamingArgsText, toolCallId, argsText),
+    streamingArgsText: HashMap.set(
+      state.streamingArgsText,
+      toolCallId,
+      argsText,
+    ),
   }));
 
 /**
@@ -324,4 +328,3 @@ export const getPlanInitStatus = (
     const option = HashMap.get(state.planInitializationStatus, toolCallId);
     return option._tag === "Some" ? option.value : null;
   });
-

@@ -11,14 +11,14 @@
  * - "act" mode: Write operations allowed
  */
 
-import { Effect } from "effect";
-import type { ToolSet, Tool } from "ai";
-import { logToOutput } from "../../utils/logger.js";
+import { exec } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import type { Tool, ToolSet } from "ai";
+import { Effect } from "effect";
 import { glob } from "glob";
+import { logToOutput } from "../../utils/logger.js";
 import { ToolCallAbortRegistry } from "./tool-call-abort-registry.js";
 
 const execAsync = promisify(exec);
@@ -163,7 +163,10 @@ function checkBashPermission(
 
   // In plan mode, only allow read-only commands
   if (mode === "plan" && !isReadOnlyCommand(trimmed)) {
-    return { allowed: false, reason: "Write commands are not allowed in plan mode" };
+    return {
+      allowed: false,
+      reason: "Write commands are not allowed in plan mode",
+    };
   }
 
   return { allowed: true };
@@ -172,9 +175,15 @@ function checkBashPermission(
 /**
  * Check if a write operation is allowed in the given mode
  */
-function checkWritePermission(mode: ToolExecutorMode): { allowed: boolean; reason?: string } {
+function checkWritePermission(mode: ToolExecutorMode): {
+  allowed: boolean;
+  reason?: string;
+} {
   if (mode === "plan") {
-    return { allowed: false, reason: "Write operations are not allowed in plan mode" };
+    return {
+      allowed: false,
+      reason: "Write operations are not allowed in plan mode",
+    };
   }
   return { allowed: true };
 }
@@ -203,7 +212,9 @@ function createBuiltinToolHandlers(
      * Always allowed in both modes
      */
     Read: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Read] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Read] Args received: ${JSON.stringify(args)}`,
+      );
 
       const { file_path, offset, limit } = args as {
         file_path: string;
@@ -212,7 +223,9 @@ function createBuiltinToolHandlers(
       };
 
       const resolvedPath = resolvePath(file_path);
-      logToOutput(`[CliToolExecutor:Read] Resolved path: ${resolvedPath} (from ${file_path})`);
+      logToOutput(
+        `[CliToolExecutor:Read] Resolved path: ${resolvedPath} (from ${file_path})`,
+      );
 
       try {
         const content = await fs.readFile(resolvedPath, "utf-8");
@@ -225,7 +238,9 @@ function createBuiltinToolHandlers(
 
         // Format with line numbers like cat -n
         const numberedContent = selectedLines
-          .map((line, idx) => `${String(startLine + idx + 1).padStart(6)}→${line}`)
+          .map(
+            (line, idx) => `${String(startLine + idx + 1).padStart(6)}→${line}`,
+          )
           .join("\n");
 
         // Return structured output for UI display
@@ -241,7 +256,11 @@ function createBuiltinToolHandlers(
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         logToOutput(`[CliToolExecutor:Read] Error reading file: ${msg}`);
-        return { success: false, result: "", error: `Failed to read file: ${msg}` };
+        return {
+          success: false,
+          result: "",
+          error: `Failed to read file: ${msg}`,
+        };
       }
     },
 
@@ -250,7 +269,9 @@ function createBuiltinToolHandlers(
      * Only allowed in "act" mode
      */
     Write: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Write] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Write] Args received: ${JSON.stringify(args)}`,
+      );
 
       // Check write permission based on mode
       const permission = checkWritePermission(mode);
@@ -271,7 +292,11 @@ function createBuiltinToolHandlers(
         return { success: true, result: `Successfully wrote to ${file_path}` };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        return { success: false, result: "", error: `Failed to write file: ${msg}` };
+        return {
+          success: false,
+          result: "",
+          error: `Failed to write file: ${msg}`,
+        };
       }
     },
 
@@ -280,7 +305,9 @@ function createBuiltinToolHandlers(
      * Only allowed in "act" mode
      */
     Edit: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Edit] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Edit] Args received: ${JSON.stringify(args)}`,
+      );
 
       // Check write permission based on mode
       const permission = checkWritePermission(mode);
@@ -323,7 +350,11 @@ function createBuiltinToolHandlers(
         return { success: true, result: `Successfully edited ${file_path}` };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        return { success: false, result: "", error: `Failed to edit file: ${msg}` };
+        return {
+          success: false,
+          result: "",
+          error: `Failed to edit file: ${msg}`,
+        };
       }
     },
 
@@ -334,21 +365,29 @@ function createBuiltinToolHandlers(
      * In "act" mode, write commands are also allowed (except blocked patterns)
      */
     Bash: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Bash] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Bash] Args received: ${JSON.stringify(args)}`,
+      );
 
       const { command, timeout } = args as {
         command: string;
         timeout?: number;
       };
 
-      logToOutput(`[CliToolExecutor:Bash] Command: ${command}, timeout: ${timeout}`);
+      logToOutput(
+        `[CliToolExecutor:Bash] Command: ${command}, timeout: ${timeout}`,
+      );
 
       // Check bash permission based on mode
       const permission = checkBashPermission(command, mode);
-      logToOutput(`[CliToolExecutor:Bash] Permission check: allowed=${permission.allowed}, reason=${permission.reason || 'none'}`);
+      logToOutput(
+        `[CliToolExecutor:Bash] Permission check: allowed=${permission.allowed}, reason=${permission.reason || "none"}`,
+      );
 
       if (!permission.allowed) {
-        logToOutput(`[CliToolExecutor:Bash] Bash blocked: ${permission.reason} (command: ${command})`);
+        logToOutput(
+          `[CliToolExecutor:Bash] Bash blocked: ${permission.reason} (command: ${command})`,
+        );
         return { success: false, result: "", error: permission.reason };
       }
 
@@ -359,7 +398,9 @@ function createBuiltinToolHandlers(
           cwd: workspaceRoot || process.cwd(), // Execute in workspace directory
         });
 
-        logToOutput(`[CliToolExecutor:Bash] Command succeeded: stdout.length=${stdout.length}, stderr.length=${stderr?.length || 0}`);
+        logToOutput(
+          `[CliToolExecutor:Bash] Command succeeded: stdout.length=${stdout.length}, stderr.length=${stderr?.length || 0}`,
+        );
 
         // Return structured output for tool call UI component
         return {
@@ -384,13 +425,18 @@ function createBuiltinToolHandlers(
         const stderr = execError.stderr || "";
         const errorMessage = execError.message || String(error);
 
-        logToOutput(`[CliToolExecutor:Bash] Caught error: exitCode=${exitCode}, stdout.length=${stdout.length}, stderr=${stderr.slice(0, 200)}`);
+        logToOutput(
+          `[CliToolExecutor:Bash] Caught error: exitCode=${exitCode}, stdout.length=${stdout.length}, stderr=${stderr.slice(0, 200)}`,
+        );
 
         // Treat as success if:
         // 1. Exit code is 0, OR
         // 2. We have stdout output (command produced useful results), OR
         // 3. stderr is empty (not a real error, just no results found - e.g., ls on empty dir, grep with no matches)
-        const isSuccessful = exitCode === 0 || stdout.trim().length > 0 || stderr.trim().length === 0;
+        const isSuccessful =
+          exitCode === 0 ||
+          stdout.trim().length > 0 ||
+          stderr.trim().length === 0;
 
         return {
           success: isSuccessful,
@@ -400,7 +446,9 @@ function createBuiltinToolHandlers(
             stderr: stderr || errorMessage,
             exitCode,
           }),
-          error: !isSuccessful ? `Command failed with exit code ${exitCode}` : undefined,
+          error: !isSuccessful
+            ? `Command failed with exit code ${exitCode}`
+            : undefined,
         };
       }
     },
@@ -411,14 +459,18 @@ function createBuiltinToolHandlers(
      * Always allowed in both modes (read-only operation)
      */
     Glob: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Glob] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Glob] Args received: ${JSON.stringify(args)}`,
+      );
 
       const { pattern, path: basePath } = args as {
         pattern: string;
         path?: string;
       };
 
-      logToOutput(`[CliToolExecutor:Glob] Pattern: ${pattern}, basePath: ${basePath}`);
+      logToOutput(
+        `[CliToolExecutor:Glob] Pattern: ${pattern}, basePath: ${basePath}`,
+      );
 
       try {
         const cwd = resolvePath(basePath ?? ".");
@@ -448,15 +500,23 @@ function createBuiltinToolHandlers(
      * Always allowed in both modes (read-only operation)
      */
     Grep: async (args: unknown): Promise<CliToolResult> => {
-      logToOutput(`[CliToolExecutor:Grep] Args received: ${JSON.stringify(args)}`);
+      logToOutput(
+        `[CliToolExecutor:Grep] Args received: ${JSON.stringify(args)}`,
+      );
 
-      const { pattern, path: searchPath, glob: globPattern } = args as {
+      const {
+        pattern,
+        path: searchPath,
+        glob: globPattern,
+      } = args as {
         pattern: string;
         path?: string;
         glob?: string;
       };
 
-      logToOutput(`[CliToolExecutor:Grep] Pattern: ${pattern}, searchPath: ${searchPath}, glob: ${globPattern}`);
+      logToOutput(
+        `[CliToolExecutor:Grep] Pattern: ${pattern}, searchPath: ${searchPath}, glob: ${globPattern}`,
+      );
 
       try {
         // Build ripgrep command with proper escaping
@@ -587,16 +647,24 @@ export function createCliToolExecutor(
         // Check for built-in CLI tools first (Read, Write, Edit, Bash, Glob, Grep)
         const builtinHandler = builtinToolHandlers[toolName];
         if (builtinHandler) {
-          logToOutput(`[CliToolExecutor] Using built-in handler for: ${toolName}`);
+          logToOutput(
+            `[CliToolExecutor] Using built-in handler for: ${toolName}`,
+          );
 
           // Register with abort registry to enable cancellation
           const abortController = ToolCallAbortRegistry.register(toolCallId);
 
           // Check if already aborted before starting
           if (abortController.signal.aborted) {
-            logToOutput(`[CliToolExecutor] Tool ${toolName} (${toolCallId}) was already aborted`);
+            logToOutput(
+              `[CliToolExecutor] Tool ${toolName} (${toolCallId}) was already aborted`,
+            );
             ToolCallAbortRegistry.cleanup(toolCallId);
-            return { success: false, result: "", error: "Tool call was cancelled" };
+            return {
+              success: false,
+              result: "",
+              error: "Tool call was cancelled",
+            };
           }
 
           progressCallback?.(
@@ -666,9 +734,15 @@ export function createCliToolExecutor(
 
         // Check if already aborted before starting
         if (abortController.signal.aborted) {
-          logToOutput(`[CliToolExecutor] Tool ${toolName} (${toolCallId}) was already aborted`);
+          logToOutput(
+            `[CliToolExecutor] Tool ${toolName} (${toolCallId}) was already aborted`,
+          );
           ToolCallAbortRegistry.cleanup(toolCallId);
-          return { success: false, result: "", error: "Tool call was cancelled" };
+          return {
+            success: false,
+            result: "",
+            error: "Tool call was cancelled",
+          };
         }
 
         progressCallback?.(
@@ -700,7 +774,9 @@ export function createCliToolExecutor(
             catch: (error) => {
               const errorMsg =
                 error instanceof Error ? error.message : String(error);
-              logToOutput(`[CliToolExecutor] Tool execution error: ${errorMsg}`);
+              logToOutput(
+                `[CliToolExecutor] Tool execution error: ${errorMsg}`,
+              );
               return new Error(errorMsg);
             },
           });

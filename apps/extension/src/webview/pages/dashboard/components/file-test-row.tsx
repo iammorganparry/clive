@@ -1,7 +1,7 @@
-import type React from "react";
-import type { EligibleFile } from "./branch-changes.js";
 import { FileText } from "lucide-react";
+import type React from "react";
 import { truncateMiddle } from "../../../utils/path-utils.js";
+import type { EligibleFile } from "./branch-changes.js";
 
 interface FileTestRowProps {
   file: EligibleFile;

@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { renderHook, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { RpcProvider, useRpc } from "../provider.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VSCodeAPI } from "../../services/vscode.js";
+import { RpcProvider, useRpc } from "../provider.js";
 
 // Mock VSCodeAPI
 const createMockVscode = (): VSCodeAPI => {
@@ -154,16 +154,16 @@ describe("Client proxy", () => {
     // Test calling hooks inside a proper component
     const TestComponent = () => {
       const client = useRpc();
-      
+
       // Query procedure should have useQuery
       expect(client.status.branchChanges).toBeDefined();
       expect(client.status.branchChanges.useQuery).toBeDefined();
-      
+
       // Subscription procedure should have useSubscription
       const planTestsHook = client.agents.planTests.useSubscription();
       expect(planTestsHook).toBeDefined();
       expect(typeof planTestsHook.subscribe).toBe("function");
-      
+
       return null;
     };
 

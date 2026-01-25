@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { ContractGraph } from "../../src/graph/graph.js";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createContract } from "../../src/graph/contract.js";
+import { ContractGraph } from "../../src/graph/graph.js";
 import { createRelationship } from "../../src/graph/relationship.js";
 
 describe("ContractGraph", () => {
@@ -30,7 +30,9 @@ describe("ContractGraph", () => {
       graph.addContract(createContract("User.create"));
       graph.addContract(createContract("DB.users"));
 
-      graph.addRelationship(createRelationship("User.create", "DB.users", "writes"));
+      graph.addRelationship(
+        createRelationship("User.create", "DB.users", "writes"),
+      );
 
       const outgoing = graph.getOutgoing("User.create");
       expect(outgoing).toHaveLength(1);
@@ -40,14 +42,18 @@ describe("ContractGraph", () => {
     it("throws if source contract does not exist", () => {
       graph.addContract(createContract("DB.users"));
       expect(() =>
-        graph.addRelationship(createRelationship("Unknown", "DB.users", "writes"))
+        graph.addRelationship(
+          createRelationship("Unknown", "DB.users", "writes"),
+        ),
       ).toThrow("Contract not found: Unknown");
     });
 
     it("throws if target contract does not exist", () => {
       graph.addContract(createContract("User.create"));
       expect(() =>
-        graph.addRelationship(createRelationship("User.create", "Unknown", "writes"))
+        graph.addRelationship(
+          createRelationship("User.create", "Unknown", "writes"),
+        ),
       ).toThrow("Contract not found: Unknown");
     });
   });
@@ -56,7 +62,9 @@ describe("ContractGraph", () => {
     it("returns incoming relationships", () => {
       graph.addContract(createContract("User.create"));
       graph.addContract(createContract("DB.users"));
-      graph.addRelationship(createRelationship("User.create", "DB.users", "writes"));
+      graph.addRelationship(
+        createRelationship("User.create", "DB.users", "writes"),
+      );
 
       const incoming = graph.getIncoming("DB.users");
       expect(incoming).toHaveLength(1);
@@ -86,7 +94,10 @@ describe("ContractGraph", () => {
     });
 
     it("respects maxDepth", () => {
-      const result = graph.traverse("A", { direction: "outgoing", maxDepth: 1 });
+      const result = graph.traverse("A", {
+        direction: "outgoing",
+        maxDepth: 1,
+      });
       expect(result.contracts.map((c) => c.id)).toEqual(["A", "B"]);
     });
 
@@ -110,11 +121,18 @@ describe("ContractGraph", () => {
       graph.addContract(createContract("DB.users"));
       graph.addContract(createContract("User.create"));
       graph.addContract(createContract("User.update"));
-      graph.addRelationship(createRelationship("User.create", "DB.users", "writes"));
-      graph.addRelationship(createRelationship("User.update", "DB.users", "writes"));
+      graph.addRelationship(
+        createRelationship("User.create", "DB.users", "writes"),
+      );
+      graph.addRelationship(
+        createRelationship("User.update", "DB.users", "writes"),
+      );
 
       const dependents = graph.findDependents("DB.users");
-      expect(dependents.map((c) => c.id).sort()).toEqual(["User.create", "User.update"]);
+      expect(dependents.map((c) => c.id).sort()).toEqual([
+        "User.create",
+        "User.update",
+      ]);
     });
   });
 
@@ -123,11 +141,18 @@ describe("ContractGraph", () => {
       graph.addContract(createContract("User.create"));
       graph.addContract(createContract("DB.users"));
       graph.addContract(createContract("Auth.validate"));
-      graph.addRelationship(createRelationship("User.create", "DB.users", "writes"));
-      graph.addRelationship(createRelationship("User.create", "Auth.validate", "calls"));
+      graph.addRelationship(
+        createRelationship("User.create", "DB.users", "writes"),
+      );
+      graph.addRelationship(
+        createRelationship("User.create", "Auth.validate", "calls"),
+      );
 
       const deps = graph.findDependencies("User.create");
-      expect(deps.map((c) => c.id).sort()).toEqual(["Auth.validate", "DB.users"]);
+      expect(deps.map((c) => c.id).sort()).toEqual([
+        "Auth.validate",
+        "DB.users",
+      ]);
     });
   });
 
@@ -136,12 +161,12 @@ describe("ContractGraph", () => {
       graph.addContract(
         createContract("User.create", {
           location: { file: "src/users/create.ts", line: 10 },
-        })
+        }),
       );
       graph.addContract(
         createContract("User.update", {
           location: { file: "src/users/update.ts", line: 15 },
-        })
+        }),
       );
 
       const contracts = graph.findByFile("src/users/create.ts");
@@ -153,7 +178,7 @@ describe("ContractGraph", () => {
       graph.addContract(
         createContract("User.create", {
           location: { file: "src/users/create.ts" },
-        })
+        }),
       );
 
       const contracts = graph.findByFile("create.ts");
@@ -165,7 +190,9 @@ describe("ContractGraph", () => {
     it("finds producers of an event", () => {
       graph.addContract(createContract("Order.place"));
       graph.addContract(createContract("OrderPlaced", { type: "event" }));
-      graph.addRelationship(createRelationship("Order.place", "OrderPlaced", "publishes"));
+      graph.addRelationship(
+        createRelationship("Order.place", "OrderPlaced", "publishes"),
+      );
 
       const producers = graph.findProducers("OrderPlaced");
       expect(producers.map((c) => c.id)).toEqual(["Order.place"]);
@@ -176,7 +203,9 @@ describe("ContractGraph", () => {
     it("finds consumers of an event", () => {
       graph.addContract(createContract("OrderPlaced", { type: "event" }));
       graph.addContract(createContract("Inventory.reserve"));
-      graph.addRelationship(createRelationship("Inventory.reserve", "OrderPlaced", "consumes"));
+      graph.addRelationship(
+        createRelationship("Inventory.reserve", "OrderPlaced", "consumes"),
+      );
 
       const consumers = graph.findConsumers("OrderPlaced");
       expect(consumers.map((c) => c.id)).toEqual(["Inventory.reserve"]);

@@ -4,26 +4,26 @@
  * Handles mode-based tool selection and callback wiring
  */
 
+import type { LanguageModel, ToolSet } from "ai";
 import { Effect, type Ref } from "effect";
 import type { KnowledgeFileService } from "../knowledge-file-service.js";
-import type { SummaryService } from "./summary-service.js";
 import type { Message } from "./context-tracker.js";
-import type { TokenBudget } from "./token-budget.js";
 import type { LoopState } from "./loop-state.js";
+import type { SummaryService } from "./summary-service.js";
+import type { TokenBudget } from "./token-budget.js";
 import {
+  createApprovePlanTool,
   createBashExecuteTool,
+  createCompleteTaskTool,
+  createEditFileContentTool,
+  createProposeTestPlanToolWithGuard,
   createSearchKnowledgeTool,
   createSummarizeContextTool,
+  createTodoWriteTool,
   createWebTools,
   createWriteKnowledgeFileTool,
   createWriteTestFileTool,
-  createProposeTestPlanToolWithGuard,
-  createCompleteTaskTool,
-  createApprovePlanTool,
-  createEditFileContentTool,
-  createTodoWriteTool,
 } from "./tools/index.js";
-import type { LanguageModel, ToolSet } from "ai";
 
 /**
  * Streaming callback for bash command output

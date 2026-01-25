@@ -1,16 +1,16 @@
-import type React from "react";
 import {
   Queue,
-  QueueSection,
-  QueueSectionTrigger,
-  QueueSectionLabel,
-  QueueSectionContent,
-  QueueList,
   QueueItem,
-  QueueItemIndicator,
   QueueItemContent,
+  QueueItemIndicator,
+  QueueList,
+  QueueSection,
+  QueueSectionContent,
+  QueueSectionLabel,
+  QueueSectionTrigger,
 } from "@clive/ui/components/ai-elements/queue";
-import { FileTextIcon, CheckCircle2Icon } from "lucide-react";
+import { CheckCircle2Icon, FileTextIcon } from "lucide-react";
+import type React from "react";
 import {
   groupTodosBySection,
   type ScratchpadTodo,

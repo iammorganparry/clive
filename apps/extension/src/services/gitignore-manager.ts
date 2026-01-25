@@ -5,8 +5,8 @@
 
 import { Data, Effect } from "effect";
 import type * as vscode from "vscode";
-import { VSCodeService } from "./vs-code.js";
 import { extractErrorMessage } from "../utils/error-utils.js";
+import { VSCodeService } from "./vs-code.js";
 
 /**
  * Error types for gitignore operations

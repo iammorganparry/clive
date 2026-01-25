@@ -36,7 +36,7 @@ Focus on identifying testing gaps, risks, and opportunities. Propose a structure
         )
       : filePaths;
     const fileList = relativeFiles.map((f) => `- ${f}`).join("\n");
-    
+
     return `Analyze this changeset as a WHOLE and propose ONE consolidated test plan:
 
 Files:
@@ -45,5 +45,3 @@ ${fileList}
 Analyze how these files work together, what feature/flow they implement, and propose a comprehensive test strategy using the format defined in your system prompt. Group tests by feature/flow, not by individual file.`;
   },
 } as const;
-
-

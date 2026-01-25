@@ -4,9 +4,9 @@
  * Loads configuration from environment variables with optional .env fallback.
  */
 
-import { config as loadDotenv } from "dotenv";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { config as loadDotenv } from "dotenv";
 
 // Load .env from monorepo root only
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -103,7 +103,7 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
   const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
   const sessionTimeoutMs = parseInt(
     process.env.SESSION_TIMEOUT_MS || String(30 * 60 * 1000),
-    10
+    10,
   );
   const wsPath = process.env.CLIVE_WS_PATH || "/ws";
 
@@ -125,7 +125,7 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
  */
 export function getConfigValue<K extends keyof SlackConfig>(
   config: SlackConfig,
-  key: K
+  key: K,
 ): SlackConfig[K] {
   return config[key];
 }

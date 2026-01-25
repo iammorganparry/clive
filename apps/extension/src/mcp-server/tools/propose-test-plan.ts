@@ -4,8 +4,8 @@
  * Requires extension bridge for VSCode editor streaming
  */
 
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { ensureBridgeConnected } from "../bridge/extension-bridge.js";
 
 /**
@@ -50,9 +50,7 @@ const ProposeTestPlanInputSchema = z.object({
   mockDependencies: z
     .array(
       z.object({
-        dependency: z
-          .string()
-          .describe("Name of the dependency to mock"),
+        dependency: z.string().describe("Name of the dependency to mock"),
         existingMock: z
           .string()
           .optional()
@@ -70,9 +68,7 @@ const ProposeTestPlanInputSchema = z.object({
           .enum(["database", "api", "filesystem", "network"])
           .describe("Type of external dependency"),
         name: z.string().describe("Name of the dependency"),
-        testStrategy: z
-          .string()
-          .describe("How to handle in tests"),
+        testStrategy: z.string().describe("How to handle in tests"),
       }),
     )
     .optional()

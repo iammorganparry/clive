@@ -8,8 +8,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ContractGraph } from "../graph/graph.js";
 import type { Contract } from "../graph/contract.js";
+import type { ContractGraph } from "../graph/graph.js";
 
 /**
  * Options for annotating source files
@@ -308,7 +308,7 @@ function injectAnnotationIntoContent(
       `\n${indent}* @see ${contractsFile}#${contractId}` +
       `\n${indent}`;
 
-    const updatedJsDoc = beforeClosing + contractAnnotation + "*/";
+    const updatedJsDoc = `${beforeClosing + contractAnnotation}*/`;
 
     // Replace the JSDoc in lines
     lines.splice(

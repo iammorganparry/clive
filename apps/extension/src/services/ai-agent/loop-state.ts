@@ -168,7 +168,9 @@ export const shouldContinueLoop = (state: LoopState): boolean => {
   }
 
   // Too many consecutive failures
-  if (state.consecutiveFailures >= LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES) {
+  if (
+    state.consecutiveFailures >= LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES
+  ) {
     return false;
   }
 
@@ -190,7 +192,10 @@ export const shouldContinueLoop = (state: LoopState): boolean => {
   }
 
   // Continue if there are failed todos and we haven't exceeded retry limit
-  if (failedTodos.length > 0 && state.consecutiveFailures < LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES) {
+  if (
+    failedTodos.length > 0 &&
+    state.consecutiveFailures < LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES
+  ) {
     return true;
   }
 
@@ -218,7 +223,9 @@ export const getExitReason = (state: LoopState): LoopExitReason | null => {
     return "max_time";
   }
 
-  if (state.consecutiveFailures >= LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES) {
+  if (
+    state.consecutiveFailures >= LOOP_SAFETY_LIMITS.MAX_CONSECUTIVE_FAILURES
+  ) {
     return "error";
   }
 
@@ -282,7 +289,10 @@ export const updateTodosFromInput = (
     if (existingTodo) {
       return {
         ...existingTodo,
-        status: inputTodo.status === "completed" ? "completed" as const : inputTodo.status,
+        status:
+          inputTodo.status === "completed"
+            ? ("completed" as const)
+            : inputTodo.status,
         activeForm: inputTodo.activeForm,
       };
     }
@@ -291,7 +301,10 @@ export const updateTodosFromInput = (
       id: `todo-${index}`,
       content: inputTodo.content,
       activeForm: inputTodo.activeForm,
-      status: inputTodo.status === "completed" ? "completed" as const : inputTodo.status,
+      status:
+        inputTodo.status === "completed"
+          ? ("completed" as const)
+          : inputTodo.status,
     };
   });
 
@@ -391,12 +404,16 @@ export const buildIterationPrompt = (
 
 ## Bootstrap Instructions
 
-${planFilePath ? `1. Read the test plan file at: ${planFilePath}
+${
+  planFilePath
+    ? `1. Read the test plan file at: ${planFilePath}
 2. Extract the test suites from the plan
 3. Use the TodoWrite tool to create a todo for each test suite
-4. Then start implementing the first test suite` : `1. Review the test requirements
+4. Then start implementing the first test suite`
+    : `1. Review the test requirements
 2. Use the TodoWrite tool to create todos for each test suite you need to implement
-3. Then start implementing the first test suite`}
+3. Then start implementing the first test suite`
+}
 
 ## TodoWrite Example
 
@@ -420,7 +437,10 @@ Workspace root: ${workspaceRoot}`;
 
   const progress = getProgressSummary(state);
   const pendingTodos = state.todos.filter(
-    (t) => t.status === "pending" || t.status === "in_progress" || t.status === "failed",
+    (t) =>
+      t.status === "pending" ||
+      t.status === "in_progress" ||
+      t.status === "failed",
   );
 
   const todoList = pendingTodos

@@ -22,4 +22,3 @@ When you discover something valuable not in the knowledge base, use writeKnowled
 to record it. Choose a category name that makes sense for the discovery.
 </knowledge_base>`,
   );
-

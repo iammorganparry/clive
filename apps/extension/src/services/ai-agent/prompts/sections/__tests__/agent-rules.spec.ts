@@ -3,10 +3,10 @@
  * Tests the agent rules section with various configurations
  */
 
-import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
-import { agentRules } from "../agent-rules.js";
+import { describe, expect, it } from "vitest";
 import type { BuildConfig } from "../../types.js";
+import { agentRules } from "../agent-rules.js";
 
 describe("Agent Rules Section", () => {
   describe("Built-in Rules", () => {

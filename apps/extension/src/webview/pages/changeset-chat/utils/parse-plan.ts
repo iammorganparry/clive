@@ -85,10 +85,10 @@ function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
     // Array item at top level (2 space indent with dash)
     else if (line.match(/^ {2}- /) && currentKey) {
       const afterDash = line.slice(4).trim();
-      
+
       // Check if this is an object (has key:value) or simple array item
-      const hasKeyValue = afterDash.includes(':');
-      
+      const hasKeyValue = afterDash.includes(":");
+
       if (hasKeyValue) {
         // This is an object in array with inline first property
         // Finalize previous object if any
@@ -98,13 +98,13 @@ function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
         if (!objectsArray) objectsArray = [];
         currentObject = {};
         currentArray = null;
-        
+
         // Parse the first property
         const propMatch = afterDash.match(/^([a-zA-Z_][a-zA-Z0-9_]*):(.*)$/);
         if (propMatch) {
           const key = propMatch[1];
           const value = propMatch[2].trim();
-          
+
           if (value.startsWith("[") && value.endsWith("]")) {
             // Inline array
             const items = value
@@ -131,7 +131,10 @@ function parseYAMLFrontmatter(text: string): Record<string, unknown> | null {
       const keys = Object.keys(currentObject);
       const lastKey = keys[keys.length - 1];
       if (lastKey && Array.isArray(currentObject[lastKey])) {
-        const value = line.slice(8).trim().replace(/^["']|["']$/g, "");
+        const value = line
+          .slice(8)
+          .trim()
+          .replace(/^["']|["']$/g, "");
         (currentObject[lastKey] as unknown[]).push(value);
       }
     }

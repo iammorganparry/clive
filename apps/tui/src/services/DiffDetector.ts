@@ -4,11 +4,11 @@
  * Monitors Edit/Write tool operations and compares file states
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export interface DiffLine {
-  type: 'add' | 'remove' | 'context';
+  type: "add" | "remove" | "context";
   content: string;
   lineNumber?: number;
 }
@@ -22,7 +22,7 @@ export class DiffDetector {
    * Captures file state before modification
    */
   handleToolUse(toolName: string, input: any): void {
-    if (toolName !== 'Edit' && toolName !== 'Write') {
+    if (toolName !== "Edit" && toolName !== "Write") {
       return;
     }
 
@@ -34,15 +34,15 @@ export class DiffDetector {
     // Store old content before the edit happens
     if (fs.existsSync(filePath)) {
       try {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = fs.readFileSync(filePath, "utf-8");
         this.fileSnapshots.set(filePath, content);
-      } catch (error) {
+      } catch (_error) {
         // File might not be readable, store empty
-        this.fileSnapshots.set(filePath, '');
+        this.fileSnapshots.set(filePath, "");
       }
     } else {
       // New file will be created
-      this.fileSnapshots.set(filePath, '');
+      this.fileSnapshots.set(filePath, "");
     }
   }
 
@@ -51,7 +51,7 @@ export class DiffDetector {
    * Returns formatted diff string or null if not a file operation
    */
   generateDiff(toolName: string, input: any): string | null {
-    if (toolName !== 'Edit' && toolName !== 'Write') {
+    if (toolName !== "Edit" && toolName !== "Write") {
       return null;
     }
 
@@ -60,13 +60,13 @@ export class DiffDetector {
       return null;
     }
 
-    const oldContent = this.fileSnapshots.get(filePath) || '';
+    const oldContent = this.fileSnapshots.get(filePath) || "";
 
     // Read new content
-    let newContent = '';
+    let newContent = "";
     if (fs.existsSync(filePath)) {
       try {
-        newContent = fs.readFileSync(filePath, 'utf-8');
+        newContent = fs.readFileSync(filePath, "utf-8");
       } catch (error) {
         return `Error reading file: ${error}`;
       }
@@ -87,31 +87,31 @@ export class DiffDetector {
     filePath: string,
     oldContent: string,
     newContent: string,
-    operation: string
+    operation: string,
   ): string {
     const fileName = path.basename(filePath);
     const lines: string[] = [];
 
     // Header
-    const emoji = operation === 'Write' && !oldContent ? '●' : '●';
-    const action = operation === 'Write' && !oldContent ? 'Create' : 'Update';
+    const emoji = operation === "Write" && !oldContent ? "●" : "●";
+    const action = operation === "Write" && !oldContent ? "Create" : "Update";
     lines.push(`${emoji} ${action}(${fileName})`);
 
     // For new files, show first few lines
     if (!oldContent && newContent) {
-      const newLines = newContent.split('\n').slice(0, 20);
-      newLines.forEach(line => {
+      const newLines = newContent.split("\n").slice(0, 20);
+      newLines.forEach((line) => {
         lines.push(`  + ${line}`);
       });
-      if (newContent.split('\n').length > 20) {
-        lines.push(`  ... (${newContent.split('\n').length - 20} more lines)`);
+      if (newContent.split("\n").length > 20) {
+        lines.push(`  ... (${newContent.split("\n").length - 20} more lines)`);
       }
-      return lines.join('\n');
+      return lines.join("\n");
     }
 
     // For edits, show changed sections
-    const oldLines = oldContent.split('\n');
-    const newLines = newContent.split('\n');
+    const oldLines = oldContent.split("\n");
+    const newLines = newContent.split("\n");
 
     // Simple line-based diff (not perfect, but good enough)
     const diff = this.simpleDiff(oldLines, newLines);
@@ -125,13 +125,13 @@ export class DiffDetector {
         break;
       }
 
-      if (item.type === 'remove') {
+      if (item.type === "remove") {
         lines.push(`  - ${item.content}`);
         changeCount++;
-      } else if (item.type === 'add') {
+      } else if (item.type === "add") {
         lines.push(`  + ${item.content}`);
         changeCount++;
-      } else if (item.type === 'context') {
+      } else if (item.type === "context") {
         // Show limited context
         if (changeCount === 0 || changeCount > maxChanges - 3) {
           lines.push(`    ${item.content}`);
@@ -139,7 +139,7 @@ export class DiffDetector {
       }
     }
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   /**
@@ -162,31 +162,31 @@ export class DiffDetector {
 
       if (oldIdx >= oldLines.length) {
         // Remaining lines are additions
-        result.push({ type: 'add', content: newLine });
+        result.push({ type: "add", content: newLine });
         newIdx++;
       } else if (newIdx >= newLines.length) {
         // Remaining lines are deletions
-        result.push({ type: 'remove', content: oldLine });
+        result.push({ type: "remove", content: oldLine });
         oldIdx++;
       } else if (oldLine === newLine) {
         // Lines match
-        result.push({ type: 'context', content: oldLine });
+        result.push({ type: "context", content: oldLine });
         oldIdx++;
         newIdx++;
       } else {
         // Lines differ - check if one was removed or added
         if (!newSet.has(oldLine)) {
           // Old line was removed
-          result.push({ type: 'remove', content: oldLine });
+          result.push({ type: "remove", content: oldLine });
           oldIdx++;
         } else if (!oldSet.has(newLine)) {
           // New line was added
-          result.push({ type: 'add', content: newLine });
+          result.push({ type: "add", content: newLine });
           newIdx++;
         } else {
           // Both exist somewhere, treat as changed
-          result.push({ type: 'remove', content: oldLine });
-          result.push({ type: 'add', content: newLine });
+          result.push({ type: "remove", content: oldLine });
+          result.push({ type: "add", content: newLine });
           oldIdx++;
           newIdx++;
         }

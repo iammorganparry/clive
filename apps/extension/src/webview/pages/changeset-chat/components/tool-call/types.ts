@@ -181,13 +181,17 @@ export const isBashExecuteArgs = (input: unknown): input is BashExecuteArgs =>
 export const isProposeTestArgs = (input: unknown): input is ProposeTestArgs =>
   typeof input === "object" && input !== null && "sourceFile" in input;
 
-export const isWriteTestFileArgs = (input: unknown): input is WriteTestFileArgs =>
-  typeof input === "object" && input !== null;
+export const isWriteTestFileArgs = (
+  input: unknown,
+): input is WriteTestFileArgs => typeof input === "object" && input !== null;
 
-export const isSearchKnowledgeArgs = (input: unknown): input is SearchKnowledgeArgs =>
-  typeof input === "object" && input !== null;
+export const isSearchKnowledgeArgs = (
+  input: unknown,
+): input is SearchKnowledgeArgs => typeof input === "object" && input !== null;
 
-export const isWriteKnowledgeFileArgs = (input: unknown): input is WriteKnowledgeFileArgs =>
+export const isWriteKnowledgeFileArgs = (
+  input: unknown,
+): input is WriteKnowledgeFileArgs =>
   typeof input === "object" && input !== null;
 
 export const isWebSearchArgs = (input: unknown): input is WebSearchArgs =>
@@ -196,5 +200,6 @@ export const isWebSearchArgs = (input: unknown): input is WebSearchArgs =>
 export const isReadFileArgs = (input: unknown): input is ReadFileArgs =>
   typeof input === "object" && input !== null;
 
-export const isEditFileContentArgs = (input: unknown): input is EditFileContentArgs =>
-  typeof input === "object" && input !== null;
+export const isEditFileContentArgs = (
+  input: unknown,
+): input is EditFileContentArgs => typeof input === "object" && input !== null;

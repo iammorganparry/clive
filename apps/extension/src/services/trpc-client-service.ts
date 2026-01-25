@@ -1,13 +1,13 @@
-import { Effect } from "effect";
-import { createTRPCClient, httpLink } from "@trpc/client";
-import SuperJSON from "superjson";
 import type { AppRouter } from "@clive/api";
-import { ConfigService } from "./config-service.js";
+import { createTRPCClient, httpLink } from "@trpc/client";
+import { Effect } from "effect";
+import SuperJSON from "superjson";
 import {
   ApiError,
-  NetworkError,
   AuthTokenMissingError,
+  NetworkError,
 } from "../utils/trpc-utils.js";
+import { ConfigService } from "./config-service.js";
 
 /**
  * Create a type-safe tRPC client with auth token

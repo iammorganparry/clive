@@ -3,13 +3,9 @@
  * IPC server running in the VSCode extension that handles requests from the MCP server
  */
 
-import * as net from "node:net";
 import * as fs from "node:fs";
-import type {
-  BridgeRequest,
-  BridgeResponse,
-  BridgeHandlers,
-} from "./types.js";
+import * as net from "node:net";
+import type { BridgeHandlers, BridgeRequest, BridgeResponse } from "./types.js";
 
 /**
  * Start the MCP bridge server

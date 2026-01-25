@@ -4,8 +4,8 @@
  * directly inline with code in the editor.
  */
 
-import * as vscode from "vscode";
 import type { DiffBlock } from "@clive/core";
+import * as vscode from "vscode";
 
 /**
  * Service for managing webview insets in the text editor

@@ -3,8 +3,8 @@
  * Provides typed interface to beads issue tracking system
  */
 
+import { spawn } from "node:child_process";
 import { Context, Effect, Layer } from "effect";
-import { spawn } from "child_process";
 
 // Error types
 export class BeadsNotFoundError {
@@ -17,7 +17,7 @@ export class BeadsExecutionError {
   constructor(
     readonly message: string,
     readonly exitCode?: number,
-    readonly stderr?: string
+    readonly stderr?: string,
   ) {}
 }
 
@@ -78,21 +78,21 @@ export interface BeadsService {
    * List issues with optional filters
    */
   readonly list: (
-    options?: BeadsListOptions
+    options?: BeadsListOptions,
   ) => Effect.Effect<BeadsIssue[], BeadsExecutionError>;
 
   /**
    * Show detailed issue by ID
    */
   readonly show: (
-    id: string
+    id: string,
   ) => Effect.Effect<BeadsIssue, BeadsExecutionError | BeadsNotFoundError>;
 
   /**
    * Create a new issue
    */
   readonly create: (
-    options: BeadsCreateOptions
+    options: BeadsCreateOptions,
   ) => Effect.Effect<BeadsIssue, BeadsExecutionError>;
 
   /**
@@ -100,7 +100,7 @@ export interface BeadsService {
    */
   readonly update: (
     id: string,
-    options: BeadsUpdateOptions
+    options: BeadsUpdateOptions,
   ) => Effect.Effect<BeadsIssue, BeadsExecutionError>;
 
   /**
@@ -108,7 +108,7 @@ export interface BeadsService {
    */
   readonly close: (
     ids: string[],
-    reason?: string
+    reason?: string,
   ) => Effect.Effect<void, BeadsExecutionError>;
 
   /**
@@ -116,7 +116,7 @@ export interface BeadsService {
    */
   readonly addDependency: (
     issueId: string,
-    dependsOnId: string
+    dependsOnId: string,
   ) => Effect.Effect<void, BeadsExecutionError>;
 
   /**
@@ -148,7 +148,9 @@ export interface BeadsService {
   >;
 }
 
-export const BeadsService = Context.GenericTag<BeadsService>("@clive/BeadsService");
+export const BeadsService = Context.GenericTag<BeadsService>(
+  "@clive/BeadsService",
+);
 
 // Implementation
 export const BeadsServiceLive = Layer.succeed(
@@ -157,9 +159,7 @@ export const BeadsServiceLive = Layer.succeed(
     checkAvailable: Effect.gen(function* () {
       const result = yield* execBeads(["--version"]);
       return result.exitCode === 0;
-    }).pipe(
-      Effect.catchAll(() => Effect.fail(new BeadsNotFoundError()))
-    ),
+    }).pipe(Effect.catchAll(() => Effect.fail(new BeadsNotFoundError()))),
 
     list: (options) =>
       Effect.gen(function* () {
@@ -274,12 +274,12 @@ export const BeadsServiceLive = Layer.succeed(
       const result = yield* execBeads(["sync", "--status", "--format=json"]);
       return parseSyncStatus(result.stdout);
     }),
-  })
+  }),
 );
 
 // Helper: Execute beads command
 function execBeads(
-  args: string[]
+  args: string[],
 ): Effect.Effect<
   { stdout: string; stderr: string; exitCode: number },
   BeadsExecutionError
@@ -313,16 +313,18 @@ function execBeads(
             new BeadsExecutionError(
               `Beads command failed with exit code ${code}`,
               code ?? undefined,
-              stderr
-            )
-          )
+              stderr,
+            ),
+          ),
         );
       }
     });
 
     proc.on("error", (err) => {
       resume(
-        Effect.fail(new BeadsExecutionError(`Failed to spawn beads: ${err.message}`))
+        Effect.fail(
+          new BeadsExecutionError(`Failed to spawn beads: ${err.message}`),
+        ),
       );
     });
   });

@@ -1,5 +1,5 @@
-import type React from "react";
 import { cn } from "@clive/ui/lib/utils";
+import type React from "react";
 
 export interface AgentStatusIndicatorProps {
   /** Additional CSS classes */

@@ -5,10 +5,7 @@
  */
 
 import { Effect, Exit, Layer, Runtime, Scope, Stream } from "effect";
-import {
-  McpBridgeManager,
-  McpBridgeManagerLive,
-} from "./manager.js";
+import { McpBridgeManager, McpBridgeManagerLive } from "./manager.js";
 import type { BridgeHandlers, McpBridgeStatus } from "./types.js";
 
 /**

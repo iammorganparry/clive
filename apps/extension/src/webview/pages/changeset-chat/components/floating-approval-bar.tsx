@@ -1,7 +1,7 @@
-import type React from "react";
-import { Check } from "lucide-react";
 import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
+import { Check } from "lucide-react";
+import type React from "react";
 
 interface FloatingApprovalBarProps {
   isVisible: boolean;

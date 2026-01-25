@@ -1,6 +1,6 @@
 import { Effect } from "effect";
+import { SectionId, sections } from "./sections";
 import type { BuildConfig, PromptBuildError } from "./types";
-import { sections, SectionId } from "./sections";
 
 /**
  * PromptService - builds system prompts for TUI Claude CLI execution
@@ -26,21 +26,16 @@ export class PromptService extends Effect.Service<PromptService>()(
           }
 
           // Build all sections in order
-          const commandFileContent = yield* sections[SectionId.CommandFile](
-            config,
-          );
-          const workspaceContextContent = yield* sections[
-            SectionId.WorkspaceContext
-          ](config);
-          const issueTrackerContextContent = yield* sections[
-            SectionId.IssueTrackerContext
-          ](config);
-          const terminalFormattingContent = yield* sections[
-            SectionId.TerminalFormatting
-          ](config);
-          const conversationContextContent = yield* sections[
-            SectionId.ConversationContext
-          ](config);
+          const commandFileContent =
+            yield* sections[SectionId.CommandFile](config);
+          const workspaceContextContent =
+            yield* sections[SectionId.WorkspaceContext](config);
+          const issueTrackerContextContent =
+            yield* sections[SectionId.IssueTrackerContext](config);
+          const terminalFormattingContent =
+            yield* sections[SectionId.TerminalFormatting](config);
+          const conversationContextContent =
+            yield* sections[SectionId.ConversationContext](config);
 
           // Compose all sections into final prompt
           const prompt = [

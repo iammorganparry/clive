@@ -3,8 +3,8 @@
  * Displays status bar with execution state and info
  */
 
-import { OneDarkPro } from '../styles/theme';
-import { Session } from '../types';
+import { OneDarkPro } from "../styles/theme";
+import type { Session } from "../types";
 
 interface HeaderProps {
   width: number;
@@ -13,7 +13,12 @@ interface HeaderProps {
   activeSession?: Session | null;
 }
 
-export function Header({ width, height, isRunning, activeSession }: HeaderProps) {
+export function Header({
+  width,
+  height,
+  isRunning,
+  activeSession,
+}: HeaderProps) {
   return (
     <box
       width={width}
@@ -25,8 +30,10 @@ export function Header({ width, height, isRunning, activeSession }: HeaderProps)
     >
       <box flexDirection="row">
         <text fg={OneDarkPro.syntax.red}>
-          CLIVE  AI-Powered Work Execution
-          {activeSession ? ` · ${activeSession.name.substring(0, 30)}${activeSession.name.length > 30 ? '...' : ''}` : ''}
+          CLIVE AI-Powered Work Execution
+          {activeSession
+            ? ` · ${activeSession.name.substring(0, 30)}${activeSession.name.length > 30 ? "..." : ""}`
+            : ""}
         </text>
       </box>
     </box>

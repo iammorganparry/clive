@@ -38,7 +38,7 @@
     "effect": "^3.19.9"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.7",
+    "@biomejs/biome": "^2.3.12",
     "@clive/biome-config": "*",
     "@clive/tsconfig": "*",
     "@vitest/ui": "^4.0.16",

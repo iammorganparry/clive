@@ -1,6 +1,6 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 
-import { appRouter, type AppRouter } from "./root.js";
+import { type AppRouter, appRouter } from "./root.js";
 import { createCallerFactory } from "./trpc.js";
 
 /**

@@ -4,10 +4,10 @@
  */
 
 import type {
-  Contract,
   CodeLocation,
-  Invariant,
+  Contract,
   ErrorContract,
+  Invariant,
 } from "../graph/contract.js";
 import { formatLocation } from "../graph/contract.js";
 import type { ContractGraph } from "../graph/graph.js";

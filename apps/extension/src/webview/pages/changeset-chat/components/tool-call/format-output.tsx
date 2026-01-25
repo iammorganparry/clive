@@ -1,18 +1,18 @@
-import type React from "react";
-import type { BundledLanguage } from "shiki";
 import {
   CodeBlock,
   CodeBlockCopyButton,
 } from "@clive/ui/components/ai-elements/code-block";
+import type React from "react";
+import type { BundledLanguage } from "shiki";
 import type {
   BashExecuteOutput,
   ReadFileOutput,
   SearchKnowledgeOutput,
 } from "./types.js";
 import {
-  isFileReadingCommand,
-  extractFilePathFromReadCommand,
   detectLanguageFromPath,
+  extractFilePathFromReadCommand,
+  isFileReadingCommand,
 } from "./utils.js";
 
 /**
@@ -36,16 +36,25 @@ export const formatToolOutput = (
   }
 
   // Handle bashExecute/Bash output
-  if ((toolName === "bashExecute" || toolName === "Bash") && typeof output === "object") {
+  if (
+    (toolName === "bashExecute" || toolName === "Bash") &&
+    typeof output === "object"
+  ) {
     const bashOutput = output as BashExecuteOutput;
     const command = bashOutput.command || "";
 
     // Handle file-reading commands with proper syntax highlighting
     if (isFileReadingCommand(command) && bashOutput.stdout) {
       const filePath = extractFilePathFromReadCommand(command);
-      const language = filePath ? detectLanguageFromPath(filePath) : ("text" as BundledLanguage);
+      const language = filePath
+        ? detectLanguageFromPath(filePath)
+        : ("text" as BundledLanguage);
       return (
-        <CodeBlock code={bashOutput.stdout} language={language} showLineNumbers={true}>
+        <CodeBlock
+          code={bashOutput.stdout}
+          language={language}
+          showLineNumbers={true}
+        >
           <CodeBlockCopyButton />
         </CodeBlock>
       );
@@ -67,7 +76,9 @@ export const formatToolOutput = (
           )}
           {bashOutput.stderr && (
             <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">stderr</div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">
+                stderr
+              </div>
               <CodeBlock code={bashOutput.stderr} language="bash" />
             </div>
           )}
@@ -77,7 +88,10 @@ export const formatToolOutput = (
   }
 
   // Handle read_file/Read output
-  if ((toolName === "read_file" || toolName === "Read") && typeof output === "object") {
+  if (
+    (toolName === "read_file" || toolName === "Read") &&
+    typeof output === "object"
+  ) {
     const fileOutput = output as ReadFileOutput;
     if (fileOutput.content) {
       const filePath = fileOutput.filePath || "";
@@ -110,12 +124,17 @@ export const formatToolOutput = (
       return (
         <div className="space-y-2">
           {searchOutput.results.map((result) => {
-            const key = result.path || result.title || `result-${Math.random()}`;
+            const key =
+              result.path || result.title || `result-${Math.random()}`;
             return (
               <div key={key} className="text-sm">
-                {result.title && <div className="font-medium">{result.title}</div>}
+                {result.title && (
+                  <div className="font-medium">{result.title}</div>
+                )}
                 {result.path && (
-                  <div className="text-muted-foreground text-xs">{result.path}</div>
+                  <div className="text-muted-foreground text-xs">
+                    {result.path}
+                  </div>
                 )}
               </div>
             );
@@ -126,8 +145,15 @@ export const formatToolOutput = (
   }
 
   // Handle Glob/Grep output (same structured format)
-  if ((toolName === "Glob" || toolName === "Grep") && typeof output === "object") {
-    const searchOutput = output as { files?: Array<{ path: string }>; totalMatches?: number; pattern?: string };
+  if (
+    (toolName === "Glob" || toolName === "Grep") &&
+    typeof output === "object"
+  ) {
+    const searchOutput = output as {
+      files?: Array<{ path: string }>;
+      totalMatches?: number;
+      pattern?: string;
+    };
     if (searchOutput.files && searchOutput.files.length > 0) {
       return (
         <pre className="text-xs overflow-auto max-h-64 bg-muted p-2 rounded">
@@ -135,7 +161,9 @@ export const formatToolOutput = (
         </pre>
       );
     }
-    return <div className="text-sm text-muted-foreground">No matches found</div>;
+    return (
+      <div className="text-sm text-muted-foreground">No matches found</div>
+    );
   }
 
   return null;

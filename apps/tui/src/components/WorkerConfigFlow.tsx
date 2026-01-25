@@ -4,14 +4,14 @@
  * Collects central service URL and worker token, validates, and saves to config
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { useKeyboard } from '@opentui/react';
-import WebSocket from 'ws';
-import { OneDarkPro } from '../styles/theme';
-import { LoadingSpinner } from './LoadingSpinner';
-import { usePaste } from '../hooks/usePaste';
-import type { InputRenderable } from '@opentui/core';
-import type { WorkerConfig } from '../types/views';
+import type { InputRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
+import { useEffect, useRef, useState } from "react";
+import WebSocket from "ws";
+import { usePaste } from "../hooks/usePaste";
+import { OneDarkPro } from "../styles/theme";
+import type { WorkerConfig } from "../types/views";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 interface WorkerConfigFlowProps {
   width: number;
@@ -24,9 +24,15 @@ interface WorkerConfigFlowProps {
   onCancel: () => void;
 }
 
-type Step = 'intro' | 'url' | 'fetching_token' | 'testing' | 'success' | 'error';
+type Step =
+  | "intro"
+  | "url"
+  | "fetching_token"
+  | "testing"
+  | "success"
+  | "error";
 
-const DEFAULT_CENTRAL_URL = 'wss://slack-central-production.up.railway.app/ws';
+const DEFAULT_CENTRAL_URL = "wss://slack-central-production.up.railway.app/ws";
 
 export function WorkerConfigFlow({
   width,
@@ -35,43 +41,65 @@ export function WorkerConfigFlow({
   onComplete,
   onCancel,
 }: WorkerConfigFlowProps) {
-  const [step, setStep] = useState<Step>(existingConfig ? 'intro' : 'intro');
-  const [centralUrl, setCentralUrl] = useState(existingConfig?.centralUrl || DEFAULT_CENTRAL_URL);
-  const [token, setToken] = useState(existingConfig?.token || '');
-  const [error, setError] = useState('');
-  const [inputValue, setInputValue] = useState('');
+  const [step, setStep] = useState<Step>(existingConfig ? "intro" : "intro");
+  const [centralUrl, setCentralUrl] = useState(
+    existingConfig?.centralUrl || DEFAULT_CENTRAL_URL,
+  );
+  const [token, setToken] = useState(existingConfig?.token || "");
+  const [error, setError] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [introSelectedIndex, setIntroSelectedIndex] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
 
   // Intro options
   const introOptions = existingConfig?.enabled
     ? [
-        { id: 'disable', label: 'Disable Worker Mode', description: 'Stop receiving Slack requests' },
-        { id: 'reconfigure', label: 'Reconfigure', description: 'Update connection settings' },
-        { id: 'cancel', label: 'Keep Current', description: 'No changes' },
+        {
+          id: "disable",
+          label: "Disable Worker Mode",
+          description: "Stop receiving Slack requests",
+        },
+        {
+          id: "reconfigure",
+          label: "Reconfigure",
+          description: "Update connection settings",
+        },
+        { id: "cancel", label: "Keep Current", description: "No changes" },
       ]
     : [
-        { id: 'enable', label: 'Enable Worker Mode', description: 'Receive Slack interview requests' },
-        { id: 'cancel', label: 'Cancel', description: 'Return to previous screen' },
+        {
+          id: "enable",
+          label: "Enable Worker Mode",
+          description: "Receive Slack interview requests",
+        },
+        {
+          id: "cancel",
+          label: "Cancel",
+          description: "Return to previous screen",
+        },
       ];
 
   // Handle keyboard events
   useKeyboard((event) => {
-    if (event.name === 'escape') {
+    if (event.name === "escape") {
       onCancel();
       return;
     }
 
     // Intro screen navigation
-    if (step === 'intro') {
-      if (event.name === 'up' || event.key === 'k') {
-        setIntroSelectedIndex((prev) => (prev > 0 ? prev - 1 : introOptions.length - 1));
-      } else if (event.name === 'down' || event.key === 'j') {
-        setIntroSelectedIndex((prev) => (prev < introOptions.length - 1 ? prev + 1 : 0));
-      } else if (event.name === 'return') {
+    if (step === "intro") {
+      if (event.name === "up" || event.key === "k") {
+        setIntroSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : introOptions.length - 1,
+        );
+      } else if (event.name === "down" || event.key === "j") {
+        setIntroSelectedIndex((prev) =>
+          prev < introOptions.length - 1 ? prev + 1 : 0,
+        );
+      } else if (event.name === "return") {
         handleIntroSelect(introOptions[introSelectedIndex].id);
       } else if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
+        const index = parseInt(event.key, 10) - 1;
         if (index < introOptions.length) {
           handleIntroSelect(introOptions[index].id);
         }
@@ -79,15 +107,15 @@ export function WorkerConfigFlow({
     }
 
     // Error step - retry on Enter
-    if (step === 'error' && event.name === 'return') {
-      setError('');
-      setStep('fetching_token');
+    if (step === "error" && event.name === "return") {
+      setError("");
+      setStep("fetching_token");
     }
   });
 
   // Handle paste events for URL input
   usePaste((event) => {
-    if (step === 'url' && inputRef.current) {
+    if (step === "url" && inputRef.current) {
       if (event.text) {
         inputRef.current.insertText(event.text);
         setInputValue(inputRef.current.value);
@@ -97,20 +125,20 @@ export function WorkerConfigFlow({
 
   const handleIntroSelect = (optionId: string) => {
     switch (optionId) {
-      case 'enable':
-      case 'reconfigure':
+      case "enable":
+      case "reconfigure":
         setInputValue(centralUrl);
-        setStep('url');
+        setStep("url");
         break;
-      case 'disable':
+      case "disable":
         onComplete({
           enabled: false,
           centralUrl: existingConfig?.centralUrl || DEFAULT_CENTRAL_URL,
-          token: existingConfig?.token || '',
+          token: existingConfig?.token || "",
           autoConnect: false,
         });
         break;
-      case 'cancel':
+      case "cancel":
         onCancel();
         break;
     }
@@ -118,7 +146,7 @@ export function WorkerConfigFlow({
 
   const handleUrlSubmit = () => {
     if (!inputValue.trim()) {
-      setError('Central service URL is required');
+      setError("Central service URL is required");
       return;
     }
 
@@ -126,18 +154,18 @@ export function WorkerConfigFlow({
     try {
       new URL(inputValue);
     } catch {
-      setError('Invalid URL format');
+      setError("Invalid URL format");
       return;
     }
 
     setCentralUrl(inputValue);
-    setError('');
-    setStep('fetching_token');
+    setError("");
+    setStep("fetching_token");
   };
 
   // Auto-fetch token when entering fetching_token step
   useEffect(() => {
-    if (step !== 'fetching_token') return;
+    if (step !== "fetching_token") return;
 
     let cancelled = false;
     const fetchToken = async () => {
@@ -146,28 +174,28 @@ export function WorkerConfigFlow({
         // wss://example.com/ws -> https://example.com/api/worker-token
         // ws://example.com/ws -> http://example.com/api/worker-token
         const httpUrl = centralUrl
-          .replace(/^wss:/, 'https:')
-          .replace(/^ws:/, 'http:')
-          .replace(/\/ws$/, '/api/worker-token');
+          .replace(/^wss:/, "https:")
+          .replace(/^ws:/, "http:")
+          .replace(/\/ws$/, "/api/worker-token");
 
         const response = await fetch(httpUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch token: ${response.status}`);
         }
 
-        const data = await response.json() as { token: string };
+        const data = (await response.json()) as { token: string };
         if (!data.token) {
-          throw new Error('No token returned from server');
+          throw new Error("No token returned from server");
         }
 
         if (!cancelled) {
           setToken(data.token);
-          setStep('testing');
+          setStep("testing");
         }
       } catch (err) {
         if (!cancelled) {
-          setError((err as Error).message || 'Failed to fetch worker token');
-          setStep('error');
+          setError((err as Error).message || "Failed to fetch worker token");
+          setStep("error");
         }
       }
     };
@@ -181,7 +209,7 @@ export function WorkerConfigFlow({
 
   // Test connection when entering testing step
   useEffect(() => {
-    if (step !== 'testing') return;
+    if (step !== "testing") return;
 
     let ws: WebSocket | null = null;
     let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -198,15 +226,15 @@ export function WorkerConfigFlow({
           if (ws) {
             ws.close();
           }
-          setError('Connection timed out');
-          setStep('error');
+          setError("Connection timed out");
+          setStep("error");
         }, 10000);
 
-        ws.on('open', () => {
+        ws.on("open", () => {
           if (timeout) clearTimeout(timeout);
           // Connection successful
           ws?.close();
-          setStep('success');
+          setStep("success");
           // Auto-complete after showing success
           setTimeout(() => {
             onComplete({
@@ -218,15 +246,15 @@ export function WorkerConfigFlow({
           }, 1500);
         });
 
-        ws.on('error', (err) => {
+        ws.on("error", (err) => {
           if (timeout) clearTimeout(timeout);
-          setError(err.message || 'Connection failed');
-          setStep('error');
+          setError(err.message || "Connection failed");
+          setStep("error");
         });
       } catch (err) {
         if (timeout) clearTimeout(timeout);
-        setError((err as Error).message || 'Connection failed');
-        setStep('error');
+        setError((err as Error).message || "Connection failed");
+        setStep("error");
       }
     };
 
@@ -260,22 +288,27 @@ export function WorkerConfigFlow({
             CLIVE
           </text>
           <text fg={OneDarkPro.foreground.muted}>
-            {' · Slack Worker Setup'}
+            {" · Slack Worker Setup"}
           </text>
         </box>
 
         {/* Step: Intro */}
-        {step === 'intro' && (
+        {step === "intro" && (
           <>
             <text fg={OneDarkPro.foreground.secondary} marginTop={1}>
               Worker mode allows you to receive interview requests from Slack.
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-              When enabled, @clive mentions in Slack will route to this terminal.
+              When enabled, @clive mentions in Slack will route to this
+              terminal.
             </text>
 
             {existingConfig?.enabled && (
-              <box marginTop={2} padding={1} backgroundColor={OneDarkPro.background.secondary}>
+              <box
+                marginTop={2}
+                padding={1}
+                backgroundColor={OneDarkPro.background.secondary}
+              >
                 <text fg={OneDarkPro.syntax.green}>
                   Worker mode is currently enabled
                 </text>
@@ -294,7 +327,7 @@ export function WorkerConfigFlow({
                     backgroundColor={
                       isSelected
                         ? OneDarkPro.background.highlight
-                        : 'transparent'
+                        : "transparent"
                     }
                     padding={1}
                     marginBottom={1}
@@ -305,13 +338,14 @@ export function WorkerConfigFlow({
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      fontWeight={isSelected ? 'bold' : 'normal'}
+                      fontWeight={isSelected ? "bold" : "normal"}
                     >
-                      {isSelected ? '> ' : '  '}
+                      {isSelected ? "> " : "  "}
                       {i + 1}. {option.label}
                     </text>
                     <text fg={OneDarkPro.foreground.muted}>
-                      {'   '}{option.description}
+                      {"   "}
+                      {option.description}
                     </text>
                   </box>
                 );
@@ -321,7 +355,7 @@ export function WorkerConfigFlow({
         )}
 
         {/* Step: URL */}
-        {step === 'url' && (
+        {step === "url" && (
           <>
             <text fg={OneDarkPro.foreground.primary} marginTop={2}>
               Central Service URL:
@@ -360,7 +394,7 @@ export function WorkerConfigFlow({
         )}
 
         {/* Step: Fetching Token */}
-        {step === 'fetching_token' && (
+        {step === "fetching_token" && (
           <box marginTop={4}>
             <LoadingSpinner
               text="Fetching worker token from central service..."
@@ -370,7 +404,7 @@ export function WorkerConfigFlow({
         )}
 
         {/* Step: Testing */}
-        {step === 'testing' && (
+        {step === "testing" && (
           <box marginTop={4}>
             <LoadingSpinner
               text="Testing connection to central service..."
@@ -380,7 +414,7 @@ export function WorkerConfigFlow({
         )}
 
         {/* Step: Success */}
-        {step === 'success' && (
+        {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
               Connection successful!
@@ -392,7 +426,7 @@ export function WorkerConfigFlow({
         )}
 
         {/* Step: Error */}
-        {step === 'error' && (
+        {step === "error" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.syntax.red} fontSize={1.5}>
               Connection failed
@@ -409,26 +443,32 @@ export function WorkerConfigFlow({
               >
                 <text fg={OneDarkPro.syntax.blue}>Press Enter to retry</text>
               </box>
-              <box padding={1} backgroundColor={OneDarkPro.background.secondary}>
-                <text fg={OneDarkPro.foreground.muted}>Press Esc to cancel</text>
+              <box
+                padding={1}
+                backgroundColor={OneDarkPro.background.secondary}
+              >
+                <text fg={OneDarkPro.foreground.muted}>
+                  Press Esc to cancel
+                </text>
               </box>
             </box>
           </box>
         )}
 
         {/* Instructions */}
-        {step === 'intro' && (
+        {step === "intro" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
-              1-{introOptions.length} Select  |  Up/Down Navigate  |  Enter Confirm  |  Esc Cancel
+              1-{introOptions.length} Select | Up/Down Navigate | Enter Confirm
+              | Esc Cancel
             </text>
           </box>
         )}
 
-        {step === 'url' && (
+        {step === "url" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
-              Enter Submit  |  Esc Cancel
+              Enter Submit | Esc Cancel
             </text>
           </box>
         )}

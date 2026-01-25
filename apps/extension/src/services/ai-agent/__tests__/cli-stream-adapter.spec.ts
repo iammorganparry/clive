@@ -1,7 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Stream, Effect, Runtime, Chunk } from "effect";
+import { Chunk, Effect, Runtime, Stream } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClaudeCliEvent } from "../../claude-cli-service.js";
-import { streamFromCli, streamFromCliGenerator } from "../cli-stream-adapter.js";
+import {
+  streamFromCli,
+  streamFromCliGenerator,
+} from "../cli-stream-adapter.js";
 
 // Mock the logger to avoid noise in tests
 vi.mock("../../../utils/logger.js", () => ({
@@ -142,9 +145,9 @@ describe("cli-stream-adapter", () => {
         content: "After error",
       });
       // Error event should not be in the output
-      expect(eventsArray.some((e) => (e as { type: string }).type === "error")).toBe(
-        false,
-      );
+      expect(
+        eventsArray.some((e) => (e as { type: string }).type === "error"),
+      ).toBe(false);
     });
   });
 
@@ -153,7 +156,10 @@ describe("cli-stream-adapter", () => {
       // Create a stream with an unknown event type (cast to bypass type checking)
       const cliEvents: ClaudeCliEvent[] = [
         { type: "text", content: "Valid" },
-        { type: "unknown_type", data: "something" } as unknown as ClaudeCliEvent,
+        {
+          type: "unknown_type",
+          data: "something",
+        } as unknown as ClaudeCliEvent,
         { type: "done" },
       ];
 

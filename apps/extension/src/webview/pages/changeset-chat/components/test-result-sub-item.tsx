@@ -1,13 +1,13 @@
-import type React from "react";
-import { XCircle, } from "lucide-react";
 import {
   QueueItem,
-  QueueItemIndicator,
   QueueItemContent,
   QueueItemDescription,
+  QueueItemIndicator,
 } from "@clive/ui/components/ai-elements/queue";
-import type { TestResult } from "../utils/parse-test-output.js";
 import { cn } from "@clive/ui/lib/utils";
+import { XCircle } from "lucide-react";
+import type React from "react";
+import type { TestResult } from "../utils/parse-test-output.js";
 
 interface TestResultSubItemProps {
   test: TestResult;
@@ -47,7 +47,9 @@ export const TestResultSubItem: React.FC<TestResultSubItemProps> = ({
           <QueueItemIndicator completed={isPassed} />
         )}
         <div className="flex-1 min-w-0">
-          <QueueItemContent completed={isPassed}>{test.testName}</QueueItemContent>
+          <QueueItemContent completed={isPassed}>
+            {test.testName}
+          </QueueItemContent>
           {test.duration && (
             <QueueItemDescription completed={isPassed}>
               {formatDuration(test.duration)}
@@ -59,7 +61,7 @@ export const TestResultSubItem: React.FC<TestResultSubItemProps> = ({
               className={cn(
                 "mt-1 text-xs text-red-600 dark:text-red-400 font-mono",
                 "bg-red-50 dark:bg-red-950/30 p-2 rounded border border-red-200 dark:border-red-900/50",
-                "line-through-0"
+                "line-through-0",
               )}
             >
               {test.error}
@@ -70,4 +72,3 @@ export const TestResultSubItem: React.FC<TestResultSubItemProps> = ({
     </QueueItem>
   );
 };
-

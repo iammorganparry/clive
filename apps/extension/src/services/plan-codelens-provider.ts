@@ -1,6 +1,6 @@
+import { Effect, Layer, Runtime } from "effect";
 import * as vscode from "vscode";
 import { PlanFileService } from "./plan-file-service.js";
-import { Runtime, Layer, Effect } from "effect";
 import { VSCodeService } from "./vs-code.js";
 
 /**

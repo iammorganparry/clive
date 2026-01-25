@@ -282,16 +282,18 @@ describe("MCP Bridge Server", () => {
     it("handles partial messages with buffering", async () => {
       const testSocket = createTestSocket();
       const handlers: BridgeHandlers = {
-        bufferedMethod: vi
-          .fn()
-          .mockResolvedValue({ buffered: true }),
+        bufferedMethod: vi.fn().mockResolvedValue({ buffered: true }),
       };
 
       await startMcpBridgeServer("/tmp/buffer.sock", handlers);
       connectionHandler(testSocket as unknown as Socket);
 
       // Send message in chunks
-      const fullRequest = { id: "req-buf", method: "bufferedMethod", params: {} };
+      const fullRequest = {
+        id: "req-buf",
+        method: "bufferedMethod",
+        params: {},
+      };
       const fullMessage = `${JSON.stringify(fullRequest)}\n`;
 
       // Split into multiple chunks
@@ -443,8 +445,16 @@ describe("MCP Bridge Server", () => {
       connectionHandler(socket2 as unknown as Socket);
 
       // Send requests from both clients
-      const req1 = { id: "client1-req", method: "clientMethod", params: { client: 1 } };
-      const req2 = { id: "client2-req", method: "clientMethod", params: { client: 2 } };
+      const req1 = {
+        id: "client1-req",
+        method: "clientMethod",
+        params: { client: 1 },
+      };
+      const req2 = {
+        id: "client2-req",
+        method: "clientMethod",
+        params: { client: 2 },
+      };
 
       socket1.emit("data", Buffer.from(toJsonLine(req1)));
       socket2.emit("data", Buffer.from(toJsonLine(req2)));
@@ -457,8 +467,12 @@ describe("MCP Bridge Server", () => {
       expect(socket2.write).toHaveBeenCalled();
 
       // Verify correct responses went to correct sockets
-      const response1 = JSON.parse(socket1.write.mock.calls[0][0].replace("\n", ""));
-      const response2 = JSON.parse(socket2.write.mock.calls[0][0].replace("\n", ""));
+      const response1 = JSON.parse(
+        socket1.write.mock.calls[0][0].replace("\n", ""),
+      );
+      const response2 = JSON.parse(
+        socket2.write.mock.calls[0][0].replace("\n", ""),
+      );
       expect(response1.id).toBe("client1-req");
       expect(response2.id).toBe("client2-req");
     });

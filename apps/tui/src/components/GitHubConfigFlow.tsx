@@ -4,10 +4,10 @@
  * Collects GitHub token and validates
  */
 
-import { useState } from 'react';
-import { useKeyboard } from '@opentui/react';
-import { OneDarkPro } from '../styles/theme';
-import { LoadingSpinner } from './LoadingSpinner';
+import { useKeyboard } from "@opentui/react";
+import { useState } from "react";
+import { OneDarkPro } from "../styles/theme";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 interface GitHubConfigFlowProps {
   width: number;
@@ -16,7 +16,7 @@ interface GitHubConfigFlowProps {
   onCancel: () => void;
 }
 
-type Step = 'token' | 'validating' | 'success';
+type Step = "token" | "validating" | "success";
 
 export function GitHubConfigFlow({
   width,
@@ -24,22 +24,22 @@ export function GitHubConfigFlow({
   onComplete,
   onCancel,
 }: GitHubConfigFlowProps) {
-  const [step, setStep] = useState<Step>('token');
-  const [token, setToken] = useState('');
-  const [error, setError] = useState('');
-  const [inputValue, setInputValue] = useState('');
+  const [step, setStep] = useState<Step>("token");
+  const [_token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [inputValue, setInputValue] = useState("");
 
   // Handle keyboard input
   useKeyboard((event) => {
-    if (event.name === 'escape') {
+    if (event.name === "escape") {
       onCancel();
       return;
     }
 
-    if (step === 'token') {
-      if (event.name === 'return') {
+    if (step === "token") {
+      if (event.name === "return") {
         handleSubmit();
-      } else if (event.name === 'backspace') {
+      } else if (event.name === "backspace") {
         setInputValue((prev) => prev.slice(0, -1));
       } else if (event.key.length === 1) {
         setInputValue((prev) => prev + event.key);
@@ -49,25 +49,25 @@ export function GitHubConfigFlow({
 
   const handleSubmit = async () => {
     if (!inputValue.trim()) {
-      setError('GitHub token is required');
+      setError("GitHub token is required");
       return;
     }
 
-    setError('');
+    setError("");
     setToken(inputValue);
-    setStep('validating');
+    setStep("validating");
 
     // Validate token
     try {
       await validateGitHubToken(inputValue);
-      setStep('success');
+      setStep("success");
       setTimeout(() => {
         onComplete({ token: inputValue });
       }, 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Validation failed');
-      setStep('token');
-      setInputValue('');
+      setError(err instanceof Error ? err.message : "Validation failed");
+      setStep("token");
+      setInputValue("");
     }
   };
 
@@ -86,13 +86,11 @@ export function GitHubConfigFlow({
           <text fg={OneDarkPro.syntax.red} fontWeight="bold">
             CLIVE
           </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {' · GitHub Setup'}
-          </text>
+          <text fg={OneDarkPro.foreground.muted}>{" · GitHub Setup"}</text>
         </box>
 
         {/* Step: Token */}
-        {step === 'token' && (
+        {step === "token" && (
           <>
             <text fg={OneDarkPro.foreground.primary} marginTop={2}>
               Enter your GitHub personal access token:
@@ -105,7 +103,7 @@ export function GitHubConfigFlow({
               width={50}
             >
               <text fg={OneDarkPro.foreground.primary}>
-                {inputValue ? '•'.repeat(Math.min(inputValue.length, 40)) : '_'}
+                {inputValue ? "•".repeat(Math.min(inputValue.length, 40)) : "_"}
               </text>
             </box>
 
@@ -116,9 +114,7 @@ export function GitHubConfigFlow({
             )}
 
             <box marginTop={2} flexDirection="column" alignItems="center">
-              <text fg={OneDarkPro.foreground.muted}>
-                Create a token at:
-              </text>
+              <text fg={OneDarkPro.foreground.muted}>Create a token at:</text>
               <text fg={OneDarkPro.syntax.blue} marginTop={1}>
                 https://github.com/settings/tokens
               </text>
@@ -130,7 +126,7 @@ export function GitHubConfigFlow({
         )}
 
         {/* Step: Validating */}
-        {step === 'validating' && (
+        {step === "validating" && (
           <box marginTop={4}>
             <LoadingSpinner
               text="Validating token..."
@@ -140,7 +136,7 @@ export function GitHubConfigFlow({
         )}
 
         {/* Step: Success */}
-        {step === 'success' && (
+        {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
               ✓ GitHub configured successfully!
@@ -152,10 +148,10 @@ export function GitHubConfigFlow({
         )}
 
         {/* Instructions */}
-        {step === 'token' && (
+        {step === "token" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
-              Enter Submit  •  Esc Cancel
+              Enter Submit • Esc Cancel
             </text>
           </box>
         )}
@@ -176,7 +172,7 @@ async function validateGitHubToken(token: string): Promise<void> {
   // 2. Verify token has required scopes
   // 3. Save to config file (~/.clive/config.json)
 
-  if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
-    throw new Error('Invalid GitHub token format');
+  if (!token.startsWith("ghp_") && !token.startsWith("github_pat_")) {
+    throw new Error("Invalid GitHub token format");
   }
 }

@@ -4,12 +4,12 @@
  * Collects API key and team ID, validates, and saves to config
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { useKeyboard } from '@opentui/react';
-import { OneDarkPro } from '../styles/theme';
-import { LoadingSpinner } from './LoadingSpinner';
-import { usePaste } from '../hooks/usePaste';
-import type { InputRenderable } from '@opentui/core';
+import type { InputRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
+import { useEffect, useRef, useState } from "react";
+import { usePaste } from "../hooks/usePaste";
+import { OneDarkPro } from "../styles/theme";
+import { LoadingSpinner } from "./LoadingSpinner";
 
 interface LinearTeam {
   id: string;
@@ -24,7 +24,12 @@ interface LinearConfigFlowProps {
   onCancel: () => void;
 }
 
-type Step = 'api_key' | 'loading_teams' | 'team_selection' | 'validating' | 'success';
+type Step =
+  | "api_key"
+  | "loading_teams"
+  | "team_selection"
+  | "validating"
+  | "success";
 
 export function LinearConfigFlow({
   width,
@@ -32,32 +37,36 @@ export function LinearConfigFlow({
   onComplete,
   onCancel,
 }: LinearConfigFlowProps) {
-  const [step, setStep] = useState<Step>('api_key');
-  const [apiKey, setApiKey] = useState('');
-  const [teamID, setTeamID] = useState('');
-  const [error, setError] = useState('');
-  const [inputValue, setInputValue] = useState('');
+  const [step, setStep] = useState<Step>("api_key");
+  const [apiKey, setApiKey] = useState("");
+  const [_teamID, setTeamID] = useState("");
+  const [error, setError] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [teams, setTeams] = useState<LinearTeam[]>([]);
   const [selectedTeamIndex, setSelectedTeamIndex] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
 
   // Handle keyboard events
   useKeyboard((event) => {
-    if (event.name === 'escape') {
+    if (event.name === "escape") {
       onCancel();
       return;
     }
 
     // Team selection navigation
-    if (step === 'team_selection') {
-      if (event.name === 'up' || event.key === 'k') {
-        setSelectedTeamIndex((prev) => (prev > 0 ? prev - 1 : teams.length - 1));
-      } else if (event.name === 'down' || event.key === 'j') {
-        setSelectedTeamIndex((prev) => (prev < teams.length - 1 ? prev + 1 : 0));
-      } else if (event.name === 'return') {
+    if (step === "team_selection") {
+      if (event.name === "up" || event.key === "k") {
+        setSelectedTeamIndex((prev) =>
+          prev > 0 ? prev - 1 : teams.length - 1,
+        );
+      } else if (event.name === "down" || event.key === "j") {
+        setSelectedTeamIndex((prev) =>
+          prev < teams.length - 1 ? prev + 1 : 0,
+        );
+      } else if (event.name === "return") {
         handleTeamSelect(teams[selectedTeamIndex]);
       } else if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key) - 1;
+        const index = parseInt(event.key, 10) - 1;
         if (index < teams.length) {
           handleTeamSelect(teams[index]);
         }
@@ -67,7 +76,7 @@ export function LinearConfigFlow({
 
   // Handle paste events
   usePaste((event) => {
-    if (step === 'api_key' && inputRef.current) {
+    if (step === "api_key" && inputRef.current) {
       // Use InputRenderable's insertText method directly
       if (event.text) {
         inputRef.current.insertText(event.text);
@@ -79,49 +88,51 @@ export function LinearConfigFlow({
 
   // Fetch teams when API key is submitted
   useEffect(() => {
-    if (step === 'loading_teams' && apiKey) {
+    if (step === "loading_teams" && apiKey) {
       fetchLinearTeams(apiKey)
         .then((fetchedTeams) => {
           setTeams(fetchedTeams);
           setSelectedTeamIndex(0);
-          setStep('team_selection');
+          setStep("team_selection");
         })
         .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Failed to fetch teams');
-          setStep('api_key');
+          setError(
+            err instanceof Error ? err.message : "Failed to fetch teams",
+          );
+          setStep("api_key");
         });
     }
   }, [step, apiKey]);
 
   const handleSubmit = async () => {
     if (!inputValue.trim()) {
-      setError('This field is required');
+      setError("This field is required");
       return;
     }
 
-    setError('');
+    setError("");
 
-    if (step === 'api_key') {
+    if (step === "api_key") {
       setApiKey(inputValue);
-      setInputValue('');
-      setStep('loading_teams');
+      setInputValue("");
+      setStep("loading_teams");
     }
   };
 
   const handleTeamSelect = async (team: LinearTeam) => {
     setTeamID(team.id);
-    setStep('validating');
+    setStep("validating");
 
     // Validate and complete
     try {
       await validateLinearConfig(apiKey, team.id);
-      setStep('success');
+      setStep("success");
       setTimeout(() => {
         onComplete({ apiKey, teamID: team.id });
       }, 1000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Validation failed');
-      setStep('team_selection');
+      setError(err instanceof Error ? err.message : "Validation failed");
+      setStep("team_selection");
     }
   };
 
@@ -140,13 +151,11 @@ export function LinearConfigFlow({
           <text fg={OneDarkPro.syntax.red} fontWeight="bold">
             CLIVE
           </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {' · Linear Setup'}
-          </text>
+          <text fg={OneDarkPro.foreground.muted}>{" · Linear Setup"}</text>
         </box>
 
         {/* Step: API Key */}
-        {step === 'api_key' && (
+        {step === "api_key" && (
           <>
             <text fg={OneDarkPro.foreground.primary} marginTop={2}>
               Enter your Linear API key:
@@ -189,7 +198,7 @@ export function LinearConfigFlow({
         )}
 
         {/* Step: Loading Teams */}
-        {step === 'loading_teams' && (
+        {step === "loading_teams" && (
           <box marginTop={4}>
             <LoadingSpinner
               text="Loading teams from Linear..."
@@ -199,7 +208,7 @@ export function LinearConfigFlow({
         )}
 
         {/* Step: Team Selection */}
-        {step === 'team_selection' && (
+        {step === "team_selection" && (
           <>
             <text fg={OneDarkPro.syntax.green} marginTop={1}>
               ✓ API key verified
@@ -225,7 +234,7 @@ export function LinearConfigFlow({
                     backgroundColor={
                       isSelected
                         ? OneDarkPro.background.highlight
-                        : 'transparent'
+                        : "transparent"
                     }
                     padding={1}
                     marginBottom={1}
@@ -236,9 +245,9 @@ export function LinearConfigFlow({
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      fontWeight={isSelected ? 'bold' : 'normal'}
+                      fontWeight={isSelected ? "bold" : "normal"}
                     >
-                      {isSelected ? '▸ ' : '  '}
+                      {isSelected ? "▸ " : "  "}
                       {i + 1}. {team.name} ({team.key})
                     </text>
                   </box>
@@ -255,7 +264,7 @@ export function LinearConfigFlow({
         )}
 
         {/* Step: Validating */}
-        {step === 'validating' && (
+        {step === "validating" && (
           <box marginTop={4}>
             <LoadingSpinner
               text="Validating credentials..."
@@ -265,7 +274,7 @@ export function LinearConfigFlow({
         )}
 
         {/* Step: Success */}
-        {step === 'success' && (
+        {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
               ✓ Linear configured successfully!
@@ -277,18 +286,18 @@ export function LinearConfigFlow({
         )}
 
         {/* Instructions */}
-        {step === 'api_key' && (
+        {step === "api_key" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
-              Enter Submit  •  Esc Cancel
+              Enter Submit • Esc Cancel
             </text>
           </box>
         )}
 
-        {step === 'team_selection' && (
+        {step === "team_selection" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
-              1-9 Select  •  ↑/↓ Navigate  •  Enter Confirm  •  Esc Cancel
+              1-9 Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel
             </text>
           </box>
         )}
@@ -301,10 +310,10 @@ export function LinearConfigFlow({
  * Fetch teams from Linear API
  */
 async function fetchLinearTeams(apiKey: string): Promise<LinearTeam[]> {
-  const response = await fetch('https://api.linear.app/graphql', {
-    method: 'POST',
+  const response = await fetch("https://api.linear.app/graphql", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: apiKey,
     },
     body: JSON.stringify({
@@ -329,7 +338,7 @@ async function fetchLinearTeams(apiKey: string): Promise<LinearTeam[]> {
   const data = await response.json();
 
   if (data.errors) {
-    throw new Error(data.errors[0]?.message || 'Failed to fetch teams');
+    throw new Error(data.errors[0]?.message || "Failed to fetch teams");
   }
 
   return data.data.teams.nodes;
@@ -340,13 +349,13 @@ async function fetchLinearTeams(apiKey: string): Promise<LinearTeam[]> {
  */
 async function validateLinearConfig(
   apiKey: string,
-  teamID: string
+  teamID: string,
 ): Promise<void> {
   // Validate by attempting to fetch the team
-  const response = await fetch('https://api.linear.app/graphql', {
-    method: 'POST',
+  const response = await fetch("https://api.linear.app/graphql", {
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: apiKey,
     },
     body: JSON.stringify({
@@ -369,11 +378,11 @@ async function validateLinearConfig(
   const data = await response.json();
 
   if (data.errors) {
-    throw new Error(data.errors[0]?.message || 'Invalid team ID');
+    throw new Error(data.errors[0]?.message || "Invalid team ID");
   }
 
   if (!data.data.team) {
-    throw new Error('Team not found');
+    throw new Error("Team not found");
   }
 
   // TODO: Save to config file (~/.clive/config.json)

@@ -1,9 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  isTestCommand,
   extractTestFilePath,
-  updateTestExecutionFromStream,
+  isTestCommand,
   type TestFileExecution,
+  updateTestExecutionFromStream,
 } from "../../utils/parse-test-output.js";
 
 /**
@@ -65,7 +65,8 @@ describe("Test Results Capture E2E", () => {
       expect(testNames).toContain("should apply custom className");
 
       // Verify durations were captured for actual tests (not describe blocks)
-      const testsWithDurations = execution?.tests.filter((t) => t.duration !== undefined) || [];
+      const testsWithDurations =
+        execution?.tests.filter((t) => t.duration !== undefined) || [];
       expect(testsWithDurations.length).toBeGreaterThanOrEqual(3);
     });
 
@@ -196,7 +197,8 @@ describe("Test Results Capture E2E", () => {
       expect(execution?.summary?.failed).toBeGreaterThanOrEqual(2);
 
       // Verify failed tests have error messages (may include describe block line)
-      const failedTests = execution?.tests.filter((t) => t.status === "fail") || [];
+      const failedTests =
+        execution?.tests.filter((t) => t.status === "fail") || [];
       expect(failedTests.length).toBeGreaterThanOrEqual(2);
       // Check that at least one failed test has an error message
       const testsWithErrors = failedTests.filter((t) => t.error);
@@ -270,15 +272,9 @@ describe("Test Results Capture E2E", () => {
 
     it("should handle irregular chunk boundaries", () => {
       const command = "vitest run test.spec.ts";
-      
+
       // Chunks split at awkward boundaries
-      const chunks = [
-        "✓ test1",
-        " (10",
-        "0ms)\n✓ te",
-        "st2 (200",
-        "ms)\n",
-      ];
+      const chunks = ["✓ test1", " (10", "0ms)\n✓ te", "st2 (200", "ms)\n"];
 
       let accumulated = "";
       let execution: TestFileExecution | null = null;
@@ -385,7 +381,7 @@ describe("Test Results Capture E2E", () => {
   describe("Edge Cases", () => {
     it("should handle empty streaming chunks", () => {
       const command = "vitest run test.spec.ts";
-      
+
       const chunks = ["", "✓ test1 (100ms)\n", "", "✓ test2 (200ms)\n", ""];
 
       let accumulated = "";
@@ -406,7 +402,8 @@ describe("Test Results Capture E2E", () => {
 
     it("should handle test names with special characters", () => {
       const command = "vitest run test.spec.ts";
-      const output = "✓ should handle \"quotes\" and 'apostrophes' (100ms)\n✓ test with (parentheses) in name (50ms)\n";
+      const output =
+        "✓ should handle \"quotes\" and 'apostrophes' (100ms)\n✓ test with (parentheses) in name (50ms)\n";
 
       const execution = updateTestExecutionFromStream(
         null,
@@ -422,10 +419,11 @@ describe("Test Results Capture E2E", () => {
 
     it("should handle very long test output", () => {
       const command = "vitest run test.spec.ts";
-      
+
       // Generate 100 test results
-      const tests = Array.from({ length: 100 }, (_, i) => 
-        `✓ test ${i + 1} (${10 + i}ms)\n`
+      const tests = Array.from(
+        { length: 100 },
+        (_, i) => `✓ test ${i + 1} (${10 + i}ms)\n`,
       ).join("");
 
       const execution = updateTestExecutionFromStream(
@@ -502,7 +500,12 @@ describe("Test Results Capture E2E", () => {
 
       // First chunk - 2 tests
       let output = "✓ test1 (100ms)\n✓ test2 (200ms)\n";
-      let execution = updateTestExecutionFromStream(null, command, output, output);
+      let execution = updateTestExecutionFromStream(
+        null,
+        command,
+        output,
+        output,
+      );
 
       expect(execution?.summary?.total).toBe(2);
       expect(execution?.summary?.passed).toBe(2);
@@ -510,7 +513,12 @@ describe("Test Results Capture E2E", () => {
       // Second chunk - 1 more test
       const chunk2 = "✓ test3 (150ms)\n";
       output += chunk2;
-      execution = updateTestExecutionFromStream(execution, command, chunk2, output);
+      execution = updateTestExecutionFromStream(
+        execution,
+        command,
+        chunk2,
+        output,
+      );
 
       expect(execution?.summary?.total).toBe(3);
       expect(execution?.summary?.passed).toBe(3);
@@ -518,7 +526,12 @@ describe("Test Results Capture E2E", () => {
       // Third chunk - 1 failing test
       const chunk3 = "✗ test4 (50ms)\n";
       output += chunk3;
-      execution = updateTestExecutionFromStream(execution, command, chunk3, output);
+      execution = updateTestExecutionFromStream(
+        execution,
+        command,
+        chunk3,
+        output,
+      );
 
       expect(execution?.summary?.total).toBe(4);
       expect(execution?.summary?.passed).toBe(3);
@@ -561,4 +574,3 @@ describe("Test Results Capture E2E", () => {
     });
   });
 });
-

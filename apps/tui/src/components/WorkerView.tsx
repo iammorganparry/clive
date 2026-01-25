@@ -4,11 +4,11 @@
  * Simplified view focused on monitoring worker activity
  */
 
-import { OneDarkPro } from '../styles/theme';
-import type { WorkerStatus } from '@clive/worker-protocol';
-import type { OutputLine } from '../types';
-import { OutputPanel, type OutputPanelRef } from './OutputPanel';
-import { useRef, useEffect } from 'react';
+import type { WorkerStatus } from "@clive/worker-protocol";
+import { useEffect, useRef } from "react";
+import { OneDarkPro } from "../styles/theme";
+import type { OutputLine } from "../types";
+import { OutputPanel, type OutputPanelRef } from "./OutputPanel";
 
 interface WorkerViewProps {
   width: number;
@@ -62,16 +62,40 @@ export function WorkerView({
   const getStatusDisplay = () => {
     const sessionCount = activeSessions.length;
     switch (workerStatus) {
-      case 'ready':
-        return { text: 'Connected - Waiting for requests', color: OneDarkPro.syntax.green, icon: 'O' };
-      case 'busy':
-        return { text: 'Processing ' + sessionCount + ' session' + (sessionCount > 1 ? 's' : ''), color: OneDarkPro.syntax.yellow, icon: '*' };
-      case 'connecting':
-        return { text: 'Connecting...', color: OneDarkPro.syntax.yellow, icon: 'o' };
-      case 'disconnected':
-        return { text: 'Disconnected', color: OneDarkPro.syntax.red, icon: 'x' };
+      case "ready":
+        return {
+          text: "Connected - Waiting for requests",
+          color: OneDarkPro.syntax.green,
+          icon: "O",
+        };
+      case "busy":
+        return {
+          text:
+            "Processing " +
+            sessionCount +
+            " session" +
+            (sessionCount > 1 ? "s" : ""),
+          color: OneDarkPro.syntax.yellow,
+          icon: "*",
+        };
+      case "connecting":
+        return {
+          text: "Connecting...",
+          color: OneDarkPro.syntax.yellow,
+          icon: "o",
+        };
+      case "disconnected":
+        return {
+          text: "Disconnected",
+          color: OneDarkPro.syntax.red,
+          icon: "x",
+        };
       default:
-        return { text: 'Unknown', color: OneDarkPro.foreground.muted, icon: '?' };
+        return {
+          text: "Unknown",
+          color: OneDarkPro.foreground.muted,
+          icon: "?",
+        };
     }
   };
 
@@ -81,7 +105,8 @@ export function WorkerView({
   const outputHeight = height - headerHeight - footerHeight;
 
   // Get workspace name
-  const workspaceName = workspaceRoot.split('/').filter(Boolean).pop() || 'unknown';
+  const workspaceName =
+    workspaceRoot.split("/").filter(Boolean).pop() || "unknown";
 
   return (
     <box
@@ -103,15 +128,9 @@ export function WorkerView({
           <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
           </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {' - Worker Mode'}
-          </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {' - '}
-          </text>
-          <text fg={OneDarkPro.syntax.cyan}>
-            {workspaceName}
-          </text>
+          <text fg={OneDarkPro.foreground.muted}>{" - Worker Mode"}</text>
+          <text fg={OneDarkPro.foreground.muted}>{" - "}</text>
+          <text fg={OneDarkPro.syntax.cyan}>{workspaceName}</text>
         </box>
 
         <box flexDirection="row" marginTop={1} alignItems="center">
@@ -120,12 +139,8 @@ export function WorkerView({
           </text>
           {workerId && (
             <>
-              <text fg={OneDarkPro.foreground.muted}>
-                {' - ID: '}
-              </text>
-              <text fg={OneDarkPro.foreground.secondary}>
-                {workerId}
-              </text>
+              <text fg={OneDarkPro.foreground.muted}>{" - ID: "}</text>
+              <text fg={OneDarkPro.foreground.secondary}>{workerId}</text>
             </>
           )}
         </box>
@@ -161,8 +176,12 @@ export function WorkerView({
           <text fg={OneDarkPro.foreground.muted} marginTop={2}>
             Mention @clive in Slack to start a planning session
           </text>
-          {workerStatus === 'ready' && (
-            <box marginTop={3} padding={1} backgroundColor={OneDarkPro.background.secondary}>
+          {workerStatus === "ready" && (
+            <box
+              marginTop={3}
+              padding={1}
+              backgroundColor={OneDarkPro.background.secondary}
+            >
               <text fg={OneDarkPro.syntax.green}>
                 Ready to receive requests
               </text>
@@ -185,19 +204,17 @@ export function WorkerView({
         <box flexDirection="row">
           {activeSessions.length > 0 && (
             <text fg={OneDarkPro.syntax.yellow}>
-              Active: {activeSessions.join(', ')}
+              Active: {activeSessions.join(", ")}
             </text>
           )}
         </box>
 
         <box flexDirection="row">
-          {workerStatus === 'disconnected' && (
-            <text fg={OneDarkPro.foreground.muted}>
-              r Reconnect  |  
-            </text>
+          {workerStatus === "disconnected" && (
+            <text fg={OneDarkPro.foreground.muted}>r Reconnect |</text>
           )}
           <text fg={OneDarkPro.foreground.muted}>
-            q Exit Worker Mode  |  Ctrl+C Quit
+            q Exit Worker Mode | Ctrl+C Quit
           </text>
         </box>
       </box>

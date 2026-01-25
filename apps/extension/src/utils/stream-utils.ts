@@ -1,5 +1,5 @@
-import { Stream, Match } from "effect";
 import type { StreamTextResult, TextStreamPart, ToolSet } from "ai";
+import { Match, Stream } from "effect";
 import { logToOutput } from "./logger.js";
 
 /**
@@ -33,7 +33,6 @@ export interface AgentStreamEvent {
  * but we only use fullStream which doesn't depend on it, so we use a type assertion.
  */
 export function streamFromAI<TOOLS extends ToolSet>(
-  // biome-ignore lint/suspicious/noExplicitAny: AI SDK StreamTextResult requires Output type constraint, but we only use fullStream
   result: StreamTextResult<TOOLS, any>,
 ): Stream.Stream<AgentStreamEvent, Error, never> {
   // Cache toolCallId -> toolName from tool-input-start events

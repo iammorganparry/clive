@@ -3,13 +3,13 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { glob } from "glob";
 import { join, relative } from "node:path";
+import { glob } from "glob";
 import { ContractGraph } from "../graph/graph.js";
 import {
+  type BuildError,
   buildFromMarkdown,
   buildFromMermaid,
-  type BuildError,
 } from "../parser/contract-builder.js";
 
 /**

@@ -1,8 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.8/schema.json",
-	"extends": ["../biome/biome.json"],
-	"files": {
-		"experimentalScannerIgnores": ["node_modules/**", ".turbo/**"]
-	}
+  "root": false,
+  "$schema": "https://biomejs.dev/schemas/2.3.12/schema.json",
+  "extends": ["@clive/biome-config"]
 }
-

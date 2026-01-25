@@ -1,10 +1,10 @@
+import { ArrowLeft, LogOut, Settings } from "lucide-react";
 import type React from "react";
 import { useCallback } from "react";
-import { ArrowLeft, LogOut, Settings } from "lucide-react";
 import { Button } from "../../../components/ui/button.js";
-import { UserDropdown } from "../user-dropdown.js";
-import { useRouter, Routes } from "../../router/index.js";
 import { useAuth } from "../../contexts/auth-context.js";
+import { Routes, useRouter } from "../../router/index.js";
+import { UserDropdown } from "../user-dropdown.js";
 
 export const Header: React.FC = () => {
   const { logout } = useAuth();

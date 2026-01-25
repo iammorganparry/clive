@@ -5,9 +5,9 @@
  * Provides postMessage, updateMessage, and postEphemeral with proper error handling.
  */
 
-import { Data, Effect } from "effect";
+import type { Block, KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
-import type { KnownBlock, Block } from "@slack/types";
+import { Data, Effect } from "effect";
 
 /**
  * Error when Slack API operations fail
@@ -68,11 +68,11 @@ export class SlackService {
    * Post a message to a channel or thread
    */
   postMessage(
-    options: PostMessageOptions
+    options: PostMessageOptions,
   ): Effect.Effect<PostMessageResult, SlackServiceError> {
     return Effect.gen(this, function* () {
       yield* Effect.logDebug(
-        `[SlackService] Posting message to ${options.channel}${options.threadTs ? ` (thread: ${options.threadTs})` : ""}`
+        `[SlackService] Posting message to ${options.channel}${options.threadTs ? ` (thread: ${options.threadTs})` : ""}`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -99,13 +99,11 @@ export class SlackService {
           new SlackServiceError({
             message: `Slack API returned error: ${result.error || "unknown"}`,
             operation: "postMessage",
-          })
+          }),
         );
       }
 
-      yield* Effect.logDebug(
-        `[SlackService] Message posted: ${result.ts}`
-      );
+      yield* Effect.logDebug(`[SlackService] Message posted: ${result.ts}`);
 
       return {
         ts: result.ts,
@@ -118,11 +116,11 @@ export class SlackService {
    * Update an existing message
    */
   updateMessage(
-    options: UpdateMessageOptions
+    options: UpdateMessageOptions,
   ): Effect.Effect<PostMessageResult, SlackServiceError> {
     return Effect.gen(this, function* () {
       yield* Effect.logDebug(
-        `[SlackService] Updating message ${options.ts} in ${options.channel}`
+        `[SlackService] Updating message ${options.ts} in ${options.channel}`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -148,13 +146,11 @@ export class SlackService {
           new SlackServiceError({
             message: `Slack API returned error: ${result.error || "unknown"}`,
             operation: "updateMessage",
-          })
+          }),
         );
       }
 
-      yield* Effect.logDebug(
-        `[SlackService] Message updated: ${result.ts}`
-      );
+      yield* Effect.logDebug(`[SlackService] Message updated: ${result.ts}`);
 
       return {
         ts: result.ts,
@@ -167,11 +163,11 @@ export class SlackService {
    * Post an ephemeral message (only visible to one user)
    */
   postEphemeral(
-    options: PostEphemeralOptions
+    options: PostEphemeralOptions,
   ): Effect.Effect<void, SlackServiceError> {
     return Effect.gen(this, function* () {
       yield* Effect.logDebug(
-        `[SlackService] Posting ephemeral to ${options.user} in ${options.channel}`
+        `[SlackService] Posting ephemeral to ${options.user} in ${options.channel}`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -198,7 +194,7 @@ export class SlackService {
           new SlackServiceError({
             message: `Slack API returned error: ${result.error || "unknown"}`,
             operation: "postEphemeral",
-          })
+          }),
         );
       }
 
@@ -211,7 +207,7 @@ export class SlackService {
    */
   openModal(
     triggerId: string,
-    view: Record<string, unknown>
+    view: Record<string, unknown>,
   ): Effect.Effect<void, SlackServiceError> {
     return Effect.gen(this, function* () {
       yield* Effect.logDebug(`[SlackService] Opening modal`);
@@ -237,7 +233,7 @@ export class SlackService {
           new SlackServiceError({
             message: `Slack API returned error: ${result.error || "unknown"}`,
             operation: "openModal",
-          })
+          }),
         );
       }
 
@@ -251,11 +247,11 @@ export class SlackService {
   addReaction(
     channel: string,
     timestamp: string,
-    emoji: string
+    emoji: string,
   ): Effect.Effect<void, SlackServiceError> {
     return Effect.gen(this, function* () {
       yield* Effect.logDebug(
-        `[SlackService] Adding reaction :${emoji}: to ${timestamp}`
+        `[SlackService] Adding reaction :${emoji}: to ${timestamp}`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -280,7 +276,7 @@ export class SlackService {
           new SlackServiceError({
             message: `Slack API returned error: ${result.error || "unknown"}`,
             operation: "addReaction",
-          })
+          }),
         );
       }
 

@@ -1,10 +1,10 @@
-import * as path from "node:path";
-import { Uri } from "vscode";
 import { exec } from "node:child_process";
+import * as path from "node:path";
 import { promisify } from "node:util";
 import { Data, Effect } from "effect";
-import { VSCodeService } from "./vs-code.js";
+import { Uri } from "vscode";
 import { SettingsService } from "./settings-service.js";
+import { VSCodeService } from "./vs-code.js";
 
 const execAsync = promisify(exec);
 
@@ -88,12 +88,13 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         );
 
         // Check user-configured base branch first (optional dependency)
-        const settingsServiceOption = yield* Effect.serviceOption(SettingsService);
+        const settingsServiceOption =
+          yield* Effect.serviceOption(SettingsService);
         const userConfigured =
           settingsServiceOption._tag === "Some"
             ? yield* settingsServiceOption.value.getBaseBranch()
             : null;
-        
+
         if (userConfigured) {
           yield* Effect.logDebug(
             `[GitService] Using user-configured base branch: ${userConfigured}`,
@@ -214,23 +215,35 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
         // Parse all outputs
-        const committedFiles = parseGitDiffOutput(committedStdout, workspaceRoot, vscode.workspace);
-        const unstagedFiles = parseGitDiffOutput(unstagedStdout, workspaceRoot, vscode.workspace);
-        const stagedFiles = parseGitDiffOutput(stagedStdout, workspaceRoot, vscode.workspace);
+        const committedFiles = parseGitDiffOutput(
+          committedStdout,
+          workspaceRoot,
+          vscode.workspace,
+        );
+        const unstagedFiles = parseGitDiffOutput(
+          unstagedStdout,
+          workspaceRoot,
+          vscode.workspace,
+        );
+        const stagedFiles = parseGitDiffOutput(
+          stagedStdout,
+          workspaceRoot,
+          vscode.workspace,
+        );
 
         // Merge and deduplicate (uncommitted changes take precedence)
         const fileMap = new Map<string, ChangedFile>();
-        
+
         // Add committed files first
         for (const file of committedFiles) {
           fileMap.set(file.path, file);
         }
-        
+
         // Add staged files (overwrite if exists)
         for (const file of stagedFiles) {
           fileMap.set(file.path, file);
         }
-        
+
         // Add unstaged files (overwrite if exists)
         for (const file of unstagedFiles) {
           fileMap.set(file.path, file);
@@ -323,17 +336,25 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
         ).pipe(Effect.catchAll(() => Effect.succeed("")));
 
         // Parse outputs
-        const unstagedFiles = parseGitDiffOutput(unstagedStdout, workspaceRoot, vscode.workspace);
-        const stagedFiles = parseGitDiffOutput(stagedStdout, workspaceRoot, vscode.workspace);
+        const unstagedFiles = parseGitDiffOutput(
+          unstagedStdout,
+          workspaceRoot,
+          vscode.workspace,
+        );
+        const stagedFiles = parseGitDiffOutput(
+          stagedStdout,
+          workspaceRoot,
+          vscode.workspace,
+        );
 
         // Merge and deduplicate (unstaged changes take precedence)
         const fileMap = new Map<string, ChangedFile>();
-        
+
         // Add staged files first
         for (const file of stagedFiles) {
           fileMap.set(file.path, file);
         }
-        
+
         // Add unstaged files (overwrite if exists)
         for (const file of unstagedFiles) {
           fileMap.set(file.path, file);
@@ -467,7 +488,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
        */
       getCurrentCommitHash: () =>
         Effect.gen(function* () {
-          yield* Effect.logDebug("[GitService] Getting current HEAD commit hash");
+          yield* Effect.logDebug(
+            "[GitService] Getting current HEAD commit hash",
+          );
           const vscode = yield* VSCodeService;
           const workspaceFolders = vscode.workspace.workspaceFolders;
 

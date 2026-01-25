@@ -1,12 +1,12 @@
-import { repositories, files } from "@clive/db/schema";
+import { files, repositories } from "@clive/db/schema";
 import {
-  eq,
-  sql,
-  cosineDistance,
-  desc,
-  count,
   and,
+  cosineDistance,
+  count,
+  desc,
+  eq,
   inArray,
+  sql,
 } from "drizzle-orm";
 import { Data, Effect } from "effect";
 import { DrizzleDB, DrizzleDBLive } from "./drizzle-db.js";

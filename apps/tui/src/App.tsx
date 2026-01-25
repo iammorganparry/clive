@@ -4,31 +4,36 @@
  * View flow: Setup -> Mode Selection -> (Worker | Selection -> Main) <-> Help
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useTerminalDimensions, useKeyboard } from '@opentui/react';
-import { OneDarkPro } from './styles/theme';
-import { useAppState } from './hooks/useAppState';
-import { useViewMode } from './hooks/useViewMode';
-import { useWorkerConnection, type InterviewRequest } from './hooks/useWorkerConnection';
-import { Sidebar } from './components/Sidebar';
-import { OutputPanel, type OutputPanelRef } from './components/OutputPanel';
-import { DynamicInput } from './components/DynamicInput';
-import { StatusBar } from './components/StatusBar';
-import { SetupView } from './components/SetupView';
-import { SelectionView } from './components/SelectionView';
-import { HelpView } from './components/HelpView';
-import { LinearConfigFlow } from './components/LinearConfigFlow';
-import { GitHubConfigFlow } from './components/GitHubConfigFlow';
-import { ModeSelectionView } from './components/ModeSelectionView';
-import { WorkerConfigFlow } from './components/WorkerConfigFlow';
-import { WorkerView } from './components/WorkerView';
-import { type Conversation } from './services/ConversationService';
-import { useConversations, useAllConversations } from './hooks/useConversations';
-import { useSelectionState } from './hooks/useSelectionState';
-import { WorkerSessionManager, type ChatMessage } from './services/WorkerSessionManager';
-import type { Session, OutputLine } from './types';
-import type { WorkerConfig } from './types/views';
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { DynamicInput } from "./components/DynamicInput";
+import { HelpView } from "./components/HelpView";
+import { LinearConfigFlow } from "./components/LinearConfigFlow";
+import { ModeSelectionView } from "./components/ModeSelectionView";
+import { OutputPanel, type OutputPanelRef } from "./components/OutputPanel";
+import { SelectionView } from "./components/SelectionView";
+import { SetupView } from "./components/SetupView";
+import { Sidebar } from "./components/Sidebar";
+import { StatusBar } from "./components/StatusBar";
+import { WorkerConfigFlow } from "./components/WorkerConfigFlow";
+import { WorkerView } from "./components/WorkerView";
+import { useAppState } from "./hooks/useAppState";
+import { useAllConversations } from "./hooks/useConversations";
+import { useSelectionState } from "./hooks/useSelectionState";
+import { useViewMode } from "./hooks/useViewMode";
+import {
+  type InterviewRequest,
+  useWorkerConnection,
+} from "./hooks/useWorkerConnection";
+import type { Conversation } from "./services/ConversationService";
+import {
+  type ChatMessage,
+  WorkerSessionManager,
+} from "./services/WorkerSessionManager";
+import { OneDarkPro } from "./styles/theme";
+import type { OutputLine, Session } from "./types";
+import type { WorkerConfig } from "./types/views";
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -45,13 +50,13 @@ const queryClient = new QueryClient({
  */
 function convertChatMessageToOutputLine(msg: ChatMessage): OutputLine {
   switch (msg.type) {
-    case 'user':
-      return { type: 'user', text: msg.content };
-    case 'assistant':
-      return { type: 'assistant', text: msg.content };
-    case 'question':
+    case "user":
+      return { type: "user", text: msg.content };
+    case "assistant":
+      return { type: "assistant", text: msg.content };
+    case "question":
       return {
-        type: 'question',
+        type: "question",
         text: msg.content,
         question: msg.questionData
           ? {
@@ -69,11 +74,10 @@ function convertChatMessageToOutputLine(msg: ChatMessage): OutputLine {
           : undefined,
         toolUseID: msg.questionData?.toolUseID,
       };
-    case 'error':
-      return { type: 'stderr', text: msg.content };
-    case 'system':
+    case "error":
+      return { type: "stderr", text: msg.content };
     default:
-      return { type: 'system', text: msg.content };
+      return { type: "system", text: msg.content };
   }
 }
 
@@ -98,16 +102,18 @@ function AppContent() {
 
   // Mode selection state
   const [modeSelectedIndex, setModeSelectedIndex] = useState(0);
-  const modeOptions = ['interactive', 'worker'];
+  const modeOptions = ["interactive", "worker"];
 
   // Setup view state
   const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
-  const setupOptions = ['linear', 'beads'];
-  const [configFlow, setConfigFlow] = useState<'linear' | 'beads' | null>(null);
+  const setupOptions = ["linear", "beads"];
+  const [configFlow, setConfigFlow] = useState<"linear" | "beads" | null>(null);
 
   // Input focus state
   const [inputFocused, setInputFocused] = useState(false);
-  const [preFillValue, setPreFillValue] = useState<string | undefined>(undefined);
+  const [preFillValue, setPreFillValue] = useState<string | undefined>(
+    undefined,
+  );
 
   // Output panel ref for scroll control
   const outputPanelRef = useRef<OutputPanelRef>(null);
@@ -136,21 +142,30 @@ function AppContent() {
   const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
 
   // Worker callbacks for handling messages from central service
-  const handleWorkerInterviewRequest = useCallback((request: InterviewRequest) => {
-    setWorkerIsRunning(true);
-    setWorkerOutputLines([]); // Clear previous output
-    sessionManagerRef.current?.startInterview(request, (event) => {
-      workerConnectionRef.current?.sendEvent(event);
-    });
-  }, []);
+  const handleWorkerInterviewRequest = useCallback(
+    (request: InterviewRequest) => {
+      setWorkerIsRunning(true);
+      setWorkerOutputLines([]); // Clear previous output
+      sessionManagerRef.current?.startInterview(request, (event) => {
+        workerConnectionRef.current?.sendEvent(event);
+      });
+    },
+    [],
+  );
 
-  const handleWorkerAnswer = useCallback((sessionId: string, toolUseId: string, answers: Record<string, string>) => {
-    sessionManagerRef.current?.sendAnswer(sessionId, toolUseId, answers);
-  }, []);
+  const handleWorkerAnswer = useCallback(
+    (sessionId: string, toolUseId: string, answers: Record<string, string>) => {
+      sessionManagerRef.current?.sendAnswer(sessionId, toolUseId, answers);
+    },
+    [],
+  );
 
-  const handleWorkerMessage = useCallback((sessionId: string, message: string) => {
-    sessionManagerRef.current?.sendMessage(sessionId, message);
-  }, []);
+  const handleWorkerMessage = useCallback(
+    (sessionId: string, message: string) => {
+      sessionManagerRef.current?.sendMessage(sessionId, message);
+    },
+    [],
+  );
 
   const handleWorkerCancel = useCallback((sessionId: string) => {
     sessionManagerRef.current?.cancelSession(sessionId);
@@ -159,14 +174,14 @@ function AppContent() {
 
   // Worker connection (only active when in worker mode or when config.worker.enabled)
   const workerConnection = useWorkerConnection(
-    viewMode === 'worker' ? config?.worker : undefined,
+    viewMode === "worker" ? config?.worker : undefined,
     workspaceRoot,
     {
       onInterviewRequest: handleWorkerInterviewRequest,
       onAnswer: handleWorkerAnswer,
       onMessage: handleWorkerMessage,
       onCancel: handleWorkerCancel,
-    }
+    },
   );
 
   // Ref to access workerConnection in callbacks (avoid circular dependency)
@@ -177,7 +192,7 @@ function AppContent() {
 
   // Initialize WorkerSessionManager when in worker mode
   useEffect(() => {
-    if (viewMode === 'worker') {
+    if (viewMode === "worker") {
       const sessionManager = new WorkerSessionManager(workspaceRoot);
       sessionManagerRef.current = sessionManager;
 
@@ -193,17 +208,20 @@ function AppContent() {
       };
 
       const handleError = (_sessionId: string, error: string) => {
-        setWorkerOutputLines((prev) => [...prev, { type: 'stderr', text: error }]);
+        setWorkerOutputLines((prev) => [
+          ...prev,
+          { type: "stderr", text: error },
+        ]);
       };
 
-      sessionManager.on('message', handleMessage);
-      sessionManager.on('complete', handleComplete);
-      sessionManager.on('error', handleError);
+      sessionManager.on("message", handleMessage);
+      sessionManager.on("complete", handleComplete);
+      sessionManager.on("error", handleError);
 
       return () => {
-        sessionManager.off('message', handleMessage);
-        sessionManager.off('complete', handleComplete);
-        sessionManager.off('error', handleError);
+        sessionManager.off("message", handleMessage);
+        sessionManager.off("complete", handleComplete);
+        sessionManager.off("error", handleError);
         sessionManager.closeAll();
         sessionManagerRef.current = null;
       };
@@ -213,19 +231,19 @@ function AppContent() {
 
   // Log workspace context on startup
   useEffect(() => {
-    console.log('[Clive TUI] Starting in workspace:', workspaceRoot);
-    console.log('[Clive TUI] Claude will have context of this directory');
+    console.log("[Clive TUI] Starting in workspace:", workspaceRoot);
+    console.log("[Clive TUI] Claude will have context of this directory");
     if (process.env.CLIVE_WORKSPACE) {
-      console.log('[Clive TUI] Workspace overridden via --workspace flag (dev mode)');
+      console.log(
+        "[Clive TUI] Workspace overridden via --workspace flag (dev mode)",
+      );
     }
   }, [workspaceRoot]);
 
   // Fetch ALL conversations across all projects (not just current workspace)
   // This ensures "Other Conversations" shows all Claude Code conversations
-  const {
-    data: conversations = [],
-    isLoading: conversationsLoading,
-  } = useAllConversations(100);
+  const { data: conversations = [], isLoading: conversationsLoading } =
+    useAllConversations(100);
 
   const {
     outputLines,
@@ -276,11 +294,15 @@ function AppContent() {
     };
 
     checkScrollPosition();
-  }, [outputLines.length]);
+  }, []);
 
   // Auto-scroll to bottom when new output lines arrive (only if user hasn't scrolled up)
   useEffect(() => {
-    if (outputPanelRef.current && outputLines.length > 0 && !userHasScrolledUp) {
+    if (
+      outputPanelRef.current &&
+      outputLines.length > 0 &&
+      !userHasScrolledUp
+    ) {
       // Small delay to ensure DOM has updated before scrolling
       const timer = setTimeout(() => {
         outputPanelRef.current?.scrollToBottom();
@@ -295,7 +317,7 @@ function AppContent() {
   // Auto-resume if exactly 1 conversation
   useEffect(() => {
     // Only auto-resume when in selection view and conversations are loaded
-    if (viewMode !== 'selection' || conversationsLoading || sessionsLoading) {
+    if (viewMode !== "selection" || conversationsLoading || sessionsLoading) {
       return;
     }
 
@@ -309,7 +331,15 @@ function AppContent() {
     }
 
     // Otherwise, always show the selection view (including when 0 conversations)
-  }, [viewMode, conversations.length, sessions.length, conversationsLoading, sessionsLoading]);
+  }, [
+    viewMode,
+    conversations.length,
+    sessions.length,
+    conversationsLoading,
+    sessionsLoading,
+    conversations[0],
+    handleConversationResume,
+  ]);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
   useEffect(() => {
@@ -317,13 +347,12 @@ function AppContent() {
       cleanup();
     };
 
-    process.on('exit', handleExit);
+    process.on("exit", handleExit);
 
     return () => {
-      process.off('exit', handleExit);
+      process.off("exit", handleExit);
     };
   }, [cleanup]);
-
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
@@ -331,24 +360,32 @@ function AppContent() {
     // Skip ALL keyboard handling when input is focused - let input handle everything
     if (inputFocused) {
       // ONLY handle unfocus events
-      if (event.name === 'escape') {
+      if (event.name === "escape") {
         setInputFocused(false);
       }
       return; // Exit early, don't process any other keys
     }
 
     // Skip keyboard handling in config flows
-    if (configFlow === 'linear' || configFlow === 'beads' || viewMode === 'worker_setup') {
+    if (
+      configFlow === "linear" ||
+      configFlow === "beads" ||
+      viewMode === "worker_setup"
+    ) {
       return;
     }
 
     // Global shortcuts
-    if (event.sequence === 'q' && viewMode !== 'main' && viewMode !== 'worker') {
+    if (
+      event.sequence === "q" &&
+      viewMode !== "main" &&
+      viewMode !== "worker"
+    ) {
       process.exit(0);
     }
 
-    if (event.sequence === '?') {
-      if (viewMode === 'help') {
+    if (event.sequence === "?") {
+      if (viewMode === "help") {
         goBack();
       } else {
         goToHelp();
@@ -357,7 +394,10 @@ function AppContent() {
     }
 
     // Scroll to bottom (Ctrl+B, Cmd+B, or End key)
-    if (((event.ctrl || event.meta) && event.sequence === 'b') || event.name === 'end') {
+    if (
+      ((event.ctrl || event.meta) && event.sequence === "b") ||
+      event.name === "end"
+    ) {
       if (outputPanelRef.current) {
         outputPanelRef.current.scrollToBottom();
       }
@@ -365,74 +405,85 @@ function AppContent() {
     }
 
     // View-specific shortcuts
-    if (viewMode === 'setup' && !configFlow) {
-      if (event.name === 'escape') {
+    if (viewMode === "setup" && !configFlow) {
+      if (event.name === "escape") {
         process.exit(0);
       }
       // Arrow key navigation for setup options
-      if (event.name === 'up' || event.sequence === 'k') {
-        setSetupSelectedIndex((prev) => (prev > 0 ? prev - 1 : setupOptions.length - 1));
+      if (event.name === "up" || event.sequence === "k") {
+        setSetupSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : setupOptions.length - 1,
+        );
       }
-      if (event.name === 'down' || event.sequence === 'j') {
-        setSetupSelectedIndex((prev) => (prev < setupOptions.length - 1 ? prev + 1 : 0));
+      if (event.name === "down" || event.sequence === "j") {
+        setSetupSelectedIndex((prev) =>
+          prev < setupOptions.length - 1 ? prev + 1 : 0,
+        );
       }
       // Number key selection (1, 2, etc.)
       if (event.sequence && /^[1-9]$/.test(event.sequence)) {
-        const index = parseInt(event.sequence) - 1;
+        const index = parseInt(event.sequence, 10) - 1;
         if (index < setupOptions.length) {
           const selectedOption = setupOptions[index];
-          if (selectedOption === 'linear') {
-            setConfigFlow('linear');
-          } else if (selectedOption === 'beads') {
-            setConfigFlow('beads');
+          if (selectedOption === "linear") {
+            setConfigFlow("linear");
+          } else if (selectedOption === "beads") {
+            setConfigFlow("beads");
           }
         }
       }
-      if (event.name === 'return') {
+      if (event.name === "return") {
         const selectedOption = setupOptions[setupSelectedIndex];
-        if (selectedOption === 'linear') {
-          setConfigFlow('linear');
-        } else if (selectedOption === 'beads') {
-          setConfigFlow('beads');
+        if (selectedOption === "linear") {
+          setConfigFlow("linear");
+        } else if (selectedOption === "beads") {
+          setConfigFlow("beads");
         }
       }
-    } else if (viewMode === 'mode_selection') {
-      if (event.name === 'escape') {
+    } else if (viewMode === "mode_selection") {
+      if (event.name === "escape") {
         goBack();
         return;
       }
       // Arrow key navigation
-      if (event.name === 'up' || event.sequence === 'k') {
-        setModeSelectedIndex((prev) => (prev > 0 ? prev - 1 : modeOptions.length - 1));
+      if (event.name === "up" || event.sequence === "k") {
+        setModeSelectedIndex((prev) =>
+          prev > 0 ? prev - 1 : modeOptions.length - 1,
+        );
       }
-      if (event.name === 'down' || event.sequence === 'j') {
-        setModeSelectedIndex((prev) => (prev < modeOptions.length - 1 ? prev + 1 : 0));
+      if (event.name === "down" || event.sequence === "j") {
+        setModeSelectedIndex((prev) =>
+          prev < modeOptions.length - 1 ? prev + 1 : 0,
+        );
       }
       // Number key selection
       if (event.sequence && /^[1-2]$/.test(event.sequence)) {
-        const index = parseInt(event.sequence) - 1;
+        const index = parseInt(event.sequence, 10) - 1;
         handleModeSelect(modeOptions[index]);
       }
-      if (event.name === 'return') {
+      if (event.name === "return") {
         handleModeSelect(modeOptions[modeSelectedIndex]);
       }
-    } else if (viewMode === 'worker') {
-      if (event.name === 'escape' || event.sequence === 'q') {
+    } else if (viewMode === "worker") {
+      if (event.name === "escape" || event.sequence === "q") {
         goToModeSelection();
         return;
       }
-      if (event.sequence === 'r' && workerConnection.status === 'disconnected') {
+      if (
+        event.sequence === "r" &&
+        workerConnection.status === "disconnected"
+      ) {
         workerConnection.connect();
         return;
       }
-      if (event.ctrl && event.name === 'c') {
+      if (event.ctrl && event.name === "c") {
         cleanup();
         workerConnection.disconnect();
         process.exit(0);
       }
-    } else if (viewMode === 'selection') {
+    } else if (viewMode === "selection") {
       // Escape - clear search, go back to level 1, or go back
-      if (event.name === 'escape') {
+      if (event.name === "escape") {
         if (selectionState.searchQuery) {
           // Clear search
           selectionState.clearSearch();
@@ -447,7 +498,7 @@ function AppContent() {
       }
 
       // Backspace - remove last character from search
-      if (event.name === 'backspace') {
+      if (event.name === "backspace") {
         if (selectionState.searchQuery) {
           selectionState.search(selectionState.searchQuery.slice(0, -1));
         }
@@ -460,29 +511,29 @@ function AppContent() {
         event.sequence.length === 1 &&
         !event.ctrl &&
         !event.meta &&
-        event.name !== 'up' &&
-        event.name !== 'down' &&
-        event.name !== 'return' &&
-        event.name !== 'enter' &&
-        event.name !== 'escape' &&
-        event.name !== 'backspace'
+        event.name !== "up" &&
+        event.name !== "down" &&
+        event.name !== "return" &&
+        event.name !== "enter" &&
+        event.name !== "escape" &&
+        event.name !== "backspace"
       ) {
         selectionState.search(selectionState.searchQuery + event.sequence);
         return;
       }
 
       // Arrow key navigation
-      if (event.name === 'up' || event.sequence === 'k') {
+      if (event.name === "up" || event.sequence === "k") {
         selectionState.navigateUp();
         return;
       }
-      if (event.name === 'down' || event.sequence === 'j') {
+      if (event.name === "down" || event.sequence === "j") {
         selectionState.navigateDown();
         return;
       }
 
       // Enter to select
-      if (event.name === 'return' || event.name === 'enter') {
+      if (event.name === "return" || event.name === "enter") {
         if (selectionState.isLevel1) {
           // Level 1: Selecting an issue
           if (selectionState.selectedIndex === -1) {
@@ -493,23 +544,26 @@ function AppContent() {
 
           // Include "Other Conversations" group in the list (at the TOP to match SelectionView)
           const issuesWithOther: Session[] = [];
-          const unattachedCount = conversations.filter(c => !c.linearProjectId && !c.linearTaskId).length;
+          const unattachedCount = conversations.filter(
+            (c) => !c.linearProjectId && !c.linearTaskId,
+          ).length;
           if (unattachedCount > 0) {
             // Add "Other Conversations" at the TOP
             issuesWithOther.push({
-              id: '__unattached__',
+              id: "__unattached__",
               name: `Other Conversations (${unattachedCount})`,
               createdAt: new Date(),
-              source: 'linear' as const,
+              source: "linear" as const,
             });
           }
           // Add all Linear sessions after
           issuesWithOther.push(...sessions);
 
           const filteredSessions = selectionState.searchQuery
-            ? issuesWithOther.filter(s => {
+            ? issuesWithOther.filter((s) => {
                 const query = selectionState.searchQuery.toLowerCase();
-                const identifier = s.linearData?.identifier?.toLowerCase() || '';
+                const identifier =
+                  s.linearData?.identifier?.toLowerCase() || "";
                 const title = s.name.toLowerCase();
                 return identifier.includes(query) || title.includes(query);
               })
@@ -535,37 +589,41 @@ function AppContent() {
 
           // Check if this is the "Other Conversations" group
           const selectedIssue = selectionState.selectedIssue;
-          const isUnattachedGroup = selectedIssue.id === '__unattached__';
+          const isUnattachedGroup = selectedIssue.id === "__unattached__";
 
           const conversationsForIssue = isUnattachedGroup
-            ? conversations.filter(c => !c.linearProjectId && !c.linearTaskId)
-            : conversations.filter(c => {
+            ? conversations.filter((c) => !c.linearProjectId && !c.linearTaskId)
+            : conversations.filter((c) => {
                 const issueLinearId = selectedIssue.linearData?.id;
-                return c.linearProjectId === issueLinearId || c.linearTaskId === issueLinearId;
+                return (
+                  c.linearProjectId === issueLinearId ||
+                  c.linearTaskId === issueLinearId
+                );
               });
 
           const filteredConversations = selectionState.searchQuery
-            ? conversationsForIssue.filter(c => {
+            ? conversationsForIssue.filter((c) => {
                 const query = selectionState.searchQuery.toLowerCase();
                 const display = c.display.toLowerCase();
-                const slug = c.slug?.toLowerCase() || '';
+                const slug = c.slug?.toLowerCase() || "";
                 return display.includes(query) || slug.includes(query);
               })
             : conversationsForIssue;
 
           const displayConversations = filteredConversations.slice(0, 10);
-          const conversation = displayConversations[selectionState.selectedIndex];
+          const conversation =
+            displayConversations[selectionState.selectedIndex];
           if (conversation) {
             handleConversationResume(conversation);
           }
         }
         return;
       }
-    } else if (viewMode === 'main') {
-      if (event.name === 'escape') {
+    } else if (viewMode === "main") {
+      if (event.name === "escape") {
         goToSelection();
       }
-      if (event.ctrl && event.name === 'c') {
+      if (event.ctrl && event.name === "c") {
         // Two-stage Ctrl+C handling:
         // 1. First Ctrl+C: Kill active TTY session
         // 2. Second Ctrl+C (when idle): Exit Clive
@@ -579,16 +637,16 @@ function AppContent() {
         }
       }
       // Input focus shortcuts
-      if (event.sequence === '/') {
+      if (event.sequence === "/") {
         setInputFocused(true);
-        setPreFillValue('/');
+        setPreFillValue("/");
       }
-      if (event.sequence === 'i' || event.sequence === ':') {
+      if (event.sequence === "i" || event.sequence === ":") {
         setInputFocused(true);
-        setPreFillValue(event.sequence === ':' ? ':' : undefined);
+        setPreFillValue(event.sequence === ":" ? ":" : undefined);
       }
-    } else if (viewMode === 'help') {
-      if (event.name === 'escape') {
+    } else if (viewMode === "help") {
+      if (event.name === "escape") {
         goBack();
       }
     }
@@ -596,9 +654,9 @@ function AppContent() {
 
   // Handler for mode selection
   const handleModeSelect = (mode: string) => {
-    if (mode === 'interactive') {
+    if (mode === "interactive") {
       goToSelection();
-    } else if (mode === 'worker') {
+    } else if (mode === "worker") {
       // Check if worker is already configured
       if (config?.worker?.enabled && config?.worker?.token) {
         goToWorker();
@@ -625,7 +683,7 @@ function AppContent() {
   const handleCreateNewWithoutIssue = () => {
     goToMain();
     setInputFocused(true);
-    setPreFillValue('/plan');
+    setPreFillValue("/plan");
   };
 
   // Handler for creating new session for specific issue
@@ -633,12 +691,12 @@ function AppContent() {
     setActiveSession(issue);
     goToMain();
     setInputFocused(true);
-    setPreFillValue('/plan');
+    setPreFillValue("/plan");
   };
 
   // Handler for conversation resume
   const handleConversationResume = (conversation: Conversation) => {
-    console.log('[Clive TUI] Resuming conversation:', conversation.sessionId);
+    console.log("[Clive TUI] Resuming conversation:", conversation.sessionId);
     executeCommand(`/plan --resume=${conversation.sessionId}`);
     goToMain();
   };
@@ -646,7 +704,7 @@ function AppContent() {
   // Wrapper for executeCommand to handle special commands
   const handleExecuteCommand = (cmd: string) => {
     // Check for /resume command
-    if (cmd.trim() === '/resume') {
+    if (cmd.trim() === "/resume") {
       goToSelection();
       return;
     }
@@ -655,11 +713,13 @@ function AppContent() {
     executeCommand(cmd);
   };
 
-
   // Handler for config flow completion
-  const handleConfigComplete = (configData: { apiKey: string; teamID: string }) => {
+  const handleConfigComplete = (configData: {
+    apiKey: string;
+    teamID: string;
+  }) => {
     updateConfig({
-      issueTracker: configFlow as 'linear' | 'beads',
+      issueTracker: configFlow as "linear" | "beads",
       [configFlow as string]: configData,
     });
     setConfigFlow(null);
@@ -667,9 +727,9 @@ function AppContent() {
   };
 
   // Render appropriate view based on viewMode
-  if (viewMode === 'setup') {
+  if (viewMode === "setup") {
     // Show config flow if a tracker was selected
-    if (configFlow === 'linear') {
+    if (configFlow === "linear") {
       return (
         <LinearConfigFlow
           width={width}
@@ -680,10 +740,10 @@ function AppContent() {
       );
     }
 
-    if (configFlow === 'beads') {
+    if (configFlow === "beads") {
       // Beads doesn't need configuration, just update config and go to mode selection
       updateConfig({
-        issueTracker: 'beads',
+        issueTracker: "beads",
         beads: {},
       });
       setConfigFlow(null);
@@ -705,7 +765,7 @@ function AppContent() {
   }
 
   // Mode selection view
-  if (viewMode === 'mode_selection') {
+  if (viewMode === "mode_selection") {
     return (
       <ModeSelectionView
         width={width}
@@ -726,7 +786,7 @@ function AppContent() {
   }
 
   // Worker setup view
-  if (viewMode === 'worker_setup') {
+  if (viewMode === "worker_setup") {
     return (
       <WorkerConfigFlow
         width={width}
@@ -739,7 +799,7 @@ function AppContent() {
   }
 
   // Worker view
-  if (viewMode === 'worker') {
+  if (viewMode === "worker") {
     return (
       <WorkerView
         width={width}
@@ -757,7 +817,7 @@ function AppContent() {
     );
   }
 
-  if (viewMode === 'selection') {
+  if (viewMode === "selection") {
     return (
       <SelectionView
         width={width}
@@ -795,20 +855,14 @@ function AppContent() {
     );
   }
 
-  if (viewMode === 'help') {
-    return (
-      <HelpView
-        width={width}
-        height={height}
-        onClose={goBack}
-      />
-    );
+  if (viewMode === "help") {
+    return <HelpView width={width} height={height} onClose={goBack} />;
   }
 
   // Main view (chat interface)
   const baseInputHeight = 3;
   const statusHeight = 1;
-  const isInMode = mode !== 'none';
+  const isInMode = mode !== "none";
 
   // Calculate dynamic input height based on pending question
   const questionHeight = pendingQuestion ? Math.min(25, 20) : 0;
@@ -826,8 +880,8 @@ function AppContent() {
 
   // Mode colors
   const getModeColor = () => {
-    if (mode === 'plan') return '#3B82F6'; // blue-500
-    if (mode === 'build') return '#F59E0B'; // amber-500
+    if (mode === "plan") return "#3B82F6"; // blue-500
+    if (mode === "build") return "#F59E0B"; // amber-500
     return undefined;
   };
 
@@ -837,7 +891,7 @@ function AppContent() {
       height={height}
       backgroundColor={OneDarkPro.background.primary}
       flexDirection="column"
-      borderStyle={isInMode ? 'rounded' : undefined}
+      borderStyle={isInMode ? "rounded" : undefined}
       borderColor={isInMode ? getModeColor() : undefined}
     >
       {/* Body (Sidebar + Output) */}

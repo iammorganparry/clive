@@ -1,4 +1,4 @@
-import { createAnthropic, type AnthropicProvider } from "@ai-sdk/anthropic";
+import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";

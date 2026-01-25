@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Effect, Runtime } from "effect";
-import { createLoggerLayer } from "../logger-service.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import { createLoggerLayer } from "../logger-service.js";
 
 describe("LoggerService", () => {
   let mockOutputChannel: vscode.OutputChannel;

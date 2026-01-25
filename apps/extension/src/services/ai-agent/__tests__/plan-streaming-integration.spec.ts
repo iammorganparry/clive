@@ -1,23 +1,23 @@
-import { expect, vi, beforeEach } from "vitest";
 import { describe, it } from "@effect/vitest";
 import { Effect } from "effect";
-import {
-  handleToolCallStreamingStart,
-  handleToolCallDelta,
-  handleToolResult,
-} from "../event-handlers";
-import {
-  createAgentState,
-  createStreamingState,
-  setStreamingArgs,
-  trackPlanToolCall,
-  setPlanInitStatus,
-} from "../agent-state";
-import * as proposeTestPlan from "../tools/propose-test-plan";
+import { beforeEach, expect, vi } from "vitest";
 import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../../__tests__/mock-factories/index.js";
+import {
+  createAgentState,
+  createStreamingState,
+  setPlanInitStatus,
+  setStreamingArgs,
+  trackPlanToolCall,
+} from "../agent-state";
+import {
+  handleToolCallDelta,
+  handleToolCallStreamingStart,
+  handleToolResult,
+} from "../event-handlers";
+import * as proposeTestPlan from "../tools/propose-test-plan";
 
 // Mock the plan streaming tools
 vi.mock("../tools/propose-test-plan", async () => {

@@ -1,20 +1,25 @@
-import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { generateClaudeMd } from "../src/generators/markdown.js";
 import { buildFromMarkdown } from "../src/parser/contract-builder.js";
 import { QueryEngine } from "../src/query/engine.js";
 import { validateContracts } from "../src/validators/contract-validator.js";
-import { generateClaudeMd } from "../src/generators/markdown.js";
 
 describe("Integration", () => {
   const fixturesDir = join(__dirname, "fixtures");
-  const sampleMarkdown = readFileSync(join(fixturesDir, "sample-contracts.md"), "utf-8");
+  const sampleMarkdown = readFileSync(
+    join(fixturesDir, "sample-contracts.md"),
+    "utf-8",
+  );
 
   describe("Full parsing flow", () => {
     it("parses sample contracts from markdown", () => {
       const result = buildFromMarkdown(sampleMarkdown);
 
-      expect(result.errors.filter((e) => e.severity === "error")).toHaveLength(0);
+      expect(result.errors.filter((e) => e.severity === "error")).toHaveLength(
+        0,
+      );
       expect(result.graph.getAllContracts().length).toBeGreaterThan(0);
     });
 
@@ -34,14 +39,17 @@ describe("Integration", () => {
 
       const orderPlace = graph.getContract("Order.place");
       expect(orderPlace).toBeDefined();
-      expect(orderPlace!.location?.file).toBe("src/orders/place.ts");
-      expect(orderPlace!.location?.line).toBe(15);
-      expect(orderPlace!.exposes).toHaveLength(1);
-      expect(orderPlace!.exposes[0]).toEqual({ method: "POST", path: "/api/orders" });
-      expect(orderPlace!.publishes).toContain("OrderPlaced");
-      expect(orderPlace!.writes).toContain("orders");
-      expect(orderPlace!.invariants).toHaveLength(1);
-      expect(orderPlace!.errors).toHaveLength(2);
+      expect(orderPlace?.location?.file).toBe("src/orders/place.ts");
+      expect(orderPlace?.location?.line).toBe(15);
+      expect(orderPlace?.exposes).toHaveLength(1);
+      expect(orderPlace?.exposes[0]).toEqual({
+        method: "POST",
+        path: "/api/orders",
+      });
+      expect(orderPlace?.publishes).toContain("OrderPlaced");
+      expect(orderPlace?.writes).toContain("orders");
+      expect(orderPlace?.invariants).toHaveLength(1);
+      expect(orderPlace?.errors).toHaveLength(2);
     });
 
     it("builds relationships from edges", () => {
@@ -52,7 +60,7 @@ describe("Integration", () => {
 
       // Check for write relationship
       const writeRel = relationships.find(
-        (r) => r.from === "Order.place" && r.type === "writes"
+        (r) => r.from === "Order.place" && r.type === "writes",
       );
       expect(writeRel).toBeDefined();
     });
@@ -76,7 +84,9 @@ describe("Integration", () => {
       expect(impact).not.toBeNull();
 
       // Should find producers and consumers
-      expect(impact!.producers.length + impact!.consumers.length).toBeGreaterThan(0);
+      expect(
+        impact?.producers.length + impact?.consumers.length,
+      ).toBeGreaterThan(0);
     });
 
     it("returns invariants for code location", () => {

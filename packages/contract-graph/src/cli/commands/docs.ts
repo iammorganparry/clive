@@ -2,14 +2,14 @@
  * Docs command - Generate markdown documentation from contracts
  */
 
+import { writeFile } from "node:fs/promises";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { loadContracts } from "../loader.js";
 import {
-  generateMarkdownDocs,
   generateClaudeMd,
+  generateMarkdownDocs,
 } from "../../generators/markdown.js";
-import { writeFile } from "node:fs/promises";
+import { loadContracts } from "../loader.js";
 
 export function docsCommand(program: Command): void {
   program

@@ -3,11 +3,11 @@
  * Ensures sections remain stable and changes are visible in review
  */
 
-import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
 import { sectionRegistry } from "../sections/index.js";
-import { SectionId } from "../types.js";
 import type { BuildConfig } from "../types.js";
+import { SectionId } from "../types.js";
 
 describe("Prompt Sections", () => {
   const baseConfig: BuildConfig = {
@@ -71,4 +71,3 @@ describe("Prompt Sections", () => {
     });
   });
 });
-

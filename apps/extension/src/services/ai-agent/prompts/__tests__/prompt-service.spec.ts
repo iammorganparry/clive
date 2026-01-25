@@ -3,15 +3,15 @@
  * Tests complete prompt building with snapshots
  */
 
-import { describe, expect, beforeEach, vi } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { beforeEach, describe, expect, vi } from "vitest";
 import * as vscode from "vscode";
+import { createMockVSCodeServiceLayer } from "../../../../__tests__/mock-factories/index.js";
+import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 import { PromptService } from "../prompt-service.js";
 import { RulesService } from "../rules-service.js";
 import type { BuildConfig } from "../types.js";
-import { createMockVSCodeServiceLayer } from "../../../../__tests__/mock-factories/index.js";
-import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
 
 // Mock vscode globally for RulesService which uses vscode.* directly
 // Use setupVSCodeMock to ensure singleton pattern - same instance used everywhere

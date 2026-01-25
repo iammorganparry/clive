@@ -312,9 +312,9 @@ function parseGoTestOutput(output: string): TestResult[] {
       const duration = durationStr
         ? parseDuration(`(${durationStr})`)
         : undefined;
-      
+
       // Extract error message for failed tests
-      let error: string | undefined ;
+      let error: string | undefined;
       if (status === "fail") {
         // Go test error messages appear on lines following the FAIL line
         // They typically start with whitespace and contain file:line: format
@@ -1111,35 +1111,41 @@ function isTestOutputComplete(
   parsedResults?: TestResult[],
 ): boolean {
   const outputLower = output.toLowerCase();
-  
+
   // If we have parsed results, check if all tests have durations
   // This indicates they completed (durations are only shown after completion)
   if (parsedResults && parsedResults.length > 0) {
-    const allHaveDurations = parsedResults.every((r) => r.duration !== undefined);
+    const allHaveDurations = parsedResults.every(
+      (r) => r.duration !== undefined,
+    );
     if (allHaveDurations) {
       return true;
     }
   }
-  
+
   // Check for vitest/jest completion markers
   if (/vitest|jest/i.test(command)) {
     // Vitest completion markers: "Test Files", "Tests", summary lines
-    return /Test Files\s+\d+/.test(output) || 
-           /Tests\s+\d+/.test(output) ||
-           /Test Files\s+\d+\s+(passed|failed)/.test(output);
+    return (
+      /Test Files\s+\d+/.test(output) ||
+      /Tests\s+\d+/.test(output) ||
+      /Test Files\s+\d+\s+(passed|failed)/.test(output)
+    );
   }
-  
+
   // Check for pytest completion markers
   if (/pytest/i.test(command)) {
-    return /passed|failed|error/.test(outputLower) && 
-           /\d+\s+(passed|failed|error)/.test(output);
+    return (
+      /passed|failed|error/.test(outputLower) &&
+      /\d+\s+(passed|failed|error)/.test(output)
+    );
   }
-  
+
   // Check for go test completion markers
   if (/go\s+test/i.test(command)) {
     return /^ok\s+/.test(output.trim()) || /^FAIL\s+/.test(output.trim());
   }
-  
+
   // For other frameworks, assume incomplete during streaming
   // The caller can mark as complete when the process actually finishes
   return false;
@@ -1161,7 +1167,7 @@ export function updateTestExecutionFromStream(
 
   // Use the existing updateTestExecution function with the accumulated output
   const result = updateTestExecution(current, command, fullOutput);
-  
+
   // During streaming, keep status as "running" unless we detect completion markers
   // Pass parsed results to help detect completion (e.g., all tests have durations)
   if (result && !isTestOutputComplete(fullOutput, command, result.tests)) {
@@ -1171,7 +1177,7 @@ export function updateTestExecutionFromStream(
       completedAt: undefined,
     };
   }
-  
+
   return result;
 }
 

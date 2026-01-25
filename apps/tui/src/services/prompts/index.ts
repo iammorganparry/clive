@@ -6,6 +6,6 @@
  */
 
 export { PromptService, PromptServiceLive } from "./prompt-service";
-export type { BuildConfig, PromptBuildError } from "./types";
-export { sections, SectionId } from "./sections";
 export type { Section, SectionId as SectionIdType } from "./sections";
+export { SectionId, sections } from "./sections";
+export type { BuildConfig, PromptBuildError } from "./types";

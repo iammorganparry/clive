@@ -1,14 +1,14 @@
 import { useMachine } from "@xstate/react";
 import type { LanguageModelUsage } from "ai";
 import { Match } from "effect";
-import { useEffect, useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useRpc } from "../../../rpc/provider.js";
+import { mcpBridgeEventEmitter } from "../../../services/mcp-bridge-events.js";
 import type { ToolEvent } from "../../../types/chat.js";
 import {
   changesetChatMachine,
   type TestSuiteQueueItem,
 } from "../machines/changeset-chat-machine.js";
-import { mcpBridgeEventEmitter } from "../../../services/mcp-bridge-events.js";
 
 interface UseChangesetChatOptions {
   files: string[];
@@ -69,12 +69,21 @@ export function useChangesetChat({
 
   // MCP bridge event handlers for plan approval and context summarization
   const handlePlanApproval = useCallback(
-    (data: { approved: boolean; planId?: string; feedback?: string; approvalMode?: "auto" | "manual" }) => {
+    (data: {
+      approved: boolean;
+      planId?: string;
+      feedback?: string;
+      approvalMode?: "auto" | "manual";
+    }) => {
       console.log("[MCP Bridge] Plan approval event received:", data);
       if (data.approved) {
         // When approved via MCP bridge, dispatch APPROVE_PLAN with current queue
         const suites = state.context.testSuiteQueue;
-        send({ type: "APPROVE_PLAN", suites, approvalMode: data.approvalMode || "auto" });
+        send({
+          type: "APPROVE_PLAN",
+          suites,
+          approvalMode: data.approvalMode || "auto",
+        });
       }
       // Rejection is handled by the MCP response - agent stays in plan mode
     },
@@ -118,12 +127,18 @@ export function useChangesetChat({
   useEffect(() => {
     mcpBridgeEventEmitter.on("plan-approval", handlePlanApproval);
     mcpBridgeEventEmitter.on("summarize-context", handleSummarizeContext);
-    mcpBridgeEventEmitter.on("plan-content-streaming", handlePlanContentStreaming);
+    mcpBridgeEventEmitter.on(
+      "plan-content-streaming",
+      handlePlanContentStreaming,
+    );
 
     return () => {
       mcpBridgeEventEmitter.off("plan-approval", handlePlanApproval);
       mcpBridgeEventEmitter.off("summarize-context", handleSummarizeContext);
-      mcpBridgeEventEmitter.off("plan-content-streaming", handlePlanContentStreaming);
+      mcpBridgeEventEmitter.off(
+        "plan-content-streaming",
+        handlePlanContentStreaming,
+      );
     };
   }, [handlePlanApproval, handleSummarizeContext, handlePlanContentStreaming]);
 
@@ -279,8 +294,17 @@ export function useChangesetChat({
         Match.when({ type: "loop-iteration-complete" }, (p) => {
           const loopEvent = p as unknown as {
             iteration: number;
-            todos: Array<{ content: string; status: string; activeForm: string }>;
-            progress: { completed: number; pending: number; total: number; percentComplete: number };
+            todos: Array<{
+              content: string;
+              status: string;
+              activeForm: string;
+            }>;
+            progress: {
+              completed: number;
+              pending: number;
+              total: number;
+              percentComplete: number;
+            };
           };
           send({
             type: "LOOP_ITERATION_COMPLETE",
@@ -291,10 +315,24 @@ export function useChangesetChat({
         }),
         Match.when({ type: "loop-complete" }, (p) => {
           const loopEvent = p as unknown as {
-            reason: "complete" | "max_iterations" | "max_time" | "error" | "cancelled";
+            reason:
+              | "complete"
+              | "max_iterations"
+              | "max_time"
+              | "error"
+              | "cancelled";
             iteration: number;
-            todos: Array<{ content: string; status: string; activeForm: string }>;
-            progress: { completed: number; pending: number; total: number; percentComplete: number };
+            todos: Array<{
+              content: string;
+              status: string;
+              activeForm: string;
+            }>;
+            progress: {
+              completed: number;
+              pending: number;
+              total: number;
+              percentComplete: number;
+            };
           };
           send({
             type: "LOOP_COMPLETE",
@@ -306,8 +344,17 @@ export function useChangesetChat({
         }),
         Match.when({ type: "todos-updated" }, (p) => {
           const loopEvent = p as unknown as {
-            todos: Array<{ content: string; status: string; activeForm: string }>;
-            progress: { completed: number; pending: number; total: number; percentComplete: number };
+            todos: Array<{
+              content: string;
+              status: string;
+              activeForm: string;
+            }>;
+            progress: {
+              completed: number;
+              pending: number;
+              total: number;
+              percentComplete: number;
+            };
           };
           send({
             type: "TODOS_UPDATED",
@@ -317,11 +364,17 @@ export function useChangesetChat({
         }),
         // Native plan mode events (Claude Code's EnterPlanMode/ExitPlanMode)
         Match.when({ type: "native-plan-mode-entered" }, (p) => {
-          console.log("[useChangesetChat] Native plan mode entered:", p.toolCallId);
+          console.log(
+            "[useChangesetChat] Native plan mode entered:",
+            p.toolCallId,
+          );
           // Optional: Could dispatch event to show "Planning in progress..." indicator
         }),
         Match.when({ type: "native-plan-mode-exiting" }, (p) => {
-          console.log("[useChangesetChat] Native plan mode exiting:", p.toolCallId);
+          console.log(
+            "[useChangesetChat] Native plan mode exiting:",
+            p.toolCallId,
+          );
           // Plan content is emitted separately via plan-content-streaming
         }),
         // Plan content streaming (from both MCP proposeTestPlan and native plan mode)
@@ -405,14 +458,7 @@ export function useChangesetChat({
           conversationHistory.length > 0 ? conversationHistory : undefined,
       });
     }
-  }, [
-    files,
-    state,
-    planTestsSubscription,
-    mode,
-    commitHash,
-    baseBranch,
-  ]);
+  }, [files, state, planTestsSubscription, mode, commitHash, baseBranch]);
 
   // Abort all running tool calls mutation
   const abortAllToolCalls = rpc.agents.abortAllToolCalls.useMutation();

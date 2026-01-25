@@ -5,9 +5,9 @@
  */
 
 import { Stream } from "effect";
-import type { ClaudeCliEvent } from "../claude-cli-service.js";
-import type { AgentStreamEvent } from "../../utils/stream-utils.js";
 import { logToOutput } from "../../utils/logger.js";
+import type { AgentStreamEvent } from "../../utils/stream-utils.js";
+import type { ClaudeCliEvent } from "../claude-cli-service.js";
 
 /**
  * Convert a ClaudeCliEvent to AgentStreamEvent

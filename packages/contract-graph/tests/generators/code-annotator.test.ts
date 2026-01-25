@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
-import { ContractGraph } from "../../src/graph/graph.js";
-import { createContract } from "../../src/graph/contract.js";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  annotateSourceFiles,
-  injectAnnotation,
-  formatAnnotationResults,
   type AnnotationResult,
+  annotateSourceFiles,
+  formatAnnotationResults,
+  injectAnnotation,
 } from "../../src/generators/code-annotator.js";
+import { createContract } from "../../src/graph/contract.js";
+import { ContractGraph } from "../../src/graph/graph.js";
 
 describe("code-annotator", () => {
   let tempDir: string;
@@ -50,7 +50,12 @@ describe("code-annotator", () => {
         const content = `function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 1, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          1,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`/**
  * @contract User.create
@@ -67,7 +72,12 @@ function createUser(data) {
     return db.insert(data);
   }
 }`;
-        const result = injectAnnotation(content, 2, "UserService.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          2,
+          "UserService.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`class UserService {
   /**
@@ -84,7 +94,12 @@ function createUser(data) {
         const content = `const createUser = (data) => {
   return db.insert(data);
 };`;
-        const result = injectAnnotation(content, 1, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          1,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`/**
  * @contract User.create
@@ -103,7 +118,12 @@ const createUser = (data) => {
       return ctx.db.insert(users).values(input);
     }),
 };`;
-        const result = injectAnnotation(content, 2, "user.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          2,
+          "user.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`export const userRouter = {
   /**
@@ -127,7 +147,12 @@ const createUser = (data) => {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 4, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          4,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`/**
  * Create a new user in the database
@@ -150,7 +175,12 @@ function createUser(data) {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 7, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          7,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`/**
  * Create a new user
@@ -177,7 +207,12 @@ function createUser(data) {
   return db.insert(data);
 }`;
         // The result should be unchanged
-        const result = injectAnnotation(content, 7, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          7,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(content);
       });
@@ -192,7 +227,12 @@ function createUser(data) {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 7, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          7,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`/**
  * Create a user
@@ -210,7 +250,12 @@ function createUser(data) {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 2, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          2,
+          "User.create",
+          "contracts/system.md",
+        );
 
         // Single-line JSDoc should be expanded to multi-line with contract tags
         expect(result).toBe(`/**
@@ -228,33 +273,58 @@ function createUser(data) {
     describe("edge cases", () => {
       it("handles empty file", () => {
         const content = "";
-        const result = injectAnnotation(content, 1, "Test", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          1,
+          "Test",
+          "contracts/system.md",
+        );
         // Empty file should be skipped
         expect(result).toBe(content);
       });
 
       it("handles whitespace-only file", () => {
         const content = "   \n\n   ";
-        const result = injectAnnotation(content, 1, "Test", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          1,
+          "Test",
+          "contracts/system.md",
+        );
         // Whitespace-only file should be skipped
         expect(result).toBe(content);
       });
 
       it("handles line number out of bounds (too high)", () => {
         const content = `function test() {}`;
-        const result = injectAnnotation(content, 100, "Test", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          100,
+          "Test",
+          "contracts/system.md",
+        );
         expect(result).toBe(content);
       });
 
       it("handles line number out of bounds (zero)", () => {
         const content = `function test() {}`;
-        const result = injectAnnotation(content, 0, "Test", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          0,
+          "Test",
+          "contracts/system.md",
+        );
         expect(result).toBe(content);
       });
 
       it("handles line number out of bounds (negative)", () => {
         const content = `function test() {}`;
-        const result = injectAnnotation(content, -1, "Test", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          -1,
+          "Test",
+          "contracts/system.md",
+        );
         expect(result).toBe(content);
       });
 
@@ -266,7 +336,12 @@ export class UserService {
   }
 }`;
         // Targeting the method, not the decorator
-        const result = injectAnnotation(content, 3, "UserService.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          3,
+          "UserService.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`@Injectable()
 export class UserService {
@@ -286,7 +361,12 @@ export class UserService {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 3, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          3,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`
 
@@ -305,7 +385,12 @@ function createUser(data) {
 function createUser(data) {
   return db.insert(data);
 }`;
-        const result = injectAnnotation(content, 3, "User.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          3,
+          "User.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`// This is a regular comment
 /* This is a block comment */
@@ -324,7 +409,12 @@ function createUser(data) {
 \t\treturn db.insert(data);
 \t}
 }`;
-        const result = injectAnnotation(content, 2, "UserService.create", "contracts/system.md");
+        const result = injectAnnotation(
+          content,
+          2,
+          "UserService.create",
+          "contracts/system.md",
+        );
 
         expect(result).toBe(`class UserService {
 \t/**
@@ -351,19 +441,19 @@ function createUser(data) {
 
 function getUser(id) {
   return db.select(id);
-}`
+}`,
         );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("User.create", {
             location: { file: filename, line: 1 },
-          })
+          }),
         );
         graph.addContract(
           createContract("User.get", {
             location: { file: filename, line: 5 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -384,25 +474,25 @@ function getUser(id) {
           "services/user.ts",
           `function createUser(data) {
   return db.insert(data);
-}`
+}`,
         );
         createTestFile(
           "services/order.ts",
           `function createOrder(data) {
   return db.insert(data);
-}`
+}`,
         );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("User.create", {
             location: { file: "services/user.ts", line: 1 },
-          })
+          }),
         );
         graph.addContract(
           createContract("Order.create", {
             location: { file: "services/order.ts", line: 1 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -412,8 +502,12 @@ function getUser(id) {
 
         expect(results).toHaveLength(2);
 
-        expect(readTestFile("services/user.ts")).toContain("@contract User.create");
-        expect(readTestFile("services/order.ts")).toContain("@contract Order.create");
+        expect(readTestFile("services/user.ts")).toContain(
+          "@contract User.create",
+        );
+        expect(readTestFile("services/order.ts")).toContain(
+          "@contract Order.create",
+        );
       });
 
       it("processes contracts in descending line order to preserve offsets", async () => {
@@ -422,24 +516,24 @@ function getUser(id) {
           filename,
           `function first() {}
 function second() {}
-function third() {}`
+function third() {}`,
         );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("First", {
             location: { file: filename, line: 1 },
-          })
+          }),
         );
         graph.addContract(
           createContract("Second", {
             location: { file: filename, line: 2 },
-          })
+          }),
         );
         graph.addContract(
           createContract("Third", {
             location: { file: filename, line: 3 },
-          })
+          }),
         );
 
         await annotateSourceFiles(graph, {
@@ -474,7 +568,7 @@ function third() {}`
         graph.addContract(
           createContract("User.create", {
             location: { file: filename, line: 1 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -496,14 +590,14 @@ function third() {}`
           `/**
  * @contract User.create
  */
-function createUser(data) {}`
+function createUser(data) {}`,
         );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("User.create", {
             location: { file: filename, line: 4 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -537,7 +631,7 @@ function createUser(data) {}`
         graph.addContract(
           createContract("User.create", {
             location: { file: "services/user.ts" }, // No line number
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -552,7 +646,7 @@ function createUser(data) {}`
         graph.addContract(
           createContract("User.create", {
             location: { file: "nonexistent/file.ts", line: 1 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -571,7 +665,7 @@ function createUser(data) {}`
         graph.addContract(
           createContract("User.create", {
             location: { file: "services/user.ts", line: 100 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -590,14 +684,14 @@ function createUser(data) {}`
  * @contract User.create
  * @see contracts/system.md#User.create
  */
-function createUser() {}`
+function createUser() {}`,
         );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("User.create", {
             location: { file: "services/user.ts", line: 5 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -618,7 +712,7 @@ function createUser() {}`
         graph.addContract(
           createContract("User.create", {
             location: { file: "services/user.ts", line: 1 },
-          })
+          }),
         );
 
         await annotateSourceFiles(graph, {
@@ -633,13 +727,16 @@ function createUser() {}`
 
     describe("absolute paths", () => {
       it("handles absolute file paths in contracts", async () => {
-        const absolutePath = createTestFile("services/user.ts", `function createUser() {}`);
+        const absolutePath = createTestFile(
+          "services/user.ts",
+          `function createUser() {}`,
+        );
 
         const graph = new ContractGraph();
         graph.addContract(
           createContract("User.create", {
             location: { file: absolutePath, line: 1 },
-          })
+          }),
         );
 
         const results = await annotateSourceFiles(graph, {
@@ -658,7 +755,13 @@ function createUser() {}`
         { file: "a.ts", contractId: "A", line: 1, action: "added" },
         { file: "b.ts", contractId: "B", line: 2, action: "added" },
         { file: "c.ts", contractId: "C", line: 3, action: "updated" },
-        { file: "d.ts", contractId: "D", line: 4, action: "skipped", reason: "Already annotated" },
+        {
+          file: "d.ts",
+          contractId: "D",
+          line: 4,
+          action: "skipped",
+          reason: "Already annotated",
+        },
       ];
 
       const formatted = formatAnnotationResults(results);
@@ -679,7 +782,13 @@ function createUser() {}`
 
     it("groups results by action type", () => {
       const results: AnnotationResult[] = [
-        { file: "a.ts", contractId: "A", line: 1, action: "skipped", reason: "File not found" },
+        {
+          file: "a.ts",
+          contractId: "A",
+          line: 1,
+          action: "skipped",
+          reason: "File not found",
+        },
         { file: "b.ts", contractId: "B", line: 2, action: "added" },
         { file: "c.ts", contractId: "C", line: 3, action: "added" },
       ];
@@ -707,14 +816,14 @@ router.post('/users', async (req, res) => {
   res.json(user);
 });
 
-export default router;`
+export default router;`,
       );
 
       const graph = new ContractGraph();
       graph.addContract(
         createContract("API.createUser", {
           location: { file: "routes/users.ts", line: 5 },
-        })
+        }),
       );
 
       await annotateSourceFiles(graph, { baseDir: tempDir });
@@ -734,14 +843,14 @@ export class UsersController {
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
   }
-}`
+}`,
       );
 
       const graph = new ContractGraph();
       graph.addContract(
         createContract("UsersController.create", {
           location: { file: "controllers/users.controller.ts", line: 6 },
-        })
+        }),
       );
 
       await annotateSourceFiles(graph, { baseDir: tempDir });
@@ -758,14 +867,14 @@ export class UsersController {
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 255 }),
-});`
+});`,
       );
 
       const graph = new ContractGraph();
       graph.addContract(
         createContract("DB.users", {
           location: { file: "db/schema.ts", line: 3 },
-        })
+        }),
       );
 
       await annotateSourceFiles(graph, { baseDir: tempDir });
