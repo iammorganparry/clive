@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import {
-  useRpcQuery,
-  useRpcMutation,
-  useRpcSubscription,
-  initializeRpcMessageHandler,
-} from "../hooks.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VSCodeAPI } from "../../services/vscode.js";
+import {
+  initializeRpcMessageHandler,
+  useRpcMutation,
+  useRpcQuery,
+  useRpcSubscription,
+} from "../hooks.js";
 
 // Mock VSCodeAPI
 const createMockVscode = (): VSCodeAPI => {
@@ -395,7 +395,7 @@ describe("initializeRpcMessageHandler", () => {
 
     // Non-RPC messages should be passed to original handler
     expect(originalHandler).toHaveBeenCalledTimes(1);
-    
+
     // RPC messages without matching handlers also fall through
     // This is expected behavior - only RPC messages with active
     // pending requests or subscriptions are intercepted

@@ -73,9 +73,15 @@
   --accent: var(--vscode-sideBar-background, oklch(0.97 0 0));
   --accent-foreground: var(--vscode-foreground, oklch(0.205 0 0));
   --destructive: var(--vscode-errorForeground, oklch(0.577 0.245 27.325));
-  --border: var(--vscode-input-border, var(--vscode-panel-border, oklch(0.922 0 0)));
+  --border: var(
+    --vscode-input-border,
+    var(--vscode-panel-border, oklch(0.922 0 0))
+  );
   --input: var(--vscode-input-background, oklch(0.922 0 0));
-  --ring: var(--vscode-input-border, var(--vscode-panel-border, oklch(0.708 0 0)));
+  --ring: var(
+    --vscode-input-border,
+    var(--vscode-panel-border, oklch(0.708 0 0))
+  );
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -84,22 +90,40 @@
   --sidebar: var(--vscode-sideBar-background, oklch(0.985 0 0));
   --sidebar-foreground: var(--vscode-foreground, oklch(0.145 0 0));
   --sidebar-primary: var(--vscode-button-background, oklch(0.205 0 0));
-  --sidebar-primary-foreground: var(--vscode-button-foreground, oklch(0.985 0 0));
+  --sidebar-primary-foreground: var(
+    --vscode-button-foreground,
+    oklch(0.985 0 0)
+  );
   --sidebar-accent: var(--vscode-sideBar-background, oklch(0.97 0 0));
   --sidebar-accent-foreground: var(--vscode-foreground, oklch(0.205 0 0));
   --sidebar-border: var(--vscode-panel-border, oklch(0.922 0 0));
   --sidebar-ring: var(--vscode-panel-border, oklch(0.708 0 0));
   /* Code block colors from VS Code editor */
-  --code-background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background, var(--secondary)));
+  --code-background: var(
+    --vscode-textCodeBlock-background,
+    var(--vscode-editor-background, var(--secondary))
+  );
   --code-foreground: var(--vscode-editor-foreground, var(--foreground));
   --code-border: var(--vscode-panel-border, var(--border));
   /* Semantic colors - map to VS Code theme */
-  --success: var(--vscode-testing-iconPassed, var(--vscode-notificationsInfoIcon-foreground, oklch(0.6 0.2 145)));
+  --success: var(
+    --vscode-testing-iconPassed,
+    var(--vscode-notificationsInfoIcon-foreground, oklch(0.6 0.2 145))
+  );
   --success-foreground: var(--vscode-testing-iconPassed, oklch(0.4 0.2 145));
   --success-muted: var(--vscode-testing-iconPassed, oklch(0.9 0.05 145));
-  --warning: var(--vscode-notificationsWarningIcon-foreground, var(--vscode-editorWarning-foreground, oklch(0.7 0.15 70)));
-  --warning-foreground: var(--vscode-editorWarning-foreground, oklch(0.5 0.15 70));
-  --error-muted: var(--vscode-inputValidation-errorBackground, oklch(0.95 0.05 25));
+  --warning: var(
+    --vscode-notificationsWarningIcon-foreground,
+    var(--vscode-editorWarning-foreground, oklch(0.7 0.15 70))
+  );
+  --warning-foreground: var(
+    --vscode-editorWarning-foreground,
+    oklch(0.5 0.15 70)
+  );
+  --error-muted: var(
+    --vscode-inputValidation-errorBackground,
+    oklch(0.95 0.05 25)
+  );
 }
 
 .dark {
@@ -119,9 +143,15 @@
   --accent: var(--vscode-sideBar-background, oklch(0.269 0 0));
   --accent-foreground: var(--vscode-foreground, oklch(0.985 0 0));
   --destructive: var(--vscode-errorForeground, oklch(0.704 0.191 22.216));
-  --border: var(--vscode-input-border, var(--vscode-panel-border, oklch(1 0 0 / 10%)));
+  --border: var(
+    --vscode-input-border,
+    var(--vscode-panel-border, oklch(1 0 0 / 10%))
+  );
   --input: var(--vscode-input-background, oklch(1 0 0 / 15%));
-  --ring: var(--vscode-input-border, var(--vscode-panel-border, oklch(0.556 0 0)));
+  --ring: var(
+    --vscode-input-border,
+    var(--vscode-panel-border, oklch(0.556 0 0))
+  );
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -129,19 +159,37 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: var(--vscode-sideBar-background, oklch(0.205 0 0));
   --sidebar-foreground: var(--vscode-foreground, oklch(0.985 0 0));
-  --sidebar-primary: var(--vscode-button-background, oklch(0.488 0.243 264.376));
-  --sidebar-primary-foreground: var(--vscode-button-foreground, oklch(0.985 0 0));
+  --sidebar-primary: var(
+    --vscode-button-background,
+    oklch(0.488 0.243 264.376)
+  );
+  --sidebar-primary-foreground: var(
+    --vscode-button-foreground,
+    oklch(0.985 0 0)
+  );
   --sidebar-accent: var(--vscode-sideBar-background, oklch(0.269 0 0));
   --sidebar-accent-foreground: var(--vscode-foreground, oklch(0.985 0 0));
   --sidebar-border: var(--vscode-panel-border, oklch(1 0 0 / 10%));
   --sidebar-ring: var(--vscode-panel-border, oklch(0.556 0 0));
   /* Semantic colors - use VS Code theme variables with dark fallbacks */
-  --success: var(--vscode-testing-iconPassed, var(--vscode-notificationsInfoIcon-foreground, oklch(0.6 0.2 145)));
+  --success: var(
+    --vscode-testing-iconPassed,
+    var(--vscode-notificationsInfoIcon-foreground, oklch(0.6 0.2 145))
+  );
   --success-foreground: var(--vscode-testing-iconPassed, oklch(0.4 0.2 145));
   --success-muted: var(--vscode-testing-iconPassed, oklch(0.9 0.05 145));
-  --warning: var(--vscode-notificationsWarningIcon-foreground, var(--vscode-editorWarning-foreground, oklch(0.7 0.15 70)));
-  --warning-foreground: var(--vscode-editorWarning-foreground, oklch(0.5 0.15 70));
-  --error-muted: var(--vscode-inputValidation-errorBackground, oklch(0.95 0.05 25));
+  --warning: var(
+    --vscode-notificationsWarningIcon-foreground,
+    var(--vscode-editorWarning-foreground, oklch(0.7 0.15 70))
+  );
+  --warning-foreground: var(
+    --vscode-editorWarning-foreground,
+    oklch(0.5 0.15 70)
+  );
+  --error-muted: var(
+    --vscode-inputValidation-errorBackground,
+    oklch(0.95 0.05 25)
+  );
 }
 
 @layer base {
@@ -161,7 +209,15 @@
   /* Code block styling to match VS Code editor */
   pre,
   code {
-    font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    font-family: var(
+      --vscode-editor-font-family,
+      ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      Monaco,
+      Consolas,
+      monospace
+    );
     font-size: var(--vscode-editor-font-size, 13px);
   }
   pre {

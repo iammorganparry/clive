@@ -9,11 +9,11 @@
 import type { App } from "@slack/bolt";
 import type { MessageEvent } from "@slack/types";
 import { Effect } from "effect";
-import type { InterviewStore } from "../store/interview-store";
-import type { ClaudeManager } from "../services/claude-manager";
-import type { WorkerProxy } from "../services/worker-proxy";
-import type { SlackService } from "../services/slack-service";
 import { formatNonInitiatorNotice } from "../formatters/question-formatter";
+import type { ClaudeManager } from "../services/claude-manager";
+import type { SlackService } from "../services/slack-service";
+import type { WorkerProxy } from "../services/worker-proxy";
+import type { InterviewStore } from "../store/interview-store";
 
 /**
  * Register message handler for thread replies
@@ -22,7 +22,7 @@ export function registerMessageHandler(
   app: App,
   store: InterviewStore,
   claudeManager: ClaudeManager,
-  slackService: SlackService
+  slackService: SlackService,
 ): void {
   // Handle messages in threads (replies)
   app.message(async ({ message }) => {
@@ -71,7 +71,7 @@ export function registerMessageHandler(
             text: "This interview can only be answered by the person who started it.",
             threadTs,
             blocks: formatNonInitiatorNotice(session.initiatorId),
-          })
+          }),
         );
       }
       return;
@@ -102,7 +102,7 @@ export function registerMessageHandler(
           claudeManager.sendAnswer(
             threadTs,
             session.pendingToolUseId,
-            answerPayload
+            answerPayload,
           );
 
           // Clear pending question
@@ -110,20 +110,22 @@ export function registerMessageHandler(
 
           // Acknowledge the answer
           await Effect.runPromise(
-            slackService.addReaction(channel, msg.ts, "white_check_mark")
+            slackService.addReaction(channel, msg.ts, "white_check_mark"),
           );
         }
       }
     } else if (text) {
       // No pending question - send as follow-up message
-      console.log(`[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`);
+      console.log(
+        `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
+      );
 
       // Send message to Claude
       claudeManager.sendMessage(threadTs, text);
 
       // Add thinking indicator
       await Effect.runPromise(
-        slackService.addReaction(channel, msg.ts, "thinking_face")
+        slackService.addReaction(channel, msg.ts, "thinking_face"),
       );
     }
   });
@@ -136,7 +138,7 @@ export function registerMessageHandlerDistributed(
   app: App,
   store: InterviewStore,
   workerProxy: WorkerProxy,
-  slackService: SlackService
+  slackService: SlackService,
 ): void {
   app.message(async ({ message }) => {
     const msg = message as MessageEvent & {
@@ -182,7 +184,7 @@ export function registerMessageHandlerDistributed(
             text: "This interview can only be answered by the person who started it.",
             threadTs,
             blocks: formatNonInitiatorNotice(session.initiatorId),
-          })
+          }),
         );
       }
       return;
@@ -213,7 +215,7 @@ export function registerMessageHandlerDistributed(
           workerProxy.sendAnswer(
             threadTs,
             session.pendingToolUseId,
-            answerPayload
+            answerPayload,
           );
 
           // Clear pending question
@@ -221,20 +223,22 @@ export function registerMessageHandlerDistributed(
 
           // Acknowledge the answer
           await Effect.runPromise(
-            slackService.addReaction(channel, msg.ts, "white_check_mark")
+            slackService.addReaction(channel, msg.ts, "white_check_mark"),
           );
         }
       }
     } else if (text) {
       // No pending question - send as follow-up message
-      console.log(`[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`);
+      console.log(
+        `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
+      );
 
       // Send message to worker
       workerProxy.sendMessage(threadTs, text);
 
       // Add thinking indicator
       await Effect.runPromise(
-        slackService.addReaction(channel, msg.ts, "thinking_face")
+        slackService.addReaction(channel, msg.ts, "thinking_face"),
       );
     }
   });

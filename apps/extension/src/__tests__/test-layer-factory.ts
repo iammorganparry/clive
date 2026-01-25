@@ -21,28 +21,27 @@
  * ```
  */
 
-import { Layer, Effect } from "effect";
-import { vi, type Mock } from "vitest";
+import { Effect, Layer } from "effect";
+import { type Mock, vi } from "vitest";
 import type * as vscode from "vscode";
-
-import {
-  type VSCodeService,
-  SecretStorageService,
-} from "../services/vs-code.js";
-import { createLoggerLayer } from "../services/logger-service.js";
-import { ConfigService } from "../services/config-service.js";
+import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 import { ApiKeyService } from "../services/api-key-service.js";
-import { TrpcClientService } from "../services/trpc-client-service.js";
-import { RepositoryService } from "../services/repository-service.js";
+import { ConfigService } from "../services/config-service.js";
 import { ConversationService } from "../services/conversation-service.js";
-import { SourceFileFilter } from "../services/source-file-filter.js";
 import { GitServiceLive } from "../services/git-service.js";
 import { KnowledgeBaseService } from "../services/knowledge-base-service.js";
-import { KnowledgeBaseAgent } from "../services/ai-agent/knowledge-base-agent.js";
 import { KnowledgeFileService } from "../services/knowledge-file-service.js";
+import { createLoggerLayer } from "../services/logger-service.js";
+import { RepositoryService } from "../services/repository-service.js";
+import { SourceFileFilter } from "../services/source-file-filter.js";
+import { TrpcClientService } from "../services/trpc-client-service.js";
 import {
-  createMockVSCodeServiceLayer,
+  SecretStorageService,
+  type VSCodeService,
+} from "../services/vs-code.js";
+import {
   createMockSettingsServiceLayer,
+  createMockVSCodeServiceLayer,
 } from "./mock-factories/service-mocks.js";
 
 // =============================================================================

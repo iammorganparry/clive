@@ -1,13 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
-import { createWriteKnowledgeFileTool } from "../write-knowledge-file";
-import type { KnowledgeFileService } from "../../../knowledge-file-service";
-import { executeTool } from "./test-helpers";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockKnowledgeFileService } from "../../../../__tests__/mock-factories";
+import type { KnowledgeFileService } from "../../../knowledge-file-service";
+import { createWriteKnowledgeFileTool } from "../write-knowledge-file";
+import { executeTool } from "./test-helpers";
 
 describe("writeKnowledgeFileTool", () => {
   let mockKnowledgeFileService: KnowledgeFileService;
-  let onCompleteCallback: ((category: string, success: boolean) => void) | undefined;
+  let onCompleteCallback:
+    | ((category: string, success: boolean) => void)
+    | undefined;
   let completeCalls: Array<[string, boolean]>;
 
   beforeEach(() => {
@@ -157,7 +159,10 @@ describe("writeKnowledgeFileTool", () => {
         writeKnowledgeFile: vi.fn(() => Effect.fail(new Error("Write failed"))),
       } as unknown as KnowledgeFileService;
 
-      const tool = createWriteKnowledgeFileTool(errorService, onCompleteCallback);
+      const tool = createWriteKnowledgeFileTool(
+        errorService,
+        onCompleteCallback,
+      );
 
       await executeTool(
         tool,
@@ -246,4 +251,3 @@ describe("writeKnowledgeFileTool", () => {
     });
   });
 });
-

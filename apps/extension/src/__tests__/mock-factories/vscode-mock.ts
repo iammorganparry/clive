@@ -3,7 +3,7 @@
  * Provides configurable mocks for VS Code API to avoid duplication across test files
  */
 
-import { vi, type Mock } from "vitest";
+import { type Mock, vi } from "vitest";
 import type * as vscode from "vscode";
 
 export interface VSCodeMockOverrides {

@@ -10,9 +10,9 @@
  * - Buffer zone reduces flickering during rapid scrolling
  */
 
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { OutputLine } from './OutputLine';
-import type { OutputLine as OutputLineType } from '../types';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { OutputLine as OutputLineType } from "../types";
+import { OutputLine } from "./OutputLine";
 
 interface VirtualizedOutputListProps {
   lines: OutputLineType[];
@@ -41,20 +41,23 @@ export function VirtualizedOutputList({
   const measureRefs = useRef<Map<number, HTMLElement>>(new Map());
 
   // Measure callback for tracking actual heights
-  const setMeasureRef = useCallback((index: number, element: HTMLElement | null) => {
-    if (element) {
-      measureRefs.current.set(index, element);
-      const height = element.getBoundingClientRect?.()?.height;
-      if (height && height > 0) {
-        itemHeights.current.set(index, height);
+  const setMeasureRef = useCallback(
+    (index: number, element: HTMLElement | null) => {
+      if (element) {
+        measureRefs.current.set(index, element);
+        const height = element.getBoundingClientRect?.()?.height;
+        if (height && height > 0) {
+          itemHeights.current.set(index, height);
+        }
+      } else {
+        measureRefs.current.delete(index);
       }
-    } else {
-      measureRefs.current.delete(index);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Calculate total height from actual measurements
-  const getTotalHeight = useCallback(() => {
+  const _getTotalHeight = useCallback(() => {
     let total = 0;
     for (let i = 0; i < lines.length; i++) {
       total += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;
@@ -83,8 +86,8 @@ export function VirtualizedOutputList({
 
     // Try event listener first (for better performance if supported)
     if (scrollBox.addEventListener) {
-      scrollBox.addEventListener('scroll', handleScroll, { passive: true });
-      return () => scrollBox.removeEventListener('scroll', handleScroll);
+      scrollBox.addEventListener("scroll", handleScroll, { passive: true });
+      return () => scrollBox.removeEventListener("scroll", handleScroll);
     } else {
       // Fallback: polling for OpenTUI compatibility
       const pollInterval = setInterval(handleScroll, SCROLL_POLL_INTERVAL);
@@ -93,7 +96,13 @@ export function VirtualizedOutputList({
   }, [scrollBoxRef]);
 
   // Calculate visible range with virtualization
-  const { startIndex, endIndex, topSpacerHeight, bottomSpacerHeight, visibleLines } = useMemo(() => {
+  const {
+    startIndex,
+    endIndex,
+    topSpacerHeight,
+    bottomSpacerHeight,
+    visibleLines,
+  } = useMemo(() => {
     const totalLines = lines.length;
 
     // Skip virtualization for small lists (overhead not worth it)
@@ -114,7 +123,10 @@ export function VirtualizedOutputList({
     // Determine render window with buffer
     // Buffer extends both above and below visible area for smooth scrolling
     const start = Math.max(0, scrolledLines - BUFFER_SIZE);
-    const end = Math.min(totalLines, scrolledLines + viewportLines + BUFFER_SIZE);
+    const end = Math.min(
+      totalLines,
+      scrolledLines + viewportLines + BUFFER_SIZE,
+    );
 
     // Calculate spacer heights using actual measured heights when available
     // These invisible boxes fill the space of unrendered lines
@@ -140,15 +152,16 @@ export function VirtualizedOutputList({
   return (
     <>
       {/* Top spacer - maintains scroll position for unrendered lines above viewport */}
-      {topSpacerHeight > 0 && (
-        <box height={topSpacerHeight} width={width} />
-      )}
+      {topSpacerHeight > 0 && <box height={topSpacerHeight} width={width} />}
 
       {/* Render visible lines + buffer zone with height measurement */}
       {visibleLines.map((line, index) => {
         const actualIndex = startIndex + index;
         return (
-          <box key={actualIndex} ref={(el: any) => setMeasureRef(actualIndex, el)}>
+          <box
+            key={actualIndex}
+            ref={(el: any) => setMeasureRef(actualIndex, el)}
+          >
             <OutputLine line={line} />
           </box>
         );

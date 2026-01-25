@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
-  extractFilename,
-  truncatePath,
-  isFileWritingTool,
-  isFileReadingCommand,
-  extractFilePathFromReadCommand,
-  detectLanguageFromPath,
-  getFileIcon,
-  generateToolSummary,
-  parseGrepOutput,
-  parseFindOutput,
-  generateActionList,
   detectCancellation,
+  detectLanguageFromPath,
+  extractFilename,
+  extractFilePathFromReadCommand,
+  generateActionList,
+  generateToolSummary,
   getBashCommand,
+  getFileIcon,
   getToolDisplayInfo,
+  isFileReadingCommand,
+  isFileWritingTool,
+  parseFindOutput,
+  parseGrepOutput,
+  truncatePath,
 } from "../utils.js";
 
 describe("utils", () => {
@@ -237,7 +237,8 @@ describe("utils", () => {
 
   describe("parseGrepOutput", () => {
     it("should parse grep output into file matches", () => {
-      const stdout = "/src/file1.ts:10:const x = 1;\n/src/file1.ts:20:const y = 2;\n/src/file2.ts:5:test";
+      const stdout =
+        "/src/file1.ts:10:const x = 1;\n/src/file1.ts:20:const y = 2;\n/src/file2.ts:5:test";
       const matches = parseGrepOutput(stdout);
 
       expect(matches).toHaveLength(2);
@@ -299,7 +300,9 @@ describe("utils", () => {
     describe("Read/read_file", () => {
       it("should accept both tool names", () => {
         const input = { filePath: "/path/file.ts" };
-        expect(generateActionList("read_file", input)).toContain("Read file.ts");
+        expect(generateActionList("read_file", input)).toContain(
+          "Read file.ts",
+        );
         expect(generateActionList("Read", input)).toContain("Read file.ts");
       });
 
@@ -421,9 +424,15 @@ describe("utils", () => {
       });
 
       it("should extract first word for various commands", () => {
-        expect(getToolDisplayInfo("Bash", { command: "cat file.txt" }).label).toBe("cat");
-        expect(getToolDisplayInfo("Bash", { command: "grep pattern" }).label).toBe("grep");
-        expect(getToolDisplayInfo("Bash", { command: "find ." }).label).toBe("find");
+        expect(
+          getToolDisplayInfo("Bash", { command: "cat file.txt" }).label,
+        ).toBe("cat");
+        expect(
+          getToolDisplayInfo("Bash", { command: "grep pattern" }).label,
+        ).toBe("grep");
+        expect(getToolDisplayInfo("Bash", { command: "find ." }).label).toBe(
+          "find",
+        );
       });
 
       it("should return default label when no command available", () => {

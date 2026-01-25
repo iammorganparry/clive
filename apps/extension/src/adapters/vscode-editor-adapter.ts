@@ -2,11 +2,11 @@
  * VS Code implementation of EditorAdapter
  */
 
-import * as vscode from "vscode";
 import { createHash } from "node:crypto";
-import { Effect, Ref } from "effect";
 import type { Disposable, EditorAdapter } from "@clive/core";
-import { FileSystemError, EditorError } from "@clive/core";
+import { EditorError, FileSystemError } from "@clive/core";
+import { Effect, Ref } from "effect";
+import * as vscode from "vscode";
 
 /**
  * VS Code implementation of EditorAdapter as Effect Service

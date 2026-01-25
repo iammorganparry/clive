@@ -4,12 +4,12 @@
  * which return different content based on "plan" vs "act" mode
  */
 
-import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
+import type { BuildConfig } from "../../types.js";
 import { conversation } from "../conversation.js";
 import { taskInstructions } from "../task-instructions.js";
 import { workflow } from "../workflow.js";
-import type { BuildConfig } from "../../types.js";
 
 describe("Mode-Aware Prompt Sections", () => {
   describe("Conversation Section", () => {

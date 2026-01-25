@@ -3,19 +3,19 @@
  * Wraps TaskService with @tanstack/react-query
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Effect, Runtime } from 'effect';
-import { createTaskService } from '../services/TaskService';
-import { Config, Session, Task } from '../types';
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Runtime } from "effect";
+import { createTaskService } from "../services/TaskService";
+import type { Config, Session, Task } from "../types";
 
 // Query keys
 export const taskQueryKeys = {
-  all: ['tasks'] as const,
-  sessions: () => [...taskQueryKeys.all, 'sessions'] as const,
+  all: ["tasks"] as const,
+  sessions: () => [...taskQueryKeys.all, "sessions"] as const,
   sessionTasks: (sessionId: string) =>
-    [...taskQueryKeys.all, 'session', sessionId] as const,
-  readyTasks: () => [...taskQueryKeys.all, 'ready'] as const,
-  config: () => ['config'] as const,
+    [...taskQueryKeys.all, "session", sessionId] as const,
+  readyTasks: () => [...taskQueryKeys.all, "ready"] as const,
+  config: () => ["config"] as const,
 };
 
 /**
@@ -23,7 +23,7 @@ export const taskQueryKeys = {
  * Handles both snake_case and camelCase field names for backwards compatibility
  * Priority: LINEAR_API_KEY env var > config file apiKey
  */
-function normalizeLinearConfig(linear: any): Config['linear'] {
+function normalizeLinearConfig(linear: any): Config["linear"] {
   if (!linear) return undefined;
 
   // Check for API key in environment variable first, then fall back to config file
@@ -45,25 +45,32 @@ export function useConfig() {
     queryKey: taskQueryKeys.config(),
     queryFn: async (): Promise<Config> => {
       // Load config from file system
-      const fs = await import('fs/promises');
-      const fsSync = await import('fs');
-      const os = await import('os');
-      const path = await import('path');
+      const fs = await import("node:fs/promises");
+      const fsSync = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
 
       const logToFile = (msg: string) => {
-        fsSync.appendFileSync('/tmp/tui-debug.log', `${new Date().toISOString()} ${msg}\n`);
+        fsSync.appendFileSync(
+          "/tmp/tui-debug.log",
+          `${new Date().toISOString()} ${msg}\n`,
+        );
       };
 
       const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
-      const workspaceConfigPath = path.join(workspaceRoot, '.clive', 'config.json');
-      const globalConfigPath = path.join(os.homedir(), '.clive', 'config.json');
+      const workspaceConfigPath = path.join(
+        workspaceRoot,
+        ".clive",
+        "config.json",
+      );
+      const globalConfigPath = path.join(os.homedir(), ".clive", "config.json");
 
       let config: Config | null = null;
-      let configSource: 'workspace' | 'global' | 'none' = 'none';
+      let configSource: "workspace" | "global" | "none" = "none";
 
       // Try workspace config first (project-specific)
       try {
-        const content = await fs.readFile(workspaceConfigPath, 'utf-8');
+        const content = await fs.readFile(workspaceConfigPath, "utf-8");
         const raw = JSON.parse(content);
 
         config = {
@@ -71,18 +78,22 @@ export function useConfig() {
           linear: normalizeLinearConfig(raw.linear),
           beads: raw.beads,
         };
-        configSource = 'workspace';
+        configSource = "workspace";
 
-        logToFile(`[useConfig] Loaded config from workspace: ${workspaceConfigPath}`);
-      } catch (error) {
-        logToFile(`[useConfig] No workspace config found at ${workspaceConfigPath}`);
+        logToFile(
+          `[useConfig] Loaded config from workspace: ${workspaceConfigPath}`,
+        );
+      } catch (_error) {
+        logToFile(
+          `[useConfig] No workspace config found at ${workspaceConfigPath}`,
+        );
         // Workspace config doesn't exist or invalid, try global
       }
 
       // Try global config only if no workspace config
       if (!config) {
         try {
-          const content = await fs.readFile(globalConfigPath, 'utf-8');
+          const content = await fs.readFile(globalConfigPath, "utf-8");
           const raw = JSON.parse(content);
 
           config = {
@@ -90,18 +101,20 @@ export function useConfig() {
             linear: normalizeLinearConfig(raw.linear),
             beads: raw.beads,
           };
-          configSource = 'global';
+          configSource = "global";
 
-          logToFile(`[useConfig] Loaded config from global: ${globalConfigPath}`);
-        } catch (error) {
-          logToFile('[useConfig] No global config found');
+          logToFile(
+            `[useConfig] Loaded config from global: ${globalConfigPath}`,
+          );
+        } catch (_error) {
+          logToFile("[useConfig] No global config found");
           // No config found
         }
       }
 
       // Return empty config if nothing found
       if (!config) {
-        logToFile('[useConfig] No config found, returning defaults');
+        logToFile("[useConfig] No config found, returning defaults");
         return {
           issueTracker: undefined,
           linear: undefined,
@@ -111,9 +124,10 @@ export function useConfig() {
       logToFile(`[useConfig] Final config: ${JSON.stringify(config)}`);
 
       // Validate Linear config completeness
-      if (config.issueTracker === 'linear') {
+      if (config.issueTracker === "linear") {
         if (!config.linear) {
-          const errorMsg = 'Linear is selected but no Linear configuration found';
+          const errorMsg =
+            "Linear is selected but no Linear configuration found";
           logToFile(`[useConfig] Validation error: ${errorMsg}`);
           throw new Error(errorMsg);
         }
@@ -148,28 +162,37 @@ export function useSessions() {
   return useQuery({
     queryKey: taskQueryKeys.sessions(),
     queryFn: async (): Promise<Session[]> => {
-      const fs = await import('fs');
+      const fs = await import("node:fs");
       const logToFile = (msg: string) => {
-        fs.appendFileSync('/tmp/tui-debug.log', `${new Date().toISOString()} ${msg}\n`);
+        fs.appendFileSync(
+          "/tmp/tui-debug.log",
+          `${new Date().toISOString()} ${msg}\n`,
+        );
       };
 
       logToFile(`[useSessions] Config: ${JSON.stringify(config)}`);
 
       if (!config) {
-        logToFile('[useSessions] No config, returning empty array');
+        logToFile("[useSessions] No config, returning empty array");
         return [];
       }
 
-      logToFile(`[useSessions] Creating task service with config: ${JSON.stringify(config)}`);
+      logToFile(
+        `[useSessions] Creating task service with config: ${JSON.stringify(config)}`,
+      );
 
       try {
         const taskService = createTaskService(config);
         const runtime = Runtime.defaultRuntime;
 
-        logToFile('[useSessions] Running loadSessions...');
-        const sessions = await Runtime.runPromise(runtime)(taskService.loadSessions);
+        logToFile("[useSessions] Running loadSessions...");
+        const sessions = await Runtime.runPromise(runtime)(
+          taskService.loadSessions,
+        );
         logToFile(`[useSessions] Sessions loaded: ${sessions.length} sessions`);
-        logToFile(`[useSessions] Sessions data: ${JSON.stringify(sessions.map(s => ({ id: s.id, name: s.name })))}`);
+        logToFile(
+          `[useSessions] Sessions data: ${JSON.stringify(sessions.map((s) => ({ id: s.id, name: s.name })))}`,
+        );
 
         return sessions;
       } catch (error) {
@@ -189,7 +212,7 @@ export function useSessionTasks(sessionId: string | null) {
   const { data: config } = useConfig();
 
   return useQuery({
-    queryKey: taskQueryKeys.sessionTasks(sessionId ?? ''),
+    queryKey: taskQueryKeys.sessionTasks(sessionId ?? ""),
     queryFn: async (): Promise<Task[]> => {
       if (!config || !sessionId) return [];
 
@@ -197,7 +220,7 @@ export function useSessionTasks(sessionId: string | null) {
       const runtime = Runtime.defaultRuntime;
 
       return await Runtime.runPromise(runtime)(
-        taskService.loadTasks(sessionId)
+        taskService.loadTasks(sessionId),
       );
     },
     enabled: !!config && !!sessionId,
@@ -239,15 +262,15 @@ export function useUpdateTaskStatus() {
       status,
     }: {
       taskId: string;
-      status: 'open' | 'in_progress' | 'completed' | 'blocked';
+      status: "open" | "in_progress" | "completed" | "blocked";
     }) => {
-      if (!config) throw new Error('Config not loaded');
+      if (!config) throw new Error("Config not loaded");
 
       const taskService = createTaskService(config);
       const runtime = Runtime.defaultRuntime;
 
       await Runtime.runPromise(runtime)(
-        taskService.updateTaskStatus(taskId, status)
+        taskService.updateTaskStatus(taskId, status),
       );
     },
     onSuccess: () => {
@@ -272,15 +295,15 @@ export function useCreateTask() {
     }: {
       sessionId: string;
       title: string;
-      type: 'task' | 'bug' | 'feature';
+      type: "task" | "bug" | "feature";
     }): Promise<Task> => {
-      if (!config) throw new Error('Config not loaded');
+      if (!config) throw new Error("Config not loaded");
 
       const taskService = createTaskService(config);
       const runtime = Runtime.defaultRuntime;
 
       return await Runtime.runPromise(runtime)(
-        taskService.createTask(sessionId, title, type)
+        taskService.createTask(sessionId, title, type),
       );
     },
     onSuccess: (_, variables) => {
@@ -298,9 +321,9 @@ export function useCreateTask() {
  */
 export function useIsBeads() {
   const { data: config } = useConfig();
-  return config?.issueTracker === undefined || config?.issueTracker === 'linear'
-    ? false
-    : true;
+  return !(
+    config?.issueTracker === undefined || config?.issueTracker === "linear"
+  );
 }
 
 /**
@@ -308,5 +331,5 @@ export function useIsBeads() {
  */
 export function useIsLinear() {
   const { data: config } = useConfig();
-  return config?.issueTracker === 'linear' && !!config.linear;
+  return config?.issueTracker === "linear" && !!config.linear;
 }

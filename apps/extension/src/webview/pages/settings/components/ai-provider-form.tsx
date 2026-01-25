@@ -1,8 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import type React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Badge } from "@clive/ui/badge";
 import { Button } from "@clive/ui/button";
-import { Input } from "@clive/ui/input";
 import {
   Card,
   CardContent,
@@ -10,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
+import { Input } from "@clive/ui/input";
 import {
   Select,
   SelectContent,
@@ -17,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@clive/ui/select";
-import { Badge } from "@clive/ui/badge";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
@@ -28,6 +26,8 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 
 type AiProviderType = "anthropic" | "gateway" | "claude-cli";
@@ -405,7 +405,9 @@ export const AiProviderForm: React.FC = () => {
             ) : (
               <>
                 Current provider:{" "}
-                <span className="font-medium">{getProviderLabel(provider)}</span>
+                <span className="font-medium">
+                  {getProviderLabel(provider)}
+                </span>
               </>
             )}
           </div>
@@ -568,9 +570,7 @@ export const AiProviderForm: React.FC = () => {
 
                     <Button
                       onClick={handleSaveApiKey}
-                      disabled={
-                        !apiKey.trim() || saveApiKeyMutation.isPending
-                      }
+                      disabled={!apiKey.trim() || saveApiKeyMutation.isPending}
                       className="w-full gap-2"
                     >
                       {saveApiKeyMutation.isPending ? (
@@ -610,7 +610,9 @@ export const AiProviderForm: React.FC = () => {
             {!isLoadingCli && typedCliStatus && (
               <div className="p-3 bg-muted/50 rounded-md space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Claude CLI Status:</span>
+                  <span className="text-sm font-medium">
+                    Claude CLI Status:
+                  </span>
                   {getCliStatusBadge(typedCliStatus)}
                 </div>
 
@@ -715,12 +717,14 @@ export const AiProviderForm: React.FC = () => {
                           <Loader2 className="h-3 w-3 animate-spin" />
                           Checking...
                         </Badge>
-                      ) : (mcpStatus as McpBridgeStatus | undefined)?.starting ? (
+                      ) : (mcpStatus as McpBridgeStatus | undefined)
+                          ?.starting ? (
                         <Badge variant="secondary" className="gap-1">
                           <Loader2 className="h-3 w-3 animate-spin" />
                           Connecting...
                         </Badge>
-                      ) : (mcpStatus as McpBridgeStatus | undefined)?.bridgeReady ? (
+                      ) : (mcpStatus as McpBridgeStatus | undefined)
+                          ?.bridgeReady ? (
                         <Badge variant="default">Connected</Badge>
                       ) : (
                         <Badge variant="destructive">Disconnected</Badge>
@@ -732,7 +736,9 @@ export const AiProviderForm: React.FC = () => {
                         className="h-6 w-6 p-0"
                         disabled={isLoadingMcp}
                       >
-                        <RefreshCw className={`h-3 w-3 ${isLoadingMcp ? "animate-spin" : ""}`} />
+                        <RefreshCw
+                          className={`h-3 w-3 ${isLoadingMcp ? "animate-spin" : ""}`}
+                        />
                       </Button>
                     </div>
                     {(mcpStatus as McpBridgeStatus | undefined)?.error && (

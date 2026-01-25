@@ -1,15 +1,15 @@
-import { type Effect, Runtime } from "effect";
 import {
   isZodSchema,
+  type Procedure,
+  type RouterRecord,
   type RpcMessage,
   type RpcResponse,
-  type RpcSubscriptionUpdate,
   type RpcSubscriptionMessage,
-  type RouterRecord,
-  type Procedure,
+  type RpcSubscriptionUpdate,
 } from "@clive/webview-rpc";
-import { appRouter } from "./router.js";
+import { type Effect, Runtime } from "effect";
 import type { RpcContext } from "./context.js";
+import { appRouter } from "./router.js";
 
 const runtime = Runtime.defaultRuntime;
 

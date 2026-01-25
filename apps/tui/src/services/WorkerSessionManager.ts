@@ -1,24 +1,24 @@
 /**
  * WorkerSessionManager
- * 
+ *
  * Manages Claude CLI sessions for worker mode.
  * Uses ClaudeCliService for -p mode (print/structured output).
  * Routes events between central service and local CLI.
  */
 
-import { EventEmitter } from 'events';
-import { Effect, Runtime, Stream } from 'effect';
+import { EventEmitter } from "node:events";
 import {
-  ClaudeCliService,
   type ClaudeCliEvent,
+  ClaudeCliService,
   type CliExecutionHandle,
-} from '@clive/claude-services';
+} from "@clive/claude-services";
 import type {
-  InterviewRequest,
   InterviewEvent,
   InterviewEventPayload,
+  InterviewRequest,
   QuestionData,
-} from '@clive/worker-protocol';
+} from "@clive/worker-protocol";
+import { Effect, type Runtime, Stream } from "effect";
 
 /**
  * Planning skill system prompt
@@ -53,7 +53,7 @@ DO NOT:
  */
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'assistant' | 'system' | 'question' | 'error';
+  type: "user" | "assistant" | "system" | "question" | "error";
   content: string;
   timestamp: Date;
   questionData?: QuestionData;
@@ -96,7 +96,7 @@ export class WorkerSessionManager extends EventEmitter {
     this.runtime = Effect.runSync(
       Effect.gen(function* () {
         return yield* Effect.runtime<ClaudeCliService>();
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(layer)),
     );
   }
 
@@ -105,7 +105,7 @@ export class WorkerSessionManager extends EventEmitter {
    */
   async startInterview(
     request: InterviewRequest,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): Promise<void> {
     const { sessionId, initialPrompt } = request;
 
@@ -118,33 +118,42 @@ export class WorkerSessionManager extends EventEmitter {
     // Initialize session with user message
     const userMessage: ChatMessage = {
       id: `${sessionId}-user-0`,
-      type: 'user',
-      content: initialPrompt || 'Help me plan a new feature.',
+      type: "user",
+      content: initialPrompt || "Help me plan a new feature.",
       timestamp: new Date(),
     };
 
     const prompt = initialPrompt
       ? `Plan the following: ${initialPrompt}`
-      : 'Help me plan a new feature. What would you like to build?';
+      : "Help me plan a new feature. What would you like to build?";
 
-    const program = Effect.gen(this.createExecutionProgram(
-      sessionId,
-      prompt,
-      request.model || 'opus',
-      onEvent,
-      [userMessage]
-    ));
+    const program = Effect.gen(
+      this.createExecutionProgram(
+        sessionId,
+        prompt,
+        request.model || "opus",
+        onEvent,
+        [userMessage],
+      ),
+    );
 
     try {
       await Effect.runPromise(
-        program.pipe(Effect.provide(ClaudeCliService.Default))
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
       );
     } catch (error) {
-      console.error(`[WorkerSessionManager] Interview ${sessionId} failed:`, error);
-      this.emitInterviewEvent(sessionId, {
-        type: 'error',
-        message: String(error),
-      }, onEvent);
+      console.error(
+        `[WorkerSessionManager] Interview ${sessionId} failed:`,
+        error,
+      );
+      this.emitInterviewEvent(
+        sessionId,
+        {
+          type: "error",
+          message: String(error),
+        },
+        onEvent,
+      );
       this.activeSessions.delete(sessionId);
     }
   }
@@ -157,7 +166,7 @@ export class WorkerSessionManager extends EventEmitter {
     prompt: string,
     model: string,
     onEvent: (event: InterviewEvent) => void,
-    initialMessages: ChatMessage[]
+    initialMessages: ChatMessage[],
   ) {
     const self = this;
 
@@ -179,17 +188,19 @@ export class WorkerSessionManager extends EventEmitter {
       };
       self.activeSessions.set(sessionId, session);
 
-      console.log(`[WorkerSessionManager] CLI process started for session ${sessionId}`);
+      console.log(
+        `[WorkerSessionManager] CLI process started for session ${sessionId}`,
+      );
 
       // Emit initial user message
-      self.emit('message', sessionId, initialMessages[0]);
+      self.emit("message", sessionId, initialMessages[0]);
 
       yield* handle.stream.pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
             self.processEvent(sessionId, event, onEvent);
-          })
-        )
+          }),
+        ),
       );
 
       // Cleanup after stream ends
@@ -204,7 +215,7 @@ export class WorkerSessionManager extends EventEmitter {
   private processEvent(
     sessionId: string,
     event: ClaudeCliEvent,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): void {
     const session = this.activeSessions.get(sessionId);
     if (!session) return;
@@ -212,8 +223,8 @@ export class WorkerSessionManager extends EventEmitter {
     console.log(`[WorkerSessionManager] Event for ${sessionId}: ${event.type}`);
 
     switch (event.type) {
-      case 'tool_use': {
-        if (event.name === 'AskUserQuestion') {
+      case "tool_use": {
+        if (event.name === "AskUserQuestion") {
           const input = event.input as {
             questions?: Array<{
               header: string;
@@ -236,85 +247,115 @@ export class WorkerSessionManager extends EventEmitter {
           // Create chat message for question
           const questionMessage: ChatMessage = {
             id: `${sessionId}-question-${event.id}`,
-            type: 'question',
-            content: questionData.questions.map(q => q.question).join('\n'),
+            type: "question",
+            content: questionData.questions.map((q) => q.question).join("\n"),
             timestamp: new Date(),
             questionData,
           };
           session.messages.push(questionMessage);
-          this.emit('message', sessionId, questionMessage);
-          this.emit('question', sessionId, questionData);
+          this.emit("message", sessionId, questionMessage);
+          this.emit("question", sessionId, questionData);
 
-          this.emitInterviewEvent(sessionId, {
-            type: 'question',
-            data: questionData,
-          }, onEvent);
+          this.emitInterviewEvent(
+            sessionId,
+            {
+              type: "question",
+              data: questionData,
+            },
+            onEvent,
+          );
         }
         break;
       }
 
-      case 'text': {
+      case "text": {
         const assistantMessage: ChatMessage = {
           id: `${sessionId}-assistant-${Date.now()}`,
-          type: 'assistant',
+          type: "assistant",
           content: event.content,
           timestamp: new Date(),
         };
         session.messages.push(assistantMessage);
-        this.emit('message', sessionId, assistantMessage);
+        this.emit("message", sessionId, assistantMessage);
 
         // Check for plan content
-        if (event.content.includes('## Plan') || event.content.includes('# Plan')) {
-          this.emitInterviewEvent(sessionId, {
-            type: 'plan_ready',
-            content: event.content,
-          }, onEvent);
+        if (
+          event.content.includes("## Plan") ||
+          event.content.includes("# Plan")
+        ) {
+          this.emitInterviewEvent(
+            sessionId,
+            {
+              type: "plan_ready",
+              content: event.content,
+            },
+            onEvent,
+          );
         } else {
-          this.emitInterviewEvent(sessionId, {
-            type: 'text',
-            content: event.content,
-          }, onEvent);
+          this.emitInterviewEvent(
+            sessionId,
+            {
+              type: "text",
+              content: event.content,
+            },
+            onEvent,
+          );
         }
         break;
       }
 
-      case 'tool_result': {
+      case "tool_result": {
         const content = event.content;
-        if (content.includes('linear.app') || content.includes('Issue created')) {
+        if (
+          content.includes("linear.app") ||
+          content.includes("Issue created")
+        ) {
           const urlMatch = content.match(/https:\/\/linear\.app\/[^\s]+/g);
           if (urlMatch) {
-            this.emitInterviewEvent(sessionId, {
-              type: 'issues_created',
-              urls: urlMatch,
-            }, onEvent);
+            this.emitInterviewEvent(
+              sessionId,
+              {
+                type: "issues_created",
+                urls: urlMatch,
+              },
+              onEvent,
+            );
           }
         }
         break;
       }
 
-      case 'error': {
+      case "error": {
         const errorMessage: ChatMessage = {
           id: `${sessionId}-error-${Date.now()}`,
-          type: 'error',
+          type: "error",
           content: event.message,
           timestamp: new Date(),
         };
         session.messages.push(errorMessage);
-        this.emit('message', sessionId, errorMessage);
-        this.emit('error', sessionId, event.message);
+        this.emit("message", sessionId, errorMessage);
+        this.emit("error", sessionId, event.message);
 
-        this.emitInterviewEvent(sessionId, {
-          type: 'error',
-          message: event.message,
-        }, onEvent);
+        this.emitInterviewEvent(
+          sessionId,
+          {
+            type: "error",
+            message: event.message,
+          },
+          onEvent,
+        );
         break;
       }
 
-      case 'done': {
-        this.emit('complete', sessionId);
-        this.emitInterviewEvent(sessionId, {
-          type: 'complete',
-        }, onEvent);
+      case "done": {
+        this.emit("complete", sessionId);
+        this.emitInterviewEvent(
+          sessionId,
+          {
+            type: "complete",
+          },
+          onEvent,
+        );
         break;
       }
     }
@@ -326,7 +367,7 @@ export class WorkerSessionManager extends EventEmitter {
   private emitInterviewEvent(
     sessionId: string,
     payload: InterviewEventPayload,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): void {
     const event: InterviewEvent = {
       sessionId,
@@ -343,11 +384,13 @@ export class WorkerSessionManager extends EventEmitter {
   sendAnswer(
     sessionId: string,
     toolUseId: string,
-    answers: Record<string, string>
+    answers: Record<string, string>,
   ): void {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
-      console.error(`[WorkerSessionManager] No session ${sessionId} for answer`);
+      console.error(
+        `[WorkerSessionManager] No session ${sessionId} for answer`,
+      );
       return;
     }
 
@@ -356,15 +399,15 @@ export class WorkerSessionManager extends EventEmitter {
     // Add user answer as chat message
     const answerContent = Object.entries(answers)
       .map(([key, value]) => `${key}: ${value}`)
-      .join('\n');
+      .join("\n");
     const userMessage: ChatMessage = {
       id: `${sessionId}-user-${Date.now()}`,
-      type: 'user',
+      type: "user",
       content: answerContent,
       timestamp: new Date(),
     };
     session.messages.push(userMessage);
-    this.emit('message', sessionId, userMessage);
+    this.emit("message", sessionId, userMessage);
 
     const answerJson = JSON.stringify(answers);
     session.handle.sendToolResult(toolUseId, answerJson);
@@ -376,7 +419,9 @@ export class WorkerSessionManager extends EventEmitter {
   sendMessage(sessionId: string, message: string): void {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
-      console.error(`[WorkerSessionManager] No session ${sessionId} for message`);
+      console.error(
+        `[WorkerSessionManager] No session ${sessionId} for message`,
+      );
       return;
     }
 
@@ -385,12 +430,12 @@ export class WorkerSessionManager extends EventEmitter {
     // Add user message
     const userMessage: ChatMessage = {
       id: `${sessionId}-user-${Date.now()}`,
-      type: 'user',
+      type: "user",
       content: message,
       timestamp: new Date(),
     };
     session.messages.push(userMessage);
-    this.emit('message', sessionId, userMessage);
+    this.emit("message", sessionId, userMessage);
 
     session.handle.sendMessage(message);
   }

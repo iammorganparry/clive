@@ -185,7 +185,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.7",
+    "@biomejs/biome": "^2.3.12",
     "@clive/biome-config": "*",
     "@clive/tsconfig": "*",
     "@tailwindcss/cli": "^4.1.17",

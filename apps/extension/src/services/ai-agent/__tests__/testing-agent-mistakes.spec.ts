@@ -1,5 +1,5 @@
-import { describe, it, expect, } from "vitest";
-import { Runtime, Ref } from "effect";
+import { Ref, Runtime } from "effect";
+import { describe, expect, it } from "vitest";
 
 /**
  * Unit tests for consecutive mistake tracking in testing-agent
@@ -356,4 +356,3 @@ describe("Testing Agent - Consecutive Mistake Tracking", () => {
     });
   });
 });
-

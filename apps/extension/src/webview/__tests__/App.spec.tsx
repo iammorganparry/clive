@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App.js";
-import type { VSCodeAPI } from "../services/vscode.js";
-import { type Route, Routes } from "../router/routes.js";
 import type { RouterMachineEvent } from "../router/router-machine.js";
+import { type Route, Routes } from "../router/routes.js";
+import type { VSCodeAPI } from "../services/vscode.js";
 
 // Mock lazy-loaded components to avoid dynamic imports in tests
 vi.mock("../pages/login/index.js", () => ({
@@ -25,7 +25,9 @@ vi.mock("../pages/settings/index.js", () => ({
 }));
 
 vi.mock("../pages/onboarding/index.js", () => ({
-  OnboardingPage: () => <div data-testid="onboarding-page">Onboarding Page</div>,
+  OnboardingPage: () => (
+    <div data-testid="onboarding-page">Onboarding Page</div>
+  ),
 }));
 
 vi.mock("../pages/changeset-chat/index.js", () => ({
@@ -124,7 +126,7 @@ describe("App Integration Tests", () => {
   beforeEach(() => {
     mockVscode = createMockVscode();
     vi.clearAllMocks();
-    
+
     // Reset mock context values
     mockAuthContext.isAuthenticated = true;
     mockAuthContext.isLoading = false;
@@ -135,83 +137,83 @@ describe("App Integration Tests", () => {
 
   it("should render dashboard page when route is dashboard", async () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     mockRouterContext.route = Routes.dashboard;
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     // Wait for lazy-loaded component to render
     await waitFor(() => {
       expect(screen.getByTestId("dashboard-page")).toBeDefined();
     });
-    
+
     expect(screen.getByTestId("header")).toBeDefined();
   });
 
   it("should render login page when route is login", async () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     mockRouterContext.route = Routes.login;
     mockAuthContext.isAuthenticated = false;
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     await waitFor(() => {
       expect(screen.getByTestId("login-page")).toBeDefined();
     });
-    
+
     // Header should not be visible on login page
     expect(screen.queryByTestId("header")).toBeNull();
   });
 
   it("should render settings page when route is settings", async () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     mockRouterContext.route = Routes.settings;
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     await waitFor(() => {
       expect(screen.getByTestId("settings-page")).toBeDefined();
     });
-    
+
     expect(screen.getByTestId("header")).toBeDefined();
   });
 
   it("should render onboarding page when route is onboarding", async () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     mockRouterContext.route = Routes.onboarding;
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     await waitFor(() => {
       expect(screen.getByTestId("onboarding-page")).toBeDefined();
     });
-    
+
     // Header should not be visible on onboarding page
     expect(screen.queryByTestId("header")).toBeNull();
   });
 
   it("should generate unique key for changeset chat page with different params", async () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     // First render with specific params
     mockRouterContext.route = Routes.changesetChat;
     mockRouterContext.routeParams = {
@@ -219,30 +221,30 @@ describe("App Integration Tests", () => {
       branchName: "feature-1",
       commitHash: "abc123",
     };
-    
+
     const { rerender } = render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     await waitFor(() => {
       expect(screen.getByTestId("changeset-chat-page")).toBeDefined();
     });
-    
+
     // Update params to trigger key change
     mockRouterContext.routeParams = {
       mode: "branch",
       branchName: "feature-2",
       commitHash: "def456",
     };
-    
+
     rerender(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     // Component should still be rendered (verifying remount via key change)
     await waitFor(() => {
       expect(screen.getByTestId("changeset-chat-page")).toBeDefined();
@@ -251,28 +253,28 @@ describe("App Integration Tests", () => {
 
   it("should show initializing screen when router is initializing", () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     mockRouterContext.isInitializing = true;
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     // Should show loading text from InitializingScreen
     expect(screen.getByText(/Loading/i)).toBeDefined();
   });
 
   it("should call vscode.postMessage when component mounts", () => {
     const QueryWrapper = createQueryWrapper();
-    
+
     render(
       <QueryWrapper>
         <App vscode={mockVscode} />
-      </QueryWrapper>
+      </QueryWrapper>,
     );
-    
+
     // Verify vscode.postMessage was called with ready message
     expect(mockVscode.postMessage).toHaveBeenCalledWith({
       command: "ready",

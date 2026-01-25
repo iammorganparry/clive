@@ -4,40 +4,39 @@
  */
 
 export {
-  ClaudeCliService,
-  ClaudeCliServiceLive,
-  ClaudeCliNotFoundError,
-  ClaudeCliNotAuthenticatedError,
-  ClaudeCliExecutionError,
-  type ClaudeCliStatus,
+  type BeadsCreateOptions,
+  BeadsExecutionError,
+  type BeadsIssue,
+  type BeadsListOptions,
+  BeadsNotFoundError,
+  BeadsService,
+  BeadsServiceLive,
+  type BeadsStats,
+  type BeadsUpdateOptions,
+} from "./beads-service.js";
+export {
   type ClaudeCliEvent,
   type ClaudeCliExecuteOptions,
+  ClaudeCliExecutionError,
+  ClaudeCliNotAuthenticatedError,
+  ClaudeCliNotFoundError,
+  ClaudeCliService,
+  ClaudeCliServiceLive,
+  type ClaudeCliStatus,
   type CliExecutionHandle,
 } from "./claude-cli-service.js";
 
 export {
-  BeadsService,
-  BeadsServiceLive,
-  BeadsNotFoundError,
-  BeadsExecutionError,
-  type BeadsIssue,
-  type BeadsCreateOptions,
-  type BeadsUpdateOptions,
-  type BeadsListOptions,
-  type BeadsStats,
-} from "./beads-service.js";
-
-export {
-  LinearService,
-  makeLinearServiceLive,
-  LinearNotConfiguredError,
   LinearApiError,
-  type LinearIssue,
-  type LinearTeam,
-  type LinearProject,
-  type LinearWorkflowState,
-  type LinearCreateIssueOptions,
-  type LinearUpdateIssueOptions,
-  type LinearListIssuesOptions,
   type LinearConfig,
+  type LinearCreateIssueOptions,
+  type LinearIssue,
+  type LinearListIssuesOptions,
+  LinearNotConfiguredError,
+  type LinearProject,
+  LinearService,
+  type LinearTeam,
+  type LinearUpdateIssueOptions,
+  type LinearWorkflowState,
+  makeLinearServiceLive,
 } from "./linear-service.js";

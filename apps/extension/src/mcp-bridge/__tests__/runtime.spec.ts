@@ -6,12 +6,12 @@
 import * as fsPromises from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockBridgeHandlers } from "../../__tests__/mock-factories/mcp-mocks.js";
-import { startMcpBridgeServer, stopMcpBridgeServer } from "../server.js";
 import {
-  McpBridgeRuntime,
   getMcpBridgeRuntime,
+  McpBridgeRuntime,
   resetMcpBridgeRuntime,
 } from "../runtime.js";
+import { startMcpBridgeServer, stopMcpBridgeServer } from "../server.js";
 
 // Mock the server module
 vi.mock("../server.js", () => ({

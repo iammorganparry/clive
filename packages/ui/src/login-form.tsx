@@ -1,16 +1,18 @@
 "use client";
 
+import { GitHubLogoIcon } from "@radix-ui/react-icons";
 import { GalleryVerticalEnd } from "lucide-react";
-
-import { cn } from "./lib/utils";
 import { Button } from "./button";
 import { Field, FieldDescription, FieldGroup } from "./field";
-import { GitHubLogoIcon } from "@radix-ui/react-icons";
+import { cn } from "./lib/utils";
 
 export interface LoginFormProps {
   className?: string;
   title?: string;
   description?: string;
+  signUpLink?: string;
+  signUpText?: string;
+  onSubmit?: (email: string) => void | Promise<void>;
   onGitHubClick?: () => void | Promise<void>;
   isLoading?: boolean;
   error?: string | null;

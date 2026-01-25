@@ -1,21 +1,21 @@
-import type * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
+import { Effect, pipe, Runtime } from "effect";
+import type * as vscode from "vscode";
 import { z } from "zod";
-import { Runtime, Effect, pipe } from "effect";
-import { VSCodeService } from "../../vs-code.js";
-import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 import { normalizeEscapedChars } from "../../../utils/string-utils.js";
 import {
+  formatDiagnosticsMessage,
   getDiagnostics,
   getNewProblems,
-  formatDiagnosticsMessage,
 } from "../../diagnostics-service.js";
-import {
-  formatFileEditWithoutUserChanges,
-  formatFileEditError,
-} from "../response-formatter.js";
 import { getDiffTrackerService } from "../../diff-tracker-service.js";
+import { VSCodeService } from "../../vs-code.js";
+import {
+  formatFileEditError,
+  formatFileEditWithoutUserChanges,
+} from "../response-formatter.js";
+import type { WriteTestFileInput, WriteTestFileOutput } from "../types.js";
 
 /**
  * Streaming file output callback type

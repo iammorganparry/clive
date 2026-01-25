@@ -2,8 +2,8 @@
  * Unit tests for template interpolation
  */
 
-import { describe, it, expect } from "vitest";
-import { resolveTemplate, extractPlaceholders } from "../template-resolver.js";
+import { describe, expect, it } from "vitest";
+import { extractPlaceholders, resolveTemplate } from "../template-resolver.js";
 
 describe("Template Resolver", () => {
   describe("resolveTemplate", () => {
@@ -109,4 +109,3 @@ describe("Template Resolver", () => {
     });
   });
 });
-

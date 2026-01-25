@@ -1,8 +1,8 @@
-import type * as vscode from "vscode";
 import * as path from "node:path";
 import { tool } from "ai";
-import { z } from "zod";
 import { Data, Effect, Option, pipe, Runtime } from "effect";
+import type * as vscode from "vscode";
+import { z } from "zod";
 import { VSCodeService } from "../../vs-code.js";
 
 // ============================================================

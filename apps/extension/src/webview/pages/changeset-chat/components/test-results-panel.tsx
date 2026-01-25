@@ -1,12 +1,18 @@
-import type React from "react";
-import { FileCode, CheckCircle2, XCircle, Loader2, ChevronDownIcon } from "lucide-react";
+import { Badge } from "@clive/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@clive/ui/collapsible";
-import { Badge } from "@clive/ui/badge";
 import { cn } from "@clive/ui/lib/utils";
+import {
+  CheckCircle2,
+  ChevronDownIcon,
+  FileCode,
+  Loader2,
+  XCircle,
+} from "lucide-react";
+import type React from "react";
 import type {
   TestFileExecution,
   TestResult,
@@ -88,7 +94,10 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
             const totalCount = summary?.total ?? execution.tests.length;
 
             return (
-              <Collapsible key={`${execution.filePath}-${index}`} defaultOpen={execution.status === "running"}>
+              <Collapsible
+                key={`${execution.filePath}-${index}`}
+                defaultOpen={execution.status === "running"}
+              >
                 <CollapsibleTrigger className="w-full px-4 py-3 hover:bg-muted/50 transition-colors group">
                   <div className="flex items-center gap-3 w-full">
                     <div className="shrink-0">
@@ -108,7 +117,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                           </span>
                           {passedCount > 0 && (
                             <>
-                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                •
+                              </span>
                               <span className="text-xs text-green-600 dark:text-green-500">
                                 {passedCount} passed
                               </span>
@@ -116,7 +127,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                           )}
                           {summary.failed > 0 && (
                             <>
-                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="text-xs text-muted-foreground">
+                                •
+                              </span>
                               <span className="text-xs text-red-600 dark:text-red-500">
                                 {summary.failed} failed
                               </span>
@@ -149,7 +162,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                     {execution.tests.length === 0 ? (
                       <div className="flex items-center justify-center py-4 text-muted-foreground">
                         <Loader2 className="size-4 animate-spin mr-2" />
-                        <span className="text-xs">Waiting for test results...</span>
+                        <span className="text-xs">
+                          Waiting for test results...
+                        </span>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -169,7 +184,9 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
                               {getTestStatusIcon(test.status)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium text-sm">{test.testName}</div>
+                              <div className="font-medium text-sm">
+                                {test.testName}
+                              </div>
                               {test.duration && (
                                 <div className="text-xs text-muted-foreground mt-1">
                                   {formatDuration(test.duration)}
@@ -195,4 +212,3 @@ export const TestResultsPanel: React.FC<TestResultsPanelProps> = ({
     </div>
   );
 };
-

@@ -1,8 +1,6 @@
-import type React from "react";
+import { QueueItemDescription } from "@clive/ui/components/ai-elements/queue";
 import { Loader2 } from "lucide-react";
-import {
-  QueueItemDescription,
-} from "@clive/ui/components/ai-elements/queue";
+import type React from "react";
 import type { TestFileExecution } from "../utils/parse-test-output.js";
 import { TestResultSubItem } from "./test-result-sub-item.js";
 
@@ -51,4 +49,3 @@ export const TestResultsList: React.FC<TestResultsListProps> = ({
     </ul>
   );
 };
-

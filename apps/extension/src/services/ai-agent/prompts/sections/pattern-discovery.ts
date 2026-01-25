@@ -4,8 +4,8 @@
  */
 
 import { Effect } from "effect";
-import type { Section } from "../types.js";
 import { getToolName } from "../tool-names.js";
+import type { Section } from "../types.js";
 
 export const patternDiscovery: Section = (config) => {
   const proposeTestPlan = getToolName("proposeTestPlan", config);

@@ -5,7 +5,7 @@
  * Receives configuration from central service during registration.
  */
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
 import type { NgrokConfig } from "@clive/worker-protocol";
 
 /**
@@ -94,7 +94,10 @@ export class TunnelManager extends EventEmitter {
       return this.tunnelUrl;
     } catch (error) {
       console.error("[TunnelManager] Failed to connect:", error);
-      this.emit("error", error instanceof Error ? error : new Error(String(error)));
+      this.emit(
+        "error",
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return null;
     }
   }

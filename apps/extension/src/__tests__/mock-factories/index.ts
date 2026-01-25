@@ -4,37 +4,35 @@
  */
 
 export {
-  createVSCodeMock,
-  setupVSCodeMock,
-  resetVSCodeMock,
-  getVSCodeMock,
-  type VSCodeMockOverrides,
-} from "./vscode-mock.js";
-
-export {
+  type ChildProcessHandlers,
   createMockChildProcess,
   createMockSpawn,
   createMockSpawnWithChild,
   type MockChildProcess,
-  type ChildProcessHandlers,
 } from "./child-process-mock.js";
-
-export {
-  createMockTokenBudgetService,
-  createMockSummaryService,
-  createMockKnowledgeFileService,
-  createMockDiffContentProvider,
-  createMockStreamingWrite,
-  createMockPlanStreaming,
-  createMockVSCodeServiceLayer,
-  createMockClaudeCliServiceLayer,
-  type StreamingWriteMockOverrides,
-  type PlanStreamingMockOverrides,
-  type ClaudeCliServiceMockOverrides,
-} from "./service-mocks.js";
-
 export {
   createMockDiagnostic,
   createMockDiagnosticWithRange,
   createPrePostDiagnosticScenario,
 } from "./diagnostics-mock.js";
+
+export {
+  type ClaudeCliServiceMockOverrides,
+  createMockClaudeCliServiceLayer,
+  createMockDiffContentProvider,
+  createMockKnowledgeFileService,
+  createMockPlanStreaming,
+  createMockStreamingWrite,
+  createMockSummaryService,
+  createMockTokenBudgetService,
+  createMockVSCodeServiceLayer,
+  type PlanStreamingMockOverrides,
+  type StreamingWriteMockOverrides,
+} from "./service-mocks.js";
+export {
+  createVSCodeMock,
+  getVSCodeMock,
+  resetVSCodeMock,
+  setupVSCodeMock,
+  type VSCodeMockOverrides,
+} from "./vscode-mock.js";

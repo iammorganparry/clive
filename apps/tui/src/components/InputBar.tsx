@@ -3,10 +3,10 @@
  * Command input field at bottom of screen
  */
 
-import { useState, useRef } from 'react';
-import { OneDarkPro } from '../styles/theme';
-import { usePaste } from '../hooks/usePaste';
-import type { InputRenderable } from '@opentui/core';
+import type { InputRenderable } from "@opentui/core";
+import { useRef, useState } from "react";
+import { usePaste } from "../hooks/usePaste";
+import { OneDarkPro } from "../styles/theme";
 
 interface InputBarProps {
   width: number;
@@ -16,17 +16,23 @@ interface InputBarProps {
   disabled?: boolean;
 }
 
-export function InputBar({ width, height, y, onSubmit, disabled = false }: InputBarProps) {
-  const [input, setInput] = useState('');
+export function InputBar({
+  width,
+  height,
+  y,
+  onSubmit,
+  disabled = false,
+}: InputBarProps) {
+  const [input, setInput] = useState("");
   const inputRef = useRef<InputRenderable>(null);
 
   // Handle paste events
   usePaste((event) => {
     if (!disabled && inputRef.current && event.text) {
       // Debug: log the paste event
-      console.log('InputBar paste event:', event);
-      console.log('InputBar paste text:', event.text);
-      console.log('InputBar paste text length:', event.text.length);
+      console.log("InputBar paste event:", event);
+      console.log("InputBar paste text:", event.text);
+      console.log("InputBar paste text length:", event.text.length);
 
       // Use InputRenderable's insertText method directly
       inputRef.current.insertText(event.text);
@@ -38,7 +44,7 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
   const handleSubmit = () => {
     if (input.trim() && !disabled) {
       onSubmit(input);
-      setInput('');
+      setInput("");
     }
   };
 
@@ -56,10 +62,12 @@ export function InputBar({ width, height, y, onSubmit, disabled = false }: Input
       paddingBottom={1}
     >
       <box flexDirection="row">
-        <text fg={OneDarkPro.syntax.cyan}>{'> '}</text>
+        <text fg={OneDarkPro.syntax.cyan}>{"> "}</text>
         <input
           ref={inputRef}
-          placeholder={disabled ? 'Waiting for response...' : 'Enter command (or /help)'}
+          placeholder={
+            disabled ? "Waiting for response..." : "Enter command (or /help)"
+          }
           focused={!disabled}
           onInput={setInput}
           onSubmit={handleSubmit}

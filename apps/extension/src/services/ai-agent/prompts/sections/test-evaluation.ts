@@ -72,4 +72,3 @@ When mocking would be difficult or complex:
 **CRITICAL**: Always check knowledge base first for test-execution patterns. Recommend the BEST approach, not all possible approaches. Explain why this provides maximum safety with reasonable effort.
 </test_type_evaluation>`,
   );
-

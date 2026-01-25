@@ -1,16 +1,11 @@
-import type React from "react";
-import { useState, useCallback } from "react";
-import { Circle } from "lucide-react";
-import {
-  Card,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@clive/ui/card";
+import { cn } from "@clive/ui";
 import { Button } from "@clive/ui/button";
+import { Card, CardFooter, CardHeader, CardTitle } from "@clive/ui/card";
 import { Input } from "@clive/ui/input";
-import { Separator } from "@clive/ui/separator";import { cn } from "@clive/ui";
-;
+import { Separator } from "@clive/ui/separator";
+import { Circle } from "lucide-react";
+import type React from "react";
+import { useCallback, useState } from "react";
 
 export type ApprovalMode = "auto" | "manual";
 

@@ -1,11 +1,11 @@
-import { expect, describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  sanitizePlanName,
-  unescapeJsonString,
   extractJsonField,
+  extractSuitesInfo,
   generateCorrelationId,
   generatePlanFilename,
-  extractSuitesInfo,
+  sanitizePlanName,
+  unescapeJsonString,
 } from "../testing-agent-helpers";
 
 describe("JSON Parsing Utilities", () => {
@@ -74,7 +74,9 @@ describe("JSON Parsing Utilities", () => {
     });
 
     it("should handle multiple escape sequences", () => {
-      const result = unescapeJsonString('line1\\nline2\\tvalue\\"quoted\\"\\\\end');
+      const result = unescapeJsonString(
+        'line1\\nline2\\tvalue\\"quoted\\"\\\\end',
+      );
       expect(result).toBe('line1\nline2\tvalue"quoted"\\end');
     });
 
@@ -145,7 +147,8 @@ describe("JSON Parsing Utilities", () => {
     });
 
     it("should handle multiline content with newlines", () => {
-      const json = '{"planContent": "# Header\\n\\nParagraph 1\\n\\nParagraph 2"}';
+      const json =
+        '{"planContent": "# Header\\n\\nParagraph 1\\n\\nParagraph 2"}';
       const result = extractJsonField(json, "planContent");
       expect(result).toBe("# Header\\n\\nParagraph 1\\n\\nParagraph 2");
     });
@@ -231,7 +234,9 @@ describe("JSON Parsing Utilities", () => {
         count: 1,
         primaryTestType: "unit",
       });
-      expect(result).toBe(".clive/plans/test-plan-with-special-chars-unit-1-suite.md");
+      expect(result).toBe(
+        ".clive/plans/test-plan-with-special-chars-unit-1-suite.md",
+      );
     });
 
     it("should truncate long plan names to 50 characters", () => {
@@ -240,7 +245,9 @@ describe("JSON Parsing Utilities", () => {
         count: 1,
         primaryTestType: "unit",
       });
-      const filename = result.replace(".clive/plans/", "").replace("-unit-1-suite.md", "");
+      const filename = result
+        .replace(".clive/plans/", "")
+        .replace("-unit-1-suite.md", "");
       expect(filename.length).toBe(50);
     });
   });

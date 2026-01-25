@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, FileEdit, Minus, Plus } from "lucide-react";
 import { cn } from "@clive/ui";
 import { Icon } from "@iconify/react";
+import { ChevronDown, ChevronRight, FileEdit, Minus, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 
 /**
  * SEARCH/REPLACE block interface
@@ -118,20 +118,40 @@ function calculateChangeSummary(blocks: SearchReplaceBlock[]): {
   }
 
   if (removed === 0 && added > 0) {
-    return { added, removed, message: `Added ${added} line${added !== 1 ? "s" : ""}` };
+    return {
+      added,
+      removed,
+      message: `Added ${added} line${added !== 1 ? "s" : ""}`,
+    };
   }
   if (added === 0 && removed > 0) {
-    return { added, removed, message: `Removed ${removed} line${removed !== 1 ? "s" : ""}` };
+    return {
+      added,
+      removed,
+      message: `Removed ${removed} line${removed !== 1 ? "s" : ""}`,
+    };
   }
   if (added === removed) {
-    return { added, removed, message: `Changed ${added} line${added !== 1 ? "s" : ""}` };
+    return {
+      added,
+      removed,
+      message: `Changed ${added} line${added !== 1 ? "s" : ""}`,
+    };
   }
 
   const net = added - removed;
   if (net > 0) {
-    return { added, removed, message: `+${net} line${net !== 1 ? "s" : ""} (${removed} removed, ${added} added)` };
+    return {
+      added,
+      removed,
+      message: `+${net} line${net !== 1 ? "s" : ""} (${removed} removed, ${added} added)`,
+    };
   }
-  return { added, removed, message: `${net} line${Math.abs(net) !== 1 ? "s" : ""} (${removed} removed, ${added} added)` };
+  return {
+    added,
+    removed,
+    message: `${net} line${Math.abs(net) !== 1 ? "s" : ""} (${removed} removed, ${added} added)`,
+  };
 }
 
 /**
@@ -207,7 +227,11 @@ export function DiffPreview({
     let newLine = 1;
 
     return diffLines.map((line) => {
-      const result = { ...line, oldLineNumber: undefined as number | undefined, newLineNumber: undefined as number | undefined };
+      const result = {
+        ...line,
+        oldLineNumber: undefined as number | undefined,
+        newLineNumber: undefined as number | undefined,
+      };
 
       if (line.type === "removed") {
         result.oldLineNumber = oldLine++;
@@ -232,7 +256,12 @@ export function DiffPreview({
   };
 
   return (
-    <div className={cn("rounded-md border border-border/50 overflow-hidden bg-card", className)}>
+    <div
+      className={cn(
+        "rounded-md border border-border/50 overflow-hidden bg-card",
+        className,
+      )}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
         <button
@@ -279,7 +308,8 @@ export function DiffPreview({
                 className={cn(
                   "flex items-stretch min-h-[24px]",
                   line.type === "removed" && "bg-red-500/15 dark:bg-red-900/25",
-                  line.type === "added" && "bg-green-500/15 dark:bg-green-900/25"
+                  line.type === "added" &&
+                    "bg-green-500/15 dark:bg-green-900/25",
                 )}
               >
                 {/* Line number gutter */}
@@ -292,7 +322,7 @@ export function DiffPreview({
                         ? "text-red-600/70 dark:text-red-400/70 bg-red-500/10"
                         : line.type === "added"
                           ? "bg-green-500/5"
-                          : "text-muted-foreground/50"
+                          : "text-muted-foreground/50",
                     )}
                   >
                     {line.oldLineNumber || ""}
@@ -305,7 +335,7 @@ export function DiffPreview({
                         ? "text-green-600/70 dark:text-green-400/70 bg-green-500/10"
                         : line.type === "removed"
                           ? "bg-red-500/5"
-                          : "text-muted-foreground/50"
+                          : "text-muted-foreground/50",
                     )}
                   >
                     {line.newLineNumber || ""}
@@ -317,7 +347,8 @@ export function DiffPreview({
                   className={cn(
                     "w-5 flex-shrink-0 flex items-center justify-center",
                     line.type === "removed" && "text-red-600 dark:text-red-400",
-                    line.type === "added" && "text-green-600 dark:text-green-400"
+                    line.type === "added" &&
+                      "text-green-600 dark:text-green-400",
                   )}
                 >
                   {line.type === "removed" && <Minus className="size-3" />}
@@ -329,7 +360,8 @@ export function DiffPreview({
                   className={cn(
                     "flex-1 px-2 py-0.5 whitespace-pre overflow-x-auto",
                     line.type === "removed" && "text-red-800 dark:text-red-200",
-                    line.type === "added" && "text-green-800 dark:text-green-200"
+                    line.type === "added" &&
+                      "text-green-800 dark:text-green-200",
                   )}
                 >
                   {line.content || " "}

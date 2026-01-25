@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  initializeTheme,
-  updateTheme,
   getCurrentTheme,
+  initializeTheme,
   type ThemeInfo,
+  updateTheme,
 } from "../theme-service.js";
 
 describe("ThemeService", () => {

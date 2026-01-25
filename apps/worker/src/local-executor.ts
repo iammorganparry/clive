@@ -5,19 +5,19 @@
  * Streams events back to the central service via callback.
  */
 
-import { EventEmitter } from "events";
-import { Effect, Runtime, Stream } from "effect";
+import { EventEmitter } from "node:events";
 import {
-  ClaudeCliService,
   type ClaudeCliEvent,
+  ClaudeCliService,
   type CliExecutionHandle,
 } from "@clive/claude-services";
 import type {
-  InterviewRequest,
   InterviewEvent,
   InterviewEventPayload,
+  InterviewRequest,
   QuestionData,
 } from "@clive/worker-protocol";
+import { Effect, type Runtime, Stream } from "effect";
 
 /**
  * Planning skill system prompt
@@ -72,7 +72,7 @@ export class LocalExecutor extends EventEmitter {
     this.runtime = Effect.runSync(
       Effect.gen(function* () {
         return yield* Effect.runtime<ClaudeCliService>();
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(layer)),
     );
   }
 
@@ -81,7 +81,7 @@ export class LocalExecutor extends EventEmitter {
    */
   async startInterview(
     request: InterviewRequest,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): Promise<void> {
     const { sessionId, initialPrompt } = request;
 
@@ -95,23 +95,29 @@ export class LocalExecutor extends EventEmitter {
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
-    const program = Effect.gen(this.createExecutionProgram(
-      sessionId,
-      prompt,
-      request.model || "opus",
-      onEvent
-    ));
+    const program = Effect.gen(
+      this.createExecutionProgram(
+        sessionId,
+        prompt,
+        request.model || "opus",
+        onEvent,
+      ),
+    );
 
     try {
       await Effect.runPromise(
-        program.pipe(Effect.provide(ClaudeCliService.Default))
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
       );
     } catch (error) {
       console.error(`[LocalExecutor] Interview ${sessionId} failed:`, error);
-      this.emitEvent(sessionId, {
-        type: "error",
-        message: String(error),
-      }, onEvent);
+      this.emitEvent(
+        sessionId,
+        {
+          type: "error",
+          message: String(error),
+        },
+        onEvent,
+      );
       this.activeSessions.delete(sessionId);
     }
   }
@@ -123,7 +129,7 @@ export class LocalExecutor extends EventEmitter {
     sessionId: string,
     prompt: string,
     model: string,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ) {
     const self = this;
 
@@ -143,14 +149,16 @@ export class LocalExecutor extends EventEmitter {
         startedAt: new Date(),
       });
 
-      console.log(`[LocalExecutor] CLI process started for session ${sessionId}`);
+      console.log(
+        `[LocalExecutor] CLI process started for session ${sessionId}`,
+      );
 
       yield* handle.stream.pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
             self.processEvent(sessionId, event, onEvent);
-          })
-        )
+          }),
+        ),
       );
 
       // Cleanup after stream ends
@@ -165,7 +173,7 @@ export class LocalExecutor extends EventEmitter {
   private processEvent(
     sessionId: string,
     event: ClaudeCliEvent,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): void {
     console.log(`[LocalExecutor] Event for ${sessionId}: ${event.type}`);
 
@@ -191,55 +199,85 @@ export class LocalExecutor extends EventEmitter {
             })),
           };
 
-          this.emitEvent(sessionId, {
-            type: "question",
-            data: questionData,
-          }, onEvent);
+          this.emitEvent(
+            sessionId,
+            {
+              type: "question",
+              data: questionData,
+            },
+            onEvent,
+          );
         }
         break;
       }
 
       case "text": {
-        if (event.content.includes("## Plan") || event.content.includes("# Plan")) {
-          this.emitEvent(sessionId, {
-            type: "plan_ready",
-            content: event.content,
-          }, onEvent);
+        if (
+          event.content.includes("## Plan") ||
+          event.content.includes("# Plan")
+        ) {
+          this.emitEvent(
+            sessionId,
+            {
+              type: "plan_ready",
+              content: event.content,
+            },
+            onEvent,
+          );
         } else {
-          this.emitEvent(sessionId, {
-            type: "text",
-            content: event.content,
-          }, onEvent);
+          this.emitEvent(
+            sessionId,
+            {
+              type: "text",
+              content: event.content,
+            },
+            onEvent,
+          );
         }
         break;
       }
 
       case "tool_result": {
         const content = event.content;
-        if (content.includes("linear.app") || content.includes("Issue created")) {
+        if (
+          content.includes("linear.app") ||
+          content.includes("Issue created")
+        ) {
           const urlMatch = content.match(/https:\/\/linear\.app\/[^\s]+/g);
           if (urlMatch) {
-            this.emitEvent(sessionId, {
-              type: "issues_created",
-              urls: urlMatch,
-            }, onEvent);
+            this.emitEvent(
+              sessionId,
+              {
+                type: "issues_created",
+                urls: urlMatch,
+              },
+              onEvent,
+            );
           }
         }
         break;
       }
 
       case "error": {
-        this.emitEvent(sessionId, {
-          type: "error",
-          message: event.message,
-        }, onEvent);
+        this.emitEvent(
+          sessionId,
+          {
+            type: "error",
+            message: event.message,
+          },
+          onEvent,
+        );
         break;
       }
 
       case "done": {
-        this.emitEvent(sessionId, {
-          type: "complete",
-        }, onEvent);
+        this.emitEvent(
+          sessionId,
+          {
+            type: "complete",
+          },
+          onEvent,
+        );
         break;
       }
     }
@@ -251,7 +289,7 @@ export class LocalExecutor extends EventEmitter {
   private emitEvent(
     sessionId: string,
     payload: InterviewEventPayload,
-    onEvent: (event: InterviewEvent) => void
+    onEvent: (event: InterviewEvent) => void,
   ): void {
     const event: InterviewEvent = {
       sessionId,
@@ -268,7 +306,7 @@ export class LocalExecutor extends EventEmitter {
   sendAnswer(
     sessionId: string,
     toolUseId: string,
-    answers: Record<string, string>
+    answers: Record<string, string>,
   ): void {
     const session = this.activeSessions.get(sessionId);
     if (!session) {

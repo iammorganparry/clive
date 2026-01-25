@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type * as vscode from "vscode";
-import { VSCodeService, type FileSystemError } from "../services/vs-code.js";
+import { type FileSystemError, VSCodeService } from "../services/vs-code.js";
 
 /**
  * Ensure a directory exists, creating it if needed

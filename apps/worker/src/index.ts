@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Clive Worker
  *
@@ -17,9 +18,9 @@
  *   CLIVE_HEARTBEAT_INTERVAL - Heartbeat interval in ms (default: 30000)
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config as dotenvConfig } from "dotenv";
-import { resolve } from "path";
-import { fileURLToPath } from "url";
 
 // Load env from monorepo root
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -56,7 +57,9 @@ async function main(): Promise<void> {
   for (const project of config.projects) {
     console.log(`    - ${project.name} (${project.id}): ${project.path}`);
   }
-  console.log(`  Default:     ${config.defaultProject || config.projects[0].id}`);
+  console.log(
+    `  Default:     ${config.defaultProject || config.projects[0].id}`,
+  );
   console.log(`  Hostname:    ${config.hostname}`);
   console.log("");
 

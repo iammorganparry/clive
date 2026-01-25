@@ -1,6 +1,6 @@
 import * as path from "node:path";
-import { Uri } from "vscode";
 import { Data, Effect, Layer, Runtime } from "effect";
+import { Uri } from "vscode";
 import { VSCodeService } from "./vs-code.js";
 
 class FileReadError extends Data.TaggedError("FileReadError")<{

@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { Effect } from "effect";
-
-import { handleRpcMessage, isRpcMessage } from "../handler.js";
-import type { RpcContext } from "../context.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
+import type { RpcContext } from "../context.js";
+import { handleRpcMessage, isRpcMessage } from "../handler.js";
 
 describe("isRpcMessage", () => {
   it("should correctly identify RPC messages", () => {

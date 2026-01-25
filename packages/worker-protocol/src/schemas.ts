@@ -161,7 +161,10 @@ export const CancelRequestSchema = z.object({
 // ============================================================
 
 export const CentralToWorkerMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("start_interview"), payload: InterviewRequestSchema }),
+  z.object({
+    type: z.literal("start_interview"),
+    payload: InterviewRequestSchema,
+  }),
   z.object({ type: z.literal("answer"), payload: AnswerRequestSchema }),
   z.object({ type: z.literal("message"), payload: MessageRequestSchema }),
   z.object({ type: z.literal("cancel"), payload: CancelRequestSchema }),

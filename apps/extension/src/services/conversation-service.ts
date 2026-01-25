@@ -1,12 +1,12 @@
 import { Effect } from "effect";
+import {
+  type ApiError,
+  type AuthTokenMissingError,
+  type NetworkError,
+  wrapTrpcCall,
+} from "../utils/trpc-utils.js";
 import { ConfigService } from "./config-service.js";
 import { TrpcClientService } from "./trpc-client-service.js";
-import {
-  wrapTrpcCall,
-  type ApiError,
-  type NetworkError,
-  type AuthTokenMissingError,
-} from "../utils/trpc-utils.js";
 
 export interface Conversation {
   id: string;

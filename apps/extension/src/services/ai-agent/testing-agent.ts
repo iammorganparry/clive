@@ -1,67 +1,70 @@
 import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
-import { type LanguageModel, type ToolSet, streamText } from "ai";
+import { type LanguageModel, streamText, type ToolSet } from "ai";
 import { Data, Effect, HashMap, Match, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
-import { VSCodeService } from "../vs-code.js";
 import { createUsageEvent, stringifyEvent } from "../../utils/json-utils.js";
+import { logToOutput } from "../../utils/logger.js";
 import { streamFromAI } from "../../utils/stream-utils.js";
 import { AIModels } from "../ai-models.js";
 import {
   createAnthropicProvider,
   createXaiProvider,
 } from "../ai-provider-factory.js";
+import { ClaudeCliService } from "../claude-cli-service.js";
 import { ConfigService } from "../config-service.js";
 import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { SettingsService } from "../settings-service.js";
-import { ClaudeCliService } from "../claude-cli-service.js";
-import { createCliToolExecutor } from "./cli-tool-executor.js";
-import { runCliExecutionLoop, runRalphWiggumCliLoop } from "./cli-execution-loop.js";
-import {
-  createLoopState,
-  createEmptyLoopState,
-  shouldContinueLoop,
-  getExitReason,
-  incrementIteration,
-  getProgressSummary,
-  buildIterationPrompt,
-  type LoopState,
-  type TestSuiteInfo,
-} from "./loop-state.js";
-import { emit } from "./stream-event-emitter.js";
-import type { TodoDisplayItem } from "./stream-events.js";
-import { SummaryService } from "./summary-service.js";
+import { VSCodeService } from "../vs-code.js";
 import { emitAgentError } from "./agent-error-utils.js";
+import {
+  type AgentState,
+  createAgentState,
+  createStreamingState,
+  type StreamingState,
+  setMessages,
+} from "./agent-state.js";
+import {
+  runCliExecutionLoop,
+  runRalphWiggumCliLoop,
+} from "./cli-execution-loop.js";
+import { createCliToolExecutor } from "./cli-tool-executor.js";
 import { CompletionDetector } from "./completion-detector.js";
 import {
   estimateContextSize,
   getMessagesToKeep,
-  shouldSummarize,
   type Message,
+  shouldSummarize,
 } from "./context-tracker.js";
-import { PromptFactory, PromptService } from "./prompts/index.js";
-import { makeTokenBudget } from "./token-budget.js";
-import { KnowledgeContext } from "./knowledge-context.js";
-// DiffContentProvider import removed - file edits now use DiffTrackerService
-import { addCacheControlToMessages } from "./utils/cache-control.js";
 import {
-  createAgentState,
-  createStreamingState,
-  setMessages,
-  type AgentState,
-  type StreamingState,
-} from "./agent-state.js";
-import {
-  handleToolCallStreamingStart,
-  handleToolCallDelta,
-  handleToolCall,
   handleTextDelta,
   handleThinking,
+  handleToolCall,
+  handleToolCallDelta,
+  handleToolCallStreamingStart,
   handleToolResult,
   type ProgressCallback,
 } from "./event-handlers.js";
-import { createToolSet } from "./tool-factory.js";
+import { KnowledgeContext } from "./knowledge-context.js";
+import {
+  buildIterationPrompt,
+  createEmptyLoopState,
+  createLoopState,
+  getExitReason,
+  getProgressSummary,
+  incrementIteration,
+  type LoopState,
+  shouldContinueLoop,
+  type TestSuiteInfo,
+} from "./loop-state.js";
+import { PromptFactory, PromptService } from "./prompts/index.js";
+import { emit } from "./stream-event-emitter.js";
+import type { TodoDisplayItem } from "./stream-events.js";
+import { SummaryService } from "./summary-service.js";
 import { generateCorrelationId } from "./testing-agent-helpers.js";
-import { logToOutput } from "../../utils/logger.js";
+import { makeTokenBudget } from "./token-budget.js";
+import { createToolSet } from "./tool-factory.js";
+// DiffContentProvider import removed - file edits now use DiffTrackerService
+import { addCacheControlToMessages } from "./utils/cache-control.js";
 
 class TestingAgentError extends Data.TaggedError("TestingAgentError")<{
   message: string;
@@ -1051,9 +1054,7 @@ const runApiExecutionLoop = (
     while (true) {
       // Check abort signal
       if (signal?.aborted) {
-        logToOutput(
-          `[RunApiExecutionLoop:${correlationId}] Aborted by signal`,
-        );
+        logToOutput(`[RunApiExecutionLoop:${correlationId}] Aborted by signal`);
         yield* Ref.update(loopStateRef, (s) => ({
           ...s,
           exitReason: "cancelled" as const,
@@ -1144,8 +1145,7 @@ const runApiExecutionLoop = (
         catch: (error) => {
           emitError(error);
           return new TestingAgentError({
-            message:
-              error instanceof Error ? error.message : "Unknown error",
+            message: error instanceof Error ? error.message : "Unknown error",
             cause: error,
           });
         },
@@ -1157,8 +1157,7 @@ const runApiExecutionLoop = (
         Stream.mapError((error) => {
           emitError(error);
           return new TestingAgentError({
-            message:
-              error instanceof Error ? error.message : "Unknown error",
+            message: error instanceof Error ? error.message : "Unknown error",
             cause: error,
           });
         }),
@@ -1226,8 +1225,7 @@ const runApiExecutionLoop = (
         catch: (error) => {
           emitError(error);
           return new TestingAgentError({
-            message:
-              error instanceof Error ? error.message : "Unknown error",
+            message: error instanceof Error ? error.message : "Unknown error",
             cause: error,
           });
         },

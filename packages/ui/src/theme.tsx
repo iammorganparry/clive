@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
 import { DesktopIcon, MoonIcon, SunIcon } from "@radix-ui/react-icons";
+import * as React from "react";
 import * as z from "zod/v4";
 
 import { Button } from "./button";
@@ -72,7 +72,7 @@ const getNextTheme = (current: ThemeMode): ThemeMode => {
   return themes[(themes.indexOf(current) + 1) % themes.length]!;
 };
 
-export const themeDetectorScript = (function () {
+export const themeDetectorScript = (() => {
   function themeFn() {
     const isValidTheme = (theme: string): theme is ThemeMode => {
       const validThemes = ["light", "dark", "auto"] as const;

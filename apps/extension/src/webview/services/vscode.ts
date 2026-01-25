@@ -1,7 +1,7 @@
 export interface VSCodeAPI {
-	readonly postMessage: (message: unknown) => void;
-	readonly getState: () => unknown;
-	readonly setState: (state: unknown) => void;
+  readonly postMessage: (message: unknown) => void;
+  readonly getState: () => unknown;
+  readonly setState: (state: unknown) => void;
 }
 
 /**
@@ -17,8 +17,8 @@ let vscodeInstance: VSCodeAPI | null = null;
  * This ensures acquireVsCodeApi() is only called once
  */
 export function getVSCodeAPI(): VSCodeAPI {
-	if (!vscodeInstance) {
-		vscodeInstance = acquireVsCodeApi();
-	}
-	return vscodeInstance;
+  if (!vscodeInstance) {
+    vscodeInstance = acquireVsCodeApi();
+  }
+  return vscodeInstance;
 }

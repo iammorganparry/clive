@@ -1,12 +1,23 @@
 {
-  "description": "Clive plugin stop hook for test implementation loops",
+  "description": "Clive plugin hooks for build loops and Linear sync",
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__linear__update_issue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLIVE_ROOT/apps/claude-code-plugin/hooks/linear-issue-updated-hook.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh"
+            "command": "$CLIVE_ROOT/apps/claude-code-plugin/hooks/stop-hook.sh"
           }
         ]
       }

@@ -16,7 +16,7 @@ export interface ScratchpadTodo {
 export function parseScratchpad(content: string): ScratchpadTodo[] {
   const todos: ScratchpadTodo[] = [];
   const lines = content.split("\n");
-  
+
   let currentSection = "";
   let todoIdCounter = 0;
 
@@ -33,7 +33,7 @@ export function parseScratchpad(content: string): ScratchpadTodo[] {
     if (checkboxMatch) {
       const isChecked = checkboxMatch[1].toLowerCase() === "x";
       const title = checkboxMatch[2].trim();
-      
+
       if (title && currentSection) {
         todos.push({
           id: `todo-${todoIdCounter++}`,
@@ -65,4 +65,3 @@ export function groupTodosBySection(
     {} as Record<string, ScratchpadTodo[]>,
   );
 }
-

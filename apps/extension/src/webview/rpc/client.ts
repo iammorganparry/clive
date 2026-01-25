@@ -5,8 +5,8 @@
  * communicating with the extension's RPC router.
  */
 
-import type { AppRouter } from "../../rpc/router.js";
 import type { InferRouterInput, InferRouterOutput } from "@clive/webview-rpc";
+import type { AppRouter } from "../../rpc/router.js";
 
 /**
  * Re-export the router type for use in the webview

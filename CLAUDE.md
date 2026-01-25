@@ -106,6 +106,49 @@ tooling/
   └─ typescript/         # Shared TypeScript configs
 ```
 
+### System Contracts
+
+**IMPORTANT:** When making changes to this codebase, review the contract definitions in `contracts/CONTRACTS-AI.md` for the file you're editing. This file contains:
+
+- **Invariants** - Business rules that MUST be maintained
+- **Schema definitions** - Input/output types for APIs
+- **Database operations** - Which tables are read/written
+- **Cross-service dependencies** - What other services depend on this code
+
+**Quick Commands:**
+
+```bash
+# Query contracts for a specific file
+npx @clive/contract-graph query "what contracts affect packages/api/src/router/conversation.ts"
+
+# Analyze impact of changing a contract
+npx @clive/contract-graph impact conversation.getById
+
+# Validate contracts are still correct after changes
+npx @clive/contract-graph validate contracts/
+
+# Regenerate AI-optimized contract docs
+npx @clive/contract-graph docs --dir . --claude --output contracts/CONTRACTS-AI.md
+```
+
+**Programmatic Access (for agents):**
+
+```typescript
+import { loadContracts, QueryEngine } from '@clive/contract-graph';
+
+// Load all contracts
+const { graph } = await loadContracts('.');
+const engine = new QueryEngine(graph);
+
+// Get contracts for a file you're editing
+const result = engine.contractsFor('packages/api/src/router/conversation.ts');
+console.log(result.invariants); // Rules you must maintain
+
+// Analyze impact before making changes
+const impact = engine.impactOf('conversation.getById');
+console.log(impact?.warnings); // Cross-service impacts
+```
+
 ### Extension Architecture
 
 The VS Code extension follows a clean architecture with strict separation:

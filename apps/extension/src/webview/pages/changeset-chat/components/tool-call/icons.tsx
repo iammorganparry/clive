@@ -1,4 +1,3 @@
-import type React from "react";
 import {
   BookOpenIcon,
   CheckCircleIcon,
@@ -12,6 +11,7 @@ import {
   TerminalIcon,
   XCircleIcon,
 } from "lucide-react";
+import type React from "react";
 import type { ToolState } from "../../../../types/chat.js";
 
 /**
@@ -66,13 +66,17 @@ export const getStatusBadge = (state: ToolState): React.ReactNode | null => {
     "output-denied": (
       <div className="flex items-center gap-1 rounded-full bg-red-100 dark:bg-red-900/30 px-2 py-0.5">
         <XCircleIcon className="size-3 text-red-600 dark:text-red-400" />
-        <span className="text-xs font-medium text-red-700 dark:text-red-300">Rejected</span>
+        <span className="text-xs font-medium text-red-700 dark:text-red-300">
+          Rejected
+        </span>
       </div>
     ),
     "output-cancelled": (
       <div className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
         <XCircleIcon className="size-3 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground">Cancelled</span>
+        <span className="text-xs font-medium text-muted-foreground">
+          Cancelled
+        </span>
       </div>
     ),
   };

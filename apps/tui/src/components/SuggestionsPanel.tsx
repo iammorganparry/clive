@@ -1,4 +1,4 @@
-import { OneDarkPro } from '../styles/theme';
+import { OneDarkPro } from "../styles/theme";
 
 export interface CommandSuggestion {
   cmd: string;
@@ -11,7 +11,11 @@ interface SuggestionsPanelProps {
   width: number;
 }
 
-export function SuggestionsPanel({ suggestions, selectedIndex, width }: SuggestionsPanelProps) {
+export function SuggestionsPanel({
+  suggestions,
+  selectedIndex,
+  width,
+}: SuggestionsPanelProps) {
   if (suggestions.length === 0) return null;
 
   return (
@@ -25,21 +29,27 @@ export function SuggestionsPanel({ suggestions, selectedIndex, width }: Suggesti
       paddingTop={0}
       paddingBottom={0}
     >
-      <text fg={OneDarkPro.foreground.muted}>
-        Commands:
-      </text>
+      <text fg={OneDarkPro.foreground.muted}>Commands:</text>
       {suggestions.map((suggestion, i) => {
         const isSelected = i === selectedIndex;
-        const prefix = isSelected ? '► ' : '  ';
+        const prefix = isSelected ? "► " : "  ";
         const line = `${prefix}${suggestion.cmd} - ${suggestion.desc}`;
         return (
           <box
             key={suggestion.cmd}
-            backgroundColor={isSelected ? OneDarkPro.background.highlight : 'transparent'}
+            backgroundColor={
+              isSelected ? OneDarkPro.background.highlight : "transparent"
+            }
             paddingLeft={1}
             paddingRight={1}
           >
-            <text fg={isSelected ? OneDarkPro.syntax.blue : OneDarkPro.foreground.primary}>
+            <text
+              fg={
+                isSelected
+                  ? OneDarkPro.syntax.blue
+                  : OneDarkPro.foreground.primary
+              }
+            >
               {line}
             </text>
           </box>

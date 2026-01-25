@@ -1,5 +1,39 @@
 "use client";
 
+import type { ChatStatus, FileUIPart, LanguageModelUsage } from "ai";
+import {
+  CornerDownLeftIcon,
+  ImageIcon,
+  Loader2Icon,
+  MicIcon,
+  PaperclipIcon,
+  PlusIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
+import { nanoid } from "nanoid";
+import {
+  type ChangeEvent,
+  type ChangeEventHandler,
+  Children,
+  type ClipboardEventHandler,
+  type ComponentProps,
+  createContext,
+  type FormEvent,
+  type FormEventHandler,
+  Fragment,
+  type HTMLAttributes,
+  type KeyboardEventHandler,
+  type PropsWithChildren,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../../button";
 import {
   Command,
@@ -27,6 +61,7 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "../../input-group";
+import { cn } from "../../lib/utils";
 import {
   Select,
   SelectContent,
@@ -34,53 +69,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../select";
-import { cn } from "../../lib/utils";
-import type { ChatStatus, FileUIPart, LanguageModelUsage } from "ai";
-import {
-  CornerDownLeftIcon,
-  ImageIcon,
-  Loader2Icon,
-  MicIcon,
-  PaperclipIcon,
-  PlusIcon,
-  SquareIcon,
-  XIcon,
-} from "lucide-react";
 import {
   Context,
-  ContextTrigger,
+  ContextCacheUsage,
   ContextContent,
-  ContextContentHeader,
   ContextContentBody,
   ContextContentFooter,
+  ContextContentHeader,
   ContextInputUsage,
   ContextOutputUsage,
   ContextReasoningUsage,
-  ContextCacheUsage,
+  ContextTrigger,
 } from "./context";
-import { nanoid } from "nanoid";
-import {
-  type ChangeEvent,
-  type ChangeEventHandler,
-  Children,
-  type ClipboardEventHandler,
-  type ComponentProps,
-  createContext,
-  type FormEvent,
-  type FormEventHandler,
-  Fragment,
-  type HTMLAttributes,
-  type KeyboardEventHandler,
-  type PropsWithChildren,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
 
 // ============================================================================
 // Provider Context & Types

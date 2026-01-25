@@ -1,18 +1,21 @@
-import type React from "react";
-import { useMemo } from "react";
 import {
   Queue,
-  QueueSection,
-  QueueSectionTrigger,
-  QueueSectionLabel,
-  QueueSectionContent,
-  QueueList,
   QueueItem,
-  QueueItemIndicator,
   QueueItemContent,
+  QueueItemIndicator,
+  QueueList,
+  QueueSection,
+  QueueSectionContent,
+  QueueSectionLabel,
+  QueueSectionTrigger,
 } from "@clive/ui/components/ai-elements/queue";
-import { CheckCircle, Circle, Loader2, AlertCircle } from "lucide-react";
-import type { LoopTodoItem, LoopProgress } from "../machines/changeset-chat-machine.js";
+import { AlertCircle, CheckCircle, Circle, Loader2 } from "lucide-react";
+import type React from "react";
+import { useMemo } from "react";
+import type {
+  LoopProgress,
+  LoopTodoItem,
+} from "../machines/changeset-chat-machine.js";
 
 interface LoopProgressDisplayProps {
   todos: LoopTodoItem[];
@@ -99,13 +102,15 @@ export const LoopProgressDisplay: React.FC<LoopProgressDisplayProps> = ({
 
       {/* Exit reason banner */}
       {exitReason && exitReasonLabel && (
-        <div className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
-          exitReason === "complete"
-            ? "bg-green-500/10 text-green-600"
-            : exitReason === "cancelled"
-            ? "bg-muted text-muted-foreground"
-            : "bg-yellow-500/10 text-yellow-600"
-        }`}>
+        <div
+          className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+            exitReason === "complete"
+              ? "bg-green-500/10 text-green-600"
+              : exitReason === "cancelled"
+                ? "bg-muted text-muted-foreground"
+                : "bg-yellow-500/10 text-yellow-600"
+          }`}
+        >
           {exitReason === "complete" ? (
             <CheckCircle className="h-3 w-3" />
           ) : (
@@ -130,7 +135,9 @@ export const LoopProgressDisplay: React.FC<LoopProgressDisplayProps> = ({
               <QueueList>
                 <QueueItem>
                   <QueueItemIndicator />
-                  <QueueItemContent>{inProgressItem.activeForm}</QueueItemContent>
+                  <QueueItemContent>
+                    {inProgressItem.activeForm}
+                  </QueueItemContent>
                 </QueueItem>
               </QueueList>
             </QueueSectionContent>
@@ -175,7 +182,9 @@ export const LoopProgressDisplay: React.FC<LoopProgressDisplayProps> = ({
                 {completedItems.map((item) => (
                   <QueueItem key={`completed-${item.content}`}>
                     <QueueItemIndicator completed />
-                    <QueueItemContent completed>{item.content}</QueueItemContent>
+                    <QueueItemContent completed>
+                      {item.content}
+                    </QueueItemContent>
                   </QueueItem>
                 ))}
               </QueueList>

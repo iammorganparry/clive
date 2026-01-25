@@ -8,13 +8,12 @@ import { useEffect } from "react";
  *                  Should be memoized with useCallback if it has dependencies.
  */
 export function useMessageHandler(
-	handler: (event: MessageEvent) => void
+  handler: (event: MessageEvent) => void,
 ): void {
-	useEffect(() => {
-		window.addEventListener("message", handler);
-		return () => {
-			window.removeEventListener("message", handler);
-		};
-	}, [handler]);
+  useEffect(() => {
+    window.addEventListener("message", handler);
+    return () => {
+      window.removeEventListener("message", handler);
+    };
+  }, [handler]);
 }
-

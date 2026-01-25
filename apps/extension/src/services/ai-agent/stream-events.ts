@@ -59,7 +59,11 @@ export interface ToolResultEvent extends BaseStreamEvent {
   toolCallId: string;
   toolName: string;
   output: unknown;
-  state: "output-available" | "output-error" | "output-cancelled" | "output-denied";
+  state:
+    | "output-available"
+    | "output-error"
+    | "output-cancelled"
+    | "output-denied";
 }
 
 /**

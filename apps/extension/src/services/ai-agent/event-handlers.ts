@@ -6,46 +6,46 @@
 
 import type { ToolResult } from "@ai-sdk/provider-utils";
 import { Effect, pipe, Ref } from "effect";
+import { logToOutput } from "../../utils/logger.js";
 import type { AgentState, StreamingState } from "./agent-state.js";
 import {
-  setToolRejected,
-  setTaskCompleted,
+  addExecution,
+  deletePlanToolCall,
+  deleteStreamingArgs,
+  getFilePathForPlan,
+  getPlanInitStatus,
+  getStreamingArgs,
+  hasPlanToolCall,
+  hasStreamingArgs,
   incrementMistakes,
   resetMistakes,
-  addExecution,
+  setPlanInitStatus,
+  setStreamingArgs,
+  setTaskCompleted,
+  setToolRejected,
   trackCommandToolCall,
   trackFileToolCall,
   trackPlanToolCall,
-  hasPlanToolCall,
-  deletePlanToolCall,
-  setStreamingArgs,
-  getStreamingArgs,
-  hasStreamingArgs,
-  deleteStreamingArgs,
-  setPlanInitStatus,
-  getPlanInitStatus,
-  getFilePathForPlan,
 } from "./agent-state.js";
-import {
-  extractJsonField,
-  unescapeJsonString,
-  sanitizePlanName,
-  extractSuitesInfo,
-  generatePlanFilename,
-} from "./testing-agent-helpers.js";
-import { logToOutput } from "../../utils/logger.js";
 import { emit } from "./stream-event-emitter.js";
 import {
-  initializeStreamingWrite,
-  appendStreamingContent,
-  finalizeStreamingWrite,
-} from "./tools/write-test-file.js";
+  extractJsonField,
+  extractSuitesInfo,
+  generatePlanFilename,
+  sanitizePlanName,
+  unescapeJsonString,
+} from "./testing-agent-helpers.js";
 import {
-  initializePlanStreamingWriteEffect,
   appendPlanStreamingContentEffect,
   finalizePlanStreamingWriteEffect,
+  initializePlanStreamingWriteEffect,
   renamePlanFileEffect,
 } from "./tools/propose-test-plan.js";
+import {
+  appendStreamingContent,
+  finalizeStreamingWrite,
+  initializeStreamingWrite,
+} from "./tools/write-test-file.js";
 import type { WriteTestFileOutput } from "./types.js";
 /**
  * Progress callback type
@@ -88,7 +88,13 @@ export const handleToolCallStreamingStart = (
 
       // Emit tool-call event immediately so UI shows the card
       yield* Effect.sync(() => {
-        emit.toolCall(progressCallback, event.toolCallId ?? "", event.toolName ?? "", undefined, "input-streaming");
+        emit.toolCall(
+          progressCallback,
+          event.toolCallId ?? "",
+          event.toolName ?? "",
+          undefined,
+          "input-streaming",
+        );
       });
     }
   });
@@ -201,7 +207,10 @@ const handleProposeTestPlanDelta = (
               toolCallId,
               Promise.resolve(false),
             );
-            emit.error(progressCallback, `Failed to open plan file: ${error.message ?? "Unknown error"}`);
+            emit.error(
+              progressCallback,
+              `Failed to open plan file: ${error.message ?? "Unknown error"}`,
+            );
           }),
         ),
       );
@@ -282,7 +291,13 @@ const handleProposeTestPlanDelta = (
     // FIRST: Emit the event to the webview (always succeeds, even if filePath is empty)
     // The webview needs the content for display regardless of file creation success
     yield* Effect.sync(() => {
-      emit.planContent(progressCallback, toolCallId, planContentChunk, false, targetPath || undefined);
+      emit.planContent(
+        progressCallback,
+        toolCallId,
+        planContentChunk,
+        false,
+        targetPath || undefined,
+      );
     });
 
     // THEN: Attempt to write to file (may fail, but event was already sent)
@@ -384,7 +399,12 @@ export const handleToolCall = (
       yield* Effect.logDebug(
         `[TestingAgent:${correlationId}] Skipping tool ${event.toolName} due to rejection cascade`,
       );
-      emit.toolSkipped(progressCallback, event.toolCallId, event.toolName, "Previous tool was rejected");
+      emit.toolSkipped(
+        progressCallback,
+        event.toolCallId,
+        event.toolName,
+        "Previous tool was rejected",
+      );
       return;
     }
 
@@ -433,7 +453,13 @@ export const handleToolCall = (
     yield* emitToolProgress(event, progressCallback);
 
     // Emit event
-    emit.toolCall(progressCallback, event.toolCallId, event.toolName ?? "", event.toolArgs, "input-available");
+    emit.toolCall(
+      progressCallback,
+      event.toolCallId,
+      event.toolName ?? "",
+      event.toolArgs,
+      "input-available",
+    );
   });
 
 /**
@@ -615,7 +641,13 @@ export const handleToolResult = (
         : "output-available";
 
     // Emit tool result
-    emit.toolResult(progressCallback, event.toolCallId ?? "", event.toolName ?? "", actualOutput, resultState);
+    emit.toolResult(
+      progressCallback,
+      event.toolCallId ?? "",
+      event.toolName ?? "",
+      actualOutput,
+      resultState,
+    );
   });
 
 /**
@@ -682,7 +714,13 @@ const handleProposeTestPlanResult = (
 
         // Emit final plan content as complete with file path (may be empty if file creation failed)
         yield* Effect.sync(() => {
-          emit.planContent(progressCallback, toolCallId, planContent, true, targetPath || undefined);
+          emit.planContent(
+            progressCallback,
+            toolCallId,
+            planContent,
+            true,
+            targetPath || undefined,
+          );
         });
       }
 

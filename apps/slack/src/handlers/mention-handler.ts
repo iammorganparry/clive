@@ -5,24 +5,24 @@
  * Supports both local (ClaudeManager) and distributed (WorkerProxy) modes.
  */
 
+import type { InterviewEvent as WorkerInterviewEvent } from "@clive/worker-protocol";
 import type { App } from "@slack/bolt";
 import type { AppMentionEvent } from "@slack/types";
 import { Effect } from "effect";
-import type { InterviewStore } from "../store/interview-store";
-import type { ClaudeManager } from "../services/claude-manager";
-import type { WorkerProxy } from "../services/worker-proxy";
-import type { SlackService } from "../services/slack-service";
-import type { InterviewEvent } from "../store/types";
-import type { InterviewEvent as WorkerInterviewEvent } from "@clive/worker-protocol";
+import { formatMarkdown, section } from "../formatters/block-builder";
 import {
-  formatWelcomeMessage,
-  formatQuestionData,
-  formatPhaseIndicator,
   formatCompletionMessage,
   formatErrorMessage,
+  formatPhaseIndicator,
+  formatQuestionData,
   formatTimeoutMessage,
+  formatWelcomeMessage,
 } from "../formatters/question-formatter";
-import { section, formatMarkdown } from "../formatters/block-builder";
+import type { ClaudeManager } from "../services/claude-manager";
+import type { SlackService } from "../services/slack-service";
+import type { WorkerProxy } from "../services/worker-proxy";
+import type { InterviewStore } from "../store/interview-store";
+import type { InterviewEvent } from "../store/types";
 
 /**
  * Extract description from @mention text
@@ -62,7 +62,11 @@ function extractProjectName(description: string): string | undefined {
     if (match?.[1]) {
       const projectName = match[1].trim().toLowerCase().replace(/\s+/g, "-");
       // Skip common words that aren't project names
-      if (!["the", "a", "an", "this", "that", "my", "our", "your"].includes(projectName)) {
+      if (
+        !["the", "a", "an", "this", "that", "my", "our", "your"].includes(
+          projectName,
+        )
+      ) {
         return projectName;
       }
     }
@@ -78,7 +82,7 @@ export function registerMentionHandler(
   app: App,
   store: InterviewStore,
   claudeManager: ClaudeManager,
-  slackService: SlackService
+  slackService: SlackService,
 ): void {
   app.event("app_mention", async ({ event, context, say }) => {
     const mentionEvent = event as AppMentionEvent;
@@ -95,20 +99,24 @@ export function registerMentionHandler(
       return;
     }
 
-    console.log(`[MentionHandler] Received mention from ${userId} in ${channel}`);
+    console.log(
+      `[MentionHandler] Received mention from ${userId} in ${channel}`,
+    );
 
     // Use the original message ts as thread, or if already in thread, use existing thread_ts
     const threadTs = threadTsFromEvent || messageTs;
 
     // Check for existing session in this thread
     if (store.has(threadTs)) {
-      console.log(`[MentionHandler] Session already exists for thread ${threadTs}`);
+      console.log(
+        `[MentionHandler] Session already exists for thread ${threadTs}`,
+      );
       await Effect.runPromise(
         slackService.postMessage({
           channel,
           text: "An interview is already in progress in this thread. Please continue answering questions or wait for it to complete.",
           threadTs,
-        })
+        }),
       );
       return;
     }
@@ -118,7 +126,7 @@ export function registerMentionHandler(
     console.log(`[MentionHandler] Description: "${description || "(none)"}"`);
 
     // Create new session
-    const session = store.create(threadTs, channel, userId, description);
+    const _session = store.create(threadTs, channel, userId, description);
 
     // Set up timeout handler
     store.onTimeout(threadTs, async (timedOutSession) => {
@@ -129,7 +137,7 @@ export function registerMentionHandler(
           text: "Interview timed out after 30 minutes of inactivity.",
           threadTs: timedOutSession.threadTs,
           blocks: formatTimeoutMessage(),
-        })
+        }),
       );
       store.close(threadTs);
     });
@@ -141,7 +149,7 @@ export function registerMentionHandler(
         text: "Starting planning interview...",
         threadTs,
         blocks: formatWelcomeMessage(!!description),
-      })
+      }),
     );
 
     // Start Claude interview
@@ -157,9 +165,9 @@ export function registerMentionHandler(
             threadTs,
             channel,
             store,
-            slackService
+            slackService,
           );
-        }
+        },
       );
 
       store.setClaudeHandle(threadTs, handle);
@@ -173,7 +181,7 @@ export function registerMentionHandler(
           text: `Failed to start interview: ${error}`,
           threadTs,
           blocks: formatErrorMessage(String(error)),
-        })
+        }),
       );
 
       store.close(threadTs);
@@ -189,7 +197,7 @@ async function handleInterviewEvent(
   threadTs: string,
   channel: string,
   store: InterviewStore,
-  slackService: SlackService
+  slackService: SlackService,
 ): Promise<void> {
   console.log(`[MentionHandler] Interview event: ${event.type}`);
 
@@ -205,7 +213,7 @@ async function handleInterviewEvent(
           text: "Please answer the following question:",
           threadTs,
           blocks: formatQuestionData(event.data),
-        })
+        }),
       );
       break;
     }
@@ -220,7 +228,7 @@ async function handleInterviewEvent(
           text: `Phase: ${event.phase}`,
           threadTs,
           blocks: formatPhaseIndicator(event.phase),
-        })
+        }),
       );
       break;
     }
@@ -231,10 +239,10 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: event.content.substring(0, 200) + "...",
+          text: `${event.content.substring(0, 200)}...`,
           threadTs,
           blocks: [section(formattedText)],
-        })
+        }),
       );
       break;
     }
@@ -254,7 +262,7 @@ async function handleInterviewEvent(
             section("*Plan Ready for Review*"),
             section(formattedPlan.substring(0, 2900)),
           ],
-        })
+        }),
       );
       break;
     }
@@ -272,7 +280,7 @@ async function handleInterviewEvent(
           text: "Planning complete! Issues created.",
           threadTs,
           blocks: formatCompletionMessage(event.urls),
-        })
+        }),
       );
 
       // Close session
@@ -289,14 +297,18 @@ async function handleInterviewEvent(
           text: `Error: ${event.message}`,
           threadTs,
           blocks: formatErrorMessage(event.message),
-        })
+        }),
       );
       break;
     }
 
     case "complete": {
       const session = store.get(threadTs);
-      if (session && session.phase !== "completed" && session.phase !== "error") {
+      if (
+        session &&
+        session.phase !== "completed" &&
+        session.phase !== "error"
+      ) {
         store.setPhase(threadTs, "completed");
 
         // If we have Linear URLs, show them
@@ -307,7 +319,7 @@ async function handleInterviewEvent(
               text: "Planning complete!",
               threadTs,
               blocks: formatCompletionMessage(session.linearIssueUrls),
-            })
+            }),
           );
         }
 
@@ -323,7 +335,7 @@ async function handleInterviewEvent(
           text: "Interview timed out.",
           threadTs,
           blocks: formatTimeoutMessage(),
-        })
+        }),
       );
       store.close(threadTs);
       break;
@@ -338,7 +350,7 @@ export function registerMentionHandlerDistributed(
   app: App,
   store: InterviewStore,
   workerProxy: WorkerProxy,
-  slackService: SlackService
+  slackService: SlackService,
 ): void {
   app.event("app_mention", async ({ event, context, say }) => {
     const mentionEvent = event as AppMentionEvent;
@@ -355,20 +367,24 @@ export function registerMentionHandlerDistributed(
       return;
     }
 
-    console.log(`[MentionHandler] Received mention from ${userId} in ${channel}`);
+    console.log(
+      `[MentionHandler] Received mention from ${userId} in ${channel}`,
+    );
 
     // Use the original message ts as thread, or if already in thread, use existing thread_ts
     const threadTs = threadTsFromEvent || messageTs;
 
     // Check for existing session in this thread
     if (store.has(threadTs)) {
-      console.log(`[MentionHandler] Session already exists for thread ${threadTs}`);
+      console.log(
+        `[MentionHandler] Session already exists for thread ${threadTs}`,
+      );
       await Effect.runPromise(
         slackService.postMessage({
           channel,
           text: "An interview is already in progress in this thread. Please continue answering questions or wait for it to complete.",
           threadTs,
-        })
+        }),
       );
       return;
     }
@@ -384,7 +400,7 @@ export function registerMentionHandlerDistributed(
     }
 
     // Create new session
-    const session = store.create(threadTs, channel, userId, description);
+    const _session = store.create(threadTs, channel, userId, description);
 
     // Set up timeout handler
     store.onTimeout(threadTs, async (timedOutSession) => {
@@ -396,7 +412,7 @@ export function registerMentionHandlerDistributed(
           text: "Interview timed out after 30 minutes of inactivity.",
           threadTs: timedOutSession.threadTs,
           blocks: formatTimeoutMessage(),
-        })
+        }),
       );
       store.close(threadTs);
     });
@@ -408,7 +424,7 @@ export function registerMentionHandlerDistributed(
         text: "Starting planning interview...",
         threadTs,
         blocks: formatWelcomeMessage(!!description),
-      })
+      }),
     );
 
     // Start interview via worker
@@ -426,10 +442,10 @@ export function registerMentionHandlerDistributed(
             threadTs,
             channel,
             store,
-            slackService
+            slackService,
           );
         },
-        projectName // Pass detected project for routing
+        projectName, // Pass detected project for routing
       );
 
       if ("error" in result) {
@@ -448,7 +464,7 @@ export function registerMentionHandlerDistributed(
           text: `Failed to start interview: ${error}`,
           threadTs,
           blocks: formatErrorMessage(String(error)),
-        })
+        }),
       );
 
       store.close(threadTs);
@@ -464,7 +480,7 @@ async function handleWorkerInterviewEvent(
   threadTs: string,
   channel: string,
   store: InterviewStore,
-  slackService: SlackService
+  slackService: SlackService,
 ): Promise<void> {
   console.log(`[MentionHandler] Worker event: ${event.type}`);
 
@@ -482,7 +498,7 @@ async function handleWorkerInterviewEvent(
           text: "Please answer the following question:",
           threadTs,
           blocks: formatQuestionData(payload.data),
-        })
+        }),
       );
       break;
     }
@@ -497,7 +513,7 @@ async function handleWorkerInterviewEvent(
           text: `Phase: ${payload.phase}`,
           threadTs,
           blocks: formatPhaseIndicator(payload.phase),
-        })
+        }),
       );
       break;
     }
@@ -508,10 +524,10 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: payload.content.substring(0, 200) + "...",
+          text: `${payload.content.substring(0, 200)}...`,
           threadTs,
           blocks: [section(formattedText)],
-        })
+        }),
       );
       break;
     }
@@ -531,7 +547,7 @@ async function handleWorkerInterviewEvent(
             section("*Plan Ready for Review*"),
             section(formattedPlan.substring(0, 2900)),
           ],
-        })
+        }),
       );
       break;
     }
@@ -549,7 +565,7 @@ async function handleWorkerInterviewEvent(
           text: "Planning complete! Issues created.",
           threadTs,
           blocks: formatCompletionMessage(payload.urls),
-        })
+        }),
       );
 
       // Close session
@@ -566,14 +582,18 @@ async function handleWorkerInterviewEvent(
           text: `Error: ${payload.message}`,
           threadTs,
           blocks: formatErrorMessage(payload.message),
-        })
+        }),
       );
       break;
     }
 
     case "complete": {
       const session = store.get(threadTs);
-      if (session && session.phase !== "completed" && session.phase !== "error") {
+      if (
+        session &&
+        session.phase !== "completed" &&
+        session.phase !== "error"
+      ) {
         store.setPhase(threadTs, "completed");
 
         // If we have Linear URLs, show them
@@ -584,7 +604,7 @@ async function handleWorkerInterviewEvent(
               text: "Planning complete!",
               threadTs,
               blocks: formatCompletionMessage(session.linearIssueUrls),
-            })
+            }),
           );
         }
 
@@ -600,7 +620,7 @@ async function handleWorkerInterviewEvent(
           text: "Interview timed out.",
           threadTs,
           blocks: formatTimeoutMessage(),
-        })
+        }),
       );
       store.close(threadTs);
       break;

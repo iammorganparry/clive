@@ -40,4 +40,3 @@ export const testAgentTemplate = `{{AGENT_ROLE}}
 {{FILE_OPERATIONS}}
 
 Focus on comprehensive testing strategy across all appropriate levels while maintaining natural conversation flow.`;
-

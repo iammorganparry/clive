@@ -13,20 +13,27 @@ export interface TokenMetadata {
 
 export class MetadataCalculator {
   // Model pricing per 1M tokens (as of January 2025)
-  private static readonly PRICING: Record<string, { input: number; output: number }> = {
-    'claude-sonnet-4-5': { input: 3.0, output: 15.0 },
-    'claude-opus-4-5': { input: 15.0, output: 75.0 },
-    'claude-opus-4': { input: 15.0, output: 75.0 },
-    'claude-haiku-3-5': { input: 0.8, output: 4.0 },
-    'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
-    'claude-3-5-haiku-20241022': { input: 0.8, output: 4.0 },
+  private static readonly PRICING: Record<
+    string,
+    { input: number; output: number }
+  > = {
+    "claude-sonnet-4-5": { input: 3.0, output: 15.0 },
+    "claude-opus-4-5": { input: 15.0, output: 75.0 },
+    "claude-opus-4": { input: 15.0, output: 75.0 },
+    "claude-haiku-3-5": { input: 0.8, output: 4.0 },
+    "claude-3-5-sonnet-20241022": { input: 3.0, output: 15.0 },
+    "claude-3-5-haiku-20241022": { input: 0.8, output: 4.0 },
   };
 
   /**
    * Calculate cost in USD for given token usage
    */
-  static calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-    const pricing = this.PRICING[model];
+  static calculateCost(
+    model: string,
+    inputTokens: number,
+    outputTokens: number,
+  ): number {
+    const pricing = MetadataCalculator.PRICING[model];
     if (!pricing) {
       // Unknown model, return 0
       return 0;
@@ -42,9 +49,9 @@ export class MetadataCalculator {
    * Get cost color for display (red = expensive, yellow = moderate, gray = cheap)
    */
   static getCostColor(costUSD: number): string {
-    if (costUSD > 0.10) return '#E06C75'; // Red
-    if (costUSD > 0.01) return '#E5C07B'; // Yellow
-    return '#5C6370'; // Gray (muted)
+    if (costUSD > 0.1) return "#E06C75"; // Red
+    if (costUSD > 0.01) return "#E5C07B"; // Yellow
+    return "#5C6370"; // Gray (muted)
   }
 
   /**
@@ -52,7 +59,7 @@ export class MetadataCalculator {
    */
   static formatCost(costUSD: number): string {
     if (costUSD < 0.0001) {
-      return '<$0.0001';
+      return "<$0.0001";
     }
     return `$${costUSD.toFixed(4)}`;
   }
@@ -72,12 +79,12 @@ export class MetadataCalculator {
    * Format token counts for display
    */
   static formatTokens(inputTokens?: number, outputTokens?: number): string {
-    if (!inputTokens && !outputTokens) return '';
+    if (!inputTokens && !outputTokens) return "";
 
     const parts: string[] = [];
     if (inputTokens) parts.push(`↓${inputTokens}`);
     if (outputTokens) parts.push(`↑${outputTokens}`);
 
-    return parts.join('/');
+    return parts.join("/");
   }
 }

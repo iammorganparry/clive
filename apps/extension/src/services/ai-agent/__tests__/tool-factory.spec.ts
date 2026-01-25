@@ -1,11 +1,11 @@
-import { expect, vi } from "vitest";
 import { describe, it } from "@effect/vitest";
+import type { LanguageModel } from "ai";
 import { Effect } from "effect";
-import { createToolSet, type ToolConfig } from "../tool-factory";
+import { expect, vi } from "vitest";
 import { createMockTokenBudgetService } from "../../../__tests__/mock-factories";
 import type { KnowledgeFileService } from "../../knowledge-file-service";
 import type { SummaryService } from "../summary-service";
-import type { LanguageModel } from "ai";
+import { createToolSet, type ToolConfig } from "../tool-factory";
 
 // Mock dependencies
 vi.mock("../tools/bash-execute", () => ({

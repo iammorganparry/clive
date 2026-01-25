@@ -1,20 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createProposeTestTool } from "../propose-test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProposeTestInput } from "../../types";
+import { createProposeTestTool } from "../propose-test";
 import { executeTool } from "./test-helpers";
 
 // Mock hitl-utils
 vi.mock("../../hitl-utils", () => ({
-  processProposeTestApproval: vi.fn((_input: ProposeTestInput, approved: boolean) => ({
-    success: approved,
-    id: approved ? `test-${Date.now()}` : "",
-    message: approved ? "Proposal approved" : "Proposal rejected",
-  })),
+  processProposeTestApproval: vi.fn(
+    (_input: ProposeTestInput, approved: boolean) => ({
+      success: approved,
+      id: approved ? `test-${Date.now()}` : "",
+      message: approved ? "Proposal approved" : "Proposal rejected",
+    }),
+  ),
 }));
 
 describe("proposeTestTool", () => {
   let approvalRegistry: Set<string>;
-  let waitForApproval: ((toolCallId: string, input: ProposeTestInput) => Promise<boolean>) | undefined;
+  let waitForApproval:
+    | ((toolCallId: string, input: ProposeTestInput) => Promise<boolean>)
+    | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -146,7 +150,8 @@ describe("proposeTestTool", () => {
       await executeTool(tool, input, { success: false });
 
       expect(waitForApproval).toHaveBeenCalled();
-      const toolCallId = (waitForApproval as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const toolCallId = (waitForApproval as ReturnType<typeof vi.fn>).mock
+        .calls[0][0];
       expect(toolCallId).toContain("propose-");
     });
 
@@ -222,4 +227,3 @@ describe("proposeTestTool", () => {
     });
   });
 });
-

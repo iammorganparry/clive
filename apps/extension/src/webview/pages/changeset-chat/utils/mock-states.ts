@@ -356,7 +356,10 @@ export function createMockBashExecutePendingApproval(): ChatMessage {
     id: `msg-bash-pending-${Date.now()}`,
     role: "assistant",
     parts: [
-      { type: "text", text: "I'd like to run a terminal command. Please approve or reject." },
+      {
+        type: "text",
+        text: "I'd like to run a terminal command. Please approve or reject.",
+      },
       {
         type: "tool-bashExecute",
         toolName: "bashExecute",

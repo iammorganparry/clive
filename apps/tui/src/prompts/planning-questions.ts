@@ -12,22 +12,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "User pain point",
-        description: "End users are experiencing friction or difficulty"
+        description: "End users are experiencing friction or difficulty",
       },
       {
         label: "Developer productivity",
-        description: "Development workflow needs improvement"
+        description: "Development workflow needs improvement",
       },
       {
         label: "System limitation",
-        description: "Current system can't handle a required capability"
+        description: "Current system can't handle a required capability",
       },
       {
         label: "Quality issue",
-        description: "Code quality, performance, or maintainability concerns"
-      }
+        description: "Code quality, performance, or maintainability concerns",
+      },
     ],
-    multiSelect: false
+    multiSelect: false,
   },
 
   userImpact: {
@@ -48,22 +48,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Blocking other work",
-        description: "This is preventing progress on other tasks"
+        description: "This is preventing progress on other tasks",
       },
       {
         label: "User-requested",
-        description: "Users are asking for this capability"
+        description: "Users are asking for this capability",
       },
       {
         label: "Technical debt",
-        description: "Accumulating debt that will get harder to fix"
+        description: "Accumulating debt that will get harder to fix",
       },
       {
         label: "Proactive improvement",
-        description: "Good time to make this enhancement"
-      }
+        description: "Good time to make this enhancement",
+      },
     ],
-    multiSelect: false
+    multiSelect: false,
   },
 
   // Phase 2: Scope & Boundaries
@@ -85,22 +85,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Time constraints",
-        description: "Deadline or timeline limitations"
+        description: "Deadline or timeline limitations",
       },
       {
         label: "Technical constraints",
-        description: "Must use specific technologies or patterns"
+        description: "Must use specific technologies or patterns",
       },
       {
         label: "Resource constraints",
-        description: "Limited availability or budget"
+        description: "Limited availability or budget",
       },
       {
         label: "No major constraints",
-        description: "Flexibility in approach and timeline"
-      }
+        description: "Flexibility in approach and timeline",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   // Phase 3: User Stories & Acceptance
@@ -122,26 +122,26 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Invalid input",
-        description: "Handle malformed or unexpected user input"
+        description: "Handle malformed or unexpected user input",
       },
       {
         label: "Network failures",
-        description: "Handle API or connectivity issues"
+        description: "Handle API or connectivity issues",
       },
       {
         label: "Missing data",
-        description: "Handle null/undefined/missing values"
+        description: "Handle null/undefined/missing values",
       },
       {
         label: "Permission errors",
-        description: "Handle unauthorized access attempts"
+        description: "Handle unauthorized access attempts",
       },
       {
         label: "Race conditions",
-        description: "Handle concurrent operations"
-      }
+        description: "Handle concurrent operations",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   errorHandling: {
@@ -150,22 +150,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Show user-friendly message",
-        description: "Display clear error message to user"
+        description: "Display clear error message to user",
       },
       {
         label: "Retry automatically",
-        description: "Attempt to recover automatically"
+        description: "Attempt to recover automatically",
       },
       {
         label: "Fallback behavior",
-        description: "Gracefully degrade to alternative flow"
+        description: "Gracefully degrade to alternative flow",
       },
       {
         label: "Log and alert",
-        description: "Capture error for debugging, notify team"
-      }
+        description: "Capture error for debugging, notify team",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   // Phase 4: Technical Context
@@ -187,22 +187,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "External APIs",
-        description: "Depends on third-party services"
+        description: "Depends on third-party services",
       },
       {
         label: "Database changes",
-        description: "Requires schema or migration work"
+        description: "Requires schema or migration work",
       },
       {
         label: "Other features",
-        description: "Depends on other work being completed first"
+        description: "Depends on other work being completed first",
       },
       {
         label: "No external dependencies",
-        description: "Can be implemented independently"
-      }
+        description: "Can be implemented independently",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   risks: {
@@ -211,26 +211,26 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Breaking changes",
-        description: "Could break existing functionality"
+        description: "Could break existing functionality",
       },
       {
         label: "Performance impact",
-        description: "Could affect system performance"
+        description: "Could affect system performance",
       },
       {
         label: "Data migration needed",
-        description: "Requires migrating existing data"
+        description: "Requires migrating existing data",
       },
       {
         label: "Complex integration",
-        description: "Integration with other systems is complex"
+        description: "Integration with other systems is complex",
       },
       {
         label: "Low risk",
-        description: "Well-understood, isolated changes"
-      }
+        description: "Well-understood, isolated changes",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   // Definition of Done helpers
@@ -240,22 +240,22 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "Unit tests (Recommended)",
-        description: "Test individual functions and components"
+        description: "Test individual functions and components",
       },
       {
         label: "Integration tests",
-        description: "Test interactions between components"
+        description: "Test interactions between components",
       },
       {
         label: "E2E tests",
-        description: "Test complete user workflows"
+        description: "Test complete user workflows",
       },
       {
         label: "Manual testing only",
-        description: "Verify manually, no automated tests needed"
-      }
+        description: "Verify manually, no automated tests needed",
+      },
     ],
-    multiSelect: true
+    multiSelect: true,
   },
 
   documentationNeeds: {
@@ -264,27 +264,27 @@ export const PlanningQuestionTemplates = {
     options: [
       {
         label: "API documentation",
-        description: "Update API docs for new endpoints or changes"
+        description: "Update API docs for new endpoints or changes",
       },
       {
         label: "User guide",
-        description: "Update user-facing documentation"
+        description: "Update user-facing documentation",
       },
       {
         label: "Code comments",
-        description: "Add inline documentation for complex logic"
+        description: "Add inline documentation for complex logic",
       },
       {
         label: "README updates",
-        description: "Update project README"
+        description: "Update project README",
       },
       {
         label: "No documentation needed",
-        description: "Changes are self-explanatory"
-      }
+        description: "Changes are self-explanatory",
+      },
     ],
-    multiSelect: true
-  }
+    multiSelect: true,
+  },
 } as const;
 
 /**
@@ -295,50 +295,51 @@ export const InterviewPhases = {
   phase1_problemUnderstanding: {
     name: "Problem Understanding",
     description: "Understand the problem, impact, and desired outcome",
-    recommendedQuestions: 2-4,
+    recommendedQuestions: 2 - 4,
     questions: [
       "What problem are you trying to solve?",
       "Who is impacted by this problem?",
       "What's the desired outcome after this work is complete?",
-      "Why is this important to address now?"
-    ]
+      "Why is this important to address now?",
+    ],
   },
 
   phase2_scopeBoundaries: {
     name: "Scope & Boundaries",
     description: "Define what's in scope, out of scope, and constraints",
-    recommendedQuestions: 2-3,
+    recommendedQuestions: 2 - 3,
     questions: [
       "What's IN scope for this work?",
       "What's explicitly OUT of scope?",
-      "Are there any constraints we should know about (time, technical, resource)?"
-    ]
+      "Are there any constraints we should know about (time, technical, resource)?",
+    ],
   },
 
   phase3_userStoriesAcceptance: {
     name: "User Stories & Acceptance",
     description: "Define success criteria and edge cases",
-    recommendedQuestions: 3-5,
+    recommendedQuestions: 3 - 5,
     questions: [
       "What value does this deliver to users?",
       "How will we know this is working correctly?",
       "What edge cases or error scenarios should we handle?",
       "What should happen when things go wrong?",
-      "Are there any specific acceptance criteria you have in mind?"
-    ]
+      "Are there any specific acceptance criteria you have in mind?",
+    ],
   },
 
   phase4_technicalContext: {
     name: "Technical Context",
-    description: "Understand existing patterns, decisions, dependencies, and risks",
-    recommendedQuestions: 1-3,
+    description:
+      "Understand existing patterns, decisions, dependencies, and risks",
+    recommendedQuestions: 1 - 3,
     questions: [
       "Are there existing patterns in the codebase we should follow?",
       "Any architectural decisions already made for this area?",
       "What does this depend on or what depends on this?",
-      "What could go wrong or complicate this work?"
-    ]
-  }
+      "What could go wrong or complicate this work?",
+    ],
+  },
 } as const;
 
 /**
@@ -355,8 +356,8 @@ export const UserStoryTemplates = {
       acceptanceCriteria: [
         "Type errors appear in editor within 1 second",
         "Error messages are clear and actionable",
-        "Errors disappear when fixed"
-      ]
+        "Errors disappear when fixed",
+      ],
     },
     {
       role: "user",
@@ -366,10 +367,10 @@ export const UserStoryTemplates = {
         "Export button appears on dashboard",
         "Clicking button downloads CSV file",
         "CSV contains all user data in readable format",
-        "Export completes within 5 seconds"
-      ]
-    }
-  ]
+        "Export completes within 5 seconds",
+      ],
+    },
+  ],
 };
 
 /**
@@ -380,22 +381,22 @@ export const AcceptanceCriteriaGuidelines = {
     "Testable - Can verify it's working",
     "Specific - Clear and unambiguous",
     "Measurable - Can determine pass/fail",
-    "User-focused - Describes behavior from user perspective"
+    "User-focused - Describes behavior from user perspective",
   ],
 
   goodExamples: [
     "User sees error message when login fails",
     "Search returns results within 2 seconds",
     "Form validation shows inline errors",
-    "User can export data as CSV"
+    "User can export data as CSV",
   ],
 
   badExamples: [
     "Code is well-structured", // Not testable
     "System works correctly", // Not specific
     "Performance is good", // Not measurable
-    "OAuth middleware is implemented" // Implementation-focused, not user-focused
-  ]
+    "OAuth middleware is implemented", // Implementation-focused, not user-focused
+  ],
 };
 
 /**
@@ -410,7 +411,7 @@ export const DefinitionOfDoneStandards = {
     "Documentation updated",
     "No linting errors",
     "No type errors",
-    "Build succeeds"
+    "Build succeeds",
   ],
 
   taskSpecific: {
@@ -418,19 +419,19 @@ export const DefinitionOfDoneStandards = {
       "All acceptance criteria met",
       "New functionality tested",
       "Error handling implemented",
-      "User-facing changes documented"
+      "User-facing changes documented",
     ],
     bugfix: [
       "Bug no longer reproducible",
       "Regression test added",
       "Root cause addressed",
-      "All existing tests still pass"
+      "All existing tests still pass",
     ],
     refactor: [
       "Code structure improved",
       "All existing tests still pass",
       "No behavior changes",
-      "Performance not degraded"
-    ]
-  }
+      "Performance not degraded",
+    ],
+  },
 };

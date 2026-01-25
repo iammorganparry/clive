@@ -3,19 +3,19 @@
  * Animated loading indicator using OpenTUI timeline
  */
 
-import { useState, useEffect } from 'react';
-import { useTimeline } from '@opentui/react';
-import { OneDarkPro } from '../styles/theme';
+import { useTimeline } from "@opentui/react";
+import { useEffect, useState } from "react";
+import { OneDarkPro } from "../styles/theme";
 
 interface LoadingSpinnerProps {
   text?: string;
   color?: string;
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 export function LoadingSpinner({
-  text = 'Loading...',
+  text = "Loading...",
   color = OneDarkPro.syntax.blue,
 }: LoadingSpinnerProps) {
   const [frameIndex, setFrameIndex] = useState(0);
@@ -44,7 +44,9 @@ interface PulsingDotProps {
   color?: string;
 }
 
-export function PulsingDot({ color = OneDarkPro.syntax.blue }: PulsingDotProps) {
+export function PulsingDot({
+  color = OneDarkPro.syntax.blue,
+}: PulsingDotProps) {
   const [opacity, setOpacity] = useState(1);
 
   const timeline = useTimeline({
@@ -59,12 +61,12 @@ export function PulsingDot({ color = OneDarkPro.syntax.blue }: PulsingDotProps) 
       {
         opacity: 0.3,
         duration: 500,
-        ease: 'easeInOutSine',
+        ease: "easeInOutSine",
         onUpdate: (animation) => {
           setOpacity(animation.targets[0].opacity);
         },
       },
-      0
+      0,
     );
 
     timeline.add(
@@ -72,17 +74,19 @@ export function PulsingDot({ color = OneDarkPro.syntax.blue }: PulsingDotProps) 
       {
         opacity: 1,
         duration: 500,
-        ease: 'easeInOutSine',
+        ease: "easeInOutSine",
         onUpdate: (animation) => {
           setOpacity(animation.targets[0].opacity);
         },
       },
-      500
+      500,
     );
   }, [timeline]);
 
   // Convert opacity to color intensity
-  const intensityHex = Math.floor(opacity * 255).toString(16).padStart(2, '0');
+  const intensityHex = Math.floor(opacity * 255)
+    .toString(16)
+    .padStart(2, "0");
   const fadedColor = color + intensityHex;
 
   return <text fg={fadedColor}>●</text>;
@@ -115,12 +119,12 @@ export function LoadingBar({
       {
         progress: width,
         duration: 2000,
-        ease: 'linear',
+        ease: "linear",
         onUpdate: (animation) => {
           setProgress(animation.targets[0].progress);
         },
       },
-      0
+      0,
     );
   }, [timeline, width]);
 
@@ -129,11 +133,7 @@ export function LoadingBar({
 
   return (
     <box flexDirection="row">
-      <box
-        width={filledWidth}
-        height={1}
-        backgroundColor={color}
-      />
+      <box width={filledWidth} height={1} backgroundColor={color} />
       <box
         width={emptyWidth}
         height={1}

@@ -74,7 +74,10 @@ class McpBridgeEventEmitter {
         try {
           listener(data);
         } catch (error) {
-          console.error(`[MCP Bridge Event] Error in listener for ${event}:`, error);
+          console.error(
+            `[MCP Bridge Event] Error in listener for ${event}:`,
+            error,
+          );
         }
       }
     }

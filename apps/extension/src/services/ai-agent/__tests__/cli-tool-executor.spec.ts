@@ -1,13 +1,15 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Runtime } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Use vi.hoisted to create mock functions that can be referenced in vi.mock
-const { mockReadFile, mockWriteFile, mockExecAsync, mockGlob } = vi.hoisted(() => ({
-  mockReadFile: vi.fn(),
-  mockWriteFile: vi.fn(),
-  mockExecAsync: vi.fn(),
-  mockGlob: vi.fn(),
-}));
+const { mockReadFile, mockWriteFile, mockExecAsync, mockGlob } = vi.hoisted(
+  () => ({
+    mockReadFile: vi.fn(),
+    mockWriteFile: vi.fn(),
+    mockExecAsync: vi.fn(),
+    mockGlob: vi.fn(),
+  }),
+);
 
 // Mock the logger
 vi.mock("../../../utils/logger.js", () => ({
@@ -298,7 +300,11 @@ describe("cli-tool-executor", () => {
 
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
-        .executeToolCall("Bash", { command: "ls /test 2>/dev/null" }, "tool-10-stderr")
+        .executeToolCall(
+          "Bash",
+          { command: "ls /test 2>/dev/null" },
+          "tool-10-stderr",
+        )
         .pipe(Runtime.runPromise(runtime));
 
       expect(result.success).toBe(true);
@@ -326,7 +332,11 @@ describe("cli-tool-executor", () => {
     it("should block stdout redirection in plan mode", async () => {
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
-        .executeToolCall("Bash", { command: "echo test > output.txt" }, "tool-10-stdout-redirect")
+        .executeToolCall(
+          "Bash",
+          { command: "echo test > output.txt" },
+          "tool-10-stdout-redirect",
+        )
         .pipe(Runtime.runPromise(runtime));
 
       expect(result.success).toBe(false);
@@ -339,7 +349,11 @@ describe("cli-tool-executor", () => {
 
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
-        .executeToolCall("Bash", { command: "ls /test && cat file.txt" }, "tool-10-compound-readonly")
+        .executeToolCall(
+          "Bash",
+          { command: "ls /test && cat file.txt" },
+          "tool-10-compound-readonly",
+        )
         .pipe(Runtime.runPromise(runtime));
 
       expect(result.success).toBe(true);
@@ -352,7 +366,11 @@ describe("cli-tool-executor", () => {
     it("should block compound commands with write operations in plan mode", async () => {
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
-        .executeToolCall("Bash", { command: "ls /test && mkdir newdir" }, "tool-10-compound-write")
+        .executeToolCall(
+          "Bash",
+          { command: "ls /test && mkdir newdir" },
+          "tool-10-compound-write",
+        )
         .pipe(Runtime.runPromise(runtime));
 
       expect(result.success).toBe(false);
@@ -474,7 +492,11 @@ describe("cli-tool-executor", () => {
 
       const executor = createCliToolExecutor({ tools: {} });
       await executor
-        .executeToolCall("Glob", { pattern: "*.js", path: "/custom/dir" }, "tool-15")
+        .executeToolCall(
+          "Glob",
+          { pattern: "*.js", path: "/custom/dir" },
+          "tool-15",
+        )
         .pipe(Runtime.runPromise(runtime));
 
       expect(mockGlob).toHaveBeenCalledWith(
@@ -521,11 +543,7 @@ describe("cli-tool-executor", () => {
 
       const executor = createCliToolExecutor({ tools: {} });
       await executor
-        .executeToolCall(
-          "Grep",
-          { pattern: "test", glob: "*.ts" },
-          "tool-18",
-        )
+        .executeToolCall("Grep", { pattern: "test", glob: "*.ts" }, "tool-18")
         .pipe(Runtime.runPromise(runtime));
 
       expect(mockExecAsync).toHaveBeenCalledWith(
@@ -768,7 +786,11 @@ describe("cli-tool-executor", () => {
         // no workspaceRoot
       });
       await executor
-        .executeToolCall("Read", { file_path: "relative/path.ts" }, "tool-path-6")
+        .executeToolCall(
+          "Read",
+          { file_path: "relative/path.ts" },
+          "tool-path-6",
+        )
         .pipe(Runtime.runPromise(runtime));
       // Should be called with relative path as-is
       expect(mockReadFile).toHaveBeenCalledWith("relative/path.ts", "utf-8");
@@ -789,11 +811,7 @@ describe("cli-tool-executor", () => {
 
       const executor = createCliToolExecutor({ tools: {}, mode: "plan" });
       const result = await executor
-        .executeToolCall(
-          "Bash",
-          { command: "grep pattern file.txt" },
-          "exit-1",
-        )
+        .executeToolCall("Bash", { command: "grep pattern file.txt" }, "exit-1")
         .pipe(Runtime.runPromise(runtime));
       expect(result.success).toBe(true);
       const parsed = JSON.parse(result.result);
@@ -894,7 +912,10 @@ describe("cli-tool-executor", () => {
 
   describe("Grep handler with workspaceRoot", () => {
     it("should use workspaceRoot as cwd for grep command", async () => {
-      mockExecAsync.mockResolvedValue({ stdout: "file.ts:1:match", stderr: "" });
+      mockExecAsync.mockResolvedValue({
+        stdout: "file.ts:1:match",
+        stderr: "",
+      });
       const executor = createCliToolExecutor({
         tools: {},
         mode: "plan",

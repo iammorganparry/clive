@@ -1,13 +1,13 @@
-import { describe, expect, vi, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
 import type { LanguageModel } from "ai";
-import { createSummarizeContextTool } from "../summarize-context";
-import type { SummaryService } from "../../summary-service";
+import { Effect } from "effect";
+import { beforeEach, describe, expect, vi } from "vitest";
+import { createMockSummaryService } from "../../../../__tests__/mock-factories";
 import type { Message } from "../../context-tracker";
 import * as contextTracker from "../../context-tracker";
+import type { SummaryService } from "../../summary-service";
+import { createSummarizeContextTool } from "../summarize-context";
 import { executeTool } from "./test-helpers";
-import { createMockSummaryService } from "../../../../__tests__/mock-factories";
 
 type SummarizeResult = {
   success: boolean;

@@ -1,14 +1,14 @@
-import { describe, expect, beforeEach, it, vi } from "vitest";
-import { Effect, Runtime, Stream, Chunk } from "effect";
-import {
-  ClaudeCliService,
-  ClaudeCliNotFoundError,
-  ClaudeCliNotAuthenticatedError,
-  ClaudeCliExecutionError,
-  type ClaudeCliStatus,
-  type ClaudeCliEvent,
-} from "../claude-cli-service.js";
+import { Chunk, Effect, Runtime, Stream } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockClaudeCliServiceLayer } from "../../__tests__/mock-factories/service-mocks.js";
+import {
+  type ClaudeCliEvent,
+  ClaudeCliExecutionError,
+  ClaudeCliNotAuthenticatedError,
+  ClaudeCliNotFoundError,
+  ClaudeCliService,
+  type ClaudeCliStatus,
+} from "../claude-cli-service.js";
 
 /**
  * Tests for ClaudeCliService using the mock factory approach.
@@ -144,7 +144,11 @@ describe("ClaudeCliService", () => {
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
         return yield* service.checkAuth();
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
       if (result._tag === "Left") {
@@ -194,7 +198,11 @@ describe("ClaudeCliService", () => {
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
         return yield* service.authenticate();
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
       if (result._tag === "Left") {
@@ -239,7 +247,12 @@ describe("ClaudeCliService", () => {
     it("should emit tool_use events", async () => {
       const mockEvents: ClaudeCliEvent[] = [
         { type: "text", content: "Let me read that file" },
-        { type: "tool_use", id: "tool-1", name: "readFile", input: { path: "/test.ts" } },
+        {
+          type: "tool_use",
+          id: "tool-1",
+          name: "readFile",
+          input: { path: "/test.ts" },
+        },
         { type: "tool_result", id: "tool-1", content: "file contents" },
         { type: "done" },
       ];
@@ -301,7 +314,11 @@ describe("ClaudeCliService", () => {
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
         return yield* service.execute({ prompt: "Hello" });
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
       if (result._tag === "Left") {
@@ -323,7 +340,11 @@ describe("ClaudeCliService", () => {
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
         return yield* service.execute({ prompt: "Hello" });
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
       if (result._tag === "Left") {
@@ -351,7 +372,11 @@ describe("ClaudeCliService", () => {
         const service = yield* ClaudeCliService;
         const handle = yield* service.execute({ prompt: "Hello" });
         return yield* Stream.runCollect(handle.stream);
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
     });
@@ -429,7 +454,10 @@ describe("ClaudeCliService", () => {
           Effect.fail(
             new ClaudeCliNotFoundError({
               message: "CLI not found",
-              searchedPaths: ["/usr/local/bin/claude", "/opt/homebrew/bin/claude"],
+              searchedPaths: [
+                "/usr/local/bin/claude",
+                "/opt/homebrew/bin/claude",
+              ],
             }),
           ),
       });
@@ -437,7 +465,11 @@ describe("ClaudeCliService", () => {
       const result = await Effect.gen(function* () {
         const service = yield* ClaudeCliService;
         return yield* service.getCliPath();
-      }).pipe(Effect.provide(layer), Effect.either, Runtime.runPromise(runtime));
+      }).pipe(
+        Effect.provide(layer),
+        Effect.either,
+        Runtime.runPromise(runtime),
+      );
 
       expect(result._tag).toBe("Left");
       if (result._tag === "Left") {

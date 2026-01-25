@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect";
 import type * as vscode from "vscode";
-import { GlobalStateKeys, type AiProviderType } from "../constants.js";
+import { type AiProviderType, GlobalStateKeys } from "../constants.js";
 
 class SettingsError extends Data.TaggedError("SettingsError")<{
   message: string;

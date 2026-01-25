@@ -1,5 +1,3 @@
-import type React from "react";
-import { useState } from "react";
 import { Button } from "@clive/ui/button";
 import {
   DropdownMenu,
@@ -10,35 +8,52 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@clive/ui/dropdown-menu";
-import { Bug, CheckCircle, XCircle, List, RotateCcw, Terminal, FileEdit, Search, Globe, Brain, Activity, AlertCircle } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  Brain,
+  Bug,
+  CheckCircle,
+  FileEdit,
+  Globe,
+  List,
+  RotateCcw,
+  Search,
+  Terminal,
+  XCircle,
+} from "lucide-react";
+import type React from "react";
+import { useState } from "react";
 import type { ChangesetChatEvent } from "../machines/changeset-chat-machine.js";
 import {
-  createMockPlan,
   createMockActiveQueue,
-  createMockPassedSuiteQueue,
-  createMockFailedSuiteQueue,
-  createMockMixedQueue,
   createMockBashExecuteMessage,
   createMockBashExecutePendingApproval,
   createMockBashExecuteRejected,
-  createMockWriteTestFileMessage,
-  createMockWriteTestFilePendingApproval,
-  createMockWriteTestFileRejected,
-  createMockSearchKnowledgeMessage,
+  createMockError,
+  createMockFailedSuiteQueue,
+  createMockMixedQueue,
+  createMockPassedSuiteQueue,
+  createMockPlan,
+  createMockReasoningState,
   createMockReplaceInFileMessage,
   createMockReplaceInFilePendingApproval,
   createMockReplaceInFileRejected,
-  createMockWebSearchMessage,
-  createMockReasoningState,
+  createMockSearchKnowledgeMessage,
   createMockUsage,
-  createMockError,
+  createMockWebSearchMessage,
+  createMockWriteTestFileMessage,
+  createMockWriteTestFilePendingApproval,
+  createMockWriteTestFileRejected,
 } from "../utils/mock-states.js";
 
 interface DevTestingToolbarProps {
   send: (event: ChangesetChatEvent) => void;
 }
 
-export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) => {
+export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({
+  send,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleInjectPlan = () => {
@@ -482,4 +497,3 @@ export const DevTestingToolbar: React.FC<DevTestingToolbarProps> = ({ send }) =>
     </div>
   );
 };
-

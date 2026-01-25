@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi, afterEach } from "vitest";
+
 import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatToolOutput } from "../format-output.js";
 
 // Cleanup after each test to avoid DOM accumulation
@@ -17,7 +18,11 @@ vi.mock("@clive/ui/components/ai-elements/code-block", () => ({
       {code}
     </pre>
   ),
-  CodeBlockCopyButton: () => <button type="button" data-testid="copy-button">Copy</button>,
+  CodeBlockCopyButton: () => (
+    <button type="button" data-testid="copy-button">
+      Copy
+    </button>
+  ),
 }));
 
 describe("formatToolOutput", () => {

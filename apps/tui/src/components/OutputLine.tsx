@@ -4,9 +4,9 @@
  * Ported from apps/tui-go/internal/tui/root.go renderOutputContent
  */
 
-import { OutputLine as OutputLineType } from '../types';
-import { OneDarkPro } from '../styles/theme';
-import { MetadataCalculator } from '../services/MetadataCalculator';
+import { MetadataCalculator } from "../services/MetadataCalculator";
+import { OneDarkPro } from "../styles/theme";
+import type { OutputLine as OutputLineType } from "../types";
 
 interface Props {
   line: OutputLineType;
@@ -14,12 +14,13 @@ interface Props {
 
 export function OutputLine({ line }: Props) {
   switch (line.type) {
-    case 'tool_call': {
+    case "tool_call": {
       const toolInput = line.toolInput || {};
 
       // Read tool - show file path
-      if (line.toolName === 'Read' && toolInput.file_path) {
-        const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
+      if (line.toolName === "Read" && toolInput.file_path) {
+        const filename =
+          toolInput.file_path.split("/").pop() || toolInput.file_path;
         return (
           <box flexDirection="row">
             <text fg={OneDarkPro.syntax.yellow}>Read 📄 </text>
@@ -29,19 +30,21 @@ export function OutputLine({ line }: Props) {
       }
 
       // Grep tool - show pattern and path
-      if (line.toolName === 'Grep' && toolInput.pattern) {
-        const path = toolInput.path || '.';
-        const filename = path.split('/').pop() || path;
+      if (line.toolName === "Grep" && toolInput.pattern) {
+        const path = toolInput.path || ".";
+        const filename = path.split("/").pop() || path;
         return (
           <box flexDirection="row">
-            <text fg={OneDarkPro.syntax.yellow}>Grep 🔍 "{toolInput.pattern}" in </text>
+            <text fg={OneDarkPro.syntax.yellow}>
+              Grep 🔍 "{toolInput.pattern}" in{" "}
+            </text>
             <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
         );
       }
 
       // Glob tool - show pattern
-      if (line.toolName === 'Glob' && toolInput.pattern) {
+      if (line.toolName === "Glob" && toolInput.pattern) {
         return (
           <box flexDirection="row">
             <text fg={OneDarkPro.syntax.yellow}>Glob 📁 </text>
@@ -51,7 +54,7 @@ export function OutputLine({ line }: Props) {
       }
 
       // Bash tool - show command
-      if (line.toolName === 'Bash' && toolInput.command) {
+      if (line.toolName === "Bash" && toolInput.command) {
         return (
           <box flexDirection="row">
             <text fg={OneDarkPro.syntax.cyan}>Bash $ </text>
@@ -61,11 +64,15 @@ export function OutputLine({ line }: Props) {
       }
 
       // Edit/Write tools - show file path
-      if ((line.toolName === 'Edit' || line.toolName === 'Write') && toolInput.file_path) {
-        const filename = toolInput.file_path.split('/').pop() || toolInput.file_path;
+      if (
+        (line.toolName === "Edit" || line.toolName === "Write") &&
+        toolInput.file_path
+      ) {
+        const filename =
+          toolInput.file_path.split("/").pop() || toolInput.file_path;
         return (
           <box flexDirection="row">
-            <text fg={OneDarkPro.syntax.yellow}>{line.toolName} ✏️  </text>
+            <text fg={OneDarkPro.syntax.yellow}>{line.toolName} ✏️ </text>
             <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
         );
@@ -74,17 +81,18 @@ export function OutputLine({ line }: Props) {
       // Default: show tool name
       return (
         <box>
-          <text fg={OneDarkPro.syntax.yellow}>
-            ● {line.toolName}
-          </text>
+          <text fg={OneDarkPro.syntax.yellow}>● {line.toolName}</text>
         </box>
       );
     }
 
-    case 'tool_result': {
+    case "tool_result": {
       // Skip rendering tool results for Read/Grep/Glob/Bash tools
-      const isFileReadTool = line.toolName === 'Read' || line.toolName === 'Grep' || line.toolName === 'Glob';
-      const isBashTool = line.toolName === 'Bash';
+      const isFileReadTool =
+        line.toolName === "Read" ||
+        line.toolName === "Grep" ||
+        line.toolName === "Glob";
+      const isBashTool = line.toolName === "Bash";
       if (isFileReadTool || isBashTool) {
         return null;
       }
@@ -96,33 +104,34 @@ export function OutputLine({ line }: Props) {
       // Truncation limits per tool category
       const TRUNCATION_LIMITS: Record<string, number> = {
         // Web tools
-        'WebSearch': 2000,
-        'WebFetch': 1500,
+        WebSearch: 2000,
+        WebFetch: 1500,
 
         // MCP context tools (very verbose)
-        'mcp__context7': 1500,
-        'mcp__contextserver': 1500,
+        mcp__context7: 1500,
+        mcp__contextserver: 1500,
 
         // MCP Linear tools (JSON responses)
-        'mcp__linear__create_issue': 800,
-        'mcp__linear__update_issue': 800,
-        'mcp__linear__create_project': 800,
-        'mcp__linear__list_issues': 2000,
-        'mcp__linear__get_issue': 1500,
+        mcp__linear__create_issue: 800,
+        mcp__linear__update_issue: 800,
+        mcp__linear__create_project: 800,
+        mcp__linear__list_issues: 2000,
+        mcp__linear__get_issue: 1500,
 
         // MCP Playwright tools (page snapshots are huge)
-        'mcp__playwright__browser_snapshot': 2000,
-        'mcp__playwright__browser_console_messages': 1500,
-        'mcp__playwright__browser_network_requests': 1500,
+        mcp__playwright__browser_snapshot: 2000,
+        mcp__playwright__browser_console_messages: 1500,
+        mcp__playwright__browser_network_requests: 1500,
 
         // Default for any unspecified tool
-        'DEFAULT': 3000,
+        DEFAULT: 3000,
       };
 
       if (displayText && displayText.length > 0) {
         // Get tool-specific limit or default
-        const toolName = line.toolName || '';
-        const maxChars = TRUNCATION_LIMITS[toolName] || TRUNCATION_LIMITS['DEFAULT'];
+        const toolName = line.toolName || "";
+        const maxChars =
+          TRUNCATION_LIMITS[toolName] || TRUNCATION_LIMITS.DEFAULT;
 
         // Truncate if exceeds limit
         if (displayText.length > maxChars) {
@@ -139,14 +148,17 @@ export function OutputLine({ line }: Props) {
       }
 
       if (line.inputTokens || line.outputTokens) {
-        const tokens = MetadataCalculator.formatTokens(line.inputTokens, line.outputTokens);
+        const tokens = MetadataCalculator.formatTokens(
+          line.inputTokens,
+          line.outputTokens,
+        );
         if (tokens) {
           metadata.push(`🪙 ${tokens}`);
         }
       }
 
       if (line.costUSD !== undefined) {
-        const costColor = MetadataCalculator.getCostColor(line.costUSD);
+        const _costColor = MetadataCalculator.getCostColor(line.costUSD);
         const costText = MetadataCalculator.formatCost(line.costUSD);
         metadata.push(`💰 ${costText}`);
       }
@@ -155,7 +167,7 @@ export function OutputLine({ line }: Props) {
         <box flexDirection="column">
           <text fg={OneDarkPro.foreground.muted}>
             ↳ {displayText}
-            {metadata.length > 0 ? ` ${metadata.join(' ')}` : ''}
+            {metadata.length > 0 ? ` ${metadata.join(" ")}` : ""}
           </text>
           {wasTruncated && (
             <text fg={OneDarkPro.foreground.comment}>
@@ -166,20 +178,23 @@ export function OutputLine({ line }: Props) {
       );
     }
 
-    case 'file_diff': {
+    case "file_diff": {
       // Split diff into lines and color appropriately
-      const diffLines = line.text.split('\n');
+      const diffLines = line.text.split("\n");
       return (
         <box flexDirection="column">
           {diffLines.map((diffLine, i) => {
             let color = OneDarkPro.foreground.muted;
 
             // Color based on diff prefix
-            if (diffLine.includes(' + ') || diffLine.startsWith('  + ')) {
+            if (diffLine.includes(" + ") || diffLine.startsWith("  + ")) {
               color = OneDarkPro.syntax.green;
-            } else if (diffLine.includes(' - ') || diffLine.startsWith('  - ')) {
+            } else if (
+              diffLine.includes(" - ") ||
+              diffLine.startsWith("  - ")
+            ) {
               color = OneDarkPro.syntax.red;
-            } else if (diffLine.startsWith('● ')) {
+            } else if (diffLine.startsWith("● ")) {
               color = OneDarkPro.syntax.yellow;
             }
 
@@ -193,66 +208,58 @@ export function OutputLine({ line }: Props) {
       );
     }
 
-    case 'subagent_spawn':
+    case "subagent_spawn":
       return (
         <box>
-          <text fg={OneDarkPro.syntax.magenta}>
-            ⚡ {line.text}
-          </text>
+          <text fg={OneDarkPro.syntax.magenta}>⚡ {line.text}</text>
         </box>
       );
 
-    case 'subagent_complete':
+    case "subagent_complete":
       return (
         <box>
-          <text fg={OneDarkPro.syntax.cyan}>
-            ✓ {line.text}
-          </text>
+          <text fg={OneDarkPro.syntax.cyan}>✓ {line.text}</text>
         </box>
       );
 
-    case 'assistant':
+    case "assistant":
       return (
-        <box backgroundColor={OneDarkPro.background.highlight} padding={1} marginBottom={1}>
-          <text fg={OneDarkPro.foreground.primary}>
-            {line.text}
-          </text>
+        <box
+          backgroundColor={OneDarkPro.background.highlight}
+          padding={1}
+          marginBottom={1}
+        >
+          <text fg={OneDarkPro.foreground.primary}>{line.text}</text>
         </box>
       );
 
-    case 'user':
+    case "user":
       return (
         <box
           backgroundColor={OneDarkPro.background.secondary}
           padding={1}
           marginBottom={1}
         >
-          <text fg={OneDarkPro.syntax.green}>
-            {line.text}
-          </text>
+          <text fg={OneDarkPro.syntax.green}>{line.text}</text>
         </box>
       );
 
-    case 'system':
+    case "system":
       return (
         <box marginBottom={1}>
-          <text fg={OneDarkPro.foreground.comment}>
-            💭 {line.text}
-          </text>
+          <text fg={OneDarkPro.foreground.comment}>💭 {line.text}</text>
         </box>
       );
 
-    case 'error':
-    case 'stderr':
+    case "error":
+    case "stderr":
       return (
         <box>
-          <text fg={OneDarkPro.syntax.red}>
-            ✗ {line.text}
-          </text>
+          <text fg={OneDarkPro.syntax.red}>✗ {line.text}</text>
         </box>
       );
 
-    case 'exit':
+    case "exit":
       // Only show exit status for non-zero exit codes (errors)
       if (line.exitCode !== 0) {
         return (
@@ -266,11 +273,11 @@ export function OutputLine({ line }: Props) {
       // Don't render anything for successful completion
       return null;
 
-    case 'question':
+    case "question":
       // Questions are handled by QuestionPanel, not inline
       return null;
 
-    case 'debug':
+    case "debug":
       return (
         <box>
           <text fg={OneDarkPro.foreground.comment}>
@@ -278,14 +285,10 @@ export function OutputLine({ line }: Props) {
           </text>
         </box>
       );
-
-    case 'stdout':
     default:
       return (
         <box>
-          <text fg={OneDarkPro.foreground.primary}>
-            {line.text}
-          </text>
+          <text fg={OneDarkPro.foreground.primary}>{line.text}</text>
         </box>
       );
   }

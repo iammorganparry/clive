@@ -6,11 +6,11 @@
  * Built with Effect-TS for proper error handling
  */
 
-import { Context, Data, Effect, Layer } from 'effect';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
-import os from 'os';
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { Context, Data, Effect, Layer } from "effect";
 
 export interface SessionMetadata {
   sessionId: string;
@@ -26,7 +26,7 @@ export interface SessionMetadata {
  * Error when reading or writing session metadata
  */
 export class SessionMetadataError extends Data.TaggedError(
-  'SessionMetadataError'
+  "SessionMetadataError",
 )<{
   message: string;
   cause?: unknown;
@@ -40,8 +40,8 @@ class SessionMetadataServiceImpl {
   private cache: Map<string, SessionMetadata> = new Map();
 
   constructor() {
-    const cliveDir = path.join(os.homedir(), '.clive');
-    this.metadataFile = path.join(cliveDir, 'session-metadata.json');
+    const cliveDir = path.join(os.homedir(), ".clive");
+    this.metadataFile = path.join(cliveDir, "session-metadata.json");
   }
 
   /**
@@ -55,17 +55,21 @@ class SessionMetadataServiceImpl {
           await mkdir(dir, { recursive: true });
         }
       },
-      catch: (error) => new SessionMetadataError({
-        message: 'Failed to create metadata directory',
-        cause: error,
-      }),
+      catch: (error) =>
+        new SessionMetadataError({
+          message: "Failed to create metadata directory",
+          cause: error,
+        }),
     });
   }
 
   /**
    * Load all session metadata from file
    */
-  private loadMetadata(): Effect.Effect<Record<string, SessionMetadata>, SessionMetadataError> {
+  private loadMetadata(): Effect.Effect<
+    Record<string, SessionMetadata>,
+    SessionMetadataError
+  > {
     return Effect.gen(this, function* () {
       // Ensure directory exists
       yield* this.ensureDirectory();
@@ -77,18 +81,19 @@ class SessionMetadataServiceImpl {
 
       // Read file
       const content = yield* Effect.tryPromise({
-        try: () => readFile(this.metadataFile, 'utf-8'),
-        catch: (error) => new SessionMetadataError({
-          message: 'Failed to read session metadata',
-          cause: error,
-        }),
+        try: () => readFile(this.metadataFile, "utf-8"),
+        catch: (error) =>
+          new SessionMetadataError({
+            message: "Failed to read session metadata",
+            cause: error,
+          }),
       });
 
       // Parse JSON
       try {
         const data = JSON.parse(content);
         return data as Record<string, SessionMetadata>;
-      } catch (error) {
+      } catch (_error) {
         // If parse fails, return empty (corrupted file)
         return {};
       }
@@ -98,22 +103,26 @@ class SessionMetadataServiceImpl {
   /**
    * Save all session metadata to file
    */
-  private saveMetadata(metadata: Record<string, SessionMetadata>): Effect.Effect<void, SessionMetadataError> {
+  private saveMetadata(
+    metadata: Record<string, SessionMetadata>,
+  ): Effect.Effect<void, SessionMetadataError> {
     return Effect.gen(this, function* () {
       // Ensure directory exists
       yield* this.ensureDirectory();
 
       // Write file
       yield* Effect.tryPromise({
-        try: () => writeFile(
-          this.metadataFile,
-          JSON.stringify(metadata, null, 2),
-          'utf-8'
-        ),
-        catch: (error) => new SessionMetadataError({
-          message: 'Failed to write session metadata',
-          cause: error,
-        }),
+        try: () =>
+          writeFile(
+            this.metadataFile,
+            JSON.stringify(metadata, null, 2),
+            "utf-8",
+          ),
+        catch: (error) =>
+          new SessionMetadataError({
+            message: "Failed to write session metadata",
+            cause: error,
+          }),
       });
     });
   }
@@ -121,7 +130,9 @@ class SessionMetadataServiceImpl {
   /**
    * Get metadata for a specific session
    */
-  getMetadata(sessionId: string): Effect.Effect<SessionMetadata | null, SessionMetadataError> {
+  getMetadata(
+    sessionId: string,
+  ): Effect.Effect<SessionMetadata | null, SessionMetadataError> {
     return Effect.gen(this, function* () {
       // Check cache first
       if (this.cache.has(sessionId)) {
@@ -144,7 +155,12 @@ class SessionMetadataServiceImpl {
   /**
    * Set metadata for a session
    */
-  setMetadata(sessionId: string, metadata: Partial<Omit<SessionMetadata, 'sessionId' | 'createdAt' | 'updatedAt'>>): Effect.Effect<SessionMetadata, SessionMetadataError> {
+  setMetadata(
+    sessionId: string,
+    metadata: Partial<
+      Omit<SessionMetadata, "sessionId" | "createdAt" | "updatedAt">
+    >,
+  ): Effect.Effect<SessionMetadata, SessionMetadataError> {
     return Effect.gen(this, function* () {
       // Load current metadata
       const allMetadata = yield* this.loadMetadata();
@@ -175,7 +191,11 @@ class SessionMetadataServiceImpl {
   /**
    * Associate a Linear project with a session
    */
-  setLinearProject(sessionId: string, projectId: string, projectIdentifier?: string): Effect.Effect<SessionMetadata, SessionMetadataError> {
+  setLinearProject(
+    sessionId: string,
+    projectId: string,
+    projectIdentifier?: string,
+  ): Effect.Effect<SessionMetadata, SessionMetadataError> {
     return this.setMetadata(sessionId, {
       linearProjectId: projectId,
       linearProjectIdentifier: projectIdentifier,
@@ -185,7 +205,11 @@ class SessionMetadataServiceImpl {
   /**
    * Associate a Linear task with a session
    */
-  setLinearTask(sessionId: string, taskId: string, taskIdentifier?: string): Effect.Effect<SessionMetadata, SessionMetadataError> {
+  setLinearTask(
+    sessionId: string,
+    taskId: string,
+    taskIdentifier?: string,
+  ): Effect.Effect<SessionMetadata, SessionMetadataError> {
     return this.setMetadata(sessionId, {
       linearTaskId: taskId,
       linearTaskIdentifier: taskIdentifier,
@@ -195,7 +219,10 @@ class SessionMetadataServiceImpl {
   /**
    * Get all metadata (for debugging/admin)
    */
-  getAllMetadata(): Effect.Effect<Record<string, SessionMetadata>, SessionMetadataError> {
+  getAllMetadata(): Effect.Effect<
+    Record<string, SessionMetadata>,
+    SessionMetadataError
+  > {
     return this.loadMetadata();
   }
 
@@ -212,15 +239,14 @@ class SessionMetadataServiceImpl {
 /**
  * SessionMetadataService context tag
  */
-export class SessionMetadataService extends Context.Tag('SessionMetadataService')<
-  SessionMetadataService,
-  SessionMetadataServiceImpl
->() {
+export class SessionMetadataService extends Context.Tag(
+  "SessionMetadataService",
+)<SessionMetadataService, SessionMetadataServiceImpl>() {
   /**
    * Default layer providing SessionMetadataService
    */
   static readonly Default = Layer.succeed(
     SessionMetadataService,
-    new SessionMetadataServiceImpl()
+    new SessionMetadataServiceImpl(),
   );
 }

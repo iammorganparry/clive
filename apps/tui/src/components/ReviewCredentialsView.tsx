@@ -4,12 +4,12 @@
  * Collects base URL, test email/password, and skip auth option
  */
 
-import { useState, useRef, useCallback } from 'react';
-import { useKeyboard } from '@opentui/react';
-import { OneDarkPro } from '../styles/theme';
-import { usePaste } from '../hooks/usePaste';
-import type { InputRenderable } from '@opentui/core';
-import type { ReviewCredentials } from '../types/views';
+import type { InputRenderable } from "@opentui/core";
+import { useKeyboard } from "@opentui/react";
+import { useCallback, useRef, useState } from "react";
+import { usePaste } from "../hooks/usePaste";
+import { OneDarkPro } from "../styles/theme";
+import type { ReviewCredentials } from "../types/views";
 
 interface ReviewCredentialsViewProps {
   width: number;
@@ -19,9 +19,9 @@ interface ReviewCredentialsViewProps {
   onBack: () => void;
 }
 
-type FieldName = 'baseUrl' | 'email' | 'password' | 'skipAuth';
+type FieldName = "baseUrl" | "email" | "password" | "skipAuth";
 
-const FIELDS: FieldName[] = ['baseUrl', 'email', 'password', 'skipAuth'];
+const FIELDS: FieldName[] = ["baseUrl", "email", "password", "skipAuth"];
 
 export function ReviewCredentialsView({
   width,
@@ -31,9 +31,11 @@ export function ReviewCredentialsView({
   onBack,
 }: ReviewCredentialsViewProps) {
   const [focusedField, setFocusedField] = useState<number>(0);
-  const [baseUrl, setBaseUrl] = useState(credentials.baseUrl || 'http://localhost:3000');
-  const [email, setEmail] = useState(credentials.email || '');
-  const [password, setPassword] = useState(credentials.password || '');
+  const [baseUrl, setBaseUrl] = useState(
+    credentials.baseUrl || "http://localhost:3000",
+  );
+  const [email, setEmail] = useState(credentials.email || "");
+  const [password, setPassword] = useState(credentials.password || "");
   const [skipAuth, setSkipAuth] = useState(credentials.skipAuth || false);
 
   const baseUrlRef = useRef<InputRenderable>(null);
@@ -42,10 +44,14 @@ export function ReviewCredentialsView({
 
   const getInputRef = useCallback((field: FieldName) => {
     switch (field) {
-      case 'baseUrl': return baseUrlRef;
-      case 'email': return emailRef;
-      case 'password': return passwordRef;
-      default: return null;
+      case "baseUrl":
+        return baseUrlRef;
+      case "email":
+        return emailRef;
+      case "password":
+        return passwordRef;
+      default:
+        return null;
     }
   }, []);
 
@@ -60,13 +66,13 @@ export function ReviewCredentialsView({
 
   // Handle keyboard events
   useKeyboard((event) => {
-    if (event.name === 'escape') {
+    if (event.name === "escape") {
       onBack();
       return;
     }
 
     // Tab navigation between fields
-    if (event.name === 'tab') {
+    if (event.name === "tab") {
       if (event.shift) {
         // Shift+Tab - go backwards
         setFocusedField((prev) => (prev > 0 ? prev - 1 : FIELDS.length - 1));
@@ -78,9 +84,9 @@ export function ReviewCredentialsView({
     }
 
     // Enter to submit (if not on checkbox)
-    if (event.name === 'return') {
+    if (event.name === "return") {
       const currentField = FIELDS[focusedField];
-      if (currentField === 'skipAuth') {
+      if (currentField === "skipAuth") {
         // Toggle checkbox
         setSkipAuth((prev) => !prev);
       } else {
@@ -91,7 +97,7 @@ export function ReviewCredentialsView({
     }
 
     // Space to toggle checkbox when focused on skipAuth
-    if (event.sequence === ' ' && FIELDS[focusedField] === 'skipAuth') {
+    if (event.sequence === " " && FIELDS[focusedField] === "skipAuth") {
       setSkipAuth((prev) => !prev);
       return;
     }
@@ -105,13 +111,13 @@ export function ReviewCredentialsView({
       ref.current.insertText(event.text);
       // Update state to match
       switch (currentField) {
-        case 'baseUrl':
+        case "baseUrl":
           setBaseUrl(ref.current.value);
           break;
-        case 'email':
+        case "email":
           setEmail(ref.current.value);
           break;
-        case 'password':
+        case "password":
           setPassword(ref.current.value);
           break;
       }
@@ -125,7 +131,7 @@ export function ReviewCredentialsView({
     onChange: (val: string) => void,
     ref: React.RefObject<InputRenderable | null>,
     placeholder: string,
-    isPassword = false
+    isPassword = false,
   ) => {
     const isFocused = FIELDS[focusedField] === field;
 
@@ -144,14 +150,16 @@ export function ReviewCredentialsView({
           paddingRight={1}
           backgroundColor={OneDarkPro.background.secondary}
           borderStyle="rounded"
-          borderColor={isFocused ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
+          borderColor={
+            isFocused ? OneDarkPro.syntax.green : OneDarkPro.ui.border
+          }
         >
           <input
             ref={ref}
             placeholder={placeholder}
             focused={isFocused}
             onInput={onChange}
-            value={isPassword ? '*'.repeat(value.length) : value}
+            value={isPassword ? "*".repeat(value.length) : value}
             style={{
               fg: OneDarkPro.foreground.primary,
               backgroundColor: OneDarkPro.background.secondary,
@@ -164,7 +172,7 @@ export function ReviewCredentialsView({
   };
 
   const renderCheckbox = () => {
-    const isFocused = FIELDS[focusedField] === 'skipAuth';
+    const isFocused = FIELDS[focusedField] === "skipAuth";
 
     return (
       <box flexDirection="row" alignItems="center" marginTop={1}>
@@ -172,17 +180,25 @@ export function ReviewCredentialsView({
           width={3}
           height={1}
           borderStyle="rounded"
-          borderColor={isFocused ? OneDarkPro.syntax.green : OneDarkPro.ui.border}
+          borderColor={
+            isFocused ? OneDarkPro.syntax.green : OneDarkPro.ui.border
+          }
           backgroundColor={OneDarkPro.background.secondary}
           justifyContent="center"
           alignItems="center"
         >
-          <text fg={skipAuth ? OneDarkPro.syntax.green : OneDarkPro.foreground.muted}>
-            {skipAuth ? 'x' : ' '}
+          <text
+            fg={
+              skipAuth ? OneDarkPro.syntax.green : OneDarkPro.foreground.muted
+            }
+          >
+            {skipAuth ? "x" : " "}
           </text>
         </box>
         <text
-          fg={isFocused ? OneDarkPro.syntax.blue : OneDarkPro.foreground.primary}
+          fg={
+            isFocused ? OneDarkPro.syntax.blue : OneDarkPro.foreground.primary
+          }
           marginLeft={2}
         >
           Skip authentication (public app)
@@ -206,9 +222,7 @@ export function ReviewCredentialsView({
           <text fg={OneDarkPro.syntax.red} bold>
             CLIVE
           </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {' · Review Setup'}
-          </text>
+          <text fg={OneDarkPro.foreground.muted}>{" · Review Setup"}</text>
         </box>
 
         {/* Description */}
@@ -219,31 +233,31 @@ export function ReviewCredentialsView({
         {/* Form Fields */}
         <box flexDirection="column" width={50}>
           {renderInputField(
-            'App Base URL',
-            'baseUrl',
+            "App Base URL",
+            "baseUrl",
             baseUrl,
             setBaseUrl,
             baseUrlRef,
-            'http://localhost:3000'
+            "http://localhost:3000",
           )}
 
           {renderInputField(
-            'Test Email (optional)',
-            'email',
+            "Test Email (optional)",
+            "email",
             email,
             setEmail,
             emailRef,
-            'test@example.com'
+            "test@example.com",
           )}
 
           {renderInputField(
-            'Test Password (optional)',
-            'password',
+            "Test Password (optional)",
+            "password",
             password,
             setPassword,
             passwordRef,
-            'password',
-            true
+            "password",
+            true,
           )}
 
           {renderCheckbox()}
@@ -252,7 +266,7 @@ export function ReviewCredentialsView({
         {/* Keyboard Hints */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.muted}>
-            Tab Navigate  {'\u00B7'}  Enter Continue  {'\u00B7'}  Esc Back
+            Tab Navigate {"\u00B7"} Enter Continue {"\u00B7"} Esc Back
           </text>
         </box>
       </box>

@@ -13,6 +13,9 @@ const runtime = Runtime.defaultRuntime;
 export const conversationRouter = {
   /**
    * Create a new conversation for a source file
+   *
+   * @contract conversation.create
+   * @see contracts/system.md#conversation.create
    */
   create: protectedProcedure
     .input(z.object({ sourceFile: z.string() }))
@@ -37,6 +40,9 @@ export const conversationRouter = {
 
   /**
    * Get conversation by ID
+   *
+   * @contract conversation.getById
+   * @see contracts/system.md#conversation.getById
    */
   getById: protectedProcedure
     .input(z.object({ id: z.string() }))
@@ -79,6 +85,9 @@ export const conversationRouter = {
 
   /**
    * Get conversation by user and source file
+   *
+   * @contract conversation.getByFile
+   * @see contracts/system.md#conversation.getByFile
    */
   getByFile: protectedProcedure
     .input(z.object({ sourceFile: z.string() }))
@@ -103,6 +112,9 @@ export const conversationRouter = {
 
   /**
    * Get conversation by user, branch name, and base branch
+   *
+   * @contract conversation.getByBranch
+   * @see contracts/system.md#conversation.getByBranch
    */
   getByBranch: protectedProcedure
     .input(
@@ -140,6 +152,9 @@ export const conversationRouter = {
 
   /**
    * Create a new conversation for a branch
+   *
+   * @contract conversation.createForBranch
+   * @see contracts/system.md#conversation.createForBranch
    */
   createForBranch: protectedProcedure
     .input(
@@ -179,6 +194,9 @@ export const conversationRouter = {
 
   /**
    * List all conversations for the user
+   *
+   * @contract conversation.list
+   * @see contracts/system.md#conversation.list
    */
   list: protectedProcedure.query(async ({ ctx }) => {
     return Effect.gen(function* () {
@@ -201,6 +219,9 @@ export const conversationRouter = {
 
   /**
    * Update conversation status
+   *
+   * @contract conversation.updateStatus
+   * @see contracts/system.md#conversation.updateStatus
    */
   updateStatus: protectedProcedure
     .input(
@@ -271,6 +292,9 @@ export const conversationRouter = {
 
   /**
    * Delete a conversation
+   *
+   * @contract conversation.delete
+   * @see contracts/system.md#conversation.delete
    */
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
@@ -330,6 +354,9 @@ export const conversationRouter = {
 
   /**
    * Add a message to a conversation
+   *
+   * @contract conversation.addMessage
+   * @see contracts/system.md#conversation.addMessage
    */
   addMessage: protectedProcedure
     .input(
@@ -399,6 +426,9 @@ export const conversationRouter = {
 
   /**
    * Get all messages for a conversation
+   *
+   * @contract conversation.getMessages
+   * @see contracts/system.md#conversation.getMessages
    */
   getMessages: protectedProcedure
     .input(z.object({ conversationId: z.string() }))

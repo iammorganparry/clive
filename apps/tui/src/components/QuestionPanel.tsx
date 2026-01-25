@@ -3,11 +3,11 @@
  * Displays AskUserQuestion tool prompt with navigation and submission
  */
 
-import { useState, useEffect } from 'react';
-import { useKeyboard } from '@opentui/react';
-import { OneDarkPro } from '../styles/theme';
-import type { QuestionData } from '../types';
-import { debugLog } from '../utils/debug-logger';
+import { useKeyboard } from "@opentui/react";
+import { useEffect, useState } from "react";
+import { OneDarkPro } from "../styles/theme";
+import type { QuestionData } from "../types";
+import { debugLog } from "../utils/debug-logger";
 
 interface QuestionPanelProps {
   width: number;
@@ -35,7 +35,7 @@ export function QuestionPanel({
 
   // Custom input state for "Other" option
   const [showCustomInput, setShowCustomInput] = useState(false);
-  const [customInput, setCustomInput] = useState('');
+  const [customInput, setCustomInput] = useState("");
 
   const currentQuestion = question.questions[currentIndex];
   const isLastQuestion = currentIndex === question.questions.length - 1;
@@ -43,7 +43,7 @@ export function QuestionPanel({
   // Add "Other" option to the end of options list
   const optionsWithOther = [
     ...currentQuestion.options,
-    { label: 'Other', description: 'Enter a custom answer' }
+    { label: "Other", description: "Enter a custom answer" },
   ];
   const isOtherSelected = selectedIndex === optionsWithOther.length - 1;
 
@@ -51,30 +51,30 @@ export function QuestionPanel({
   useKeyboard((key) => {
     // If custom input is showing, handle differently
     if (showCustomInput) {
-      if (key.name === 'return' && customInput.trim()) {
+      if (key.name === "return" && customInput.trim()) {
         handleCustomSubmit();
-      } else if (key.name === 'escape') {
+      } else if (key.name === "escape") {
         setShowCustomInput(false);
-        setCustomInput('');
+        setCustomInput("");
       }
       return; // Let input component handle other keys
     }
 
-    if (key.name === 'up' || key.name === 'k') {
+    if (key.name === "up" || key.name === "k") {
       setSelectedIndex((prev) =>
-        prev > 0 ? prev - 1 : optionsWithOther.length - 1
+        prev > 0 ? prev - 1 : optionsWithOther.length - 1,
       );
-    } else if (key.name === 'down' || key.name === 'j') {
+    } else if (key.name === "down" || key.name === "j") {
       setSelectedIndex((prev) =>
-        prev < optionsWithOther.length - 1 ? prev + 1 : 0
+        prev < optionsWithOther.length - 1 ? prev + 1 : 0,
       );
-    } else if (key.name === 'return') {
+    } else if (key.name === "return") {
       handleSelect();
-    } else if (key.name === 'escape') {
+    } else if (key.name === "escape") {
       onCancel?.();
     } else if (/^[1-9]$/.test(key.key)) {
       // Number key selection (1-9)
-      const index = parseInt(key.key) - 1;
+      const index = parseInt(key.key, 10) - 1;
       if (index < optionsWithOther.length) {
         setSelectedIndex(index);
         // Auto-submit on number key
@@ -135,7 +135,7 @@ export function QuestionPanel({
     };
     setAnswers(newAnswers);
     setShowCustomInput(false);
-    setCustomInput('');
+    setCustomInput("");
 
     if (isLastQuestion) {
       // Submit all answers
@@ -149,10 +149,10 @@ export function QuestionPanel({
 
   // Debug: log panel dimensions
   useEffect(() => {
-    debugLog('QuestionPanel', 'Rendering with dimensions', {
+    debugLog("QuestionPanel", "Rendering with dimensions", {
       width,
       height,
-      currentQuestion: currentQuestion.header
+      currentQuestion: currentQuestion.header,
     });
   }, [width, height, currentQuestion.header]);
 
@@ -177,9 +177,7 @@ export function QuestionPanel({
 
       {/* Header */}
       <box marginBottom={1}>
-        <text fg={OneDarkPro.syntax.blue}>
-          ❓ {currentQuestion.header}
-        </text>
+        <text fg={OneDarkPro.syntax.blue}>❓ {currentQuestion.header}</text>
       </box>
 
       {/* Question text */}
@@ -201,31 +199,47 @@ export function QuestionPanel({
               paddingLeft={1}
               paddingRight={1}
               backgroundColor={
-                isSelected
-                  ? OneDarkPro.background.highlight
-                  : 'transparent'
+                isSelected ? OneDarkPro.background.highlight : "transparent"
               }
               flexDirection="column"
             >
               {/* Option label with number shortcut and selection indicator */}
-              <box flexDirection="row" alignItems="center" marginBottom={option.description ? 1 : 0}>
+              <box
+                flexDirection="row"
+                alignItems="center"
+                marginBottom={option.description ? 1 : 0}
+              >
                 {/* Number shortcut badge */}
                 <text
-                  bg={isSelected ? OneDarkPro.syntax.blue : OneDarkPro.background.secondary}
-                  fg={isSelected ? OneDarkPro.background.primary : OneDarkPro.foreground.muted}
+                  bg={
+                    isSelected
+                      ? OneDarkPro.syntax.blue
+                      : OneDarkPro.background.secondary
+                  }
+                  fg={
+                    isSelected
+                      ? OneDarkPro.background.primary
+                      : OneDarkPro.foreground.muted
+                  }
                 >
                   {` ${i + 1} `}
                 </text>
                 {/* Spacing */}
                 <text> </text>
                 {/* Selection indicator */}
-                <text fg={isSelected ? OneDarkPro.syntax.green : 'transparent'}>
-                  {isSelected ? '▸' : ' '}
+                <text fg={isSelected ? OneDarkPro.syntax.green : "transparent"}>
+                  {isSelected ? "▸" : " "}
                 </text>
                 {/* Spacing */}
                 <text> </text>
                 {/* Option label */}
-                <text fg={isSelected ? OneDarkPro.foreground.primary : OneDarkPro.foreground.secondary}>
+                <text
+                  fg={
+                    isSelected
+                      ? OneDarkPro.foreground.primary
+                      : OneDarkPro.foreground.secondary
+                  }
+                >
                   {option.label}
                 </text>
               </box>
@@ -271,9 +285,8 @@ export function QuestionPanel({
       <box marginTop={1}>
         <text fg={OneDarkPro.foreground.muted}>
           {showCustomInput
-            ? 'Type your answer • Enter Submit • Esc Cancel'
-            : `1-${optionsWithOther.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel`
-          }
+            ? "Type your answer • Enter Submit • Esc Cancel"
+            : `1-${optionsWithOther.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel`}
         </text>
       </box>
     </box>

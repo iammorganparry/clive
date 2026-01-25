@@ -1,4 +1,4 @@
-import { createAnthropic, type AnthropicProvider } from "@ai-sdk/anthropic";
+import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
@@ -36,6 +36,9 @@ export type LanguageModelProvider = AnthropicProvider;
  * const model = provider.embedding('text-embedding-3-small');
  * await embedMany({ model, values: texts });
  * ```
+ *
+ * @contract AIGateway.openai
+ * @see contracts/system.md#AIGateway.openai
  */
 export const createEmbeddingProvider = (tokenResult: AiTokenResult) => {
   if (tokenResult.isGateway) {
@@ -75,6 +78,9 @@ export const createEmbeddingProvider = (tokenResult: AiTokenResult) => {
  * const model = anthropic('claude-opus-4-5');
  * await generateText({ model, prompt: '...' });
  * ```
+ *
+ * @contract AIGateway.anthropic
+ * @see contracts/system.md#AIGateway.anthropic
  */
 export const createAnthropicProvider = (tokenResult: AiTokenResult) => {
   if (tokenResult.isGateway) {
@@ -109,6 +115,9 @@ export const createAnthropicProvider = (tokenResult: AiTokenResult) => {
  * const model = xai('grok-code-fast-1');
  * await generateText({ model, prompt: '...' });
  * ```
+ *
+ * @contract AIGateway.xai
+ * @see contracts/system.md#AIGateway.xai
  */
 export const createXaiProvider = (tokenResult: AiTokenResult) => {
   if (tokenResult.isGateway) {

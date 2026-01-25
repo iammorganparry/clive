@@ -1,8 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
-import type React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@clive/ui/button";
-import { Input } from "@clive/ui/input";
 import {
   Card,
   CardContent,
@@ -10,6 +6,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
+import { Input } from "@clive/ui/input";
+import { useQueryClient } from "@tanstack/react-query";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "../../../rpc/provider.js";
 
 export const BaseBranchForm: React.FC = () => {
@@ -130,9 +130,7 @@ export const BaseBranchForm: React.FC = () => {
             </Button>
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>

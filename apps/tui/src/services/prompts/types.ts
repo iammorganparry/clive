@@ -10,9 +10,9 @@ export interface BuildConfig {
   readonly workspaceRoot?: string;
 
   /**
-   * Mode: plan or build
+   * Mode: plan, build, or review
    */
-  readonly mode?: "plan" | "build";
+  readonly mode?: "plan" | "build" | "review";
 
   /**
    * Issue tracker integration

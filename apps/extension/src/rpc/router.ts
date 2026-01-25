@@ -1,12 +1,12 @@
 import { createRouter } from "@clive/webview-rpc";
-import { statusRouter } from "./routers/status.js";
+import type { RpcContext } from "./context.js";
 import { agentsRouter } from "./routers/agents.js";
 import { authRouter } from "./routers/auth.js";
 import { configRouter } from "./routers/config.js";
 import { conversationsRouter } from "./routers/conversations.js";
 import { knowledgeBaseRouter } from "./routers/knowledge-base.js";
+import { statusRouter } from "./routers/status.js";
 import { systemRouter } from "./routers/system.js";
-import type { RpcContext } from "./context.js";
 
 const { router } = createRouter<RpcContext>();
 

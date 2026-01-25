@@ -1,24 +1,24 @@
-import { describe, expect, vi, beforeEach } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect, Either, Runtime } from "effect";
+import { beforeEach, describe, expect, vi } from "vitest";
 import type * as vscode from "vscode";
-import {
-  createProposeTestPlanTool,
-  initializePlanStreamingWriteEffect,
-  appendPlanStreamingContentEffect,
-  finalizePlanStreamingWriteEffect,
-  renamePlanFileEffect,
-} from "../propose-test-plan";
-import type {
-  ProposeTestPlanInput,
-  ProposeTestPlanOutput,
-} from "../propose-test-plan";
-import { executeTool } from "./test-helpers";
 import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../../../__tests__/mock-factories/index.js";
 import type { VSCodeService } from "../../../vs-code.js";
+import type {
+  ProposeTestPlanInput,
+  ProposeTestPlanOutput,
+} from "../propose-test-plan";
+import {
+  appendPlanStreamingContentEffect,
+  createProposeTestPlanTool,
+  finalizePlanStreamingWriteEffect,
+  initializePlanStreamingWriteEffect,
+  renamePlanFileEffect,
+} from "../propose-test-plan";
+import { executeTool } from "./test-helpers";
 
 describe("proposeTestPlanTool", () => {
   let mockFs: {

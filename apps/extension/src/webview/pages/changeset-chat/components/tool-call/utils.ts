@@ -57,8 +57,12 @@ export const isFileReadingCommand = (command: string): boolean => {
 /**
  * Extract file path from file-reading command
  */
-export const extractFilePathFromReadCommand = (command: string): string | null => {
-  const match = command.match(/^(?:cat|head|tail|less)\s+(?:-[^\s]+\s+)*([^\s|><]+)/);
+export const extractFilePathFromReadCommand = (
+  command: string,
+): string | null => {
+  const match = command.match(
+    /^(?:cat|head|tail|less)\s+(?:-[^\s]+\s+)*([^\s|><]+)/,
+  );
   return match?.[1]?.replace(/['"]/g, "") || null;
 };
 
@@ -172,7 +176,10 @@ export const generateToolSummary = (
   output?: unknown,
 ): string => {
   // bashExecute/Bash: Show the command with smart formatting
-  if ((toolName === "bashExecute" || toolName === "Bash") && isBashExecuteArgs(input)) {
+  if (
+    (toolName === "bashExecute" || toolName === "Bash") &&
+    isBashExecuteArgs(input)
+  ) {
     const command = input.command.trim();
     if (command.startsWith("cat ")) {
       const filePath = command
@@ -191,9 +198,13 @@ export const generateToolSummary = (
       return "find files";
     }
     if (command.startsWith("grep ")) {
-      const patternMatch = command.match(/grep\s+(?:-r\s+)?(?:['"]([^'"]+)['"]|([^\s]+))/);
+      const patternMatch = command.match(
+        /grep\s+(?:-r\s+)?(?:['"]([^'"]+)['"]|([^\s]+))/,
+      );
       const pattern = patternMatch?.[1] || patternMatch?.[2] || "";
-      const pathMatch = command.match(/grep\s+(?:-r\s+)?(?:['"][^'"]+['"]|[^\s]+)\s+([^\s]+)/);
+      const pathMatch = command.match(
+        /grep\s+(?:-r\s+)?(?:['"][^'"]+['"]|[^\s]+)\s+([^\s]+)/,
+      );
       const path = pathMatch?.[1] || "";
       if (pattern && path) {
         const dirName = extractFilename(path);
@@ -357,7 +368,12 @@ export const extractFileInfo = (
         const out = output as WriteTestFileOutput;
         filePath = out.filePath || out.path;
       }
-      if (!filePath && input && typeof input === "object" && isWriteTestFileArgs(input)) {
+      if (
+        !filePath &&
+        input &&
+        typeof input === "object" &&
+        isWriteTestFileArgs(input)
+      ) {
         filePath = input.targetPath || input.filePath;
       }
     } else if (toolName === "writeKnowledgeFile") {
@@ -365,7 +381,12 @@ export const extractFileInfo = (
         const out = output as WriteKnowledgeFileOutput;
         filePath = out.path || out.relativePath;
       }
-      if (!filePath && input && typeof input === "object" && isWriteKnowledgeFileArgs(input)) {
+      if (
+        !filePath &&
+        input &&
+        typeof input === "object" &&
+        isWriteKnowledgeFileArgs(input)
+      ) {
         filePath = input.filePath;
       }
     }
@@ -392,7 +413,11 @@ export const extractFileInfo = (
     } else if (toolName === "writeKnowledgeFile") {
       const out = output as WriteKnowledgeFileOutput;
       filePath = out.path || out.relativePath;
-      if (input && typeof input === "object" && isWriteKnowledgeFileArgs(input)) {
+      if (
+        input &&
+        typeof input === "object" &&
+        isWriteKnowledgeFileArgs(input)
+      ) {
         content = input.content;
       }
     }
@@ -466,7 +491,10 @@ export const generateActionList = (
 ): string[] => {
   const actions: string[] = [];
 
-  if ((toolName === "bashExecute" || toolName === "Bash") && isBashExecuteArgs(input)) {
+  if (
+    (toolName === "bashExecute" || toolName === "Bash") &&
+    isBashExecuteArgs(input)
+  ) {
     const command = input.command.trim();
     if (isFileReadingCommand(command)) {
       return [];
@@ -483,7 +511,9 @@ export const generateActionList = (
         if (output && typeof output === "object") {
           const fileOutput = output as ReadFileOutput;
           if (fileOutput.startLine && fileOutput.endLine) {
-            actions.push(`Read ${filename} L${fileOutput.startLine}-${fileOutput.endLine}`);
+            actions.push(
+              `Read ${filename} L${fileOutput.startLine}-${fileOutput.endLine}`,
+            );
           } else {
             actions.push(`Read ${filename}`);
           }
@@ -537,7 +567,10 @@ export const generateActionList = (
 /**
  * Check if terminal output indicates cancellation
  */
-export const detectCancellation = (output: unknown, stderr?: string): boolean => {
+export const detectCancellation = (
+  output: unknown,
+  stderr?: string,
+): boolean => {
   if (output && typeof output === "object") {
     const outputObj = output as BashExecuteOutput;
     const message = outputObj.message || outputObj.error || "";
@@ -665,7 +698,9 @@ export const getToolDisplayInfo = (
   if (toolName === "searchKnowledge") {
     if (isSearchKnowledgeArgs(input) && input.query) {
       const truncatedQuery =
-        input.query.length > 40 ? `${input.query.slice(0, 37)}...` : input.query;
+        input.query.length > 40
+          ? `${input.query.slice(0, 37)}...`
+          : input.query;
       return { label: "Search", context: truncatedQuery };
     }
     return { label: "Search knowledge" };
@@ -675,7 +710,9 @@ export const getToolDisplayInfo = (
   if (toolName === "webSearch") {
     if (isWebSearchArgs(input) && input.query) {
       const truncatedQuery =
-        input.query.length > 40 ? `${input.query.slice(0, 37)}...` : input.query;
+        input.query.length > 40
+          ? `${input.query.slice(0, 37)}...`
+          : input.query;
       return { label: "Web search", context: truncatedQuery };
     }
     return { label: "Web search" };
@@ -684,7 +721,10 @@ export const getToolDisplayInfo = (
   // Propose test - show source file
   if (toolName === "proposeTest") {
     if (isProposeTestArgs(input) && input.sourceFile) {
-      return { label: "Propose test", context: extractFilename(input.sourceFile) };
+      return {
+        label: "Propose test",
+        context: extractFilename(input.sourceFile),
+      };
     }
     return { label: "Propose test" };
   }
@@ -705,7 +745,10 @@ export const getToolDisplayInfo = (
       const pattern = inputObj.pattern;
       const path = inputObj.path as string | undefined;
       if (path) {
-        return { label: "Grep", context: `${pattern} in ${extractFilename(path)}` };
+        return {
+          label: "Grep",
+          context: `${pattern} in ${extractFilename(path)}`,
+        };
       }
       return { label: "Grep", context: pattern };
     }

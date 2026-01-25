@@ -3,9 +3,9 @@
  * Effect Service following the codebase pattern
  */
 
+import * as path from "node:path";
 import { Effect } from "effect";
 import * as vscode from "vscode";
-import * as path from "node:path";
 import { VSCodeService } from "../../vs-code.js";
 
 /**

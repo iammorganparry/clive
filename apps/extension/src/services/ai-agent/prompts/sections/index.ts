@@ -6,8 +6,6 @@
  * Extension-specific sections are defined locally
  */
 
-import { SectionId, type SectionRegistry } from "../types.js";
-
 // Shared sections from @clive/prompts package
 import {
   conversation,
@@ -23,6 +21,7 @@ import {
   verification,
   workflow,
 } from "@clive/prompts/sections";
+import { SectionId, type SectionRegistry } from "../types.js";
 
 // Extension-specific sections (local)
 import { agentRole } from "./agent-role.js";

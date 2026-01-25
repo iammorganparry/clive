@@ -6,12 +6,12 @@
  * Built with Effect-TS for proper error handling and composability
  */
 
-import { Context, Data, Effect, Layer } from 'effect';
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
-import os from 'os';
-import { SessionMetadataService } from './SessionMetadataService';
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { Context, Data, Effect, Layer } from "effect";
+import { SessionMetadataService } from "./SessionMetadataService";
 
 export interface Conversation {
   sessionId: string;
@@ -30,7 +30,7 @@ export interface Conversation {
  * Error when conversation history file is not found
  */
 export class ConversationHistoryNotFoundError extends Data.TaggedError(
-  'ConversationHistoryNotFoundError'
+  "ConversationHistoryNotFoundError",
 )<{
   message: string;
   path: string;
@@ -40,7 +40,7 @@ export class ConversationHistoryNotFoundError extends Data.TaggedError(
  * Error when reading or parsing conversation data
  */
 export class ConversationReadError extends Data.TaggedError(
-  'ConversationReadError'
+  "ConversationReadError",
 )<{
   message: string;
   cause?: unknown;
@@ -55,16 +55,21 @@ class ConversationServiceImpl {
   private readonly projectsDir: string;
 
   constructor() {
-    this.claudeDir = path.join(os.homedir(), '.claude');
-    this.historyFile = path.join(this.claudeDir, 'history.jsonl');
-    this.projectsDir = path.join(this.claudeDir, 'projects');
+    this.claudeDir = path.join(os.homedir(), ".claude");
+    this.historyFile = path.join(this.claudeDir, "history.jsonl");
+    this.projectsDir = path.join(this.claudeDir, "projects");
   }
 
   /**
    * Get recent conversations grouped by session
    * Returns most recent conversations first
    */
-  getRecentConversations(limit: number = 50): Effect.Effect<Conversation[], ConversationHistoryNotFoundError | ConversationReadError> {
+  getRecentConversations(
+    limit: number = 50,
+  ): Effect.Effect<
+    Conversation[],
+    ConversationHistoryNotFoundError | ConversationReadError
+  > {
     return Effect.gen(this, function* () {
       // Check if history file exists
       if (!existsSync(this.historyFile)) {
@@ -73,14 +78,15 @@ class ConversationServiceImpl {
 
       // Read history file
       const historyContent = yield* Effect.tryPromise({
-        try: () => readFile(this.historyFile, 'utf-8'),
-        catch: (error) => new ConversationReadError({
-          message: 'Failed to read conversation history',
-          cause: error,
-        }),
+        try: () => readFile(this.historyFile, "utf-8"),
+        catch: (error) =>
+          new ConversationReadError({
+            message: "Failed to read conversation history",
+            cause: error,
+          }),
       });
 
-      const lines = historyContent.trim().split('\n');
+      const lines = historyContent.trim().split("\n");
 
       // Parse history entries
       const historyEntries: Array<{
@@ -95,7 +101,12 @@ class ConversationServiceImpl {
 
         try {
           const entry = JSON.parse(line);
-          if (entry.sessionId && entry.project && entry.display && entry.timestamp) {
+          if (
+            entry.sessionId &&
+            entry.project &&
+            entry.display &&
+            entry.timestamp
+          ) {
             historyEntries.push({
               sessionId: entry.sessionId,
               project: entry.project,
@@ -103,10 +114,7 @@ class ConversationServiceImpl {
               timestamp: entry.timestamp,
             });
           }
-        } catch (error) {
-          // Skip invalid lines
-          continue;
-        }
+        } catch (_error) {}
       }
 
       // Group by sessionId and take the first entry (original prompt) for each session
@@ -146,13 +154,19 @@ class ConversationServiceImpl {
   /**
    * Get conversations for a specific project/directory
    */
-  getConversationsForProject(projectPath: string, limit: number = 50): Effect.Effect<Conversation[], ConversationHistoryNotFoundError | ConversationReadError> {
+  getConversationsForProject(
+    projectPath: string,
+    limit: number = 50,
+  ): Effect.Effect<
+    Conversation[],
+    ConversationHistoryNotFoundError | ConversationReadError
+  > {
     return Effect.gen(this, function* () {
       // Get more conversations to filter
       const allConversations = yield* this.getRecentConversations(200);
 
       return allConversations
-        .filter(conv => conv.project === projectPath)
+        .filter((conv) => conv.project === projectPath)
         .slice(0, limit);
     });
   }
@@ -160,14 +174,19 @@ class ConversationServiceImpl {
   /**
    * Enrich conversations with slug and git branch from conversation files
    */
-  private enrichConversations(conversations: Conversation[]): Effect.Effect<void, ConversationReadError> {
+  private enrichConversations(
+    conversations: Conversation[],
+  ): Effect.Effect<void, ConversationReadError> {
     return Effect.gen(this, function* () {
       for (const conv of conversations) {
         try {
           // Encode project path for directory name (same as CLI does)
           const encodedProject = this.encodeProjectPath(conv.project);
           const projectDir = path.join(this.projectsDir, encodedProject);
-          const conversationFile = path.join(projectDir, `${conv.sessionId}.jsonl`);
+          const conversationFile = path.join(
+            projectDir,
+            `${conv.sessionId}.jsonl`,
+          );
 
           if (!existsSync(conversationFile)) {
             continue;
@@ -175,23 +194,21 @@ class ConversationServiceImpl {
 
           // Read first line to get slug and git branch
           const content = yield* Effect.tryPromise({
-            try: () => readFile(conversationFile, 'utf-8'),
-            catch: () => new ConversationReadError({
-              message: `Failed to read conversation file: ${conversationFile}`,
-            }),
+            try: () => readFile(conversationFile, "utf-8"),
+            catch: () =>
+              new ConversationReadError({
+                message: `Failed to read conversation file: ${conversationFile}`,
+              }),
           });
 
-          const firstLine = content.split('\n')[0];
+          const firstLine = content.split("\n")[0];
 
           if (firstLine) {
             const data = JSON.parse(firstLine);
             conv.slug = data.slug;
             conv.gitBranch = data.gitBranch;
           }
-        } catch (error) {
-          // Skip enrichment on error
-          continue;
-        }
+        } catch (_error) {}
       }
     });
   }
@@ -200,15 +217,17 @@ class ConversationServiceImpl {
    * Enrich conversations with Linear metadata from SessionMetadataService
    * Errors are caught gracefully - metadata enrichment is optional
    */
-  private enrichWithLinearMetadata(conversations: Conversation[]): Effect.Effect<void, never> {
+  private enrichWithLinearMetadata(
+    conversations: Conversation[],
+  ): Effect.Effect<void, never> {
     return Effect.gen(this, function* () {
       const metadataService = yield* SessionMetadataService;
 
       for (const conv of conversations) {
         // Fetch metadata for this session, catching any errors
-        const metadataEffect = metadataService.getMetadata(conv.sessionId).pipe(
-          Effect.catchAll(() => Effect.succeed(null))
-        );
+        const metadataEffect = metadataService
+          .getMetadata(conv.sessionId)
+          .pipe(Effect.catchAll(() => Effect.succeed(null)));
 
         const metadata = yield* metadataEffect;
 
@@ -228,15 +247,16 @@ class ConversationServiceImpl {
    * Mimics the CLI's encoding: replace / with - and remove : (for Windows)
    */
   private encodeProjectPath(projectPath: string): string {
-    return projectPath
-      .replace(/\//g, '-')
-      .replace(/:/g, '');
+    return projectPath.replace(/\//g, "-").replace(/:/g, "");
   }
 
   /**
    * Get conversation details (full transcript)
    */
-  getConversationDetails(sessionId: string, projectPath: string): Effect.Effect<any[], ConversationReadError> {
+  getConversationDetails(
+    sessionId: string,
+    projectPath: string,
+  ): Effect.Effect<any[], ConversationReadError> {
     return Effect.gen(this, function* () {
       const encodedProject = this.encodeProjectPath(projectPath);
       const projectDir = path.join(this.projectsDir, encodedProject);
@@ -247,14 +267,15 @@ class ConversationServiceImpl {
       }
 
       const content = yield* Effect.tryPromise({
-        try: () => readFile(conversationFile, 'utf-8'),
-        catch: (error) => new ConversationReadError({
-          message: `Failed to read conversation file: ${conversationFile}`,
-          cause: error,
-        }),
+        try: () => readFile(conversationFile, "utf-8"),
+        catch: (error) =>
+          new ConversationReadError({
+            message: `Failed to read conversation file: ${conversationFile}`,
+            cause: error,
+          }),
       });
 
-      const lines = content.trim().split('\n');
+      const lines = content.trim().split("\n");
 
       const events = [];
       for (const line of lines) {
@@ -262,9 +283,7 @@ class ConversationServiceImpl {
 
         try {
           events.push(JSON.parse(line));
-        } catch (error) {
-          continue;
-        }
+        } catch (_error) {}
       }
 
       return events;
@@ -274,7 +293,10 @@ class ConversationServiceImpl {
   /**
    * Check if a conversation exists
    */
-  conversationExists(sessionId: string, projectPath: string): Effect.Effect<boolean, never> {
+  conversationExists(
+    sessionId: string,
+    projectPath: string,
+  ): Effect.Effect<boolean, never> {
     return Effect.sync(() => {
       const encodedProject = this.encodeProjectPath(projectPath);
       const projectDir = path.join(this.projectsDir, encodedProject);
@@ -288,7 +310,7 @@ class ConversationServiceImpl {
 /**
  * ConversationService context tag
  */
-export class ConversationService extends Context.Tag('ConversationService')<
+export class ConversationService extends Context.Tag("ConversationService")<
   ConversationService,
   ConversationServiceImpl
 >() {
@@ -297,6 +319,6 @@ export class ConversationService extends Context.Tag('ConversationService')<
    */
   static readonly Default = Layer.succeed(
     ConversationService,
-    new ConversationServiceImpl()
+    new ConversationServiceImpl(),
   );
 }

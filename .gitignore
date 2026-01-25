@@ -62,3 +62,15 @@ dist/
 # Docs
 
 docs/repos
+
+# Clive working files
+.claude/settings.local.json
+.claude/.restart-session
+.claude/.parent-issue-id
+.claude/.test-loop-state
+.claude/.test-plan-path
+.claude/.test-max-iterations
+.claude/.linear-updated
+.claude/.cancel-test-loop
+.claude/current-plan.md
+.claude/progress.txt

@@ -1,10 +1,10 @@
 "use client";
 
-import type React from "react";
 import { ThemeProvider as UIThemeProvider } from "@clive/ui/theme";
+import type React from "react";
 
 export function ThemeProvider({
-  children,
+	children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <UIThemeProvider>{children}</UIThemeProvider>;
+	return <UIThemeProvider>{children}</UIThemeProvider>;
 }

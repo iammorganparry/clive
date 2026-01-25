@@ -3,36 +3,34 @@ import { twMerge } from "tailwind-merge";
 
 export const cn = (...inputs: Parameters<typeof cx>) => twMerge(cx(inputs));
 
-export { LoginForm } from "./login-form";
-export type { LoginFormProps } from "./login-form";
+export type {
+  DeviceAuthPendingProps,
+  DeviceCodeEntryProps,
+  Feature,
+  FeatureListProps,
+  LoadingScreenProps,
+  ResultCardProps,
+} from "./components/blocks";
+export {
+  DeviceAuthPending,
+  DeviceCodeEntry,
+  FeatureList,
+  LoadingScreen,
+  ResultCard,
+} from "./components/blocks";
 
 export {
   InputOTP,
   InputOTPGroup,
-  InputOTPSlot,
   InputOTPSeparator,
+  InputOTPSlot,
 } from "./input-otp";
-
+export type { LoginFormProps } from "./login-form";
+export { LoginForm } from "./login-form";
+export type { ResolvedTheme, ThemeMode } from "./theme";
 export {
   ThemeProvider,
-  useTheme,
   ThemeToggle,
   themeDetectorScript,
+  useTheme,
 } from "./theme";
-export type { ThemeMode, ResolvedTheme } from "./theme";
-
-export {
-  DeviceCodeEntry,
-  DeviceAuthPending,
-  ResultCard,
-  LoadingScreen,
-  FeatureList,
-} from "./components/blocks";
-export type {
-  DeviceCodeEntryProps,
-  DeviceAuthPendingProps,
-  ResultCardProps,
-  LoadingScreenProps,
-  FeatureListProps,
-  Feature,
-} from "./components/blocks";

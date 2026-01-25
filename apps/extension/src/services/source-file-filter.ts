@@ -71,14 +71,15 @@ export class SourceFileFilter extends Effect.Service<SourceFileFilter>()(
           // Check extension
           const ext = path.extname(file.path);
           if (
-            !sourceExtensions.includes(
-              ext as (typeof sourceExtensions)[number],
-            )
+            !sourceExtensions.includes(ext as (typeof sourceExtensions)[number])
           ) {
             yield* Effect.logDebug(
               `[SourceFileFilter] File ${file.path} not eligible: wrong extension (${ext})`,
             );
-            return { isEligible: false, reason: `File extension ${ext} is not supported` };
+            return {
+              isEligible: false,
+              reason: `File extension ${ext} is not supported`,
+            };
           }
 
           // Check if file is in excluded directories
@@ -88,7 +89,10 @@ export class SourceFileFilter extends Effect.Service<SourceFileFilter>()(
               yield* Effect.logDebug(
                 `[SourceFileFilter] File ${file.path} not eligible: in excluded directory (${excludedDir})`,
               );
-              return { isEligible: false, reason: `File is in excluded directory: ${excludedDir}` };
+              return {
+                isEligible: false,
+                reason: `File is in excluded directory: ${excludedDir}`,
+              };
             }
           }
 
@@ -98,7 +102,10 @@ export class SourceFileFilter extends Effect.Service<SourceFileFilter>()(
               yield* Effect.logDebug(
                 `[SourceFileFilter] File ${file.path} not eligible: matches test pattern`,
               );
-              return { isEligible: false, reason: "File matches test file pattern" };
+              return {
+                isEligible: false,
+                reason: "File matches test file pattern",
+              };
             }
           }
 
@@ -145,7 +152,9 @@ export class SourceFileFilter extends Effect.Service<SourceFileFilter>()(
             );
 
             // Return all files with their eligibility status
-            const eligibleCount = eligibleFiles.filter((file) => file.isEligible).length;
+            const eligibleCount = eligibleFiles.filter(
+              (file) => file.isEligible,
+            ).length;
             yield* Effect.logDebug(
               `[SourceFileFilter] Found ${eligibleCount} eligible file(s) out of ${eligibleFiles.length} total`,
             );
@@ -162,4 +171,3 @@ export class SourceFileFilter extends Effect.Service<SourceFileFilter>()(
  * Use this in production code; use SourceFileFilter.Default in tests with mocked deps.
  */
 export const SourceFileFilterLive = SourceFileFilter.Default;
-

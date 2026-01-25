@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { sectionRegistry, testAgentSectionOrder } from "../index.js";
+import { describe, expect, it } from "vitest";
 import { SectionId } from "../../types.js";
+import { sectionRegistry, testAgentSectionOrder } from "../index.js";
 
 describe("Section Registry", () => {
   describe("sectionRegistry", () => {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from "react";
-import { Routes } from "../router/routes.js";
-import { useRouter } from "../router/router-context.js";
-import { useRpc } from "../rpc/provider.js";
-import { useComparisonMode } from "../contexts/comparison-mode-context.js";
 import { useAuth } from "../contexts/auth-context.js";
+import { useComparisonMode } from "../contexts/comparison-mode-context.js";
+import { useRouter } from "../router/router-context.js";
+import { Routes } from "../router/routes.js";
+import { useRpc } from "../rpc/provider.js";
 
 /**
  * Hook that checks for conversation history and navigates to changeset-chat
@@ -22,10 +22,9 @@ export function useNavigateToChatIfHistory() {
   });
 
   // Query uncommitted changes
-  const { data: uncommittedChanges } =
-    rpc.status.uncommittedChanges.useQuery({
-      enabled: isAuthenticated && mode === "uncommitted",
-    });
+  const { data: uncommittedChanges } = rpc.status.uncommittedChanges.useQuery({
+    enabled: isAuthenticated && mode === "uncommitted",
+  });
 
   // Get the appropriate files based on mode
   const currentFiles = useMemo(() => {
@@ -72,4 +71,3 @@ export function useNavigateToChatIfHistory() {
     }
   }, [currentFiles, hasHistory, branchName, route, navigate]);
 }
-

@@ -1,7 +1,7 @@
-import { Uri, EventEmitter } from "vscode";
-import type { CancellationToken } from "vscode";
-import type * as vscode from "vscode";
 import { Effect, Runtime } from "effect";
+import type * as vscode from "vscode";
+import type { CancellationToken } from "vscode";
+import { EventEmitter, Uri } from "vscode";
 import { VSCodeService } from "./vs-code.js";
 
 /**

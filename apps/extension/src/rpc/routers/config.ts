@@ -1,14 +1,14 @@
+import { createRouter } from "@clive/webview-rpc";
 import { Effect } from "effect";
 import { z } from "zod";
-import { createRouter } from "@clive/webview-rpc";
+import { type AiProviderType, GlobalStateKeys } from "../../constants.js";
 import { ApiKeyService } from "../../services/api-key-service.js";
-import { GitService } from "../../services/git-service.js";
-import { SettingsService } from "../../services/settings-service.js";
 import { ClaudeCliService } from "../../services/claude-cli-service.js";
-import { GlobalStateKeys, type AiProviderType } from "../../constants.js";
+import { GitService } from "../../services/git-service.js";
 import { createConfigServiceLayer } from "../../services/layer-factory.js";
-import type { RpcContext } from "../context.js";
+import { SettingsService } from "../../services/settings-service.js";
 import { VSCodeService } from "../../services/vs-code.js";
+import type { RpcContext } from "../context.js";
 
 const { procedure } = createRouter<RpcContext>();
 
@@ -150,7 +150,9 @@ export const configRouter = {
    */
   getBaseBranch: procedure.input(z.void()).query(({ ctx }) =>
     Effect.gen(function* () {
-      yield* Effect.logDebug("[ConfigRouter] Getting base branch configuration");
+      yield* Effect.logDebug(
+        "[ConfigRouter] Getting base branch configuration",
+      );
       const settingsService = yield* SettingsService;
       const gitService = yield* GitService;
       const vscode = yield* VSCodeService;
@@ -217,7 +219,7 @@ export const configRouter = {
                 autoDetected: "main",
                 error: error.message,
               };
-            })
+            }),
         }),
         provideConfigLayer(ctx),
       ),
@@ -394,7 +396,9 @@ export const configRouter = {
    */
   authenticateClaudeCli: procedure.input(z.void()).mutation(({ ctx }) =>
     Effect.gen(function* () {
-      yield* Effect.logDebug("[ConfigRouter] Triggering Claude CLI authentication");
+      yield* Effect.logDebug(
+        "[ConfigRouter] Triggering Claude CLI authentication",
+      );
       const cliService = yield* ClaudeCliService;
       const success = yield* cliService.authenticate();
       return { success };

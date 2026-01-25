@@ -6,10 +6,10 @@
 import type { ProgressCallback } from "./event-handlers.js";
 import type {
   AgentStreamEvent,
-  ToolCallState,
-  TodoDisplayItem,
-  LoopProgressSummary,
   LoopCompleteEvent,
+  LoopProgressSummary,
+  TodoDisplayItem,
+  ToolCallState,
 } from "./stream-events.js";
 
 /**
@@ -83,7 +83,11 @@ export const emit = {
     toolCallId: string,
     toolName: string,
     output: unknown,
-    state: "output-available" | "output-error" | "output-cancelled" | "output-denied",
+    state:
+      | "output-available"
+      | "output-error"
+      | "output-cancelled"
+      | "output-denied",
   ): void => {
     emitStreamEvent(callback, {
       type: "tool-result",
@@ -161,10 +165,7 @@ export const emit = {
   /**
    * Emit error event
    */
-  error: (
-    callback: ProgressCallback | undefined,
-    message: string,
-  ): void => {
+  error: (callback: ProgressCallback | undefined, message: string): void => {
     emitStreamEvent(callback, {
       type: "error",
       message,

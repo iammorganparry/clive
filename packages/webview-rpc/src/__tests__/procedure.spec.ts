@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createProcedureBuilder } from "../procedure.js";
 import type { Procedure } from "../types.js";
@@ -32,8 +32,12 @@ describe("createProcedureBuilder", () => {
 
     it("should create query procedure without input schema", () => {
       const builder = createProcedureBuilder<{ userId: string }>();
-      const handler = ({ ctx }: { input: void; ctx: { userId: string } }) =>
-        Effect.succeed({ result: "Query result" });
+      const handler = ({
+        ctx,
+      }: {
+        input: void;
+        ctx: { userId: string };
+      }) => Effect.succeed({ result: "Query result" });
 
       // Note: This test assumes we can create procedures without input
       // If the API requires input, we'd need to use z.void() or similar

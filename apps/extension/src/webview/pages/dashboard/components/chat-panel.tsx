@@ -10,8 +10,8 @@ import {
   CardTitle,
 } from "../../../../components/ui/card.js";
 import { Input } from "../../../../components/ui/input.js";
-import type { VSCodeAPI } from "../../../services/vscode.js";
 import { useRpc } from "../../../rpc/provider.js";
+import type { VSCodeAPI } from "../../../services/vscode.js";
 
 export interface ChatMessage {
   id: string;

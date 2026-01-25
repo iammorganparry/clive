@@ -3,10 +3,10 @@
  * Tests the regression detection section
  */
 
-import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
-import { regressionDetection } from "../regression-detection.js";
+import { describe, expect, it } from "vitest";
 import type { BuildConfig } from "../../types.js";
+import { regressionDetection } from "../regression-detection.js";
 
 describe("Regression Detection Section", () => {
   it("should return regression detection instructions", async () => {

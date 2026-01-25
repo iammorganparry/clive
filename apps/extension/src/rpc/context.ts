@@ -1,5 +1,6 @@
 import type { Context } from "effect";
 import type * as vscode from "vscode";
+import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
 import type { DiffContentProvider } from "../services/diff-content-provider.js";
 import type { GitService } from "../services/git-service.js";
 import type {
@@ -9,7 +10,6 @@ import type {
   createSystemServiceLayer,
   LayerContext,
 } from "../services/layer-factory.js";
-import type { McpBridgeRuntime } from "../mcp-bridge/runtime.js";
 
 /**
  * Layer types inferred from the layer factory functions for type safety

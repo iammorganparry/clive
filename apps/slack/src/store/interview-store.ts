@@ -6,10 +6,10 @@
  */
 
 import type {
-  InterviewSession,
-  InterviewPhase,
-  QuestionData,
   AnswerPayload,
+  InterviewPhase,
+  InterviewSession,
+  QuestionData,
 } from "./types";
 
 /**
@@ -35,7 +35,7 @@ export class InterviewStore {
     threadTs: string,
     channel: string,
     initiatorId: string,
-    initialDescription?: string
+    initialDescription?: string,
   ): InterviewSession {
     // Clear any existing session for this thread
     this.close(threadTs);
@@ -57,7 +57,7 @@ export class InterviewStore {
 
     this.sessions.set(threadTs, session);
     console.log(
-      `[InterviewStore] Created session for thread ${threadTs}, initiator: ${initiatorId}`
+      `[InterviewStore] Created session for thread ${threadTs}, initiator: ${initiatorId}`,
     );
 
     return session;
@@ -95,7 +95,7 @@ export class InterviewStore {
   setPendingQuestion(
     threadTs: string,
     questionData: QuestionData,
-    toolUseId: string
+    toolUseId: string,
   ): void {
     const session = this.sessions.get(threadTs);
     if (session) {
@@ -103,7 +103,7 @@ export class InterviewStore {
       session.pendingToolUseId = toolUseId;
       this.touch(threadTs);
       console.log(
-        `[InterviewStore] Session ${threadTs} pending question: ${toolUseId}`
+        `[InterviewStore] Session ${threadTs} pending question: ${toolUseId}`,
       );
     }
   }
@@ -128,7 +128,7 @@ export class InterviewStore {
       session.answers[header] = answer;
       this.touch(threadTs);
       console.log(
-        `[InterviewStore] Session ${threadTs} answer recorded: ${header}`
+        `[InterviewStore] Session ${threadTs} answer recorded: ${header}`,
       );
     }
   }
@@ -138,7 +138,7 @@ export class InterviewStore {
    */
   getAnswerPayload(threadTs: string): AnswerPayload | undefined {
     const session = this.sessions.get(threadTs);
-    if (session && session.pendingQuestion) {
+    if (session?.pendingQuestion) {
       const payload: AnswerPayload = {};
       for (const question of session.pendingQuestion.questions) {
         const answer = session.answers[question.header];
@@ -156,7 +156,7 @@ export class InterviewStore {
    */
   setClaudeHandle(
     threadTs: string,
-    handle: InterviewSession["claudeHandle"]
+    handle: InterviewSession["claudeHandle"],
   ): void {
     const session = this.sessions.get(threadTs);
     if (session) {
@@ -171,7 +171,9 @@ export class InterviewStore {
     const session = this.sessions.get(threadTs);
     if (session) {
       session.workerId = workerId;
-      console.log(`[InterviewStore] Session ${threadTs} assigned to worker ${workerId}`);
+      console.log(
+        `[InterviewStore] Session ${threadTs} assigned to worker ${workerId}`,
+      );
     }
   }
 
@@ -327,7 +329,7 @@ export class InterviewStore {
    */
   onTimeout(
     threadTs: string,
-    callback: (session: InterviewSession) => void
+    callback: (session: InterviewSession) => void,
   ): void {
     const session = this.sessions.get(threadTs);
     if (session) {

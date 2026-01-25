@@ -4,7 +4,7 @@
  */
 export const AIModels = {
   testing: {
-    low:  "claude-haiku-4-5",
+    low: "claude-haiku-4-5",
     medium: "claude-sonnet-4-5",
     high: "claude-opus-4-5",
   },

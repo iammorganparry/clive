@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
 
 const MAX_HISTORY = 50;
-const STORAGE_KEY = 'clive-command-history';
+const STORAGE_KEY = "clive-command-history";
 
 export function useCommandHistory() {
   const [history, setHistory] = useState<string[]>([]);
@@ -19,7 +19,7 @@ export function useCommandHistory() {
         }
       }
     } catch (e) {
-      console.error('Failed to load command history:', e);
+      console.error("Failed to load command history:", e);
     }
   }, []);
 
@@ -41,7 +41,7 @@ export function useCommandHistory() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newHistory));
     } catch (e) {
-      console.error('Failed to save command history:', e);
+      console.error("Failed to save command history:", e);
     }
   };
 
@@ -61,7 +61,7 @@ export function useCommandHistory() {
     }
     const newIndex = index + 1;
     setIndex(newIndex);
-    return newIndex < history.length ? (history[newIndex] || null) : null;
+    return newIndex < history.length ? history[newIndex] || null : null;
   };
 
   const reset = () => {

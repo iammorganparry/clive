@@ -67,4 +67,3 @@ After EVERY test case addition (via writeTestFile or editFile):
 **Remember**: The goal is to catch setup/mocking issues early. Writing one test case at a time ensures you discover configuration problems immediately, not after investing time in many tests that all fail for the same reason.
 </verification_rules>`,
   );
-

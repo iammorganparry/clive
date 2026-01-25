@@ -9,12 +9,12 @@
  * - Maintains session state
  */
 
-import { EventEmitter } from 'events';
-import { spawn, type ChildProcess } from 'node:child_process';
-import * as path from 'node:path';
-import { debugLog } from '../utils/debug-logger';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { type ChildProcess, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import * as path from "node:path";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { debugLog } from "../utils/debug-logger";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,10 +23,12 @@ export interface PtyCliManagerOptions {
   workspaceRoot: string;
   systemPrompt?: string;
   model?: string; // 'sonnet', 'opus', 'haiku', or full model name
-  mode?: 'plan' | 'build';
+  mode?: "plan" | "build" | "review";
   mcpConfig?: any; // MCP server configuration
   addDirs?: string[]; // Additional directories to allow access
   betas?: string[]; // Beta features to enable
+  cols?: number; // Explicit terminal columns (for direct mode)
+  rows?: number; // Explicit terminal rows (for direct mode)
 }
 
 export interface PtyDimensions {
@@ -38,79 +40,96 @@ export interface PtyDimensions {
 
 export class PtyCliManager extends EventEmitter {
   private nodeProcess: ChildProcess | null = null;
-  private ansiBuffer = '';
-  private activeMode: 'plan' | 'build' | null = null;
+  private ansiBuffer = "";
+  private activeMode: "plan" | "build" | "review" | null = null;
   private ptyDimensions: PtyDimensions | null = null;
+  private directMode = false;
 
   /**
    * Execute Claude CLI in interactive mode with PTY via Node.js subprocess
    */
   async execute(prompt: string, options: PtyCliManagerOptions): Promise<void> {
-    debugLog('PtyCliManager', 'Starting PTY execution via Node.js subprocess', {
+    debugLog("PtyCliManager", "Starting PTY execution via Node.js subprocess", {
       promptLength: prompt.length,
       model: options.model,
       mode: options.mode,
     });
 
     // Spawn Node.js subprocess to handle PTY
-    const handlerPath = path.join(__dirname, 'pty-handler.cjs');
+    const handlerPath = path.join(__dirname, "pty-handler.cjs");
 
-    debugLog('PtyCliManager', 'Spawning Node.js subprocess', {
+    debugLog("PtyCliManager", "Spawning Node.js subprocess", {
       handlerPath,
       nodeVersion: process.version,
     });
 
-    this.nodeProcess = spawn('node', [handlerPath], {
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+    this.nodeProcess = spawn("node", [handlerPath], {
+      stdio: ["inherit", "inherit", "inherit", "ipc"],
       cwd: options.workspaceRoot,
     });
 
     this.activeMode = options.mode || null;
 
     // Listen for messages from Node.js subprocess
-    this.nodeProcess.on('message', (message: any) => {
+    this.nodeProcess.on("message", (message: any) => {
       this.handleMessage(message);
     });
 
     // Listen for subprocess exit
-    this.nodeProcess.on('exit', (code, signal) => {
-      debugLog('PtyCliManager', 'Node.js subprocess exited', { code, signal });
+    this.nodeProcess.on("exit", (code, signal) => {
+      debugLog("PtyCliManager", "Node.js subprocess exited", { code, signal });
       this.nodeProcess = null;
     });
 
     // Listen for subprocess errors
-    this.nodeProcess.on('error', (error) => {
-      debugLog('PtyCliManager', 'Node.js subprocess error', {
+    this.nodeProcess.on("error", (error) => {
+      debugLog("PtyCliManager", "Node.js subprocess error", {
         error: String(error),
         stack: error.stack,
       });
-      this.emit('error', error);
+      this.emit("error", error);
     });
 
     // Wait for handler to be ready
     await new Promise<void>((resolve) => {
       const handler = (message: any) => {
-        if (message.type === 'handler-ready') {
-          this.nodeProcess?.off('message', handler);
+        if (message.type === "handler-ready") {
+          this.nodeProcess?.off("message", handler);
           resolve();
         }
       };
-      this.nodeProcess?.on('message', handler);
+      this.nodeProcess?.on("message", handler);
     });
 
-    debugLog('PtyCliManager', 'Node.js subprocess ready, spawning PTY');
+    debugLog("PtyCliManager", "Node.js subprocess ready, spawning PTY");
 
-    // Calculate terminal dimensions - use all available space
+    // Calculate terminal dimensions
     const termWidth = process.stdout.columns || 80;
     const termHeight = process.stdout.rows || 24;
 
-    // Calculate available space by subtracting TUI chrome
-    const dimensions = this.calculateDimensions(termWidth, termHeight, options.mode);
+    // Use explicit dimensions if provided (direct mode), otherwise calculate
+    let dimensions: PtyDimensions;
+    if (this.directMode && options.cols && options.rows) {
+      // Direct mode: use full terminal
+      dimensions = {
+        cols: options.cols,
+        rows: options.rows,
+        maxWidth: options.cols,
+        maxHeight: options.rows,
+      };
+    } else {
+      // Normal mode: Calculate available space by subtracting TUI chrome
+      dimensions = this.calculateDimensions(
+        termWidth,
+        termHeight,
+        options.mode,
+      );
+    }
 
     // Store dimensions for OutputPanel
     this.ptyDimensions = dimensions;
 
-    debugLog('PtyCliManager', 'Calculated initial PTY dimensions', {
+    debugLog("PtyCliManager", "Calculated initial PTY dimensions", {
       termWidth,
       termHeight,
       ptyWidth: dimensions.cols,
@@ -118,11 +137,16 @@ export class PtyCliManager extends EventEmitter {
     });
 
     // Emit dimensions for OutputPanel to use for centering
-    this.emit('dimensions', this.ptyDimensions);
+    this.emit("dimensions", this.ptyDimensions);
+
+    // If direct mode is enabled, send the setting first
+    if (this.directMode) {
+      this.nodeProcess.send({ type: "set-direct-mode", enabled: true });
+    }
 
     // Send spawn message to subprocess
     this.nodeProcess.send({
-      type: 'spawn',
+      type: "spawn",
       options: {
         prompt,
         workspaceRoot: options.workspaceRoot,
@@ -132,7 +156,7 @@ export class PtyCliManager extends EventEmitter {
         mcpConfig: options.mcpConfig,
         addDirs: options.addDirs,
         betas: options.betas,
-        debug: true, // Enable debug for conversation file watching
+        debug: false, // Debug mode disabled - not needed for normal operation
         cols: dimensions.cols,
         rows: dimensions.rows,
       },
@@ -142,13 +166,18 @@ export class PtyCliManager extends EventEmitter {
   /**
    * Calculate PTY dimensions based on terminal size and TUI chrome
    */
-  private calculateDimensions(termWidth: number, termHeight: number, mode?: 'plan' | 'build'): PtyDimensions {
+  private calculateDimensions(
+    termWidth: number,
+    termHeight: number,
+    mode?: "plan" | "build" | "review",
+  ): PtyDimensions {
     // TUI chrome constants
     const INPUT_HEIGHT = 3;
     const STATUS_HEIGHT = 1;
     const BORDER_HEIGHT = 2;
     const modeHeaderHeight = mode ? 1 : 0;
-    const chromeHeight = INPUT_HEIGHT + STATUS_HEIGHT + BORDER_HEIGHT + modeHeaderHeight;
+    const chromeHeight =
+      INPUT_HEIGHT + STATUS_HEIGHT + BORDER_HEIGHT + modeHeaderHeight;
 
     const SIDEBAR_WIDTH = 30;
 
@@ -174,43 +203,52 @@ export class PtyCliManager extends EventEmitter {
    */
   private handleMessage(message: any): void {
     switch (message.type) {
-      case 'output':
+      case "output":
         this.ansiBuffer = message.data;
-        debugLog('PtyCliManager', 'Received output from subprocess', {
+        debugLog("PtyCliManager", "Received output from subprocess", {
           bufferSize: this.ansiBuffer.length,
         });
-        this.emit('output', { ansi: this.ansiBuffer });
+        this.emit("output", { ansi: this.ansiBuffer });
         break;
 
-      case 'exit':
-        debugLog('PtyCliManager', 'PTY exited', {
+      case "exit":
+        debugLog("PtyCliManager", "PTY exited", {
           exitCode: message.exitCode,
           signal: message.signal,
         });
-        this.emit('complete', { exitCode: message.exitCode });
+        this.emit("complete", { exitCode: message.exitCode });
         this.activeMode = null;
         break;
 
-      case 'error':
-        debugLog('PtyCliManager', 'PTY error', {
+      case "error":
+        debugLog("PtyCliManager", "PTY error", {
           error: message.error,
           stack: message.stack,
         });
-        this.emit('error', new Error(message.error));
+        this.emit("error", new Error(message.error));
         break;
 
-      case 'ready':
-        debugLog('PtyCliManager', 'PTY ready', {
+      case "ready":
+        debugLog("PtyCliManager", "PTY ready", {
           pid: message.pid,
         });
         break;
 
-      case 'log':
-        debugLog('PtyCliManager:subprocess', message.message, message.data || {});
+      case "input-ready":
+        debugLog("PtyCliManager", "Claude Code input ready");
+        this.emit("input-ready");
+        break;
+
+      case "log":
+        debugLog(
+          "PtyCliManager:subprocess",
+          message.message,
+          message.data || {},
+        );
         break;
 
       default:
-        debugLog('PtyCliManager', 'Unknown message type from subprocess', {
+        debugLog("PtyCliManager", "Unknown message type from subprocess", {
           type: message.type,
           message,
         });
@@ -222,18 +260,18 @@ export class PtyCliManager extends EventEmitter {
    */
   sendInput(input: string): void {
     if (!this.nodeProcess) {
-      debugLog('PtyCliManager', 'ERROR: No active Node.js subprocess');
-      console.error('[PtyCliManager] No active Node.js subprocess');
+      debugLog("PtyCliManager", "ERROR: No active Node.js subprocess");
+      console.error("[PtyCliManager] No active Node.js subprocess");
       return;
     }
 
-    debugLog('PtyCliManager', 'Sending input to PTY via subprocess', {
+    debugLog("PtyCliManager", "Sending input to PTY via subprocess", {
       inputLength: input.length,
       inputPreview: input.substring(0, 100),
     });
 
     this.nodeProcess.send({
-      type: 'input',
+      type: "input",
       data: input,
     });
   }
@@ -243,18 +281,21 @@ export class PtyCliManager extends EventEmitter {
    */
   sendRawInput(input: string): void {
     if (!this.nodeProcess) {
-      debugLog('PtyCliManager', 'ERROR: No active Node.js subprocess');
-      console.error('[PtyCliManager] No active Node.js subprocess');
+      debugLog("PtyCliManager", "ERROR: No active Node.js subprocess");
+      console.error("[PtyCliManager] No active Node.js subprocess");
       return;
     }
 
-    debugLog('PtyCliManager', 'Sending raw input to PTY via subprocess', {
+    debugLog("PtyCliManager", "Sending raw input to PTY via subprocess", {
       inputLength: input.length,
-      hex: input.split('').map(c => c.charCodeAt(0).toString(16)).join(' '),
+      hex: input
+        .split("")
+        .map((c) => c.charCodeAt(0).toString(16))
+        .join(" "),
     });
 
     this.nodeProcess.send({
-      type: 'raw-input',
+      type: "raw-input",
       data: input,
     });
   }
@@ -264,7 +305,7 @@ export class PtyCliManager extends EventEmitter {
    * In PTY mode, this is just regular input
    */
   sendToolResult(toolId: string, result: string): void {
-    debugLog('PtyCliManager', 'sendToolResult called', {
+    debugLog("PtyCliManager", "sendToolResult called", {
       toolId,
       resultLength: result.length,
     });
@@ -279,10 +320,10 @@ export class PtyCliManager extends EventEmitter {
    */
   sendMessageToAgent(message: string): void {
     if (!this.hasActiveSession()) {
-      throw new Error('No active agent session');
+      throw new Error("No active agent session");
     }
 
-    debugLog('PtyCliManager', 'sendMessageToAgent', { message });
+    debugLog("PtyCliManager", "sendMessageToAgent", { message });
     this.sendInput(message);
   }
 
@@ -296,7 +337,7 @@ export class PtyCliManager extends EventEmitter {
   /**
    * Get the current active mode
    */
-  getActiveMode(): 'plan' | 'build' | null {
+  getActiveMode(): "plan" | "build" | null {
     return this.hasActiveSession() ? this.activeMode : null;
   }
 
@@ -308,17 +349,31 @@ export class PtyCliManager extends EventEmitter {
     if (!this.nodeProcess) return;
 
     // Recalculate PTY dimensions based on new terminal size
-    const newDimensions = this.calculateDimensions(termWidth, termHeight, this.activeMode || undefined);
+    // In direct mode, use full terminal; otherwise calculate with TUI chrome
+    const newDimensions = this.directMode
+      ? {
+          cols: termWidth,
+          rows: termHeight,
+          maxWidth: termWidth,
+          maxHeight: termHeight,
+        }
+      : this.calculateDimensions(
+          termWidth,
+          termHeight,
+          this.activeMode || undefined,
+        );
 
     // Check if dimensions actually changed
-    if (this.ptyDimensions &&
-        this.ptyDimensions.cols === newDimensions.cols &&
-        this.ptyDimensions.rows === newDimensions.rows) {
+    if (
+      this.ptyDimensions &&
+      this.ptyDimensions.cols === newDimensions.cols &&
+      this.ptyDimensions.rows === newDimensions.rows
+    ) {
       // No change, skip resize
       return;
     }
 
-    debugLog('PtyCliManager', 'Resizing PTY via subprocess', {
+    debugLog("PtyCliManager", "Resizing PTY via subprocess", {
       termWidth,
       termHeight,
       oldCols: this.ptyDimensions?.cols,
@@ -332,13 +387,13 @@ export class PtyCliManager extends EventEmitter {
 
     // Send resize message to subprocess
     this.nodeProcess.send({
-      type: 'resize',
+      type: "resize",
       cols: newDimensions.cols,
       rows: newDimensions.rows,
     });
 
     // Emit new dimensions for OutputPanel to update
-    this.emit('dimensions', this.ptyDimensions);
+    this.emit("dimensions", this.ptyDimensions);
   }
 
   /**
@@ -347,7 +402,7 @@ export class PtyCliManager extends EventEmitter {
   kill(): void {
     if (!this.nodeProcess) return;
 
-    debugLog('PtyCliManager', 'Killing Node.js subprocess');
+    debugLog("PtyCliManager", "Killing Node.js subprocess");
 
     const proc = this.nodeProcess;
     this.nodeProcess = null;
@@ -357,15 +412,17 @@ export class PtyCliManager extends EventEmitter {
     // Immediately send SIGKILL (no graceful shutdown, just kill it)
     try {
       if (!proc.killed) {
-        debugLog('PtyCliManager', 'Sending SIGKILL to subprocess');
-        proc.kill('SIGKILL');
+        debugLog("PtyCliManager", "Sending SIGKILL to subprocess");
+        proc.kill("SIGKILL");
       }
     } catch (error) {
-      debugLog('PtyCliManager', 'Error sending SIGKILL', { error: String(error) });
+      debugLog("PtyCliManager", "Error sending SIGKILL", {
+        error: String(error),
+      });
     }
 
     // Don't wait for subprocess to die - just emit killed event
-    this.emit('killed');
+    this.emit("killed");
   }
 
   /**
@@ -373,8 +430,8 @@ export class PtyCliManager extends EventEmitter {
    */
   interrupt(): void {
     if (this.nodeProcess) {
-      debugLog('PtyCliManager', 'Interrupting PTY process via subprocess');
-      this.nodeProcess.send({ type: 'interrupt' });
+      debugLog("PtyCliManager", "Interrupting PTY process via subprocess");
+      this.nodeProcess.send({ type: "interrupt" });
     }
   }
 
@@ -382,8 +439,8 @@ export class PtyCliManager extends EventEmitter {
    * Clear the ANSI buffer
    */
   clear(): void {
-    this.ansiBuffer = '';
-    this.emit('output', { ansi: this.ansiBuffer });
+    this.ansiBuffer = "";
+    this.emit("output", { ansi: this.ansiBuffer });
   }
 
   /**
@@ -398,5 +455,93 @@ export class PtyCliManager extends EventEmitter {
    */
   getDimensions(): PtyDimensions | null {
     return this.ptyDimensions;
+  }
+
+  /**
+   * Enable or disable direct mode
+   * In direct mode, PTY output goes directly to stdout and stdin is passed through
+   */
+  setDirectMode(enabled: boolean): void {
+    this.directMode = enabled;
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: "set-direct-mode", enabled });
+    }
+  }
+
+  /**
+   * Check if direct mode is enabled
+   */
+  isDirectMode(): boolean {
+    return this.directMode;
+  }
+
+  /**
+   * Set terminal scroll region for embedded direct mode
+   * This confines Claude Code's scrolling to a specific row range
+   */
+  setScrollRegion(top: number, bottom: number): void {
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: "set-scroll-region", top, bottom });
+    }
+  }
+
+  /**
+   * Reset scroll region to full terminal
+   */
+  resetScrollRegion(): void {
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: "reset-scroll-region" });
+    }
+  }
+
+  /**
+   * Enable embedded direct mode with scroll region
+   * This lets Claude Code render directly while confining it to a specific area
+   */
+  enableEmbeddedDirectMode(region: {
+    top: number;
+    bottom: number;
+    cols: number;
+    rows: number;
+  }): void {
+    this.directMode = true;
+
+    if (this.nodeProcess) {
+      // Enable direct mode first
+      this.nodeProcess.send({ type: "set-direct-mode", enabled: true });
+
+      // Set the scroll region
+      this.nodeProcess.send({
+        type: "set-scroll-region",
+        top: region.top,
+        bottom: region.bottom,
+      });
+
+      // Resize PTY to match the region dimensions
+      this.nodeProcess.send({
+        type: "resize",
+        cols: region.cols,
+        rows: region.rows,
+      });
+    }
+
+    debugLog("PtyCliManager", "Enabled embedded direct mode", region);
+  }
+
+  /**
+   * Disable embedded direct mode and restore normal buffered mode
+   */
+  disableEmbeddedDirectMode(): void {
+    this.directMode = false;
+
+    if (this.nodeProcess) {
+      // Reset scroll region
+      this.nodeProcess.send({ type: "reset-scroll-region" });
+
+      // Disable direct mode
+      this.nodeProcess.send({ type: "set-direct-mode", enabled: false });
+    }
+
+    debugLog("PtyCliManager", "Disabled embedded direct mode");
   }
 }

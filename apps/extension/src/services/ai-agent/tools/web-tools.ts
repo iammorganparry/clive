@@ -25,4 +25,3 @@ export const createWebTools = (config?: WebToolsConfig) => {
 
 // Re-export individual tools for direct use
 export { scrapeTool, searchTool };
-

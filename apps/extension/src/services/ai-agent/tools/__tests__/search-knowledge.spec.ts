@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
-import { createSearchKnowledgeTool } from "../search-knowledge";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockKnowledgeFileService } from "../../../../__tests__/mock-factories";
 import type { KnowledgeFileService } from "../../../knowledge-file-service";
 import { FileSystemError } from "../../../vs-code.js";
-import { createMockKnowledgeFileService } from "../../../../__tests__/mock-factories";
+import { createSearchKnowledgeTool } from "../search-knowledge";
 
 type SearchResult = {
   results: Array<{

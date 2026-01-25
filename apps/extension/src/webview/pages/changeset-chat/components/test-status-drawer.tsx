@@ -1,13 +1,13 @@
-import type React from "react";
-import { FileCode, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Badge } from "@clive/ui/badge";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from "@clive/ui/drawer";
-import { Badge } from "@clive/ui/badge";
 import { cn } from "@clive/ui/lib/utils";
+import { CheckCircle2, FileCode, Loader2, XCircle } from "lucide-react";
+import type React from "react";
 import type {
   TestFileExecution,
   TestResult,

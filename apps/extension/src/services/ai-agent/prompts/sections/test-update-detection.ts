@@ -209,4 +209,3 @@ Example format in Problem Summary:
 - **Faster iterations**: Update existing tests is often faster than writing from scratch
 </test_update_detection>`,
   );
-

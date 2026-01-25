@@ -16,7 +16,7 @@ export class LinearApiError {
   constructor(
     readonly message: string,
     readonly statusCode?: number,
-    readonly response?: unknown
+    readonly response?: unknown,
   ) {}
 }
 
@@ -155,49 +155,49 @@ export interface LinearService {
    * Get team by ID or key
    */
   readonly getTeam: (
-    idOrKey: string
+    idOrKey: string,
   ) => Effect.Effect<LinearTeam, LinearApiError | LinearNotConfiguredError>;
 
   /**
    * List workflow states for a team
    */
   readonly listWorkflowStates: (
-    teamId: string
+    teamId: string,
   ) => Effect.Effect<LinearWorkflowState[], LinearApiError>;
 
   /**
    * List projects
    */
   readonly listProjects: (
-    teamId?: string
+    teamId?: string,
   ) => Effect.Effect<LinearProject[], LinearApiError>;
 
   /**
    * List issues with filters
    */
   readonly listIssues: (
-    options?: LinearListIssuesOptions
+    options?: LinearListIssuesOptions,
   ) => Effect.Effect<LinearIssue[], LinearApiError>;
 
   /**
    * Get issue by ID or identifier
    */
   readonly getIssue: (
-    idOrIdentifier: string
+    idOrIdentifier: string,
   ) => Effect.Effect<LinearIssue, LinearApiError | LinearNotConfiguredError>;
 
   /**
    * Get sub-issues (children) of a parent issue
    */
   readonly getSubIssues: (
-    parentId: string
+    parentId: string,
   ) => Effect.Effect<LinearIssue[], LinearApiError>;
 
   /**
    * Create a new issue
    */
   readonly createIssue: (
-    options: LinearCreateIssueOptions
+    options: LinearCreateIssueOptions,
   ) => Effect.Effect<LinearIssue, LinearApiError>;
 
   /**
@@ -205,12 +205,12 @@ export interface LinearService {
    */
   readonly updateIssue: (
     id: string,
-    options: LinearUpdateIssueOptions
+    options: LinearUpdateIssueOptions,
   ) => Effect.Effect<LinearIssue, LinearApiError>;
 }
 
 export const LinearService = Context.GenericTag<LinearService>(
-  "@clive/LinearService"
+  "@clive/LinearService",
 );
 
 // Implementation
@@ -275,7 +275,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           const response = yield* executeGraphQL<{ team: LinearTeam }>(
             config.apiKey,
             query,
-            { id: idOrKey }
+            { id: idOrKey },
           );
 
           return response.team;
@@ -355,49 +355,52 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           const variables: Record<string, unknown> = {};
 
           if (options?.teamId) {
-            filters.push('team: { id: { eq: $teamId } }');
+            filters.push("team: { id: { eq: $teamId } }");
             variables.teamId = options.teamId;
           }
           if (options?.projectId) {
-            filters.push('project: { id: { eq: $projectId } }');
+            filters.push("project: { id: { eq: $projectId } }");
             variables.projectId = options.projectId;
           }
           if (options?.assigneeId) {
-            filters.push('assignee: { id: { eq: $assigneeId } }');
+            filters.push("assignee: { id: { eq: $assigneeId } }");
             variables.assigneeId = options.assigneeId;
           }
           if (options?.stateType) {
-            filters.push('state: { type: { eq: $stateType } }');
+            filters.push("state: { type: { eq: $stateType } }");
             variables.stateType = options.stateType;
           }
           if (options?.filter?.parent?.null !== undefined) {
             filters.push(`parent: { null: ${options.filter.parent.null} }`);
           }
           if (options?.filter?.search) {
-            filters.push('title: { containsIgnoreCase: $search }');
+            filters.push("title: { containsIgnoreCase: $search }");
             variables.search = options.filter.search;
           }
 
           const filterString =
-            filters.length > 0 ? `filter: { ${filters.join(', ')} }` : '';
+            filters.length > 0 ? `filter: { ${filters.join(", ")} }` : "";
           const limit = options?.limit ?? 50;
 
           // Determine correct GraphQL types for variables
           const variableTypes: Record<string, string> = {
-            teamId: 'ID',
-            projectId: 'ID',
-            assigneeId: 'ID',
-            stateType: 'String',
-            search: 'String',
+            teamId: "ID",
+            projectId: "ID",
+            assigneeId: "ID",
+            stateType: "String",
+            search: "String",
           };
 
-          const variableDeclarations = Object.keys(variables).length > 0
-            ? `(${Object.keys(variables).map(k => `$${k}: ${variableTypes[k] || 'String'}!`).join(', ')})`
-            : '';
+          const variableDeclarations =
+            Object.keys(variables).length > 0
+              ? `(${Object.keys(variables)
+                  .map((k) => `$${k}: ${variableTypes[k] || "String"}!`)
+                  .join(", ")})`
+              : "";
 
           const query = `
             query${variableDeclarations} {
-              issues(${filterString}${filterString ? ', ' : ''}first: ${limit}, orderBy: updatedAt) {
+              issues(${filterString}${filterString ? ", " : ""}first: ${limit}, orderBy: updatedAt) {
                 nodes {
                   id
                   identifier
@@ -453,7 +456,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           }>(
             config.apiKey,
             query,
-            Object.keys(variables).length > 0 ? variables : undefined
+            Object.keys(variables).length > 0 ? variables : undefined,
           );
 
           return response.issues.nodes.map(parseLinearIssue);
@@ -515,7 +518,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           const response = yield* executeGraphQL<{ issue: unknown }>(
             config.apiKey,
             query,
-            { id: idOrIdentifier }
+            { id: idOrIdentifier },
           );
 
           return parseLinearIssue(response.issue);
@@ -583,7 +586,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
           `;
 
           const allIssues: LinearIssue[] = [];
-          let cursor: string | undefined = undefined;
+          let cursor: string | undefined;
 
           // Pagination loop
           while (true) {
@@ -678,7 +681,7 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
 
           if (!response.issueCreate.success) {
             return yield* Effect.fail(
-              new LinearApiError("Failed to create issue")
+              new LinearApiError("Failed to create issue"),
             );
           }
 
@@ -750,20 +753,20 @@ export const makeLinearServiceLive = (config: LinearConfig) =>
 
           if (!response.issueUpdate.success) {
             return yield* Effect.fail(
-              new LinearApiError("Failed to update issue")
+              new LinearApiError("Failed to update issue"),
             );
           }
 
           return parseLinearIssue(response.issueUpdate.issue);
         }),
-    })
+    }),
   );
 
 // Helper: Execute GraphQL query
 function executeGraphQL<T>(
   apiKey: string,
   query: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
 ): Effect.Effect<T, LinearApiError> {
   return Effect.tryPromise({
     try: async () => {
@@ -776,16 +779,16 @@ function executeGraphQL<T>(
         body: JSON.stringify({ query, variables }),
       });
 
-      const json = await response.json() as {
+      const json = (await response.json()) as {
         data?: T;
         errors?: Array<{ message: string; [key: string]: unknown }>;
       };
 
       if (!response.ok) {
         throw new LinearApiError(
-          `Linear API request failed: ${response.statusText}${json.errors ? `\nErrors: ${JSON.stringify(json.errors)}` : ''}`,
+          `Linear API request failed: ${response.statusText}${json.errors ? `\nErrors: ${JSON.stringify(json.errors)}` : ""}`,
           response.status,
-          json.errors
+          json.errors,
         );
       }
 
@@ -793,7 +796,7 @@ function executeGraphQL<T>(
         throw new LinearApiError(
           `Linear API errors: ${JSON.stringify(json.errors)}`,
           undefined,
-          json.errors
+          json.errors,
         );
       }
 
@@ -806,7 +809,7 @@ function executeGraphQL<T>(
       return new LinearApiError(
         `Linear API request failed: ${error}`,
         undefined,
-        error
+        error,
       );
     },
   });

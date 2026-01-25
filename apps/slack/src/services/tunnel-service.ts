@@ -5,8 +5,8 @@
  * Each user runs their own Clive instance with ngrok providing the public URL.
  */
 
-import { Data, Effect } from "effect";
 import * as ngrok from "@ngrok/ngrok";
+import { Data, Effect } from "effect";
 
 /**
  * Error when tunnel operations fail
@@ -32,7 +32,9 @@ export const TunnelService = {
    */
   connect: (port: number): Effect.Effect<string, TunnelServiceError> =>
     Effect.gen(function* () {
-      yield* Effect.logDebug(`[TunnelService] Connecting ngrok tunnel to port ${port}`);
+      yield* Effect.logDebug(
+        `[TunnelService] Connecting ngrok tunnel to port ${port}`,
+      );
 
       // Get auth token from environment
       const authToken = process.env.NGROK_AUTH_TOKEN;
@@ -40,7 +42,7 @@ export const TunnelService = {
         return yield* Effect.fail(
           new TunnelServiceError({
             message: "NGROK_AUTH_TOKEN environment variable is required",
-          })
+          }),
         );
       }
 
@@ -66,7 +68,7 @@ export const TunnelService = {
         return yield* Effect.fail(
           new TunnelServiceError({
             message: "ngrok connected but did not return a URL",
-          })
+          }),
         );
       }
 
@@ -86,7 +88,7 @@ export const TunnelService = {
       if (activeListener) {
         yield* Effect.tryPromise({
           try: async () => {
-            await activeListener!.close();
+            await activeListener?.close();
           },
           catch: (error) =>
             new TunnelServiceError({

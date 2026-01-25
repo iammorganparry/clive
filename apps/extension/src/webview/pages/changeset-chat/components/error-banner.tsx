@@ -1,6 +1,6 @@
-import type React from "react";
-import { AlertCircle } from "lucide-react";
 import { Button } from "@clive/ui/button";
+import { AlertCircle } from "lucide-react";
+import type React from "react";
 import type { ChangesetChatError } from "../machines/changeset-chat-machine.js";
 
 interface ErrorBannerProps {
@@ -19,9 +19,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
       <div className="flex items-center gap-2">
         <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-destructive">
-            {error.message}
-          </p>
+          <p className="text-sm text-destructive">{error.message}</p>
           {/* Contextual help text for common errors */}
           {error.message.includes("Insufficient funds") ||
           error.message.includes("402") ? (

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Tests for RPC Router Event Forwarding
@@ -61,7 +61,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-123";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       // Emit plan-content-streaming event
       progressCallback(
@@ -91,7 +94,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-456";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "plan-content-streaming",
@@ -118,7 +124,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-789";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "file-created",
@@ -146,7 +155,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-abc";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "file-output-streaming",
@@ -178,7 +190,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-parse";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       const complexContent = {
         type: "plan-content-streaming",
@@ -189,7 +204,10 @@ describe("RPC Router Event Forwarding", () => {
         nested: { key: "value", array: [1, 2, 3] },
       };
 
-      progressCallback("plan-content-streaming", JSON.stringify(complexContent));
+      progressCallback(
+        "plan-content-streaming",
+        JSON.stringify(complexContent),
+      );
 
       expect(receivedEvents.length).toBe(1);
       const event = receivedEvents[0] as Record<string, unknown>;
@@ -204,7 +222,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-invalid";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       // Send invalid JSON
       progressCallback("plan-content-streaming", "not valid json {");
@@ -226,7 +247,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-other";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback("analyzing", "Analyzing files...");
 
@@ -246,7 +270,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-tool";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "tool-call",
@@ -272,7 +299,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-result";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "tool-result",
@@ -299,7 +329,10 @@ describe("RPC Router Event Forwarding", () => {
       };
       const subscriptionId = "sub-reasoning";
 
-      const progressCallback = createProgressCallback(onProgress, subscriptionId);
+      const progressCallback = createProgressCallback(
+        onProgress,
+        subscriptionId,
+      );
 
       progressCallback(
         "reasoning",
@@ -316,4 +349,3 @@ describe("RPC Router Event Forwarding", () => {
     });
   });
 });
-

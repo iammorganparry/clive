@@ -3,7 +3,7 @@
  * Uses Effect.Service pattern with Ref for mutable state tracking
  */
 
-import { Effect, Ref, pipe } from "effect";
+import { Effect, pipe, Ref } from "effect";
 import { countTokensInText } from "../../utils/token-utils.js";
 
 export type Priority = "high" | "medium" | "low";
@@ -134,4 +134,6 @@ export const makeTokenBudget = () =>
  * Type alias for TokenBudgetService instance
  * Use this type when accepting a budget as a parameter
  */
-export type TokenBudget = Effect.Effect.Success<ReturnType<typeof makeTokenBudget>>;
+export type TokenBudget = Effect.Effect.Success<
+  ReturnType<typeof makeTokenBudget>
+>;

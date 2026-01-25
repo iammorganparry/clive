@@ -5,19 +5,19 @@
  * Forwards interview requests to workers via WebSocket.
  */
 
-import { EventEmitter } from "events";
-import type { WebSocket } from "ws";
+import { EventEmitter } from "node:events";
 import type {
-  InterviewRequest,
-  InterviewEvent,
   AnswerRequest,
-  MessageRequest,
   CancelRequest,
   CentralToWorkerMessage,
+  InterviewEvent,
+  InterviewRequest,
+  MessageRequest,
 } from "@clive/worker-protocol";
-import type { WorkerRegistry } from "./worker-registry";
+import type { WebSocket } from "ws";
+import type { AnswerPayload } from "../store/types";
 import type { SessionRouter } from "./session-router";
-import type { InterviewSession, QuestionData, AnswerPayload } from "../store/types";
+import type { WorkerRegistry } from "./worker-registry";
 
 /**
  * Callback for interview events
@@ -47,7 +47,7 @@ export class WorkerProxy extends EventEmitter {
     this.router = router;
 
     // Handle orphaned sessions
-    this.router.on("sessionUnassigned", (sessionId, workerId, reason) => {
+    this.router.on("sessionUnassigned", (sessionId, _workerId, reason) => {
       const pending = this.pendingInterviews.get(sessionId);
       if (pending) {
         pending.onEvent({
@@ -77,9 +77,11 @@ export class WorkerProxy extends EventEmitter {
     initiatorId: string,
     initialPrompt: string,
     onEvent: InterviewEventCallback,
-    projectId?: string
+    projectId?: string,
   ): Promise<{ workerId: string } | { error: string }> {
-    console.log(`[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`);
+    console.log(
+      `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
+    );
 
     // Assign to worker (with project-based routing if provided)
     const workerId = this.router.assignSession(threadTs, projectId);
@@ -87,7 +89,9 @@ export class WorkerProxy extends EventEmitter {
       const projectMsg = projectId
         ? ` No workers have access to project "${projectId}".`
         : "";
-      return { error: `No workers available.${projectMsg} Please try again later.` };
+      return {
+        error: `No workers available.${projectMsg} Please try again later.`,
+      };
     }
 
     // Get worker socket
@@ -126,7 +130,9 @@ export class WorkerProxy extends EventEmitter {
       payload: request,
     });
 
-    console.log(`[WorkerProxy] Interview ${threadTs} sent to worker ${workerId}${projectPath ? ` at ${projectPath}` : ""}`);
+    console.log(
+      `[WorkerProxy] Interview ${threadTs} sent to worker ${workerId}${projectPath ? ` at ${projectPath}` : ""}`,
+    );
     return { workerId };
   }
 
@@ -136,7 +142,9 @@ export class WorkerProxy extends EventEmitter {
   handleWorkerEvent(event: InterviewEvent): void {
     const pending = this.pendingInterviews.get(event.sessionId);
     if (!pending) {
-      console.warn(`[WorkerProxy] Event for unknown session: ${event.sessionId}`);
+      console.warn(
+        `[WorkerProxy] Event for unknown session: ${event.sessionId}`,
+      );
       return;
     }
 
@@ -146,7 +154,11 @@ export class WorkerProxy extends EventEmitter {
     pending.onEvent(event);
 
     // Clean up on completion/error
-    if (event.type === "complete" || event.type === "error" || event.type === "timeout") {
+    if (
+      event.type === "complete" ||
+      event.type === "error" ||
+      event.type === "timeout"
+    ) {
       this.pendingInterviews.delete(event.sessionId);
       this.router.unassignSession(event.sessionId, event.type);
     }
@@ -162,7 +174,7 @@ export class WorkerProxy extends EventEmitter {
   sendAnswer(
     threadTs: string,
     toolUseId: string,
-    answers: AnswerPayload
+    answers: AnswerPayload,
   ): boolean {
     const workerId = this.router.getWorkerForSession(threadTs);
     if (!workerId) {
@@ -275,8 +287,12 @@ export class WorkerProxy extends EventEmitter {
   /**
    * Send message to worker
    */
-  private sendToWorker(socket: WebSocket, message: CentralToWorkerMessage): void {
-    if (socket.readyState !== 1) { // WebSocket.OPEN
+  private sendToWorker(
+    socket: WebSocket,
+    message: CentralToWorkerMessage,
+  ): void {
+    if (socket.readyState !== 1) {
+      // WebSocket.OPEN
       console.error("[WorkerProxy] Cannot send - socket not open");
       return;
     }

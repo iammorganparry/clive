@@ -1,21 +1,21 @@
-import { expect, vi } from "vitest";
 import { describe, it } from "@effect/vitest";
-import { Effect, Ref, HashMap } from "effect";
-import {
-  handleToolCallStreamingStart,
-  handleToolCallDelta,
-  handleToolCall,
-  handleTextDelta,
-  handleThinking,
-  handleToolResult,
-} from "../event-handlers";
+import { Effect, HashMap, Ref } from "effect";
+import { expect, vi } from "vitest";
+import { createMockVSCodeServiceLayer } from "../../../__tests__/mock-factories/index.js";
 import {
   createAgentState,
   createStreamingState,
-  hasStreamingArgs,
   getStreamingArgs,
+  hasStreamingArgs,
 } from "../agent-state";
-import { createMockVSCodeServiceLayer } from "../../../__tests__/mock-factories/index.js";
+import {
+  handleTextDelta,
+  handleThinking,
+  handleToolCall,
+  handleToolCallDelta,
+  handleToolCallStreamingStart,
+  handleToolResult,
+} from "../event-handlers";
 
 // Mock the streaming tools using factory - use async import to avoid hoisting issues
 vi.mock("../tools/write-test-file", async () => {

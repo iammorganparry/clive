@@ -8,8 +8,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { useRpc } from "../rpc/provider.js";
 import type { UserInfo } from "../../services/config-service.js";
+import { useRpc } from "../rpc/provider.js";
 
 export type UserData = UserInfo;
 

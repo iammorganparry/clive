@@ -31,4 +31,3 @@ export const frameworkGuides: Section = (_config) =>
 - Group related tests appropriately
 </framework_guidelines>`,
   );
-

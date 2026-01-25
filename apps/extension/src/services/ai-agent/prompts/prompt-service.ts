@@ -4,12 +4,11 @@
  */
 
 import { Effect } from "effect";
-import type { BuildConfig } from "./types.js";
-import type { SectionId } from "./types.js";
 import { RulesService } from "./rules-service.js";
-import { resolveTemplate } from "./template-resolver.js";
 import { sectionRegistry, testAgentSectionOrder } from "./sections/index.js";
+import { resolveTemplate } from "./template-resolver.js";
 import { testAgentTemplate } from "./templates/test-agent-template.js";
+import type { BuildConfig, SectionId } from "./types.js";
 
 /**
  * Service for building complete prompts from sections
@@ -33,10 +32,7 @@ export class PromptService extends Effect.Service<PromptService>()(
 
           // Load user rules if requested and workspace root is available
           let userRules = "";
-          if (
-            buildConfig.includeUserRules &&
-            buildConfig.workspaceRoot
-          ) {
+          if (buildConfig.includeUserRules && buildConfig.workspaceRoot) {
             userRules = yield* rulesService.loadUserRules();
           }
 
@@ -70,7 +66,7 @@ export class PromptService extends Effect.Service<PromptService>()(
        * Useful for creating specialized prompts
        */
       const buildCustomPrompt = (
-        sections: typeof SectionId[keyof typeof SectionId][],
+        sections: (typeof SectionId)[keyof typeof SectionId][],
         template: string,
         config?: Partial<BuildConfig>,
       ) =>
@@ -82,10 +78,7 @@ export class PromptService extends Effect.Service<PromptService>()(
 
           // Load user rules if requested
           let userRules = "";
-          if (
-            buildConfig.includeUserRules &&
-            buildConfig.workspaceRoot
-          ) {
+          if (buildConfig.includeUserRules && buildConfig.workspaceRoot) {
             userRules = yield* rulesService.loadUserRules();
           }
 
@@ -120,4 +113,3 @@ export class PromptService extends Effect.Service<PromptService>()(
  * Default live layer for PromptService
  */
 export const PromptServiceLive = PromptService.Default;
-

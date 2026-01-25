@@ -1,5 +1,5 @@
-import { setup, assign } from "xstate";
-import { Routes, type Route } from "./routes.js";
+import { assign, setup } from "xstate";
+import { type Route, Routes } from "./routes.js";
 
 /**
  * Router state machine for managing initialization and navigation flow.

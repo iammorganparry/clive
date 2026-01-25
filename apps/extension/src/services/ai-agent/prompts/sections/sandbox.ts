@@ -51,4 +51,3 @@ Before running any integration/E2E test, you MUST execute these steps IN ORDER:
 **Always verify Docker services are healthy before running tests.**
 </sandbox_execution>`,
   );
-

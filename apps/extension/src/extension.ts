@@ -1,29 +1,30 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+
+import { Effect, Layer, Runtime } from "effect";
 import * as vscode from "vscode";
-import { CliveViewProvider } from "./views/clive-view-provider.js";
 import { CommandCenter } from "./commands/command-center.js";
-import { DiffContentProvider } from "./services/diff-content-provider.js";
-import { Effect, Runtime, Layer } from "effect";
-import { ConfigService } from "./services/config-service.js";
-import { createSecretStorageLayer } from "./services/vs-code.js";
-import { createLoggerLayer } from "./services/logger-service.js";
-import { setGlobalOutputChannel } from "./utils/logger.js";
 import { Commands, GlobalStateKeys } from "./constants.js";
-import {
-  PlanCodeLensProvider,
-  handleApprovePlan,
-  handleRejectPlan,
-} from "./services/plan-codelens-provider.js";
-import {
-  getDiffTrackerService,
-  initializeDiffTrackerService,
-} from "./services/diff-tracker-service.js";
+import { createBridgeHandlers } from "./mcp-bridge/handlers.js";
 import {
   getMcpBridgeRuntime,
   resetMcpBridgeRuntime,
 } from "./mcp-bridge/runtime.js";
-import { createBridgeHandlers } from "./mcp-bridge/handlers.js";
+import { ConfigService } from "./services/config-service.js";
+import { DiffContentProvider } from "./services/diff-content-provider.js";
+import {
+  getDiffTrackerService,
+  initializeDiffTrackerService,
+} from "./services/diff-tracker-service.js";
+import { createLoggerLayer } from "./services/logger-service.js";
+import {
+  handleApprovePlan,
+  handleRejectPlan,
+  PlanCodeLensProvider,
+} from "./services/plan-codelens-provider.js";
+import { createSecretStorageLayer } from "./services/vs-code.js";
+import { setGlobalOutputChannel } from "./utils/logger.js";
+import { CliveViewProvider } from "./views/clive-view-provider.js";
 
 // Build-time constant injected by esbuild
 declare const __DEV__: boolean;
@@ -283,7 +284,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionExports {
       outputChannel.appendLine("[MCP Bridge] Runtime initialized");
 
       // Check if Claude CLI is the current provider and start bridge if so
-      const currentProvider = context.globalState.get<string>(GlobalStateKeys.aiProvider);
+      const currentProvider = context.globalState.get<string>(
+        GlobalStateKeys.aiProvider,
+      );
       if (currentProvider === "claude-cli") {
         try {
           const socketPath = await runtime.start();

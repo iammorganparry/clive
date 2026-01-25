@@ -17,4 +17,3 @@ export class RulesLoadError extends Data.TaggedError("RulesLoadError")<{
   path?: string;
   cause?: unknown;
 }> {}
-

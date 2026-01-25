@@ -1,12 +1,13 @@
 import type React from "react";
-import { useEffect, lazy, Suspense } from "react";
-import type { VSCodeAPI } from "./services/vscode.js";
+import { lazy, Suspense, useEffect } from "react";
 import { WebviewMessages } from "../constants.js";
-import { logger } from "./services/logger.js";
-import { useAuth } from "./contexts/auth-context.js";
-import { useRouter, Routes } from "./router/index.js";
-import { Header } from "./components/layout/header.js";
 import { InitializingScreen } from "./components/initializing-screen.js";
+import { Header } from "./components/layout/header.js";
+import { useAuth } from "./contexts/auth-context.js";
+import { Routes, useRouter } from "./router/index.js";
+import { logger } from "./services/logger.js";
+import type { VSCodeAPI } from "./services/vscode.js";
+
 // Lazy load route components
 const LoginPage = lazy(() =>
   import("./pages/login/index.js").then((module) => ({

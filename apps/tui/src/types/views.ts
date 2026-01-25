@@ -3,7 +3,14 @@
  * Matches the flow from Go TUI: Setup -> Selection -> Main
  */
 
-export type ViewMode = 'setup' | 'mode_selection' | 'worker_setup' | 'worker' | 'selection' | 'main' | 'help';
+export type ViewMode =
+  | "setup"
+  | "mode_selection"
+  | "worker_setup"
+  | "worker"
+  | "selection"
+  | "main"
+  | "help";
 
 /**
  * Worker configuration for connecting to central Slack service
@@ -23,7 +30,7 @@ export interface WorkerConfig {
  * Config interface for issue tracker setup
  */
 export interface IssueTrackerConfig {
-  issueTracker: 'linear' | 'beads' | null;
+  issueTracker: "linear" | "beads" | null;
   linear?: {
     apiKey: string;
     teamID: string;

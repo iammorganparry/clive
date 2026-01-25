@@ -51,7 +51,9 @@ export interface TypedBridgeHandlers extends BridgeHandlers {
   proposePlan: (params: unknown) => Promise<ProposePlanBridgeResponse>;
   proposeTestPlan: (params: unknown) => Promise<ProposeTestPlanBridgeResponse>;
   approvePlan: (params: unknown) => Promise<ApprovePlanBridgeResponse>;
-  summarizeContext: (params: unknown) => Promise<SummarizeContextBridgeResponse>;
+  summarizeContext: (
+    params: unknown,
+  ) => Promise<SummarizeContextBridgeResponse>;
 }
 
 /**
@@ -91,7 +93,13 @@ export interface ProposePlanBridgeParams {
     };
     acceptanceCriteria: string[];
     definitionOfDone: string[];
-    skill: "feature" | "bugfix" | "refactor" | "docs" | "unit-tests" | "e2e-tests";
+    skill:
+      | "feature"
+      | "bugfix"
+      | "refactor"
+      | "docs"
+      | "unit-tests"
+      | "e2e-tests";
     complexity: number;
     estimatedEffort?: string;
     dependencies?: string[];

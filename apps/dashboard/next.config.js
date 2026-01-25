@@ -2,9 +2,10 @@
  * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially useful
  * for Docker builds.
  */
-import dotenv from "dotenv";
+
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 
 // Load environment variables from root .env file
 const __filename = fileURLToPath(import.meta.url);
@@ -18,11 +19,7 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
-    transpilePackages: [
-        "@clive/db",
-        "@clive/ui",
-        "@clive/validators",
-    ],
+	transpilePackages: ["@clive/db", "@clive/ui", "@clive/validators"],
 };
 
 export default config;

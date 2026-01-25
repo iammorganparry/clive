@@ -4,7 +4,7 @@
  * Provides special output events for subagent tracing in the UI
  */
 
-import { OutputLine } from '../types';
+import type { OutputLine } from "../types";
 
 export interface SubagentInfo {
   id: string;
@@ -21,14 +21,18 @@ export class SubagentTracker {
    * Handle tool_use event - detect Task tool spawns
    * Returns OutputLine for subagent_spawn event or null
    */
-  handleToolUse(toolUseId: string, toolName: string, input: any): OutputLine | null {
-    if (toolName !== 'Task') {
+  handleToolUse(
+    toolUseId: string,
+    toolName: string,
+    input: any,
+  ): OutputLine | null {
+    if (toolName !== "Task") {
       return null;
     }
 
     // Extract subagent info from Task tool input
-    const subagentType = input.subagent_type || input.agent_type || 'unknown';
-    const description = input.description || input.prompt || 'No description';
+    const subagentType = input.subagent_type || input.agent_type || "unknown";
+    const description = input.description || input.prompt || "No description";
 
     // Store subagent info
     const info: SubagentInfo = {
@@ -42,8 +46,8 @@ export class SubagentTracker {
     // Return spawn event
     return {
       text: `Spawning ${subagentType} agent: ${description}`,
-      type: 'subagent_spawn',
-      toolName: 'Task',
+      type: "subagent_spawn",
+      toolName: "Task",
       toolUseID: toolUseId,
       startTime: new Date(),
     };
@@ -53,8 +57,12 @@ export class SubagentTracker {
    * Handle tool_result event - detect Task tool completions
    * Returns OutputLine for subagent_complete event or null
    */
-  handleToolResult(toolUseId: string, toolName: string, result: string): OutputLine | null {
-    if (toolName !== 'Task') {
+  handleToolResult(
+    toolUseId: string,
+    toolName: string,
+    _result: string,
+  ): OutputLine | null {
+    if (toolName !== "Task") {
       return null;
     }
 
@@ -62,9 +70,9 @@ export class SubagentTracker {
     if (!info) {
       // No spawn info found, might be a resumed agent
       return {
-        text: 'Subagent completed',
-        type: 'subagent_complete',
-        toolName: 'Task',
+        text: "Subagent completed",
+        type: "subagent_complete",
+        toolName: "Task",
         toolUseID: toolUseId,
       };
     }
@@ -78,8 +86,8 @@ export class SubagentTracker {
     // Return completion event
     return {
       text: `${info.type} agent completed (${this.formatDuration(duration)})`,
-      type: 'subagent_complete',
-      toolName: 'Task',
+      type: "subagent_complete",
+      toolName: "Task",
       toolUseID: toolUseId,
       duration,
     };

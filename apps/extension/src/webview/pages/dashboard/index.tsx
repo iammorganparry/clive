@@ -1,15 +1,15 @@
-import type React from "react";
-import { useCallback, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMachine } from "@xstate/react";
-import type { VSCodeAPI } from "../../services/vscode.js";
-import { logger } from "../../services/logger.js";
+import type React from "react";
+import { useCallback, useEffect } from "react";
+import type { ProposedTest } from "../../../services/ai-agent/types.js";
+import { useComparisonMode } from "../../contexts/comparison-mode-context.js";
 import { useRpc } from "../../rpc/provider.js";
+import { logger } from "../../services/logger.js";
+import type { VSCodeAPI } from "../../services/vscode.js";
 import type { BranchChangesData } from "./components/branch-changes.js";
 import BranchChanges from "./components/branch-changes.js";
 import { dashboardMachine } from "./machines/dashboard-machine.js";
-import type { ProposedTest } from "../../../services/ai-agent/types.js";
-import { useComparisonMode } from "../../contexts/comparison-mode-context.js";
 
 interface DashboardPageProps {
   vscode: VSCodeAPI;
@@ -104,7 +104,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Get comparison mode from context
   const { mode: comparisonMode } = useComparisonMode();
 
-
   // Query for branch changes using new RPC API
   const {
     data: branchChanges,
@@ -129,9 +128,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       ? branchChangesLoading
       : uncommittedChangesLoading;
   const changesError =
-    comparisonMode === "branch"
-      ? branchChangesError
-      : uncommittedChangesError;
+    comparisonMode === "branch" ? branchChangesError : uncommittedChangesError;
 
   // Dashboard machine (for future use - currently just tracks data)
   const [, send] = useMachine(dashboardMachine, {

@@ -1,9 +1,9 @@
-import { describe, expect, beforeEach, it, vi } from "vitest";
-import { Effect, Runtime, type Layer } from "effect";
-import { SettingsService } from "../settings-service.js";
+import { Effect, type Layer, Runtime } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
-import { GlobalStateKeys } from "../../constants.js";
 import { createMockSettingsServiceLayer } from "../../__tests__/mock-factories/service-mocks.js";
+import { GlobalStateKeys } from "../../constants.js";
+import { SettingsService } from "../settings-service.js";
 
 describe("SettingsService - Base Branch Methods", () => {
   const runtime = Runtime.defaultRuntime;
@@ -23,7 +23,9 @@ describe("SettingsService - Base Branch Methods", () => {
     }).pipe(Effect.provide(settingsLayer), Runtime.runPromise(runtime));
 
     expect(result).toBe(null);
-    expect(mockGlobalState.get).toHaveBeenCalledWith(GlobalStateKeys.baseBranch);
+    expect(mockGlobalState.get).toHaveBeenCalledWith(
+      GlobalStateKeys.baseBranch,
+    );
   });
 
   it("should return configured base branch when set", async () => {

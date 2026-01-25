@@ -3,18 +3,17 @@
  * Stores knowledge as markdown files in .clive/knowledge/ directory
  */
 
-import { Data, Effect } from "effect";
+import { Data, Effect, Layer } from "effect";
 import * as vscode from "vscode";
 import type { KnowledgeBaseCategory } from "../constants.js";
-import { VSCodeService } from "./vs-code.js";
+import { extractErrorMessage } from "../utils/error-utils.js";
 import {
-  parseFrontmatter,
   generateFrontmatter as generateFrontmatterUtil,
+  parseFrontmatter,
 } from "../utils/frontmatter-utils.js";
 import { ensureDirectoryExists } from "../utils/fs-effects.js";
-import { extractErrorMessage } from "../utils/error-utils.js";
 import { GitignoreManager } from "./gitignore-manager.js";
-import { Layer } from "effect";
+import { VSCodeService } from "./vs-code.js";
 
 /**
  * Error types for knowledge file operations
@@ -223,18 +222,17 @@ export class KnowledgeFileService extends Effect.Service<KnowledgeFileService>()
             : fullContent;
 
           // Write file
-          yield* vsCodeService.writeFile(
-            fileUri,
-            Buffer.from(finalContent, "utf-8"),
-          ).pipe(
-            Effect.mapError(
-              (error) =>
-                new KnowledgeFileError({
-                  message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
-                  cause: error,
-                }),
-            ),
-          );
+          yield* vsCodeService
+            .writeFile(fileUri, Buffer.from(finalContent, "utf-8"))
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new KnowledgeFileError({
+                    message: `Failed to write knowledge file: ${extractErrorMessage(error)}`,
+                    cause: error,
+                  }),
+              ),
+            );
 
           const relativePath = vsCodeService.asRelativePath(fileUri, false);
 

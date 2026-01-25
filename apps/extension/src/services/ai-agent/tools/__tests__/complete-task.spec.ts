@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { createCompleteTaskTool } from "../complete-task";
+import { describe, expect, it } from "vitest";
 import type { CompleteTaskInput, CompleteTaskOutput } from "../complete-task";
+import { createCompleteTaskTool } from "../complete-task";
 import { executeTool } from "./test-helpers";
 
 describe("completeTaskTool", () => {
@@ -73,7 +73,9 @@ describe("completeTaskTool", () => {
       expect(result.success).toBe(true);
       expect(result.completed).toBe(true);
       expect(result.message).toContain("Task completed successfully");
-      expect(result.message).toContain("All 5 test files written and verified passing");
+      expect(result.message).toContain(
+        "All 5 test files written and verified passing",
+      );
     });
 
     it("should handle single test file", async () => {
@@ -109,4 +111,3 @@ describe("completeTaskTool", () => {
     });
   });
 });
-

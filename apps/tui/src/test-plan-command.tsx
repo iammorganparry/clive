@@ -3,25 +3,25 @@
  * Simulates: Launch TUI → Execute /plan command → Verify output
  */
 
-import { CliManager } from './services/CliManager';
+import { CliManager } from "./services/CliManager";
 
 async function testPlanCommand() {
-  console.log('=== Testing /plan Command ===\n');
-  console.log('Creating CliManager...');
+  console.log("=== Testing /plan Command ===\n");
+  console.log("Creating CliManager...");
 
   const manager = new CliManager();
   const outputs: any[] = [];
 
   // Collect all output
-  manager.on('output', (line) => {
+  manager.on("output", (line) => {
     outputs.push(line);
 
     // Log different output types with visual distinction
     switch (line.type) {
-      case 'tool_call':
+      case "tool_call":
         console.log(`\n🔧 [TOOL] ${line.toolName}`);
         break;
-      case 'tool_result':
+      case "tool_result": {
         const metadata = [];
         if (line.duration) metadata.push(`${line.duration}ms`);
         if (line.inputTokens || line.outputTokens) {
@@ -29,78 +29,90 @@ async function testPlanCommand() {
         }
         if (line.costUSD) metadata.push(`$${line.costUSD.toFixed(4)}`);
 
-        console.log(`  ↳ Result${metadata.length ? ' [' + metadata.join(', ') + ']' : ''}`);
+        console.log(
+          `  ↳ Result${metadata.length ? ` [${metadata.join(", ")}]` : ""}`,
+        );
         if (line.text.length < 200) {
           console.log(`    ${line.text.substring(0, 100)}`);
         }
         break;
-      case 'assistant':
-        console.log(`\n💬 [ASSISTANT] ${line.text.substring(0, 100)}${line.text.length > 100 ? '...' : ''}`);
+      }
+      case "assistant":
+        console.log(
+          `\n💬 [ASSISTANT] ${line.text.substring(0, 100)}${line.text.length > 100 ? "..." : ""}`,
+        );
         break;
-      case 'system':
+      case "system":
         console.log(`\n💭 [SYSTEM] ${line.text}`);
         break;
-      case 'file_diff':
+      case "file_diff": {
         console.log(`\n📝 [DIFF]`);
         // Show first few lines of diff
-        const diffLines = line.text.split('\n').slice(0, 5);
-        diffLines.forEach(l => console.log(`  ${l}`));
+        const diffLines = line.text.split("\n").slice(0, 5);
+        diffLines.forEach((l) => console.log(`  ${l}`));
         break;
-      case 'exit':
+      }
+      case "exit":
         console.log(`\n✅ [EXIT] Code: ${line.exitCode ?? 0}`);
         break;
       default:
-        console.log(`[${line.type.toUpperCase()}] ${line.text.substring(0, 80)}`);
+        console.log(
+          `[${line.type.toUpperCase()}] ${line.text.substring(0, 80)}`,
+        );
     }
   });
 
-  manager.on('complete', () => {
-    console.log('\n=== Execution Complete ===');
+  manager.on("complete", () => {
+    console.log("\n=== Execution Complete ===");
     console.log(`\nTotal outputs: ${outputs.length}`);
 
     // Analyze output types
-    const types = outputs.reduce((acc, line) => {
-      acc[line.type] = (acc[line.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    const types = outputs.reduce(
+      (acc, line) => {
+        acc[line.type] = (acc[line.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
 
-    console.log('\nOutput breakdown:');
+    console.log("\nOutput breakdown:");
     Object.entries(types).forEach(([type, count]) => {
       console.log(`  ${type}: ${count}`);
     });
 
     // Check for expected elements
-    console.log('\n✅ Test Results:');
+    console.log("\n✅ Test Results:");
     console.log(`  - Tool calls: ${types.tool_call || 0}`);
     console.log(`  - Assistant messages: ${types.assistant || 0}`);
-    console.log(`  - Exit event: ${types.exit ? 'YES' : 'NO'}`);
+    console.log(`  - Exit event: ${types.exit ? "YES" : "NO"}`);
 
     process.exit(0);
   });
 
   console.log('\nExecuting: "/plan Write a simple hello world function"\n');
-  console.log('---\n');
+  console.log("---\n");
 
   try {
-    await manager.execute('Write a simple hello world function', {
+    await manager.execute("Write a simple hello world function", {
       workspaceRoot: process.cwd(),
-      model: 'sonnet',
-      systemPrompt: 'You are a planning assistant. Create a brief, concise plan with 2-3 steps. Keep your response SHORT.',
+      model: "sonnet",
+      systemPrompt:
+        "You are a planning assistant. Create a brief, concise plan with 2-3 steps. Keep your response SHORT.",
     });
   } catch (error) {
-    console.error('[ERROR]', error);
+    console.error("[ERROR]", error);
     process.exit(1);
   }
 }
 
 // Run with timeout
 const timeoutId = setTimeout(() => {
-  console.error('\n❌ Test timed out after 60 seconds');
+  console.error("\n❌ Test timed out after 60 seconds");
   process.exit(1);
 }, 60000);
 
-testPlanCommand().catch(error => {
+testPlanCommand().catch((error) => {
   clearTimeout(timeoutId);
-  console.error('Test failed:', error);
+  console.error("Test failed:", error);
   process.exit(1);
 });

@@ -9,26 +9,24 @@
  * - Emits enriched OutputLine events
  */
 
-import { EventEmitter } from 'events';
-import { Effect, Runtime, Stream } from 'effect';
+import { EventEmitter } from "node:events";
 import {
-  ClaudeCliService,
   type ClaudeCliEvent,
+  ClaudeCliService,
   type CliExecutionHandle,
-  ClaudeCliExecutionError,
-} from '@clive/claude-services';
-import type { OutputLine, QuestionData } from '../types';
-import { DiffDetector } from './DiffDetector';
-import { SubagentTracker } from './SubagentTracker';
-import { MetadataCalculator } from './MetadataCalculator';
-import { ConversationLogger } from './ConversationLogger';
-import { debugLog } from '../utils/debug-logger';
+} from "@clive/claude-services";
+import { Effect, type Runtime, Stream } from "effect";
+import type { OutputLine, QuestionData } from "../types";
+import { debugLog } from "../utils/debug-logger";
+import { ConversationLogger } from "./ConversationLogger";
+import { DiffDetector } from "./DiffDetector";
+import { SubagentTracker } from "./SubagentTracker";
 
 export interface CliManagerOptions {
   workspaceRoot: string;
   model?: string;
   systemPrompt?: string;
-  mode?: 'plan' | 'build';
+  mode?: "plan" | "build" | "review";
   resumeSessionId?: string;
 }
 
@@ -45,7 +43,7 @@ export class CliManager extends EventEmitter {
   private toolInputs = new Map<string, any>();
 
   // Track active agent session for persistent modes
-  private activeMode: 'plan' | 'build' | null = null;
+  private activeMode: "plan" | "build" | null = null;
 
   // Track pending question to keep handle alive
   private pendingQuestionId: string | null = null;
@@ -60,7 +58,10 @@ export class CliManager extends EventEmitter {
   private hasAnsweredQuestionThisTurn = false;
 
   // Track conversation history for continuous sessions
-  private conversationHistory: Array<{ role: 'user' | 'assistant', content: string }> = [];
+  private conversationHistory: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }> = [];
 
   constructor() {
     super();
@@ -70,51 +71,57 @@ export class CliManager extends EventEmitter {
     this.runtime = Effect.runSync(
       Effect.gen(function* () {
         return yield* Effect.runtime<ClaudeCliService>();
-      }).pipe(Effect.provide(layer))
+      }).pipe(Effect.provide(layer)),
     );
   }
 
   /**
    * Execute a prompt via Claude CLI with enrichment
    */
-  async execute(prompt: string, options: CliManagerOptions, appendToHistory: boolean = false): Promise<void> {
-    debugLog('CliManager', 'Starting execution', {
+  async execute(
+    prompt: string,
+    options: CliManagerOptions,
+    appendToHistory: boolean = false,
+  ): Promise<void> {
+    debugLog("CliManager", "Starting execution", {
       promptLength: prompt.length,
       model: options.model,
       mode: options.mode,
       workspaceRoot: options.workspaceRoot,
       appendToHistory,
-      historyLength: this.conversationHistory.length
+      historyLength: this.conversationHistory.length,
     });
 
     // Start conversation logging if mode is set
     if (options.mode) {
       this.conversationLogger.start(options.workspaceRoot, options.mode);
-      debugLog('CliManager', 'Started conversation logging', {
-        logFile: this.conversationLogger.getLogFile()
+      debugLog("CliManager", "Started conversation logging", {
+        logFile: this.conversationLogger.getLogFile(),
       });
     }
 
     // Add user message to history if not already there
     if (appendToHistory || this.conversationHistory.length === 0) {
-      this.conversationHistory.push({ role: 'user', content: prompt });
+      this.conversationHistory.push({ role: "user", content: prompt });
     }
 
     const program = Effect.gen(this.createExecutionProgram(prompt, options));
 
     try {
-      await Effect.runPromise(program.pipe(Effect.provide(ClaudeCliService.Default)));
-      debugLog('CliManager', 'Execution completed successfully');
+      await Effect.runPromise(
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      );
+      debugLog("CliManager", "Execution completed successfully");
     } catch (error) {
-      debugLog('CliManager', 'Execution error', { error: String(error) });
-      this.emit('output', {
+      debugLog("CliManager", "Execution error", { error: String(error) });
+      this.emit("output", {
         text: `Execution error: ${error}`,
-        type: 'stderr',
+        type: "stderr",
       } as OutputLine);
     } finally {
       // Stop conversation logging
       this.conversationLogger.stop();
-      debugLog('CliManager', 'Stopped conversation logging');
+      debugLog("CliManager", "Stopped conversation logging");
     }
   }
 
@@ -132,7 +139,7 @@ export class CliManager extends EventEmitter {
         prompt,
         systemPrompt: options.systemPrompt,
         workspaceRoot: options.workspaceRoot,
-        model: options.model || 'sonnet',
+        model: options.model || "sonnet",
         resumeSessionId: options.resumeSessionId,
       });
 
@@ -141,32 +148,34 @@ export class CliManager extends EventEmitter {
 
       // Stream events with enrichment
       yield* handle.stream.pipe(
-        Stream.runForEach((event) => Effect.sync(() => {
-          const enrichedLines = self.enrichEvent(event);
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            const enrichedLines = self.enrichEvent(event);
 
-          debugLog('CliManager', 'Emitting enriched lines', {
-            count: enrichedLines.length,
-            types: enrichedLines.map(l => l.type)
-          });
-
-          // Log enriched output lines
-          for (const line of enrichedLines) {
-            self.conversationLogger.log({
-              timestamp: new Date().toISOString(),
-              type: 'enriched_output',
-              line,
+            debugLog("CliManager", "Emitting enriched lines", {
+              count: enrichedLines.length,
+              types: enrichedLines.map((l) => l.type),
             });
-          }
 
-          // Emit all enriched lines
-          for (const line of enrichedLines) {
-            debugLog('CliManager', 'Emitting output event', {
-              type: line.type,
-              hasQuestion: !!(line.type === 'question' && line.question)
-            });
-            self.emit('output', line);
-          }
-        }))
+            // Log enriched output lines
+            for (const line of enrichedLines) {
+              self.conversationLogger.log({
+                timestamp: new Date().toISOString(),
+                type: "enriched_output",
+                line,
+              });
+            }
+
+            // Emit all enriched lines
+            for (const line of enrichedLines) {
+              debugLog("CliManager", "Emitting output event", {
+                type: line.type,
+                hasQuestion: !!(line.type === "question" && line.question),
+              });
+              self.emit("output", line);
+            }
+          }),
+        ),
       );
 
       // Execution complete
@@ -176,7 +185,7 @@ export class CliManager extends EventEmitter {
       if (!self.activeMode && !self.pendingQuestionId) {
         self.currentHandle = null;
       }
-      self.emit('complete');
+      self.emit("complete");
     };
   }
 
@@ -187,39 +196,44 @@ export class CliManager extends EventEmitter {
   private enrichEvent(event: ClaudeCliEvent): OutputLine[] {
     const outputs: OutputLine[] = [];
 
-    debugLog('CliManager', 'enrichEvent called', { eventType: event.type });
+    debugLog("CliManager", "enrichEvent called", { eventType: event.type });
 
     // Log raw event to conversation log
     this.conversationLogger.log({
       timestamp: new Date().toISOString(),
-      type: 'raw_event',
+      type: "raw_event",
       event,
     });
 
     switch (event.type) {
-      case 'tool_use': {
+      case "tool_use": {
         // Track tool metadata
         this.toolTimings.set(event.id, new Date());
         this.toolNames.set(event.id, event.name);
         this.toolInputs.set(event.id, event.input);
 
         // Check for special tool types
-        if (event.name === 'AskUserQuestion') {
+        if (event.name === "AskUserQuestion") {
           // Handle question - emit question event
-          debugLog('CliManager', 'AskUserQuestion tool detected', {
+          debugLog("CliManager", "AskUserQuestion tool detected", {
             toolId: event.id,
-            input: event.input
+            input: event.input,
           });
 
           // CRITICAL: Only allow ONE question per turn (block duplicates before UI sees them)
           // Check if we already have a question in this turn by counting currentTurnQuestionIds
           // We can't check hasAnsweredQuestionThisTurn because user hasn't answered yet when 2nd question arrives
           if (this.currentTurnQuestionIds.size > 0) {
-            debugLog('CliManager', 'WARNING: Duplicate question detected - blocking before UI', {
-              toolId: event.id,
-              reason: 'Already have question in this turn - blocking at source',
-              existingQuestions: Array.from(this.currentTurnQuestionIds)
-            });
+            debugLog(
+              "CliManager",
+              "WARNING: Duplicate question detected - blocking before UI",
+              {
+                toolId: event.id,
+                reason:
+                  "Already have question in this turn - blocking at source",
+                existingQuestions: Array.from(this.currentTurnQuestionIds),
+              },
+            );
 
             // Mark as sent to prevent any future answer attempts
             this.sentToolResults.add(event.id);
@@ -227,10 +241,11 @@ export class CliManager extends EventEmitter {
             // Log the block
             this.conversationLogger.log({
               timestamp: new Date().toISOString(),
-              type: 'tool_result_blocked',
+              type: "tool_result_blocked",
               toolId: event.id,
-              result: '(blocked before UI - duplicate question)',
-              reason: 'Duplicate question in same turn - blocked at tool_use level',
+              result: "(blocked before UI - duplicate question)",
+              reason:
+                "Duplicate question in same turn - blocked at tool_use level",
             });
 
             // CRITICAL: Send an automatic tool_result for the blocked question
@@ -239,57 +254,66 @@ export class CliManager extends EventEmitter {
             // Send a message indicating we already have this information.
             if (this.currentHandle) {
               const autoResponse = JSON.stringify({
-                "response": "Question already answered - continuing conversation"
+                response: "Question already answered - continuing conversation",
               });
 
-              debugLog('CliManager', 'Sending automatic tool_result for blocked duplicate question', {
-                toolId: event.id
-              });
+              debugLog(
+                "CliManager",
+                "Sending automatic tool_result for blocked duplicate question",
+                {
+                  toolId: event.id,
+                },
+              );
 
               this.currentHandle.sendToolResult(event.id, autoResponse);
 
               this.conversationLogger.log({
                 timestamp: new Date().toISOString(),
-                type: 'tool_result_auto_sent',
+                type: "tool_result_auto_sent",
                 toolId: event.id,
                 result: autoResponse,
-                reason: 'Auto-response for blocked duplicate question',
+                reason: "Auto-response for blocked duplicate question",
               });
             }
 
             // Do NOT emit this question to the UI
             // Do NOT track it as pending
             // Return empty outputs to skip it completely
-            debugLog('CliManager', 'Duplicate question blocked - not emitting to UI');
+            debugLog(
+              "CliManager",
+              "Duplicate question blocked - not emitting to UI",
+            );
             return outputs;
           }
 
           // Track this question as part of current turn
           this.currentTurnQuestionIds.add(event.id);
-          debugLog('CliManager', 'Added question to current turn', {
+          debugLog("CliManager", "Added question to current turn", {
             toolId: event.id,
-            currentTurnQuestions: Array.from(this.currentTurnQuestionIds)
+            currentTurnQuestions: Array.from(this.currentTurnQuestionIds),
           });
 
           // Track pending question to keep CLI handle alive
           this.pendingQuestionId = event.id;
-          debugLog('CliManager', 'Set pendingQuestionId', { pendingQuestionId: this.pendingQuestionId });
+          debugLog("CliManager", "Set pendingQuestionId", {
+            pendingQuestionId: this.pendingQuestionId,
+          });
 
           const questionData = this.extractQuestionData(event.id, event.input);
 
-          debugLog('CliManager', 'Question data extracted', {
+          debugLog("CliManager", "Question data extracted", {
             toolUseID: questionData.toolUseID,
-            questionCount: questionData.questions.length
+            questionCount: questionData.questions.length,
           });
 
           outputs.push({
-            text: '',
-            type: 'question',
+            text: "",
+            type: "question",
             toolUseID: event.id,
             question: questionData,
           });
 
-          debugLog('CliManager', 'Question event pushed to outputs');
+          debugLog("CliManager", "Question event pushed to outputs");
           return outputs;
         }
 
@@ -300,7 +324,7 @@ export class CliManager extends EventEmitter {
         const spawnEvent = this.subagentTracker.handleToolUse(
           event.id,
           event.name,
-          event.input
+          event.input,
         );
         if (spawnEvent) {
           outputs.push(spawnEvent);
@@ -309,7 +333,7 @@ export class CliManager extends EventEmitter {
         // Regular tool call
         outputs.push({
           text: `● ${event.name}`,
-          type: 'tool_call',
+          type: "tool_call",
           toolName: event.name,
           toolUseID: event.id,
           toolInput: event.input,
@@ -319,20 +343,22 @@ export class CliManager extends EventEmitter {
         break;
       }
 
-      case 'tool_result': {
-        const toolName = this.toolNames.get(event.id) || 'unknown';
+      case "tool_result": {
+        const toolName = this.toolNames.get(event.id) || "unknown";
         const toolInput = this.toolInputs.get(event.id);
 
         // Calculate duration
         const startTime = this.toolTimings.get(event.id);
-        const duration = startTime ? Date.now() - startTime.getTime() : undefined;
+        const duration = startTime
+          ? Date.now() - startTime.getTime()
+          : undefined;
 
         // Generate file diff if applicable
         const diff = this.diffDetector.generateDiff(toolName, toolInput);
         if (diff) {
           outputs.push({
             text: diff,
-            type: 'file_diff',
+            type: "file_diff",
             toolUseID: event.id,
           });
         }
@@ -341,7 +367,7 @@ export class CliManager extends EventEmitter {
         const completeEvent = this.subagentTracker.handleToolResult(
           event.id,
           toolName,
-          event.content
+          event.content,
         );
         if (completeEvent) {
           outputs.push(completeEvent);
@@ -353,7 +379,7 @@ export class CliManager extends EventEmitter {
         // Main tool result
         outputs.push({
           text: event.content,
-          type: 'tool_result',
+          type: "tool_result",
           toolUseID: event.id,
           toolName,
           duration,
@@ -368,17 +394,21 @@ export class CliManager extends EventEmitter {
         break;
       }
 
-      case 'text': {
+      case "text": {
         outputs.push({
           text: event.content,
-          type: 'assistant',
+          type: "assistant",
         });
 
         // Track assistant response in conversation history
-        const lastMessage = this.conversationHistory[this.conversationHistory.length - 1];
-        if (!lastMessage || lastMessage.role !== 'assistant') {
+        const lastMessage =
+          this.conversationHistory[this.conversationHistory.length - 1];
+        if (!lastMessage || lastMessage.role !== "assistant") {
           // Start new assistant message
-          this.conversationHistory.push({ role: 'assistant', content: event.content });
+          this.conversationHistory.push({
+            role: "assistant",
+            content: event.content,
+          });
         } else {
           // Append to existing assistant message
           lastMessage.content += event.content;
@@ -387,28 +417,32 @@ export class CliManager extends EventEmitter {
         break;
       }
 
-      case 'thinking': {
+      case "thinking": {
         outputs.push({
           text: event.content,
-          type: 'system',
+          type: "system",
         });
         break;
       }
 
-      case 'error': {
+      case "error": {
         outputs.push({
           text: event.message,
-          type: 'stderr',
+          type: "stderr",
         });
         break;
       }
 
-      case 'done': {
+      case "done": {
         // Clear current turn questions - any answers sent after this are invalid
         if (this.currentTurnQuestionIds.size > 0) {
-          debugLog('CliManager', 'Turn ended with unanswered questions - clearing', {
-            questionIds: Array.from(this.currentTurnQuestionIds)
-          });
+          debugLog(
+            "CliManager",
+            "Turn ended with unanswered questions - clearing",
+            {
+              questionIds: Array.from(this.currentTurnQuestionIds),
+            },
+          );
           this.currentTurnQuestionIds.clear();
 
           // Clear pending question to unblock UI
@@ -417,11 +451,11 @@ export class CliManager extends EventEmitter {
 
         // Reset turn flag - allow answering questions in next turn
         this.hasAnsweredQuestionThisTurn = false;
-        debugLog('CliManager', 'Turn ended - reset question answer flag');
+        debugLog("CliManager", "Turn ended - reset question answer flag");
 
         outputs.push({
-          text: '',
-          type: 'exit',
+          text: "",
+          type: "exit",
           exitCode: 0,
         });
         break;
@@ -445,7 +479,7 @@ export class CliManager extends EventEmitter {
    * Extract metadata from tool result content
    * TODO: CLI should provide this in structured format
    */
-  private extractResultMetadata(content: string): Partial<OutputLine> {
+  private extractResultMetadata(_content: string): Partial<OutputLine> {
     // For now, return empty metadata
     // In the future, CLI can include token/cost data in JSON format
     return {};
@@ -455,15 +489,23 @@ export class CliManager extends EventEmitter {
    * Send a tool result back to the CLI via stdin
    */
   sendToolResult(toolId: string, result: string): void {
-    debugLog('CliManager', 'sendToolResult called', { toolId, resultLength: result.length });
+    debugLog("CliManager", "sendToolResult called", {
+      toolId,
+      resultLength: result.length,
+    });
 
     // Log EVERY call to sendToolResult with stack trace to debug duplicates
-    console.log(`[CliManager] sendToolResult called: toolId=${toolId}, result=${result.substring(0, 100)}`);
+    console.log(
+      `[CliManager] sendToolResult called: toolId=${toolId}, result=${result.substring(0, 100)}`,
+    );
     console.log(`[CliManager] Call stack:`, new Error().stack);
 
     if (!this.currentHandle) {
-      debugLog('CliManager', 'ERROR: Cannot send tool result - no active handle');
-      console.error('[CliManager] Cannot send tool result - no active handle');
+      debugLog(
+        "CliManager",
+        "ERROR: Cannot send tool result - no active handle",
+      );
+      console.error("[CliManager] Cannot send tool result - no active handle");
       return;
     }
 
@@ -471,57 +513,70 @@ export class CliManager extends EventEmitter {
     // When Claude calls AskUserQuestion multiple times, only answer the FIRST one
     // Answering multiple questions causes the last tool_result to be replayed in subsequent requests
     if (this.hasAnsweredQuestionThisTurn) {
-      debugLog('CliManager', 'WARNING: Already answered question this turn - ignoring to prevent 400 error', {
-        toolId,
-        reason: 'Only one tool_result allowed per turn'
-      });
+      debugLog(
+        "CliManager",
+        "WARNING: Already answered question this turn - ignoring to prevent 400 error",
+        {
+          toolId,
+          reason: "Only one tool_result allowed per turn",
+        },
+      );
 
       // Log to conversation log
       this.conversationLogger.log({
         timestamp: new Date().toISOString(),
-        type: 'tool_result_blocked',
+        type: "tool_result_blocked",
         toolId,
         result,
-        reason: 'Already answered question this turn (only one per turn allowed)',
+        reason:
+          "Already answered question this turn (only one per turn allowed)",
       });
 
       // CRITICAL: Mark blocked questions as "sent" to prevent them from being answered later
       // This prevents 400 errors when blocked questions remain in UI and get answered in future turns
       this.sentToolResults.add(toolId);
-      debugLog('CliManager', 'Marked blocked question as sent to prevent future answers', { toolId });
+      debugLog(
+        "CliManager",
+        "Marked blocked question as sent to prevent future answers",
+        { toolId },
+      );
 
       return;
     }
 
     // Check if this tool result has already been sent (prevent duplicates)
     if (this.sentToolResults.has(toolId)) {
-      debugLog('CliManager', 'WARNING: Tool result already sent - ignoring duplicate', {
-        toolId,
-        alreadySent: Array.from(this.sentToolResults)
-      });
+      debugLog(
+        "CliManager",
+        "WARNING: Tool result already sent - ignoring duplicate",
+        {
+          toolId,
+          alreadySent: Array.from(this.sentToolResults),
+        },
+      );
 
       // Log to conversation log
       this.conversationLogger.log({
         timestamp: new Date().toISOString(),
-        type: 'tool_result_duplicate',
+        type: "tool_result_duplicate",
         toolId,
         result,
-        reason: 'Already sent',
+        reason: "Already sent",
       });
 
       return;
     }
 
-    debugLog('CliManager', 'Sending tool result to handle', {
+    debugLog("CliManager", "Sending tool result to handle", {
       toolId,
       resultPreview: result.substring(0, 200),
-      currentPendingQuestionId: this.pendingQuestionId
+      currentPendingQuestionId: this.pendingQuestionId,
     });
 
     // Log tool result being sent
     this.conversationLogger.log({
       timestamp: new Date().toISOString(),
-      type: 'tool_result_sent',
+      type: "tool_result_sent",
       toolId,
       result,
     });
@@ -530,25 +585,29 @@ export class CliManager extends EventEmitter {
 
     // Mark that we've answered a question this turn
     this.hasAnsweredQuestionThisTurn = true;
-    debugLog('CliManager', 'Set hasAnsweredQuestionThisTurn = true');
+    debugLog("CliManager", "Set hasAnsweredQuestionThisTurn = true");
 
     // Mark this tool result as sent
     this.sentToolResults.add(toolId);
 
     // DO NOT remove from currentTurnQuestionIds - keep it to block subsequent questions!
     // The set will be cleared when the turn ends
-    debugLog('CliManager', 'Question answered but keeping in currentTurnQuestionIds to block duplicates', {
-      toolId,
-      currentTurnQuestions: Array.from(this.currentTurnQuestionIds)
-    });
+    debugLog(
+      "CliManager",
+      "Question answered but keeping in currentTurnQuestionIds to block duplicates",
+      {
+        toolId,
+        currentTurnQuestions: Array.from(this.currentTurnQuestionIds),
+      },
+    );
 
     // Clear pending question ID if this was the tracked question
     if (this.pendingQuestionId === toolId) {
-      debugLog('CliManager', 'Clearing pendingQuestionId', { toolId });
+      debugLog("CliManager", "Clearing pendingQuestionId", { toolId });
       this.pendingQuestionId = null;
     }
 
-    debugLog('CliManager', 'Tool result sent successfully', { toolId });
+    debugLog("CliManager", "Tool result sent successfully", { toolId });
   }
 
   /**
@@ -556,13 +615,13 @@ export class CliManager extends EventEmitter {
    */
   sendMessage(message: string): void {
     if (!this.currentHandle) {
-      console.error('[CliManager] Cannot send message - no active handle');
+      console.error("[CliManager] Cannot send message - no active handle");
       return;
     }
 
     // For bidirectional mode, messages are sent as tool results
     // or via stdin depending on the CLI mode
-    console.log('[CliManager] sendMessage not yet implemented:', message);
+    console.log("[CliManager] sendMessage not yet implemented:", message);
   }
 
   /**
@@ -578,12 +637,15 @@ export class CliManager extends EventEmitter {
    */
   getConversationContext(): string {
     if (this.conversationHistory.length === 0) {
-      return '';
+      return "";
     }
 
     const historyContext = this.conversationHistory
-      .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-      .join('\n\n');
+      .map(
+        (msg) =>
+          `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`,
+      )
+      .join("\n\n");
 
     return `\n\nPREVIOUS CONVERSATION:\n${historyContext}\n\nContinue the conversation with context from above.`;
   }
@@ -594,19 +656,19 @@ export class CliManager extends EventEmitter {
    */
   async sendMessageToAgent(message: string): Promise<void> {
     if (!this.hasActiveSession()) {
-      throw new Error('No active agent session');
+      throw new Error("No active agent session");
     }
 
     if (!this.currentHandle) {
-      throw new Error('No active CLI handle');
+      throw new Error("No active CLI handle");
     }
 
     // Add message to history
-    this.conversationHistory.push({ role: 'user', content: message });
+    this.conversationHistory.push({ role: "user", content: message });
 
-    debugLog('CliManager', 'Sending message to agent via stdin', {
+    debugLog("CliManager", "Sending message to agent via stdin", {
       message: message.substring(0, 100),
-      historyLength: this.conversationHistory.length
+      historyLength: this.conversationHistory.length,
     });
 
     // Send the user message to CLI via stdin using the handle's sendMessage method
@@ -615,11 +677,11 @@ export class CliManager extends EventEmitter {
     // Log the message to conversation log
     this.conversationLogger.log({
       timestamp: new Date().toISOString(),
-      type: 'user_message_sent',
+      type: "user_message_sent",
       message: message,
     });
 
-    debugLog('CliManager', 'Message sent to agent successfully');
+    debugLog("CliManager", "Message sent to agent successfully");
   }
 
   /**
@@ -632,7 +694,7 @@ export class CliManager extends EventEmitter {
   /**
    * Get the current active mode
    */
-  getActiveMode(): 'plan' | 'build' | null {
+  getActiveMode(): "plan" | "build" | null {
     return this.hasActiveSession() ? this.activeMode : null;
   }
 
@@ -645,7 +707,7 @@ export class CliManager extends EventEmitter {
       this.currentHandle = null;
       this.activeMode = null;
       this.pendingQuestionId = null;
-      this.emit('killed');
+      this.emit("killed");
     }
   }
 

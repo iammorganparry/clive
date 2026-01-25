@@ -1,12 +1,12 @@
-import { expect, vi, beforeEach, describe } from "vitest";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
+import { beforeEach, describe, expect, vi } from "vitest";
 import * as vscode from "vscode";
-import { createWriteTestFileTool } from "../write-test-file";
-import type { WriteTestFileInput, WriteTestFileOutput } from "../../types";
-import { executeTool } from "./test-helpers";
 import { createMockDiagnosticWithRange } from "../../../../__tests__/mock-factories/diagnostics-mock";
 import { getVSCodeMock } from "../../../../__tests__/mock-factories/vscode-mock.js";
+import type { WriteTestFileInput, WriteTestFileOutput } from "../../types";
+import { createWriteTestFileTool } from "../write-test-file";
+import { executeTool } from "./test-helpers";
 
 // Mock vscode globally for tools that use VSCodeService.Default internally
 // Use setupVSCodeMock to ensure singleton pattern - same instance used everywhere

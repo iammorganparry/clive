@@ -1,10 +1,10 @@
-import type React from "react";
-import { createContext, useContext, useCallback, useEffect } from "react";
 import { useMachine } from "@xstate/react";
-import { Routes, type Route } from "./routes.js";
+import type React from "react";
+import { createContext, useCallback, useContext, useEffect } from "react";
 import { useAuth } from "../contexts/auth-context.js";
 import { useRpc } from "../rpc/provider.js";
-import { routerMachine, type RouterMachineEvent } from "./router-machine.js";
+import { type RouterMachineEvent, routerMachine } from "./router-machine.js";
+import { type Route, Routes } from "./routes.js";
 
 interface RouterContextValue {
   route: Route;
@@ -76,12 +76,7 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
         route: Routes.dashboard,
       });
     }
-  }, [
-    state,
-    branchChangesLoading,
-    branchChanges,
-    send,
-  ]);
+  }, [state, branchChangesLoading, branchChanges, send]);
 
   // Send MCP_BRIDGE_RESULT when MCP bridge check completes
   useEffect(() => {

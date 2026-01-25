@@ -4,26 +4,27 @@
  * Allows the TUI to receive and process interview requests from Slack.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import WebSocket from 'ws';
-import { randomUUID } from 'crypto';
-import * as os from 'os';
-import * as path from 'path';
-import type { WorkerConfig } from '../types/views';
+import { randomUUID } from "node:crypto";
+import * as os from "node:os";
+import * as path from "node:path";
 import type {
-  WorkerStatus,
-  WorkerRegistration,
-  WorkerHeartbeat,
   CentralToWorkerMessage,
-  WorkerToCentralMessage,
-  InterviewRequest,
   InterviewEvent,
+  InterviewRequest,
+  WorkerHeartbeat,
   WorkerProject,
-} from '@clive/worker-protocol';
+  WorkerRegistration,
+  WorkerStatus,
+  WorkerToCentralMessage,
+} from "@clive/worker-protocol";
+import { useCallback, useEffect, useRef, useState } from "react";
+import WebSocket from "ws";
+import type { WorkerConfig } from "../types/views";
 
 // Re-export InterviewRequest for use in App.tsx
 export type { InterviewRequest };
-import { CentralToWorkerMessageSchema } from '@clive/worker-protocol';
+
+import { CentralToWorkerMessageSchema } from "@clive/worker-protocol";
 
 /**
  * Connection state for the worker
@@ -48,7 +49,11 @@ export interface WorkerCallbacks {
   /** Called when an interview request is received */
   onInterviewRequest?: (request: InterviewRequest) => void;
   /** Called when an answer is received for a session */
-  onAnswer?: (sessionId: string, toolUseId: string, answers: Record<string, string>) => void;
+  onAnswer?: (
+    sessionId: string,
+    toolUseId: string,
+    answers: Record<string, string>,
+  ) => void;
   /** Called when a message is received for a session */
   onMessage?: (sessionId: string, message: string) => void;
   /** Called when a session is cancelled */
@@ -82,9 +87,9 @@ function generateWorkerId(): string {
 export function useWorkerConnection(
   config: WorkerConfig | undefined,
   workspaceRoot: string,
-  callbacks?: WorkerCallbacks
+  callbacks?: WorkerCallbacks,
 ): UseWorkerConnectionResult {
-  const [status, setStatus] = useState<WorkerStatus>('disconnected');
+  const [status, setStatus] = useState<WorkerStatus>("disconnected");
   const [workerId, setWorkerId] = useState<string | null>(null);
   const [activeSessions, setActiveSessions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +123,7 @@ export function useWorkerConnection(
    */
   const send = useCallback((message: WorkerToCentralMessage): void => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error('[WorkerConnection] Cannot send - not connected');
+      console.error("[WorkerConnection] Cannot send - not connected");
       return;
     }
     wsRef.current.send(JSON.stringify(message));
@@ -139,11 +144,13 @@ export function useWorkerConnection(
     };
 
     send({
-      type: 'register',
+      type: "register",
       payload: registration,
     });
 
-    console.log(`[WorkerConnection] Registration sent for ${workerIdRef.current}`);
+    console.log(
+      `[WorkerConnection] Registration sent for ${workerIdRef.current}`,
+    );
   }, [config, getProject, send]);
 
   /**
@@ -162,7 +169,7 @@ export function useWorkerConnection(
     };
 
     send({
-      type: 'heartbeat',
+      type: "heartbeat",
       payload: heartbeat,
     });
   }, [status, activeSessions, send]);
@@ -196,94 +203,127 @@ export function useWorkerConnection(
   /**
    * Handle incoming message from central service
    */
-  const handleMessage = useCallback((data: string): void => {
-    try {
-      const parsed = JSON.parse(data);
-      const result = CentralToWorkerMessageSchema.safeParse(parsed);
+  const handleMessage = useCallback(
+    (data: string): void => {
+      try {
+        const parsed = JSON.parse(data);
+        const result = CentralToWorkerMessageSchema.safeParse(parsed);
 
-      if (!result.success) {
-        console.error('[WorkerConnection] Invalid message:', result.error);
-        return;
-      }
-
-      const message = result.data as CentralToWorkerMessage;
-      console.log(`[WorkerConnection] Received: ${message.type}`);
-
-      switch (message.type) {
-        case 'start_interview': {
-          const request = message.payload as InterviewRequest;
-          console.log(`[WorkerConnection] Interview request: ${request.sessionId}`);
-          setActiveSessions(prev => [...prev, request.sessionId]);
-          setStatus('busy');
-          // Call the callback to trigger interview execution
-          callbacksRef.current?.onInterviewRequest?.(request);
-          break;
+        if (!result.success) {
+          console.error("[WorkerConnection] Invalid message:", result.error);
+          return;
         }
 
-        case 'answer': {
-          const answerPayload = message.payload as { sessionId: string; toolUseId: string; answers: Record<string, string> };
-          console.log(`[WorkerConnection] Answer for session: ${answerPayload.sessionId}`);
-          callbacksRef.current?.onAnswer?.(answerPayload.sessionId, answerPayload.toolUseId, answerPayload.answers);
-          break;
-        }
+        const message = result.data as CentralToWorkerMessage;
+        console.log(`[WorkerConnection] Received: ${message.type}`);
 
-        case 'message': {
-          const msgPayload = message.payload as { sessionId: string; message: string };
-          console.log(`[WorkerConnection] Message for session: ${msgPayload.sessionId}`);
-          callbacksRef.current?.onMessage?.(msgPayload.sessionId, msgPayload.message);
-          break;
-        }
-
-        case 'cancel': {
-          const cancelPayload = message.payload as { sessionId: string };
-          console.log(`[WorkerConnection] Cancel session: ${cancelPayload.sessionId}`);
-          setActiveSessions(prev => prev.filter(id => id !== cancelPayload.sessionId));
-          if (activeSessions.length <= 1) {
-            setStatus('ready');
+        switch (message.type) {
+          case "start_interview": {
+            const request = message.payload as InterviewRequest;
+            console.log(
+              `[WorkerConnection] Interview request: ${request.sessionId}`,
+            );
+            setActiveSessions((prev) => [...prev, request.sessionId]);
+            setStatus("busy");
+            // Call the callback to trigger interview execution
+            callbacksRef.current?.onInterviewRequest?.(request);
+            break;
           }
-          callbacksRef.current?.onCancel?.(cancelPayload.sessionId);
-          break;
-        }
 
-        case 'ping':
-          send({ type: 'pong' });
-          break;
+          case "answer": {
+            const answerPayload = message.payload as {
+              sessionId: string;
+              toolUseId: string;
+              answers: Record<string, string>;
+            };
+            console.log(
+              `[WorkerConnection] Answer for session: ${answerPayload.sessionId}`,
+            );
+            callbacksRef.current?.onAnswer?.(
+              answerPayload.sessionId,
+              answerPayload.toolUseId,
+              answerPayload.answers,
+            );
+            break;
+          }
+
+          case "message": {
+            const msgPayload = message.payload as {
+              sessionId: string;
+              message: string;
+            };
+            console.log(
+              `[WorkerConnection] Message for session: ${msgPayload.sessionId}`,
+            );
+            callbacksRef.current?.onMessage?.(
+              msgPayload.sessionId,
+              msgPayload.message,
+            );
+            break;
+          }
+
+          case "cancel": {
+            const cancelPayload = message.payload as { sessionId: string };
+            console.log(
+              `[WorkerConnection] Cancel session: ${cancelPayload.sessionId}`,
+            );
+            setActiveSessions((prev) =>
+              prev.filter((id) => id !== cancelPayload.sessionId),
+            );
+            if (activeSessions.length <= 1) {
+              setStatus("ready");
+            }
+            callbacksRef.current?.onCancel?.(cancelPayload.sessionId);
+            break;
+          }
+
+          case "ping":
+            send({ type: "pong" });
+            break;
+        }
+      } catch (err) {
+        console.error("[WorkerConnection] Failed to parse message:", err);
       }
-    } catch (err) {
-      console.error('[WorkerConnection] Failed to parse message:', err);
-    }
-  }, [activeSessions.length, send]);
+    },
+    [activeSessions.length, send],
+  );
 
   /**
    * Handle disconnection with reconnection logic
    */
-  const handleDisconnect = useCallback((reason: string): void => {
-    setStatus('disconnected');
-    stopHeartbeat();
+  const handleDisconnect = useCallback(
+    (reason: string): void => {
+      setStatus("disconnected");
+      stopHeartbeat();
 
-    if (isShuttingDownRef.current) {
-      return;
-    }
+      if (isShuttingDownRef.current) {
+        return;
+      }
 
-    setError(`Disconnected: ${reason}`);
+      setError(`Disconnected: ${reason}`);
 
-    // Attempt reconnection with exponential backoff
-    if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS && config?.enabled) {
-      reconnectAttemptsRef.current++;
-      const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttemptsRef.current - 1);
-      console.log(
-        `[WorkerConnection] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`
-      );
+      // Attempt reconnection with exponential backoff
+      if (
+        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS &&
+        config?.enabled
+      ) {
+        reconnectAttemptsRef.current++;
+        const delay = RECONNECT_DELAY * 2 ** (reconnectAttemptsRef.current - 1);
+        console.log(
+          `[WorkerConnection] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`,
+        );
 
-      setTimeout(() => {
-        if (!isShuttingDownRef.current && config?.enabled) {
-          connectToService();
-        }
-      }, delay);
-    } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-      setError('Max reconnect attempts reached');
-    }
-  }, [config?.enabled, stopHeartbeat]);
+        setTimeout(() => {
+          if (!isShuttingDownRef.current && config?.enabled) {
+            connectToService();
+          }
+        }, delay);
+      } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setError("Max reconnect attempts reached");
+      }
+    },
+    [config?.enabled, stopHeartbeat, connectToService],
+  );
 
   /**
    * Connect to the central service
@@ -298,7 +338,7 @@ export function useWorkerConnection(
     }
 
     console.log(`[WorkerConnection] Connecting to ${config.centralUrl}...`);
-    setStatus('connecting');
+    setStatus("connecting");
     setError(null);
 
     return new Promise((resolve, reject) => {
@@ -309,29 +349,29 @@ export function useWorkerConnection(
           },
         });
 
-        ws.on('open', () => {
-          console.log('[WorkerConnection] WebSocket connected');
+        ws.on("open", () => {
+          console.log("[WorkerConnection] WebSocket connected");
           wsRef.current = ws;
           reconnectAttemptsRef.current = 0;
-          setStatus('ready');
+          setStatus("ready");
           setWorkerId(workerIdRef.current);
           register();
           startHeartbeat();
           resolve();
         });
 
-        ws.on('message', (data) => {
+        ws.on("message", (data) => {
           handleMessage(data.toString());
         });
 
-        ws.on('close', (code, reason) => {
+        ws.on("close", (code, reason) => {
           console.log(`[WorkerConnection] WebSocket closed: ${code} ${reason}`);
           wsRef.current = null;
           handleDisconnect(reason.toString() || `Code: ${code}`);
         });
 
-        ws.on('error', (err) => {
-          console.error('[WorkerConnection] WebSocket error:', err);
+        ws.on("error", (err) => {
+          console.error("[WorkerConnection] WebSocket error:", err);
           setError(err.message);
           reject(err);
         });
@@ -347,16 +387,16 @@ export function useWorkerConnection(
    * Disconnect from the central service
    */
   const disconnect = useCallback((): void => {
-    console.log('[WorkerConnection] Disconnecting...');
+    console.log("[WorkerConnection] Disconnecting...");
     isShuttingDownRef.current = true;
     stopHeartbeat();
 
     if (wsRef.current) {
-      wsRef.current.close(1000, 'Worker shutting down');
+      wsRef.current.close(1000, "Worker shutting down");
       wsRef.current = null;
     }
 
-    setStatus('disconnected');
+    setStatus("disconnected");
     setWorkerId(null);
     setActiveSessions([]);
   }, [stopHeartbeat]);
@@ -364,21 +404,24 @@ export function useWorkerConnection(
   /**
    * Send an event to the central service
    */
-  const sendEvent = useCallback((event: InterviewEvent): void => {
-    send({
-      type: 'event',
-      payload: event,
-    });
-  }, [send]);
+  const sendEvent = useCallback(
+    (event: InterviewEvent): void => {
+      send({
+        type: "event",
+        payload: event,
+      });
+    },
+    [send],
+  );
 
   /**
    * Mark a session as complete and remove from active sessions
    */
   const completeSession = useCallback((sessionId: string): void => {
-    setActiveSessions(prev => {
-      const updated = prev.filter(id => id !== sessionId);
+    setActiveSessions((prev) => {
+      const updated = prev.filter((id) => id !== sessionId);
       if (updated.length === 0) {
-        setStatus('ready');
+        setStatus("ready");
       }
       return updated;
     });
@@ -388,22 +431,22 @@ export function useWorkerConnection(
   useEffect(() => {
     if (config?.enabled && config?.autoConnect !== false) {
       isShuttingDownRef.current = false;
-      connectToService().catch(err => {
-        console.error('[WorkerConnection] Auto-connect failed:', err);
+      connectToService().catch((err) => {
+        console.error("[WorkerConnection] Auto-connect failed:", err);
       });
     }
 
     return () => {
       disconnect();
     };
-  }, [config?.enabled, config?.autoConnect, config?.centralUrl, config?.token]);
+  }, [config?.enabled, config?.autoConnect, connectToService, disconnect]);
 
   return {
     status,
     workerId,
     activeSessions,
     error,
-    isConnected: status === 'ready' || status === 'busy',
+    isConnected: status === "ready" || status === "busy",
     connect: connectToService,
     disconnect,
     sendEvent,

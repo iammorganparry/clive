@@ -6,9 +6,9 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { glob } from "glob";
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
  * Input schema for searchKnowledge

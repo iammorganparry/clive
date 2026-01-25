@@ -1,11 +1,10 @@
+import { Button } from "@clive/ui/button";
 import {
   CodeBlock,
   CodeBlockCopyButton,
 } from "@clive/ui/components/ai-elements/code-block";
-import { Button } from "@clive/ui/button";
 import { cn } from "@clive/ui/lib/utils";
 import { ScrollArea } from "@clive/ui/scroll-area";
-import { DiffPreview } from "./diff-preview.js";
 import {
   Task,
   TaskContent,
@@ -13,32 +12,36 @@ import {
   TaskItemFile,
   TaskTrigger,
 } from "@clive/ui/task";
-import { Icon, addCollection } from "@iconify/react";
+import { addCollection, Icon } from "@iconify/react";
 import vscodeIconsData from "@iconify-json/vscode-icons/icons.json";
 import { ChevronDownIcon, Loader2, X } from "lucide-react";
 import type React from "react";
 import { useCallback } from "react";
-
+import { DiffPreview } from "./diff-preview.js";
+import { formatToolOutput } from "./tool-call/format-output.js";
+import {
+  useOpenFile,
+  useToolAbort,
+  useToolApproval,
+} from "./tool-call/hooks.js";
+import { getStatusBadge, getToolIcon } from "./tool-call/icons.js";
 // Import from refactored modules
 import {
-  type ToolCallCardProps,
-  type FileMatch,
-  isBashExecuteArgs,
-  isEditFileContentArgs,
-  extractFilename,
-  truncatePath,
-  isFileWritingTool,
-  getToolDisplayInfo,
-  parseGrepOutput,
-  parseFindOutput,
   extractFileInfo,
+  extractFilename,
   extractFilePaths,
+  type FileMatch,
   generateActionList,
   getFileIcon,
+  getToolDisplayInfo,
+  isBashExecuteArgs,
+  isEditFileContentArgs,
+  isFileWritingTool,
+  parseFindOutput,
+  parseGrepOutput,
+  type ToolCallCardProps,
+  truncatePath,
 } from "./tool-call/index.js";
-import { getToolIcon, getStatusBadge } from "./tool-call/icons.js";
-import { formatToolOutput } from "./tool-call/format-output.js";
-import { useToolApproval, useToolAbort, useOpenFile } from "./tool-call/hooks.js";
 
 // Add vscode-icons collection for offline use
 addCollection(vscodeIconsData);
@@ -60,8 +63,14 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const hasError = state === "output-error" || !!errorText;
   const filePaths = extractFilePaths(toolName, input, output);
 
-  const { handleApprove, handleReject, canApprove } = useToolApproval(toolCallId, subscriptionId);
-  const { handleCancel, canAbort, isAborting } = useToolAbort(toolCallId, subscriptionId);
+  const { handleApprove, handleReject, canApprove } = useToolApproval(
+    toolCallId,
+    subscriptionId,
+  );
+  const { handleCancel, canAbort, isAborting } = useToolAbort(
+    toolCallId,
+    subscriptionId,
+  );
   const { handleOpenFile } = useOpenFile();
 
   // Check if this is a file-writing tool with code content
@@ -85,14 +94,19 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
       (command.includes("grep") || command.includes("find")) &&
       output &&
       typeof output === "object" &&
-      (output as { stdout?: string }).stdout
+      (output as { stdout?: string }).stdout,
   );
 
   // Render grep/find file lists
   const renderGrepFindResults = useCallback((): React.ReactNode => {
-    if ((toolName === "bashExecute" || toolName === "Bash") && typeof output === "object") {
+    if (
+      (toolName === "bashExecute" || toolName === "Bash") &&
+      typeof output === "object"
+    ) {
       const bashOutput = output as { stdout?: string; command?: string };
-      const cmd = isBashExecuteArgs(input) ? input.command : bashOutput.command || "";
+      const cmd = isBashExecuteArgs(input)
+        ? input.command
+        : bashOutput.command || "";
 
       // Grep results
       if (cmd.includes("grep") && bashOutput.stdout) {
@@ -113,10 +127,17 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
                         }}
                         className="cursor-pointer flex-1 items-center gap-2"
                       >
-                        <Icon icon={getFileIcon(match.filePath)} className="text-base shrink-0" />
+                        <Icon
+                          icon={getFileIcon(match.filePath)}
+                          className="text-base shrink-0"
+                        />
                         <span className="truncate">{filename}</span>
-                        <span className="text-muted-foreground text-xs ml-2">{truncatedPath}</span>
-                        <span className="ml-auto text-xs font-medium">{match.count}</span>
+                        <span className="text-muted-foreground text-xs ml-2">
+                          {truncatedPath}
+                        </span>
+                        <span className="ml-auto text-xs font-medium">
+                          {match.count}
+                        </span>
                       </TaskItemFile>
                     </div>
                   </TaskItem>
@@ -146,9 +167,14 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
                         }}
                         className="cursor-pointer flex-1 items-center gap-2"
                       >
-                        <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
+                        <Icon
+                          icon={getFileIcon(filePath)}
+                          className="text-base shrink-0"
+                        />
                         <span className="truncate">{filename}</span>
-                        <span className="text-muted-foreground text-xs ml-2">{truncatedPath}</span>
+                        <span className="text-muted-foreground text-xs ml-2">
+                          {truncatedPath}
+                        </span>
                       </TaskItemFile>
                     </div>
                   </TaskItem>
@@ -203,20 +229,36 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
   const toolIcon = getToolIcon(toolName);
 
   // For editFileContent, render DiffPreview with Claude Code-style diff view
-  if (toolName === "editFileContent" && isEditFileContentArgs(input) && input.diff) {
+  if (
+    toolName === "editFileContent" &&
+    isEditFileContentArgs(input) &&
+    input.diff
+  ) {
     const filePath = input.targetPath || input.filePath || "unknown";
-    return <DiffPreview filePath={filePath} diff={input.diff} onOpenFile={handleOpenFile} />;
+    return (
+      <DiffPreview
+        filePath={filePath}
+        diff={input.diff}
+        onOpenFile={handleOpenFile}
+      />
+    );
   }
 
   return (
-    <Task defaultOpen={hasGroupedResults} className={cn(hasError && "opacity-75", "w-full")}>
+    <Task
+      defaultOpen={hasGroupedResults}
+      className={cn(hasError && "opacity-75", "w-full")}
+    >
       <TaskTrigger title={triggerTitle}>
         <div className="group flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
           {toolIcon}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             {isCodeWritingTool && fileInfo ? (
               <>
-                <Icon icon={getFileIcon(fileInfo.filePath)} className="text-base shrink-0" />
+                <Icon
+                  icon={getFileIcon(fileInfo.filePath)}
+                  className="text-base shrink-0"
+                />
                 <button
                   type="button"
                   onClick={(e) => {
@@ -243,7 +285,11 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
               </>
             )}
           </div>
-          {statusBadge && <div className="flex items-center gap-2 shrink-0">{statusBadge}</div>}
+          {statusBadge && (
+            <div className="flex items-center gap-2 shrink-0">
+              {statusBadge}
+            </div>
+          )}
           <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180 shrink-0" />
         </div>
       </TaskTrigger>
@@ -289,7 +335,10 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({
                         }}
                         className="cursor-pointer flex-1 items-center gap-2"
                       >
-                        <Icon icon={getFileIcon(filePath)} className="text-base shrink-0" />
+                        <Icon
+                          icon={getFileIcon(filePath)}
+                          className="text-base shrink-0"
+                        />
                         {extractFilename(filePath)}
                       </TaskItemFile>
                     </div>

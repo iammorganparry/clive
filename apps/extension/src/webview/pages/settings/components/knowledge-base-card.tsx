@@ -1,9 +1,3 @@
-import { useCallback } from "react";
-import type React from "react";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime.js";
-import { useMachine } from "@xstate/react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@clive/ui/button";
 import {
   Card,
@@ -12,30 +6,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@clive/ui/card";
-import { Task, TaskTrigger, TaskContent, TaskItem } from "@clive/ui/task";
+import { Task, TaskContent, TaskItem, TaskTrigger } from "@clive/ui/task";
+import { useQueryClient } from "@tanstack/react-query";
+import { useMachine } from "@xstate/react";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime.js";
 import {
   AlertCircle,
   Brain,
-  Loader2,
-  X,
-  XCircle,
-  FileSearch,
-  FileOutput,
-  Settings,
-  Play,
-  Search,
   CheckCircle,
   Circle,
+  FileOutput,
+  FileSearch,
+  Loader2,
+  Play,
+  Search,
+  Settings,
+  X,
+  XCircle,
 } from "lucide-react";
-import { useRpc } from "../../../rpc/provider.js";
-import { createRequest } from "../../../rpc/hooks.js";
-import { getVSCodeAPI } from "../../../services/vscode.js";
-import {
-  knowledgeBaseMachine,
-  type ErrorType,
-} from "../machines/knowledge-base-machine.js";
+import type React from "react";
+import { useCallback } from "react";
 import type { KnowledgeBaseStatus } from "../../../../services/knowledge-base-types.js";
+import { createRequest } from "../../../rpc/hooks.js";
+import { useRpc } from "../../../rpc/provider.js";
+import { getVSCodeAPI } from "../../../services/vscode.js";
 import { truncateLogMessage } from "../../../utils/path-utils.js";
+import {
+  type ErrorType,
+  knowledgeBaseMachine,
+} from "../machines/knowledge-base-machine.js";
 
 dayjs.extend(relativeTime);
 
@@ -283,9 +283,7 @@ export const KnowledgeBaseCard: React.FC = () => {
                     {errorDisplay.title}
                   </p>
                 </div>
-                <p className="text-destructive mt-1">
-                  {errorDisplay.message}
-                </p>
+                <p className="text-destructive mt-1">{errorDisplay.message}</p>
               </div>
               <button
                 type="button"

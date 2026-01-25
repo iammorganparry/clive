@@ -1,9 +1,9 @@
 import { Data, Effect } from "effect";
-import { ConfigService } from "./config-service.js";
-import { TrpcClientService } from "./trpc-client-service.js";
-import { wrapTrpcCall } from "../utils/trpc-utils.js";
 import { chunkArray } from "../utils/array-utils.js";
+import { wrapTrpcCall } from "../utils/trpc-utils.js";
+import { ConfigService } from "./config-service.js";
 import type { IndexingStatusInfo } from "./indexing-status.js";
+import { TrpcClientService } from "./trpc-client-service.js";
 
 class RepositoryError extends Data.TaggedError("RepositoryError")<{
   message: string;

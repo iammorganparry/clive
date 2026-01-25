@@ -1,17 +1,17 @@
-import type React from "react";
-import { useCallback } from "react";
+import { Button } from "@clive/ui/button";
 import {
   Plan,
-  PlanHeader,
-  PlanContent,
-  PlanTrigger,
   PlanAction,
-  PlanTitle,
+  PlanContent,
   PlanDescription,
+  PlanHeader,
+  PlanTitle,
+  PlanTrigger,
 } from "@clive/ui/components/ai-elements/plan";
-import { Button } from "@clive/ui/button";
-import { Streamdown } from "streamdown";
 import { cn } from "@clive/ui/lib/utils";
+import type React from "react";
+import { useCallback } from "react";
+import { Streamdown } from "streamdown";
 import { useRpc } from "../../../rpc/provider.js";
 import type { ParsedPlan } from "../utils/parse-plan.js";
 
@@ -50,7 +50,7 @@ export const TestPlanPreview: React.FC<TestPlanPreviewProps> = ({
           <PlanTitle>{plan.title}</PlanTitle>
           <PlanDescription>{plan.description}</PlanDescription>
         </div>
-        
+
         {filePath && (
           <PlanAction>
             <Button

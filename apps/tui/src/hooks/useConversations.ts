@@ -4,17 +4,20 @@
  * Uses Effect-based ConversationService
  */
 
-import { useQuery } from '@tanstack/react-query';
-import { Effect, Layer } from 'effect';
-import { ConversationService, type Conversation } from '../services/ConversationService';
-import { SessionMetadataService } from '../services/SessionMetadataService';
+import { useQuery } from "@tanstack/react-query";
+import { Effect, Layer } from "effect";
+import {
+  type Conversation,
+  ConversationService,
+} from "../services/ConversationService";
+import { SessionMetadataService } from "../services/SessionMetadataService";
 
 /**
  * Fetch recent conversations for a specific project
  */
 export function useConversations(projectPath: string, limit: number = 20) {
   return useQuery<Conversation[]>({
-    queryKey: ['conversations', projectPath, limit],
+    queryKey: ["conversations", projectPath, limit],
     queryFn: async () => {
       const program = Effect.gen(function* () {
         const service = yield* ConversationService;
@@ -24,11 +27,11 @@ export function useConversations(projectPath: string, limit: number = 20) {
       // Run the Effect program with both service layers
       const serviceLayers = Layer.merge(
         ConversationService.Default,
-        SessionMetadataService.Default
+        SessionMetadataService.Default,
       );
 
       return await Effect.runPromise(
-        program.pipe(Effect.provide(serviceLayers))
+        program.pipe(Effect.provide(serviceLayers)),
       );
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -44,7 +47,7 @@ export function useConversations(projectPath: string, limit: number = 20) {
  */
 export function useAllConversations(limit: number = 50) {
   return useQuery<Conversation[]>({
-    queryKey: ['conversations', 'all', limit],
+    queryKey: ["conversations", "all", limit],
     queryFn: async () => {
       const program = Effect.gen(function* () {
         const service = yield* ConversationService;
@@ -54,11 +57,11 @@ export function useAllConversations(limit: number = 50) {
       // Run the Effect program with both service layers
       const serviceLayers = Layer.merge(
         ConversationService.Default,
-        SessionMetadataService.Default
+        SessionMetadataService.Default,
       );
 
       return await Effect.runPromise(
-        program.pipe(Effect.provide(serviceLayers))
+        program.pipe(Effect.provide(serviceLayers)),
       );
     },
     staleTime: 1000 * 60 * 5, // 5 minutes

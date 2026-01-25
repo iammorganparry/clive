@@ -3,8 +3,8 @@
  * Shared test utilities for MCP bridge and server testing
  */
 
-import { vi } from "vitest";
 import { EventEmitter } from "node:events";
+import { vi } from "vitest";
 import type {
   BridgeHandlers,
   BridgeRequest,
@@ -71,12 +71,14 @@ export interface MockNetServer extends EventEmitter {
 
 export function createMockNetServer(): MockNetServer {
   const server = new EventEmitter() as MockNetServer;
-  server.listen = vi.fn().mockImplementation((_path: string, callback?: () => void) => {
-    if (callback) {
-      setImmediate(callback);
-    }
-    return server;
-  });
+  server.listen = vi
+    .fn()
+    .mockImplementation((_path: string, callback?: () => void) => {
+      if (callback) {
+        setImmediate(callback);
+      }
+      return server;
+    });
   server.close = vi.fn().mockImplementation((callback?: () => void) => {
     if (callback) {
       setImmediate(callback);
@@ -213,7 +215,9 @@ export function createMockFileSystem(
     readFile: vi.fn().mockImplementation(async (path: string) => {
       const content = fileMap.get(path);
       if (content === undefined) {
-        const error = new Error(`ENOENT: no such file or directory, open '${path}'`);
+        const error = new Error(
+          `ENOENT: no such file or directory, open '${path}'`,
+        );
         (error as NodeJS.ErrnoException).code = "ENOENT";
         throw error;
       }
@@ -230,7 +234,9 @@ export function createMockFileSystem(
       if (isDir) {
         return { isFile: () => false, isDirectory: () => true };
       }
-      const error = new Error(`ENOENT: no such file or directory, stat '${path}'`);
+      const error = new Error(
+        `ENOENT: no such file or directory, stat '${path}'`,
+      );
       (error as NodeJS.ErrnoException).code = "ENOENT";
       throw error;
     }),
@@ -252,7 +258,9 @@ export function createMockFileSystem(
           key.startsWith(`${path}/`),
         );
         if (!isDir) {
-          const error = new Error(`ENOENT: no such file or directory, access '${path}'`);
+          const error = new Error(
+            `ENOENT: no such file or directory, access '${path}'`,
+          );
           (error as NodeJS.ErrnoException).code = "ENOENT";
           throw error;
         }

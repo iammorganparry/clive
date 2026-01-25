@@ -1,8 +1,8 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { Effect, Runtime } from "effect";
-import type { ProposeTestInput } from "../types.js";
+import { z } from "zod";
 import { processProposeTestApproval } from "../hitl-utils.js";
+import type { ProposeTestInput } from "../types.js";
 
 /**
  * Factory function to create proposeTestTool with optional approval callback
@@ -131,7 +131,8 @@ export const createProposeTestTool = (
 
           // Generate tool call ID
           const toolCallId = yield* Effect.sync(
-            () => `propose-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            () =>
+              `propose-${Date.now()}-${Math.random().toString(36).substring(7)}`,
           );
 
           // Wait for approval

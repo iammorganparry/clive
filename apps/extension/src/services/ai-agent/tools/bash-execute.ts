@@ -1,17 +1,17 @@
-import { tool } from "ai";
-import { z } from "zod";
 import {
+  type ChildProcess,
   spawn as nodeSpawn,
   type SpawnOptions,
-  type ChildProcess,
 } from "node:child_process";
-import { Effect, Runtime, Data } from "effect";
-import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
+import { tool } from "ai";
+import { Data, Effect, Runtime } from "effect";
+import { z } from "zod";
 import { countTokensInText } from "../../../utils/token-utils.js";
-import type { TokenBudgetService } from "../token-budget.js";
 import { VSCodeService } from "../../vs-code.js";
 import { APPROVAL } from "../hitl-utils.js";
+import type { TokenBudgetService } from "../token-budget.js";
 import { ToolCallAbortRegistry } from "../tool-call-abort-registry.js";
+import type { BashExecuteInput, BashExecuteOutput } from "../types.js";
 
 /**
  * Type for spawn function - allows dependency injection for testing
@@ -531,7 +531,9 @@ Blocked: rm, mv, sudo, curl, wget, ssh, kill, apt, brew, npm/pnpm/yarn install.
           if (result.cancelled) {
             return {
               cancelled: true,
-              message: result.message || "Command cancelled by user. Do not retry - proceed with your next action.",
+              message:
+                result.message ||
+                "Command cancelled by user. Do not retry - proceed with your next action.",
               command,
               stdout: result.stdout || "",
               stderr: result.stderr || undefined,

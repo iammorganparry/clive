@@ -3,7 +3,7 @@
  * Shows version info at the bottom of the screen
  */
 
-import { OneDarkPro } from '../styles/theme';
+import { OneDarkPro } from "../styles/theme";
 
 interface VersionFooterProps {
   width: number;
@@ -12,9 +12,9 @@ interface VersionFooterProps {
 
 export function VersionFooter({ width, height }: VersionFooterProps) {
   // Load version from package.json
-  let version = 'v1.0.0';
+  let version = "v1.0.0";
   try {
-    const pkg = require('../../package.json');
+    const pkg = require("../../package.json");
     version = `v${pkg.version}`;
   } catch {
     // Fallback to default if package.json not found

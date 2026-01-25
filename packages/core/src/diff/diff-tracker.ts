@@ -3,14 +3,14 @@
  */
 
 import { Effect, Ref } from "effect";
+import type { Disposable } from "../editor/adapter.js";
+import { EditorAdapterTag } from "../editor/adapter.js";
 import type {
   DiffBlock,
   DiffEvent,
   LineRange,
   PendingFileEdit,
 } from "./types.js";
-import type { Disposable } from "../editor/adapter.js";
-import { EditorAdapterTag } from "../editor/adapter.js";
 
 /**
  * Simple event emitter for diff events

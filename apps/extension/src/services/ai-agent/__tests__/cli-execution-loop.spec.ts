@@ -1,9 +1,14 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Effect, Stream, Runtime, Ref } from "effect";
-import { runCliExecutionLoop, runRalphWiggumCliLoop } from "../cli-execution-loop.js";
-import type { CliExecutionHandle, ClaudeCliEvent } from "../../claude-cli-service.js";
+import { Effect, Ref, Runtime, Stream } from "effect";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ClaudeCliEvent,
+  CliExecutionHandle,
+} from "../../claude-cli-service.js";
+import {
+  runCliExecutionLoop,
+  runRalphWiggumCliLoop,
+} from "../cli-execution-loop.js";
 import type { CliToolExecutor, CliToolResult } from "../cli-tool-executor.js";
-import type { LoopState } from "../loop-state.js";
 import { createEmptyLoopState } from "../loop-state.js";
 
 // Mock vscode globally
@@ -466,13 +471,27 @@ describe("cli-execution-loop", () => {
 
       expect(result.success).toBe(true);
       expect(result.taskCompleted).toBe(true);
-      expect(result.response).toBe("I'll read the file for you. Here's what I found.");
+      expect(result.response).toBe(
+        "I'll read the file for you. Here's what I found.",
+      );
 
       // Verify all event types were handled
-      expect(progressCallback).toHaveBeenCalledWith("reasoning", expect.any(String));
-      expect(progressCallback).toHaveBeenCalledWith("content_streamed", expect.any(String));
-      expect(progressCallback).toHaveBeenCalledWith("tool-call", expect.any(String));
-      expect(progressCallback).toHaveBeenCalledWith("tool-result", expect.any(String));
+      expect(progressCallback).toHaveBeenCalledWith(
+        "reasoning",
+        expect.any(String),
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        "content_streamed",
+        expect.any(String),
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        "tool-call",
+        expect.any(String),
+      );
+      expect(progressCallback).toHaveBeenCalledWith(
+        "tool-result",
+        expect.any(String),
+      );
     });
   });
 
@@ -564,7 +583,9 @@ describe("cli-execution-loop", () => {
     });
 
     it("should emit plan-content-streaming event for proposeTestPlan", async () => {
-      const { buildFullPlanContent } = await import("../../../utils/frontmatter-utils.js");
+      const { buildFullPlanContent } = await import(
+        "../../../utils/frontmatter-utils.js"
+      );
       const progressCallback = vi.fn();
       const cliHandle = createMockCliHandle([
         {
@@ -604,7 +625,6 @@ describe("cli-execution-loop", () => {
       expect(planParsed.toolCallId).toBe("streaming-test");
       expect(planParsed.isComplete).toBe(true);
     });
-
   });
 
   describe("tool_result event handling", () => {
@@ -614,7 +634,8 @@ describe("cli-execution-loop", () => {
         {
           type: "tool_result",
           id: "mcp-result-1",
-          content: '{"success": true, "planId": "plan-123", "message": "Plan created"}',
+          content:
+            '{"success": true, "planId": "plan-123", "message": "Plan created"}',
         },
         { type: "done" },
       ]);
@@ -929,9 +950,7 @@ describe("cli-execution-loop", () => {
   });
 
   describe("Ralph Wiggum Loop", () => {
-    const createMockClaudeCliService = (
-      handle: CliExecutionHandle,
-    ) => {
+    const createMockClaudeCliService = (handle: CliExecutionHandle) => {
       return {
         execute: vi.fn(() => Effect.succeed(handle)),
       };

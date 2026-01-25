@@ -28,4 +28,3 @@ export const extractPlaceholders = (template: string): string[] => {
   const matches = template.matchAll(/\{\{([A-Z_]+)\}\}/g);
   return [...new Set([...matches].map((m) => m[1]))];
 };
-

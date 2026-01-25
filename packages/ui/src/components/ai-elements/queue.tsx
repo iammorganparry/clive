@@ -264,11 +264,5 @@ export const QueueSectionContent = ({
 export type QueueProps = ComponentProps<"div">;
 
 export const Queue = ({ className, ...props }: QueueProps) => (
-  <div
-    className={cn(
-      "flex flex-col gap-1",
-      className,
-    )}
-    {...props}
-  />
+  <div className={cn("flex flex-col gap-1", className)} {...props} />
 );

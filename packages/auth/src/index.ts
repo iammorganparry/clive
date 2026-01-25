@@ -1,17 +1,17 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { db } from "@clive/db/client";
 import * as schema from "@clive/db/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import {
-  jwt,
   bearer,
-  organization,
   deviceAuthorization,
+  jwt,
+  organization,
 } from "better-auth/plugins";
 import dotenv from "dotenv";
-import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
 
 // Load environment variables from root .env file
 // From packages/auth/src/index.ts, go up 3 levels to reach root
@@ -46,6 +46,10 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  /**
+   * @contract BetterAuth.github
+   * @see contracts/system.md#BetterAuth.github
+   */
   socialProviders: {
     github: {
       clientId: githubClientId,
@@ -53,14 +57,26 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    /**
+     * @contract BetterAuth.jwt
+     * @see contracts/system.md#BetterAuth.jwt
+     */
     nextCookies(),
     jwt(),
     bearer(),
+    /**
+     * @contract BetterAuth.organization
+     * @see contracts/system.md#BetterAuth.organization
+     */
     organization({
       allowUserToCreateOrganization: true,
       creatorRole: "owner",
       membershipLimit: 100,
     }),
+    /**
+     * @contract BetterAuth.deviceAuthorization
+     * @see contracts/system.md#BetterAuth.deviceAuthorization
+     */
     deviceAuthorization({
       verificationUri: "/device",
     }),

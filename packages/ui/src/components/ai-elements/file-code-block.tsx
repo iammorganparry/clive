@@ -1,9 +1,9 @@
 "use client";
 
 import type { HTMLAttributes } from "react";
-import { CodeBlock } from "./code-block";
-import { cn } from "../../lib/utils";
 import type { BundledLanguage } from "shiki";
+import { cn } from "../../lib/utils";
+import { CodeBlock } from "./code-block";
 
 /**
  * Map file extension to Shiki language code and display label

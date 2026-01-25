@@ -4,8 +4,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBridgeHandlers } from "../handlers.js";
 import type { CliveViewProvider } from "../../views/clive-view-provider.js";
+import { createBridgeHandlers } from "../handlers.js";
 
 // Mock vscode globally
 vi.mock("vscode", async () => {
@@ -18,9 +18,7 @@ vi.mock("vscode", async () => {
 /**
  * Create a mock CliveViewProvider for testing
  */
-function createMockProvider(
-  postMessage = vi.fn(),
-): Partial<CliveViewProvider> {
+function createMockProvider(postMessage = vi.fn()): Partial<CliveViewProvider> {
   return {
     getWebview: vi.fn().mockReturnValue({
       webview: {

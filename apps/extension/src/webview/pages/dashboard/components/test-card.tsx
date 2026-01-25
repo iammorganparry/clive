@@ -1,3 +1,11 @@
+import {
+  AlertCircle,
+  Check,
+  FileText,
+  Loader2,
+  X,
+  XCircle,
+} from "lucide-react";
 import type React from "react";
 import { Button } from "../../../../components/ui/button.js";
 import {
@@ -7,14 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "../../../../components/ui/card.js";
-import {
-  Check,
-  X,
-  Loader2,
-  FileText,
-  AlertCircle,
-  XCircle,
-} from "lucide-react";
 import type {
   ProposedTest,
   TestExecutionStatus,

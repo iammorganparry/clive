@@ -2,21 +2,35 @@
 #
 # Clive Build Loop - Stop Hook
 #
-# This hook implements the Ralph Wiggum loop pattern:
+# This hook implements a fresh-context restart pattern:
 # - Intercepts Claude's attempt to exit
 # - Checks if all tasks are complete
-# - If not complete, re-injects the build command to continue
+# - If not complete:
+#   1. Syncs Linear statuses bidirectionally
+#   2. Signals TUI to restart with fresh context
+#   3. Allows Claude to stop (TUI will restart a fresh session)
 #
 # Supports both generic markers (ALL_TASKS_COMPLETE) and legacy test markers
 #
 # Usage: Automatically triggered when Claude tries to stop
 # The hook reads transcript from stdin and outputs the next prompt
 
-set -euo pipefail
+# Early trap to catch any unhandled errors and exit gracefully
+# This prevents "No stderr output" errors in non-build-loop sessions
+trap 'exit 0' ERR
+
+# Use -uo pipefail without -e to prevent early exit on errors
+# This allows us to handle errors gracefully with || fallbacks
+set -uo pipefail
 
 STATE_FILE=".claude/.test-loop-state"
 PLAN_PATH_FILE=".claude/.test-plan-path"
 MAX_ITERATIONS_FILE=".claude/.test-max-iterations"
+RESTART_SIGNAL_FILE=".claude/.restart-session"
+PARENT_ISSUE_FILE=".claude/.parent-issue-id"
+
+# Get the directory where this hook script lives (for finding linear-sync.ts)
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Helper to clean up state files (defined early for use throughout)
 cleanup_state() {
@@ -54,13 +68,79 @@ resolve_plan_file() {
     fi
 }
 
+# Signal TUI to restart with fresh context
+# This creates a JSON file that the TUI's RestartSignalWatcher picks up
+signal_restart() {
+    local reason="${1:-fresh_context}"
+    local mode="${2:-build}"
+    local iteration="${3:-0}"
+    local max_iterations="${4:-50}"
+
+    mkdir -p ".claude"
+
+    cat > "$RESTART_SIGNAL_FILE" << EOF
+{
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")",
+  "reason": "$reason",
+  "mode": "$mode",
+  "context": {
+    "planFile": "$PLAN_FILE",
+    "iteration": $iteration,
+    "maxIterations": $max_iterations
+  }
+}
+EOF
+
+    echo "[STOP] Signaled TUI to restart session (reason: $reason, iteration: $iteration/$max_iterations)" >&2
+}
+
+# Sync Linear statuses bidirectionally before restart
+# This ensures Linear reflects the work completed in this iteration
+sync_linear() {
+    local parent_id=""
+
+    # Read parent issue ID from state file
+    if [ -f "$PARENT_ISSUE_FILE" ]; then
+        parent_id=$(cat "$PARENT_ISSUE_FILE")
+    fi
+
+    if [ -z "$parent_id" ]; then
+        echo "[STOP] No parent issue ID found, skipping Linear sync" >&2
+        return 0
+    fi
+
+    # Run the sync script
+    local sync_script="${HOOK_DIR}/linear-sync.ts"
+    if [ -f "$sync_script" ]; then
+        echo "[STOP] Syncing Linear statuses for parent: $parent_id" >&2
+        # Run with bun, capture output but don't fail the hook if sync fails
+        if command -v bun &> /dev/null; then
+            bun run "$sync_script" "$parent_id" "$PLAN_FILE" 2>&1 || {
+                echo "[STOP] Linear sync encountered errors (non-fatal)" >&2
+            }
+        else
+            echo "[STOP] bun not found, skipping Linear sync" >&2
+        fi
+    else
+        echo "[STOP] Linear sync script not found: $sync_script" >&2
+    fi
+}
+
 PLAN_FILE=$(resolve_plan_file)
 
+# Early exit: If no plan file and no state file, we're not in a build loop
+# This prevents the hook from interfering with normal Claude sessions
+if [ ! -f "$PLAN_FILE" ] && [ ! -f "$STATE_FILE" ]; then
+    # Not in a build loop - allow normal exit silently
+    exit 0
+fi
+
 # Read JSON input from stdin (Claude Code passes metadata including transcript_path)
-INPUT_JSON=$(cat)
+INPUT_JSON=$(cat) || INPUT_JSON=""
 
 # Extract transcript path from JSON input
-TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null)
+# Note: jq may fail on malformed input - handle gracefully with pipefail
+TRANSCRIPT_PATH=$(echo "$INPUT_JSON" | jq -r '.transcript_path // empty' 2>/dev/null) || TRANSCRIPT_PATH=""
 
 # Validate transcript file exists (matches official ralph-loop pattern)
 if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
@@ -140,9 +220,11 @@ if [ "$CURRENT_ITERATION" -ge "$MAX_ITERATIONS" ]; then
 fi
 
 # Count pending tasks from plan file
-PENDING_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* pending' "$PLAN_FILE" 2>/dev/null || echo "0")
-IN_PROGRESS_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* in_progress' "$PLAN_FILE" 2>/dev/null || echo "0")
-BLOCKED_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* blocked' "$PLAN_FILE" 2>/dev/null || echo "0")
+# Note: grep -c outputs "0" AND exits with code 1 when no matches.
+# Using "|| true" prevents double output that breaks arithmetic.
+PENDING_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* pending' "$PLAN_FILE" 2>/dev/null) || PENDING_COUNT=0
+IN_PROGRESS_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* in_progress' "$PLAN_FILE" 2>/dev/null) || IN_PROGRESS_COUNT=0
+BLOCKED_COUNT=$(grep -c '\- \[ \] \*\*Status:\*\* blocked' "$PLAN_FILE" 2>/dev/null) || BLOCKED_COUNT=0
 REMAINING=$((PENDING_COUNT + IN_PROGRESS_COUNT))
 
 # If beads is available, also check beads status for more accurate tracking
@@ -192,45 +274,28 @@ else
     echo "Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining (plan: $PLAN_FILE)" >&2
 fi
 
-# Build skill-aware prompt for re-injection
-SKILL_CONTEXT=""
-if [ -n "$NEXT_TASK_SKILL" ]; then
-    SKILL_CONTEXT="
-Skill: $NEXT_TASK_SKILL (load skill file from skills/${NEXT_TASK_SKILL}.md)"
-fi
+# === FRESH CONTEXT RESTART PATTERN ===
+# Instead of blocking and re-injecting (which accumulates context),
+# we sync Linear statuses and signal the TUI to restart with a fresh session.
+#
+# Flow:
+# 1. Sync Linear -> ensures work is persisted
+# 2. Signal TUI -> TUI kills this session
+# 3. Allow exit -> Claude stops cleanly
+# 4. TUI starts new session -> fresh context, continues loop
 
-if [ -n "$NEXT_TASK_TITLE" ]; then
-    TASK_CONTEXT="
-Next task: $NEXT_TASK_TITLE$SKILL_CONTEXT"
-else
-    TASK_CONTEXT=""
-fi
+echo "[STOP] Work remains ($REMAINING tasks) - preparing fresh context restart" >&2
 
-# Block exit and continue the loop using official Ralph pattern
-# "reason" contains the actual prompt to execute (becomes next user message)
-# "systemMessage" provides iteration context
-PROMPT="Process exactly ONE task from the plan at $PLAN_FILE:
-$TASK_CONTEXT
-1. Find the first task with status 'pending' or 'in_progress'
-2. Load the skill file for this task type
-3. Execute the task following skill instructions
-4. Mark it as 'complete' (if verified) or 'blocked' (if stuck)
-5. Create a LOCAL git commit for this task's changes
-6. If you discover out-of-scope work, create a beads task (see Discovered Work Protocol in skill file)
-7. Output a brief progress summary
-8. STOP - do not continue to the next task
+# Sync Linear statuses before restart
+sync_linear
 
-The loop will automatically restart for the next task."
-SYSTEM_MSG="🔄 Iteration $CURRENT_ITERATION/$MAX_ITERATIONS - $REMAINING tasks remaining. Process ONE task then STOP."
+# Signal TUI to restart with fresh context
+signal_restart "iteration_complete" "build" "$CURRENT_ITERATION" "$MAX_ITERATIONS"
 
-# Output JSON using jq for safe escaping (matches official ralph-loop pattern)
-jq -n \
-  --arg prompt "$PROMPT" \
-  --arg msg "$SYSTEM_MSG" \
-  '{
-    "decision": "block",
-    "reason": $prompt,
-    "systemMessage": $msg
-  }'
-
+# Allow Claude to stop - TUI will restart fresh
+# The TUI's RestartSignalWatcher will pick up the signal and:
+# 1. Kill this PTY session
+# 2. Clear state (ansiBuffer, etc)
+# 3. Start a new PTY session
+# 4. Inject /clive:build command
 exit 0

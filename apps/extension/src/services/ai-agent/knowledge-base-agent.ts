@@ -1,18 +1,18 @@
 import { stepCountIs, streamText } from "ai";
 import { Data, Effect, Match, Stream } from "effect";
-import { ConfigService } from "../config-service.js";
+import { streamFromAI } from "../../utils/stream-utils.js";
 import { AIModels } from "../ai-models.js";
 import { createXaiProvider } from "../ai-provider-factory.js";
+import { ConfigService } from "../config-service.js";
+import type { KnowledgeBaseProgressEvent } from "../knowledge-base-types.js";
+import { KnowledgeFileService } from "../knowledge-file-service.js";
 import { KnowledgeBasePromptFactory } from "./prompts/index.js";
-import { streamFromAI } from "../../utils/stream-utils.js";
+import { makeTokenBudget } from "./token-budget.js";
 import {
   createBashExecuteTool,
-  createWriteKnowledgeFileTool,
   createWebTools,
+  createWriteKnowledgeFileTool,
 } from "./tools/index.js";
-import { KnowledgeFileService } from "../knowledge-file-service.js";
-import { makeTokenBudget } from "./token-budget.js";
-import type { KnowledgeBaseProgressEvent } from "../knowledge-base-types.js";
 
 class KnowledgeBaseAgentError extends Data.TaggedError(
   "KnowledgeBaseAgentError",

@@ -1,5 +1,6 @@
-import { useState, useEffect, type FormEvent } from "react";
 import { REGEXP_ONLY_CHARS } from "input-otp";
+import { AlertCircle, Laptop2 } from "lucide-react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "../../button";
 import {
   Card,
@@ -14,7 +15,6 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from "../../input-otp";
-import { Laptop2, AlertCircle } from "lucide-react";
 
 export interface DeviceCodeEntryProps {
   onSubmit: (code: string) => void | Promise<void>;

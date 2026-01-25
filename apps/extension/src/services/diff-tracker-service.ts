@@ -3,18 +3,18 @@
  * Provides Effect-based interface with interop helpers for existing code
  */
 
-import * as vscode from "vscode";
-import { Effect, Layer, Runtime } from "effect";
 import {
   type DiffBlock,
-  type LineRange,
+  DiffTrackerService,
   type EditorAdapter,
   EditorAdapterTag,
-  DiffTrackerService,
+  type LineRange,
 } from "@clive/core";
+import { Effect, Layer, Runtime } from "effect";
+import * as vscode from "vscode";
 import { VSCodeEditorAdapterService } from "../adapters/vscode-editor-adapter.js";
-import { EditorInsetService } from "./editor-inset-service.js";
 import { computeLineDiff } from "./ai-agent/tools/diff-engine.js";
+import { EditorInsetService } from "./editor-inset-service.js";
 
 /**
  * Create the adapter layer by mapping VSCodeEditorAdapterService to EditorAdapterTag

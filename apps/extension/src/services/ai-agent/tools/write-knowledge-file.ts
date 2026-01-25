@@ -1,16 +1,16 @@
 import { tool } from "ai";
-import { z } from "zod";
 import { Effect, Layer, Runtime } from "effect";
+import { z } from "zod";
+import {
+  type KnowledgeBaseCategory,
+  KnowledgeBaseCategorySchema,
+} from "../../../constants.js";
+import { extractErrorMessage } from "../../../utils/error-utils.js";
 import {
   KnowledgeFileError,
   KnowledgeFileService,
 } from "../../knowledge-file-service.js";
 import { VSCodeService } from "../../vs-code.js";
-import {
-  KnowledgeBaseCategorySchema,
-  type KnowledgeBaseCategory,
-} from "../../../constants.js";
-import { extractErrorMessage } from "../../../utils/error-utils.js";
 
 /**
  * Create a writeKnowledgeFile tool that stores knowledge entries as markdown files
@@ -98,7 +98,10 @@ export const createWriteKnowledgeFileTool = (
                 ),
               ),
               Effect.provide(
-                Layer.merge(KnowledgeFileService.Default, VSCodeService.Default),
+                Layer.merge(
+                  KnowledgeFileService.Default,
+                  VSCodeService.Default,
+                ),
               ),
             ),
         );

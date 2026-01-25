@@ -1,20 +1,20 @@
+import type {
+  QueryHookReturn,
+  RpcHookFactories,
+  RpcMessage,
+} from "@clive/webview-rpc";
+import {
+  type UseMutationOptions,
+  type UseQueryOptions,
+  useMutation as useReactMutation,
+  useQuery as useReactQuery,
+} from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useQuery as useReactQuery,
-  useMutation as useReactMutation,
-  type UseQueryOptions,
-  type UseMutationOptions,
-} from "@tanstack/react-query";
-import type {
-  RpcMessage,
-  RpcHookFactories,
-  QueryHookReturn,
-} from "@clive/webview-rpc";
-import type { VSCodeAPI } from "../services/vscode.js";
-import {
-  mcpBridgeEventEmitter,
   type McpBridgeEvents,
+  mcpBridgeEventEmitter,
 } from "../services/mcp-bridge-events.js";
+import type { VSCodeAPI } from "../services/vscode.js";
 
 // Pending request storage
 const pendingRequests = new Map<

@@ -70,16 +70,8 @@ export function createPrePostDiagnosticScenario(
   preDiagnostics: vscode.Diagnostic[];
   postDiagnostics: vscode.Diagnostic[];
 } {
-  const existingError = createMockDiagnosticWithRange(
-    5,
-    "Existing error",
-    0,
-  );
-  const newError = createMockDiagnosticWithRange(
-    10,
-    "New error introduced",
-    0,
-  );
+  const existingError = createMockDiagnosticWithRange(5, "Existing error", 0);
+  const newError = createMockDiagnosticWithRange(10, "New error introduced", 0);
   const existingWarning = createMockDiagnosticWithRange(
     7,
     "Existing warning",
@@ -104,4 +96,3 @@ export function createPrePostDiagnosticScenario(
       };
   }
 }
-

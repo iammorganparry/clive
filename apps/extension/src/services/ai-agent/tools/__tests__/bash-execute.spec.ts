@@ -1,14 +1,7 @@
-import { expect, vi } from "vitest";
-import { it } from "@effect/vitest";
-import { Effect, Exit, Cause } from "effect";
 import type { ChildProcess } from "node:child_process";
-import type { BashExecuteInput, BashExecuteOutput } from "../../types";
-import {
-  createBashExecuteTool,
-  type SpawnFn,
-  isReadOnlyCommand,
-} from "../bash-execute";
-import { executeTool } from "./test-helpers";
+import { it } from "@effect/vitest";
+import { Cause, Effect, Exit } from "effect";
+import { expect, vi } from "vitest";
 import {
   createMockChildProcess,
   createMockTokenBudgetService,
@@ -19,6 +12,13 @@ import {
 } from "../../../../__tests__/mock-factories/index.js";
 import { APPROVAL } from "../../hitl-utils.js";
 import { ToolCallAbortRegistry } from "../../tool-call-abort-registry";
+import type { BashExecuteInput, BashExecuteOutput } from "../../types";
+import {
+  createBashExecuteTool,
+  isReadOnlyCommand,
+  type SpawnFn,
+} from "../bash-execute";
+import { executeTool } from "./test-helpers";
 
 // Mock vscode globally for tools that use VSCodeService.Default internally
 vi.mock("vscode", async () => {
@@ -979,7 +979,10 @@ describe("bashExecuteTool", () => {
             // Cancellation now resolves with a cancelled result instead of rejecting
             expect(Exit.isSuccess(result)).toBe(true);
             if (Exit.isSuccess(result)) {
-              const output = result.value as { cancelled?: boolean; message?: string };
+              const output = result.value as {
+                cancelled?: boolean;
+                message?: string;
+              };
               expect(output.cancelled).toBe(true);
               expect(output.message).toContain("cancelled");
             }
@@ -1128,7 +1131,10 @@ describe("bashExecuteTool", () => {
           // Execute the tool
           const executeResult = (
             tool.execute as NonNullable<typeof tool.execute>
-          )({ command: "echo test" }, { toolCallId: toolCallId2, messages: [] });
+          )(
+            { command: "echo test" },
+            { toolCallId: toolCallId2, messages: [] },
+          );
           const promise = Promise.resolve(executeResult);
 
           // Immediately abort after registration happens (simulating race condition)

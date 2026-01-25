@@ -3,15 +3,15 @@
  * Tests user rules loading from .clive/rules/*.md files
  */
 
-import { expect, beforeEach, vi } from "vitest";
 import { describe, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { beforeEach, expect, vi } from "vitest";
 import type * as vscode from "vscode";
-import { RulesService } from "../rules-service.js";
 import {
   createMockVSCodeServiceLayer,
   type createVSCodeMock,
 } from "../../../../__tests__/mock-factories/index.js";
+import { RulesService } from "../rules-service.js";
 
 // Mock vscode globally for code that uses vscode.* directly (e.g., new vscode.RelativePattern())
 vi.mock("vscode", async () => {
