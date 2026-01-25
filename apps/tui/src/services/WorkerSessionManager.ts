@@ -110,8 +110,9 @@ DO NOT:
 
 /**
  * Get system prompt for the given session mode
+ * @internal Exported for testing
  */
-function getSystemPromptForMode(mode: SessionMode): string {
+export function getSystemPromptForMode(mode: SessionMode): string {
   switch (mode) {
     case 'plan': return PLANNING_SKILL_PROMPT;
     case 'build': return BUILD_SKILL_PROMPT;
@@ -124,8 +125,9 @@ function getSystemPromptForMode(mode: SessionMode): string {
  * Plan uses opus for comprehensive research
  * Build uses sonnet for efficient execution
  * Review uses opus for thorough verification
+ * @internal Exported for testing
  */
-function getModelForMode(mode: SessionMode): string {
+export function getModelForMode(mode: SessionMode): string {
   return mode === 'build' ? 'sonnet' : 'opus';
 }
 
