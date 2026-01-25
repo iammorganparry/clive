@@ -8,7 +8,6 @@ COPY package.json yarn.lock ./
 COPY apps/slack/package.json ./apps/slack/
 COPY packages/worker-protocol/package.json ./packages/worker-protocol/
 COPY packages/claude-services/package.json ./packages/claude-services/
-COPY packages/core/package.json ./packages/core/
 
 # Install all dependencies
 RUN yarn install --frozen-lockfile
@@ -17,7 +16,6 @@ RUN yarn install --frozen-lockfile
 COPY apps/slack ./apps/slack
 COPY packages/worker-protocol ./packages/worker-protocol
 COPY packages/claude-services ./packages/claude-services
-COPY packages/core ./packages/core
 COPY tsconfig.json ./
 
 # Build packages
