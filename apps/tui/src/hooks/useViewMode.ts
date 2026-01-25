@@ -6,7 +6,7 @@
 import { useEffect } from 'react';
 import { setup, assign } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { ViewMode, IssueTrackerConfig } from '../types/views';
+import { ViewMode, IssueTrackerConfig, WorkerConfig } from '../types/views';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -43,6 +43,7 @@ function loadEnvFile(): void {
 
 /**
  * Load config from ~/.clive/config.json
+ * Merges sensitive credentials from ~/.clive/.env
  */
 function loadConfig(): IssueTrackerConfig | null {
   // Load environment variables first
@@ -51,7 +52,19 @@ function loadConfig(): IssueTrackerConfig | null {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
       const content = fs.readFileSync(CONFIG_PATH, 'utf-8');
-      return JSON.parse(content);
+      const config = JSON.parse(content) as IssueTrackerConfig;
+
+      // Merge API key from env if present
+      if (config.linear && process.env.LINEAR_API_KEY) {
+        config.linear.apiKey = process.env.LINEAR_API_KEY;
+      }
+
+      // Merge worker token from env if worker config exists
+      if (config.worker && process.env.CLIVE_WORKER_TOKEN) {
+        config.worker.token = process.env.CLIVE_WORKER_TOKEN;
+      }
+
+      return config;
     }
   } catch (error) {
     console.error('[useViewMode] Failed to load config:', error);
@@ -60,9 +73,10 @@ function loadConfig(): IssueTrackerConfig | null {
 }
 
 /**
- * Save API key to ~/.clive/.env file (secure, not committed to git)
+ * Save a sensitive value to ~/.clive/.env file
+ * Handles multiple keys (LINEAR_API_KEY, CLIVE_WORKER_TOKEN, etc.)
  */
-function saveApiKey(apiKey: string): void {
+function saveEnvValue(key: string, value: string): void {
   try {
     const dir = path.dirname(ENV_PATH);
     if (!fs.existsSync(dir)) {
@@ -75,19 +89,23 @@ function saveApiKey(apiKey: string): void {
       envContent = fs.readFileSync(ENV_PATH, 'utf-8');
     }
 
-    // Update or add LINEAR_API_KEY
+    // Update or add the key
     const lines = envContent.split('\n');
     let found = false;
     const updatedLines = lines.map(line => {
-      if (line.trim().startsWith('LINEAR_API_KEY=')) {
+      if (line.trim().startsWith(`${key}=`)) {
         found = true;
-        return `LINEAR_API_KEY=${apiKey}`;
+        return `${key}=${value}`;
       }
       return line;
     });
 
     if (!found) {
-      updatedLines.push(`LINEAR_API_KEY=${apiKey}`);
+      // Filter out empty lines at the end before adding
+      while (updatedLines.length > 0 && updatedLines[updatedLines.length - 1] === '') {
+        updatedLines.pop();
+      }
+      updatedLines.push(`${key}=${value}`);
     }
 
     fs.writeFileSync(ENV_PATH, updatedLines.join('\n'), 'utf-8');
@@ -95,15 +113,29 @@ function saveApiKey(apiKey: string): void {
     fs.chmodSync(ENV_PATH, 0o600);
 
     // Also set in current process env
-    process.env.LINEAR_API_KEY = apiKey;
+    process.env[key] = value;
   } catch (error) {
-    console.error('[useViewMode] Failed to save API key:', error);
+    console.error(`[useViewMode] Failed to save ${key}:`, error);
   }
 }
 
 /**
+ * Save API key to ~/.clive/.env file (secure, not committed to git)
+ */
+function saveApiKey(apiKey: string): void {
+  saveEnvValue('LINEAR_API_KEY', apiKey);
+}
+
+/**
+ * Save worker token to ~/.clive/.env file (secure, not committed to git)
+ */
+function saveWorkerToken(token: string): void {
+  saveEnvValue('CLIVE_WORKER_TOKEN', token);
+}
+
+/**
  * Save config to ~/.clive/config.json
- * API keys are saved separately in ~/.clive/.env for security
+ * API keys and tokens are saved separately in ~/.clive/.env for security
  */
 function saveConfig(config: IssueTrackerConfig): void {
   try {
@@ -112,12 +144,21 @@ function saveConfig(config: IssueTrackerConfig): void {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    // Deep clone to avoid mutating the original
+    const configToSave = JSON.parse(JSON.stringify(config)) as IssueTrackerConfig;
+
     // Extract API key if present and save separately
-    const configToSave = { ...config };
     if (configToSave.linear?.apiKey) {
       saveApiKey(configToSave.linear.apiKey);
       // Remove apiKey from config before saving
-      delete configToSave.linear.apiKey;
+      delete (configToSave.linear as { apiKey?: string }).apiKey;
+    }
+
+    // Extract worker token if present and save separately
+    if (configToSave.worker?.token) {
+      saveWorkerToken(configToSave.worker.token);
+      // Remove token from config before saving
+      delete (configToSave.worker as { token?: string }).token;
     }
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(configToSave, null, 2), 'utf-8');
@@ -128,7 +169,7 @@ function saveConfig(config: IssueTrackerConfig): void {
 
 /**
  * View Mode State Machine
- * Flow: setup -> selection -> main <-> help
+ * Flow: setup -> mode_selection -> (worker | selection -> main) <-> help
  */
 const viewModeMachine = setup({
   types: {
@@ -138,9 +179,10 @@ const viewModeMachine = setup({
     },
     events: {} as
       | { type: 'GO_TO_SETUP' }
-      | { type: 'GO_TO_SELECTION' }
       | { type: 'GO_TO_MODE_SELECTION' }
-      | { type: 'GO_TO_REVIEW_CREDENTIALS' }
+      | { type: 'GO_TO_WORKER_SETUP' }
+      | { type: 'GO_TO_WORKER' }
+      | { type: 'GO_TO_SELECTION' }
       | { type: 'GO_TO_MAIN' }
       | { type: 'GO_TO_HELP' }
       | { type: 'GO_BACK' }
@@ -168,18 +210,51 @@ const viewModeMachine = setup({
   states: {
     setup: {
       on: {
+        GO_TO_MODE_SELECTION: 'mode_selection',
         GO_TO_SELECTION: 'selection',
         GO_TO_MAIN: 'main',
         UPDATE_CONFIG: {
-          target: 'selection',
+          target: 'mode_selection',
           actions: 'updateConfig',
         },
+      },
+    },
+    mode_selection: {
+      on: {
+        GO_TO_SETUP: 'setup',
+        GO_TO_WORKER_SETUP: 'worker_setup',
+        GO_TO_WORKER: 'worker',
+        GO_TO_SELECTION: 'selection',
+        GO_BACK: 'setup',
+      },
+    },
+    worker_setup: {
+      on: {
+        GO_TO_MODE_SELECTION: 'mode_selection',
+        GO_TO_WORKER: 'worker',
+        GO_BACK: 'mode_selection',
+        UPDATE_CONFIG: {
+          target: 'worker',
+          actions: 'updateConfig',
+        },
+      },
+    },
+    worker: {
+      on: {
+        GO_TO_MODE_SELECTION: 'mode_selection',
+        GO_TO_HELP: {
+          target: 'help',
+          actions: assign({
+            previousView: 'worker',
+          }),
+        },
+        GO_BACK: 'mode_selection',
       },
     },
     selection: {
       on: {
         GO_TO_SETUP: 'setup',
-        GO_TO_MODE_SELECTION: 'modeSelection',
+        GO_TO_MODE_SELECTION: 'mode_selection',
         GO_TO_MAIN: 'main',
         GO_TO_HELP: {
           target: 'help',
@@ -187,34 +262,19 @@ const viewModeMachine = setup({
             previousView: 'selection',
           }),
         },
-        GO_BACK: 'setup',
-      },
-    },
-    modeSelection: {
-      on: {
-        GO_TO_MAIN: 'main',
-        GO_TO_REVIEW_CREDENTIALS: 'reviewCredentials',
-        GO_TO_SELECTION: 'selection',
-        GO_BACK: 'selection',
-      },
-    },
-    reviewCredentials: {
-      on: {
-        GO_TO_MAIN: 'main',
-        GO_BACK: 'modeSelection',
+        GO_BACK: 'mode_selection',
       },
     },
     main: {
       on: {
         GO_TO_SELECTION: 'selection',
-        GO_TO_MODE_SELECTION: 'modeSelection',
         GO_TO_HELP: {
           target: 'help',
           actions: assign({
             previousView: 'main',
           }),
         },
-        GO_BACK: 'modeSelection',
+        GO_BACK: 'selection',
       },
     },
     help: {
@@ -227,6 +287,10 @@ const viewModeMachine = setup({
           {
             target: 'selection',
             guard: ({ context }) => context.previousView === 'selection',
+          },
+          {
+            target: 'worker',
+            guard: ({ context }) => context.previousView === 'worker',
           },
           {
             target: 'setup',
@@ -244,9 +308,10 @@ export interface ViewModeState {
 
   // Actions
   goToSetup: () => void;
-  goToSelection: () => void;
   goToModeSelection: () => void;
-  goToReviewCredentials: () => void;
+  goToWorkerSetup: () => void;
+  goToWorker: () => void;
+  goToSelection: () => void;
   goToMain: () => void;
   goToHelp: () => void;
   goBack: () => void;
@@ -264,10 +329,10 @@ export function useViewMode(): ViewModeState {
     },
   });
 
-  // Navigate to selection if config exists
+  // Navigate to mode_selection if config exists (issue tracker configured)
   useEffect(() => {
     if (loadedConfig && loadedConfig.issueTracker && state.value === 'setup') {
-      send({ type: 'GO_TO_SELECTION' });
+      send({ type: 'GO_TO_MODE_SELECTION' });
     }
   }, []); // Only run once on mount
 
@@ -278,9 +343,10 @@ export function useViewMode(): ViewModeState {
     viewMode,
     config: state.context.config,
     goToSetup: () => send({ type: 'GO_TO_SETUP' }),
-    goToSelection: () => send({ type: 'GO_TO_SELECTION' }),
     goToModeSelection: () => send({ type: 'GO_TO_MODE_SELECTION' }),
-    goToReviewCredentials: () => send({ type: 'GO_TO_REVIEW_CREDENTIALS' }),
+    goToWorkerSetup: () => send({ type: 'GO_TO_WORKER_SETUP' }),
+    goToWorker: () => send({ type: 'GO_TO_WORKER' }),
+    goToSelection: () => send({ type: 'GO_TO_SELECTION' }),
     goToMain: () => send({ type: 'GO_TO_MAIN' }),
     goToHelp: () => send({ type: 'GO_TO_HELP' }),
     goBack: () => send({ type: 'GO_BACK' }),

@@ -32,6 +32,25 @@ Guidelines for contributing including:
 - Pre-commit hooks
 - Examples and best practices
 
+### 💬 [Slack Integration](../apps/slack/README.md)
+Slack bot integration documentation:
+- Local mode setup (single user with ngrok)
+- Distributed mode setup (central service + workers)
+- Usage guide and troubleshooting
+
+### 🚀 [Slack Setup Guide](SLACK-SETUP-GUIDE.md)
+Step-by-step setup walkthrough:
+- Create Slack app from scratch
+- Configure local mode with ngrok
+- Deploy distributed mode for teams
+- Testing and troubleshooting
+
+### 🔧 [Worker Setup](../apps/worker/README.md)
+Distributed worker client documentation:
+- Installation and configuration
+- Environment variables
+- Connection and interview flow
+
 ## Quick Links
 
 - **Main README**: [../README.md](../README.md)

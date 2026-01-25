@@ -1,0 +1,301 @@
+/**
+ * Worker Proxy
+ *
+ * Replaces ClaudeManager for distributed architecture.
+ * Forwards interview requests to workers via WebSocket.
+ */
+
+import { EventEmitter } from "events";
+import type { WebSocket } from "ws";
+import type {
+  InterviewRequest,
+  InterviewEvent,
+  AnswerRequest,
+  MessageRequest,
+  CancelRequest,
+  CentralToWorkerMessage,
+} from "@clive/worker-protocol";
+import type { WorkerRegistry } from "./worker-registry";
+import type { SessionRouter } from "./session-router";
+import type { InterviewSession, QuestionData, AnswerPayload } from "../store/types";
+
+/**
+ * Callback for interview events
+ */
+type InterviewEventCallback = (event: InterviewEvent) => void;
+
+/**
+ * Pending interview info
+ */
+interface PendingInterview {
+  sessionId: string;
+  workerId: string;
+  onEvent: InterviewEventCallback;
+}
+
+/**
+ * Worker proxy for forwarding requests to workers
+ */
+export class WorkerProxy extends EventEmitter {
+  private registry: WorkerRegistry;
+  private router: SessionRouter;
+  private pendingInterviews = new Map<string, PendingInterview>();
+
+  constructor(registry: WorkerRegistry, router: SessionRouter) {
+    super();
+    this.registry = registry;
+    this.router = router;
+
+    // Handle orphaned sessions
+    this.router.on("sessionUnassigned", (sessionId, workerId, reason) => {
+      const pending = this.pendingInterviews.get(sessionId);
+      if (pending) {
+        pending.onEvent({
+          sessionId,
+          type: "error",
+          payload: { type: "error", message: `Worker disconnected: ${reason}` },
+          timestamp: new Date().toISOString(),
+        });
+        this.pendingInterviews.delete(sessionId);
+      }
+    });
+  }
+
+  /**
+   * Start an interview via worker
+   *
+   * @param threadTs - Slack thread timestamp (session identifier)
+   * @param channel - Slack channel ID
+   * @param initiatorId - User who initiated the interview
+   * @param initialPrompt - Initial user request/description
+   * @param onEvent - Callback for interview events
+   * @param projectId - Optional project ID/name for routing to specific worker
+   */
+  async startInterview(
+    threadTs: string,
+    channel: string,
+    initiatorId: string,
+    initialPrompt: string,
+    onEvent: InterviewEventCallback,
+    projectId?: string
+  ): Promise<{ workerId: string } | { error: string }> {
+    console.log(`[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`);
+
+    // Assign to worker (with project-based routing if provided)
+    const workerId = this.router.assignSession(threadTs, projectId);
+    if (!workerId) {
+      const projectMsg = projectId
+        ? ` No workers have access to project "${projectId}".`
+        : "";
+      return { error: `No workers available.${projectMsg} Please try again later.` };
+    }
+
+    // Get worker socket
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      this.router.unassignSession(threadTs, "worker not found");
+      return { error: "Worker not found. Please try again." };
+    }
+
+    // Get the project path if we're routing to a specific project
+    const projectPath = projectId
+      ? this.router.getProjectPathForSession(threadTs)
+      : undefined;
+
+    // Create interview request
+    const request: InterviewRequest = {
+      sessionId: threadTs,
+      threadTs,
+      channel,
+      initiatorId,
+      initialPrompt,
+      model: "opus",
+      projectId,
+    };
+
+    // Track pending interview
+    this.pendingInterviews.set(threadTs, {
+      sessionId: threadTs,
+      workerId,
+      onEvent,
+    });
+
+    // Send to worker
+    this.sendToWorker(worker.socket, {
+      type: "start_interview",
+      payload: request,
+    });
+
+    console.log(`[WorkerProxy] Interview ${threadTs} sent to worker ${workerId}${projectPath ? ` at ${projectPath}` : ""}`);
+    return { workerId };
+  }
+
+  /**
+   * Handle event from worker
+   */
+  handleWorkerEvent(event: InterviewEvent): void {
+    const pending = this.pendingInterviews.get(event.sessionId);
+    if (!pending) {
+      console.warn(`[WorkerProxy] Event for unknown session: ${event.sessionId}`);
+      return;
+    }
+
+    console.log(`[WorkerProxy] Event for ${event.sessionId}: ${event.type}`);
+
+    // Forward to callback
+    pending.onEvent(event);
+
+    // Clean up on completion/error
+    if (event.type === "complete" || event.type === "error" || event.type === "timeout") {
+      this.pendingInterviews.delete(event.sessionId);
+      this.router.unassignSession(event.sessionId, event.type);
+    }
+  }
+
+  /**
+   * Send answer to interview question
+   *
+   * @param threadTs - Slack thread timestamp (session identifier)
+   * @param toolUseId - Tool use ID to respond to
+   * @param answers - Answers keyed by question header
+   */
+  sendAnswer(
+    threadTs: string,
+    toolUseId: string,
+    answers: AnswerPayload
+  ): boolean {
+    const workerId = this.router.getWorkerForSession(threadTs);
+    if (!workerId) {
+      console.error(`[WorkerProxy] No worker for session ${threadTs}`);
+      return false;
+    }
+
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      console.error(`[WorkerProxy] Worker ${workerId} not found`);
+      return false;
+    }
+
+    const request: AnswerRequest = {
+      sessionId: threadTs,
+      toolUseId,
+      answers,
+    };
+
+    this.sendToWorker(worker.socket, {
+      type: "answer",
+      payload: request,
+    });
+
+    console.log(`[WorkerProxy] Answer sent to ${workerId} for ${threadTs}`);
+    return true;
+  }
+
+  /**
+   * Send a follow-up message to interview
+   *
+   * @param threadTs - Slack thread timestamp
+   * @param message - User message
+   */
+  sendMessage(threadTs: string, message: string): boolean {
+    const workerId = this.router.getWorkerForSession(threadTs);
+    if (!workerId) {
+      console.error(`[WorkerProxy] No worker for session ${threadTs}`);
+      return false;
+    }
+
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      console.error(`[WorkerProxy] Worker ${workerId} not found`);
+      return false;
+    }
+
+    const request: MessageRequest = {
+      sessionId: threadTs,
+      message,
+    };
+
+    this.sendToWorker(worker.socket, {
+      type: "message",
+      payload: request,
+    });
+
+    console.log(`[WorkerProxy] Message sent to ${workerId} for ${threadTs}`);
+    return true;
+  }
+
+  /**
+   * Cancel an interview session
+   *
+   * @param threadTs - Slack thread timestamp
+   * @param reason - Reason for cancellation
+   */
+  cancelSession(threadTs: string, reason?: string): boolean {
+    const workerId = this.router.getWorkerForSession(threadTs);
+    if (!workerId) {
+      return false;
+    }
+
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      return false;
+    }
+
+    const request: CancelRequest = {
+      sessionId: threadTs,
+      reason,
+    };
+
+    this.sendToWorker(worker.socket, {
+      type: "cancel",
+      payload: request,
+    });
+
+    this.pendingInterviews.delete(threadTs);
+    this.router.unassignSession(threadTs, reason || "cancelled");
+
+    console.log(`[WorkerProxy] Cancelled session ${threadTs}`);
+    return true;
+  }
+
+  /**
+   * Check if a session has an active worker
+   */
+  hasActiveSession(threadTs: string): boolean {
+    return this.router.isSessionAssigned(threadTs);
+  }
+
+  /**
+   * Get worker ID for a session
+   */
+  getWorkerForSession(threadTs: string): string | undefined {
+    return this.router.getWorkerForSession(threadTs);
+  }
+
+  /**
+   * Send message to worker
+   */
+  private sendToWorker(socket: WebSocket, message: CentralToWorkerMessage): void {
+    if (socket.readyState !== 1) { // WebSocket.OPEN
+      console.error("[WorkerProxy] Cannot send - socket not open");
+      return;
+    }
+    socket.send(JSON.stringify(message));
+  }
+
+  /**
+   * Close all sessions
+   */
+  closeAll(): void {
+    for (const sessionId of this.pendingInterviews.keys()) {
+      this.cancelSession(sessionId, "server shutdown");
+    }
+  }
+
+  /**
+   * Get active session count
+   */
+  get activeSessionCount(): number {
+    return this.pendingInterviews.size;
+  }
+}

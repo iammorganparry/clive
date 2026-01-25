@@ -19,12 +19,13 @@
   },
   "dependencies": {
     "@clive/claude-services": "*",
+    "@clive/worker-protocol": "*",
+    "ws": "^8.18.0",
     "@opentui/core": "^0.1.74",
     "@opentui/react": "^0.1.74",
     "@tanstack/react-query": "^5.90.12",
     "@xstate/react": "^6.0.0",
     "effect": "^3.19.9",
-    "ghostty-opentui": "^1.3.12",
     "gray-matter": "^4.0.3",
     "node-pty": "^1.1.0",
     "react": "^19.2.0",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.1",
+    "@types/ws": "^8.18.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@vitest/ui": "^4.0.16",

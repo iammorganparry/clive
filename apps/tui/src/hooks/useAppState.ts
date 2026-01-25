@@ -12,6 +12,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { CliManager } from '../services/CliManager';
 import { ConversationWatcher } from '../services/ConversationWatcher';
 import { SessionMetadataService } from '../services/SessionMetadataService';
+import { ConversationService } from '../services/ConversationService';
+import { HistoryConverter } from '../services/HistoryConverter';
 import { PromptService, PromptServiceLive } from '../services/prompts';
 import type { BuildConfig } from '../services/prompts';
 import type { OutputLine, QuestionData, Session, Task } from '../types';
@@ -692,6 +694,47 @@ export function useAppState(workspaceRoot: string, issueTracker?: 'linear' | 'be
     ).catch((error: Error) => {
       throw new Error(`Failed to build prompt: ${error.message}`);
     });
+
+    // Load historical conversation if resuming
+    if (resumeSessionId) {
+      try {
+        const historyProgram = Effect.gen(function* () {
+          const conversationService = yield* ConversationService;
+          const historyConverter = yield* HistoryConverter;
+
+          const events = yield* conversationService.getConversationDetails(
+            resumeSessionId,
+            workspaceRoot
+          );
+          const historyLines = yield* historyConverter.convertToOutputLines(events);
+
+          const separator = historyConverter.createHistorySeparator();
+          const resumeSeparator = historyConverter.createResumeSeparator();
+
+          return [separator, ...historyLines, resumeSeparator];
+        });
+
+        const historyLines = await Effect.runPromise(
+          historyProgram.pipe(
+            Effect.provide(ConversationService.Default),
+            Effect.provide(HistoryConverter.Default)
+          )
+        );
+
+        for (const line of historyLines) {
+          send({ type: 'OUTPUT', line });
+        }
+      } catch (_error) {
+        // Show warning but continue with resume
+        send({
+          type: 'OUTPUT',
+          line: {
+            text: `Warning: Could not load conversation history.`,
+            type: 'system',
+          },
+        });
+      }
+    }
 
     // Execute via CLI Manager
     // Use Opus for planning (comprehensive research), Sonnet for building (faster execution)

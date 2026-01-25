@@ -1,0 +1,9 @@
+[build]
+builder = "railpack"
+
+[deploy]
+startCommand = "yarn start"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

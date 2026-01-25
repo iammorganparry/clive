@@ -3,21 +3,20 @@
  * Matches the flow from Go TUI: Setup -> Selection -> Main
  */
 
-export type ViewMode = 'setup' | 'selection' | 'modeSelection' | 'reviewCredentials' | 'main' | 'help';
+export type ViewMode = 'setup' | 'mode_selection' | 'worker_setup' | 'worker' | 'selection' | 'main' | 'help';
 
 /**
- * Mode type for Plan vs Build vs Review selection
+ * Worker configuration for connecting to central Slack service
  */
-export type CliveMode = 'plan' | 'build' | 'review';
-
-/**
- * Credentials for review mode browser testing
- */
-export interface ReviewCredentials {
-  email?: string;
-  password?: string;
-  baseUrl?: string;  // e.g., http://localhost:3000
-  skipAuth?: boolean;  // If app doesn't require auth
+export interface WorkerConfig {
+  /** Whether worker mode is enabled */
+  enabled: boolean;
+  /** WebSocket URL of the central service (e.g., wss://slack-central-production.up.railway.app/ws) */
+  centralUrl: string;
+  /** Worker API token for authentication */
+  token: string;
+  /** Whether to auto-connect on startup (default: true) */
+  autoConnect?: boolean;
 }
 
 /**
@@ -33,4 +32,6 @@ export interface IssueTrackerConfig {
     // Beads uses local git-based issue tracking
     // No additional config needed
   };
+  /** Worker configuration for Slack integration */
+  worker?: WorkerConfig;
 }

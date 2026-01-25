@@ -536,14 +536,12 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               logToOutput(`[ClaudeCliService] Directory sandboxed to: ${options.workspaceRoot}`);
             }
 
-            // DISABLED: Resume mode has bugs with tool_use/tool_result pairing in stream-json mode
-            // The CLI makes follow-up API requests with malformed message history after tool_results
-            // causing "unexpected tool_use_id found in tool_result blocks" errors
-            // TODO: Re-enable when Claude CLI fixes conversation history reconstruction in --resume mode
-            // if (options.resumeSessionId) {
-            //   args.push("--resume", options.resumeSessionId);
-            //   logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
-            // }
+            // NOTE: --resume was previously disabled due to tool_use/tool_result bugs
+            // These were fixed in Claude CLI v2.1.0 and v2.1.9
+            if (options.resumeSessionId) {
+              args.push("--resume", options.resumeSessionId);
+              logToOutput(`[ClaudeCliService] Resuming session: ${options.resumeSessionId}`);
+            }
 
             // Use bypassPermissions mode since we're only allowing MCP tools
             // AskUserQuestion is disabled - Claude will ask questions in text instead

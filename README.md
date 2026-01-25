@@ -77,12 +77,16 @@ Clive is built as a monorepo using [Turborepo](https://turborepo.com) and contai
 ```
 apps
   ├─ extension          # VS Code extension (main product)
-  └─ nextjs             # Next.js web application
-packages  
+  ├─ nextjs             # Next.js web application
+  ├─ slack              # Slack integration (local & distributed modes)
+  └─ worker             # Distributed worker client for Slack
+packages
   ├─ api                # tRPC v11 router definition
   ├─ auth               # Authentication using Better Auth
   ├─ db                 # Database layer with Drizzle ORM & Supabase
-  └─ ui                 # Shared UI components (shadcn/ui)
+  ├─ ui                 # Shared UI components (shadcn/ui)
+  ├─ claude-services    # Claude CLI integration
+  └─ worker-protocol    # Shared types for distributed architecture
 tooling
   ├─ biome              # Shared Biome configuration
   ├─ tailwind           # Shared Tailwind theme and configuration
@@ -363,6 +367,24 @@ The default connection string format is documented in `docker-compose.yml`. The 
 | `yarn clean` | Remove all node_modules |
 | `yarn clean:workspaces` | Clean all workspace node_modules |
 
+## Slack Integration
+
+Clive includes a Slack integration that allows planning interviews via @mention. This enables team collaboration without requiring terminal access.
+
+### Features
+
+- **@mention to start**: Tag `@clive` in any channel to begin a planning interview
+- **Thread-based conversation**: Each interview runs in its own thread
+- **Interactive questions**: Answer questions with button clicks or custom text
+- **Linear integration**: Automatically creates issues when plan is approved
+
+### Operation Modes
+
+- **Local Mode**: Single-user deployment with ngrok tunnel
+- **Distributed Mode**: Central service with worker swarm for multi-user support
+
+See the [Slack Integration Guide](./apps/slack/README.md) for setup instructions.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for detailed contribution guidelines.
@@ -372,6 +394,8 @@ See [CONTRIBUTING.md](./docs/CONTRIBUTING.md) for detailed contribution guidelin
 - [Development Guide](./docs/DEVELOPMENT.md) - Architecture and development patterns
 - [Testing Guide](./docs/TESTING.md) - Testing strategies and practices
 - [Contributing Guide](./docs/CONTRIBUTING.md) - How to contribute
+- [Slack Integration](./apps/slack/README.md) - Slack bot setup and usage
+- [Worker Setup](./apps/worker/README.md) - Distributed worker configuration
 
 ## License
 

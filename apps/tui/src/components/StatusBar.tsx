@@ -1,9 +1,10 @@
 /**
  * StatusBar Component
- * Shows execution status and helpful hints
+ * Shows execution status, worker connection status, and helpful hints
  */
 
 import { OneDarkPro } from '../styles/theme';
+import type { WorkerStatus } from '@clive/worker-protocol';
 
 interface StatusBarProps {
   width: number;
@@ -11,9 +12,21 @@ interface StatusBarProps {
   isRunning: boolean;
   inputFocused?: boolean;
   workspaceRoot?: string;
+  /** Worker connection status */
+  workerStatus?: WorkerStatus;
+  /** Number of active Slack sessions on this worker */
+  workerSessions?: number;
 }
 
-export function StatusBar({ width, height, isRunning, inputFocused = false, workspaceRoot }: StatusBarProps) {
+export function StatusBar({
+  width,
+  height,
+  isRunning,
+  inputFocused = false,
+  workspaceRoot,
+  workerStatus,
+  workerSessions = 0,
+}: StatusBarProps) {
   const statusText = isRunning ? '⏳ Executing...' : '✓ Ready';
   const statusColor = isRunning ? OneDarkPro.syntax.yellow : OneDarkPro.syntax.green;
 
@@ -21,6 +34,32 @@ export function StatusBar({ width, height, isRunning, inputFocused = false, work
   const workspaceName = workspaceRoot
     ? workspaceRoot.split('/').filter(Boolean).pop() || workspaceRoot
     : 'unknown';
+
+  // Worker status display
+  const getWorkerStatusDisplay = (): { text: string; color: string } | null => {
+    if (!workerStatus) return null;
+
+    switch (workerStatus) {
+      case 'ready':
+        return {
+          text: workerSessions > 0 ? `W: ${workerSessions} session${workerSessions > 1 ? 's' : ''}` : 'W: Connected',
+          color: OneDarkPro.syntax.green,
+        };
+      case 'busy':
+        return {
+          text: `W: ${workerSessions} session${workerSessions > 1 ? 's' : ''}`,
+          color: OneDarkPro.syntax.yellow,
+        };
+      case 'connecting':
+        return { text: 'W: Connecting...', color: OneDarkPro.syntax.yellow };
+      case 'disconnected':
+        return { text: 'W: Disconnected', color: OneDarkPro.syntax.red };
+      default:
+        return null;
+    }
+  };
+
+  const workerDisplay = getWorkerStatusDisplay();
 
   // Context-sensitive help hints
   let helpHint = '';
@@ -42,7 +81,7 @@ export function StatusBar({ width, height, isRunning, inputFocused = false, work
       justifyContent="space-between"
       alignItems="center"
     >
-      {/* Left: Status and workspace */}
+      {/* Left: Status, workspace, and worker status */}
       <box flexDirection="row">
         <text fg={statusColor}>
           {statusText}
@@ -51,6 +90,12 @@ export function StatusBar({ width, height, isRunning, inputFocused = false, work
           <>
             <text fg={OneDarkPro.foreground.muted}> • </text>
             <text fg={OneDarkPro.syntax.cyan}>📁 {workspaceName}</text>
+          </>
+        )}
+        {workerDisplay && (
+          <>
+            <text fg={OneDarkPro.foreground.muted}> • </text>
+            <text fg={workerDisplay.color}>[{workerDisplay.text}]</text>
           </>
         )}
       </box>

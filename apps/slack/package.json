@@ -1,0 +1,33 @@
+{
+  "name": "@clive/slack",
+  "version": "0.1.0",
+  "type": "module",
+  "module": "src/index.ts",
+  "description": "Clive Slack integration for planning interviews via @mention",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "echo 'No build step needed - noEmit: true'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@clive/claude-services": "*",
+    "@clive/worker-protocol": "*",
+    "@ngrok/ngrok": "^1.5.0",
+    "@slack/bolt": "^4.1.0",
+    "@slack/types": "^2.14.0",
+    "@slack/web-api": "^7.8.0",
+    "dotenv": "^17.2.3",
+    "effect": "^3.19.9",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
+}

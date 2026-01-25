@@ -1,0 +1,7 @@
+[build]
+builder = "railpack"
+
+[deploy]
+startCommand = "yarn start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
