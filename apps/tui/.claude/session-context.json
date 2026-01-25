@@ -1,0 +1,23 @@
+{
+  "selectedAt": "2026-01-23T13:34:12.277Z",
+  "mode": "build",
+  "issue": {
+    "id": "2f9d1fc9-213d-4654-9db0-189358e4f306",
+    "identifier": "TRI-2119",
+    "title": "Epic: Refactor Jarvis to Vercel Sandbox + Claude Code CLI",
+    "url": "https://linear.app/trigify/issue/TRI-2119/epic-refactor-jarvis-to-vercel-sandbox-claude-code-cli",
+    "state": {
+      "id": "11a74fbe-1c9c-467c-8e5e-7e0e361a5bc4",
+      "name": "Backlog",
+      "type": "backlog"
+    },
+    "priority": 2,
+    "labels": [
+      {
+        "id": "d03abbab-633d-4743-96d2-aad70bd16309",
+        "name": "Feature",
+        "color": "#BB87FC"
+      }
+    ]
+  }
+}

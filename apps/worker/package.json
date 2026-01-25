@@ -1,0 +1,30 @@
+{
+  "name": "@clive/worker",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Clive worker client for distributed interview execution",
+  "bin": {
+    "clive-worker": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@clive/claude-services": "*",
+    "@clive/worker-protocol": "*",
+    "@ngrok/ngrok": "^1.5.0",
+    "dotenv": "^17.2.3",
+    "effect": "^3.19.9",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -84,7 +84,9 @@ yarn workspace clive test:unit:watch
 apps/
   ├─ extension/          # VS Code extension (main product)
   ├─ dashboard/          # Next.js dashboard application
-  └─ nextjs/             # Next.js web application
+  ├─ nextjs/             # Next.js web application
+  ├─ slack/              # Slack integration (local & distributed modes)
+  └─ worker/             # Distributed worker client for Slack
 
 packages/
   ├─ api/                # tRPC v11 router definitions
@@ -95,7 +97,8 @@ packages/
   ├─ ui/                 # Shared UI components (shadcn/ui)
   ├─ validators/         # Shared Zod schemas
   ├─ webview-rpc/        # Webview RPC communication
-  └─ claude-services/    # Claude API integration
+  ├─ claude-services/    # Claude API integration
+  └─ worker-protocol/    # Shared types for distributed architecture
 
 tooling/
   ├─ biome/              # Shared Biome configuration

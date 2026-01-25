@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+buildCommand = "yarn install && yarn workspace @clive/worker-protocol build && yarn workspace @clive/claude-services build"
+
+[deploy]
+startCommand = "yarn workspace @clive/slack start"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
