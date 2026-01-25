@@ -290,9 +290,16 @@ cat ~/.clive/config.json
 
 Look for `"issueTracker": "linear"` or `"issueTracker": "beads"`.
 
-**Step 2: Decide if project is needed (Linear only)**
+**Step 2: Determine Epic Mode (Continuation vs New)**
 
-If using Linear, evaluate the scope against Project Decision Criteria (see above section).
+**CRITICAL:** Check if `$CLIVE_PARENT_ID` is set.
+
+- **If `$CLIVE_PARENT_ID` IS set:** You are in EPIC CONTINUATION MODE. Skip to Step 3c.
+- **If `$CLIVE_PARENT_ID` is NOT set:** You are creating a new epic. Continue to Step 2a.
+
+**Step 2a: Decide if project is needed (Linear only, NEW EPIC MODE)**
+
+If using Linear and creating a NEW epic, evaluate the scope against Project Decision Criteria (see above section).
 
 If 2+ criteria are met, suggesting a project:
 1. Ask the user in plain text to propose project creation
@@ -304,7 +311,7 @@ If 2+ criteria are met, suggesting a project:
 
 If fewer than 2 criteria are met, skip directly to Step 3b (no project needed).
 
-**Step 3a: Create Linear Project + Issues (if approved)**
+**Step 3a: Create Linear Project + Issues (if approved, NEW EPIC MODE)**
 
 ```typescript
 // 1. Get team ID
@@ -434,7 +441,61 @@ Technical Notes:
 })
 ```
 
-**Step 3c: Create Beads Issues**
+**Step 3c: Add Tasks to Existing Epic (EPIC CONTINUATION MODE)**
+
+**CRITICAL:** When `$CLIVE_PARENT_ID` is set, DO NOT create a new epic. Add tasks directly under the existing parent.
+
+```typescript
+// CONTINUATION MODE - use existing epic as parent
+const PARENT_ID = CLIVE_PARENT_ID  // From environment variable
+
+// Get team ID
+const team = await mcp__linear__get_team({ query: LINEAR_TEAM_ID })
+
+// Create each NEW task directly under the existing epic
+await mcp__linear__create_issue({
+  team: team.id,
+  parentId: PARENT_ID,  // Use existing epic!
+  title: "Task: [New Capability]",
+  description: `
+User Story:
+As a [role]
+I want [capability]
+So that [benefit]
+
+Acceptance Criteria:
+1. [Testable criterion]
+2. [Testable criterion]
+
+Definition of Done:
+- [ ] All acceptance criteria met
+- [ ] Tests written and passing
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+Technical Notes:
+[Summary of implementation details from plan]
+
+Context from Previous Work:
+[Reference learnings from completed tasks if applicable]
+`,
+  priority: 2,
+  labels: ["skill:feature"]
+})
+
+// Repeat for each new task...
+```
+
+**After creating tasks, update the epic directory:**
+```bash
+# Ensure epic directory exists with Linear ID
+EPIC_DIR=".claude/epics/$CLIVE_PARENT_ID"
+mkdir -p "$EPIC_DIR"
+echo "$CLIVE_PARENT_ID" > "$EPIC_DIR/linear_issue_id.txt"
+```
+
+**Step 3d: Create Beads Issues (NEW EPIC MODE only)**
 
 Use bash commands:
 
@@ -448,7 +509,26 @@ bd create --parent=$EPIC_ID --title="Task: [User Story Title]" --type=task --pri
 
 **Step 4: Confirm completion**
 
-After creating all issues, output a summary:
+After creating all issues, output a summary appropriate to the mode:
+
+**For EPIC CONTINUATION MODE:**
+```
+Added [N] new tasks to existing epic:
+
+Epic: [Epic Title] ([CLIVE_PARENT_ID])
+
+Existing Tasks:
+- [TRI-101] Task 1 ✓ (Done)
+- [TRI-102] Task 2 ✓ (Done)
+
+NEW Tasks Added:
+- [TRI-105] [New Task 1 title] ([ID])
+- [TRI-106] [New Task 2 title] ([ID])
+
+Planning session complete. Use /build to start implementation.
+```
+
+**For NEW EPIC MODE:**
 ```
 Created [N] issues in [Linear/Beads]:
 - [Epic title] ([ID])
@@ -775,6 +855,88 @@ After all tasks complete, verify epic success:
 
 ---
 
+## Plan Document: Epic Continuation Format
+
+**When continuing an existing epic (CLIVE_PARENT_ID is set), use this modified structure:**
+
+```markdown
+# Epic Continuation: [Epic Title]
+
+## Parent Epic
+- **ID:** [Linear ID from CLIVE_PARENT_ID]
+- **Title:** [Epic Title]
+- **Status:** In Progress
+
+## Completed Work
+| Task | Status | Key Outcomes |
+|------|--------|--------------|
+| TRI-101 | ✓ Done | [What was delivered] |
+| TRI-102 | ✓ Done | [What was delivered] |
+
+## In Progress Work
+| Task | Status | Notes |
+|------|--------|-------|
+| TRI-103 | 🔄 In Progress | [Current state] |
+
+## Learnings Applied
+[Summary from scratchpad - patterns discovered, gotchas identified, architectural decisions made during implementation]
+
+## New Tasks (This Planning Session)
+
+### Task N+1: [User Capability]
+
+**User Story:**
+As a [role]
+I want [capability]
+So that [benefit]
+
+**Acceptance Criteria:**
+1. [Testable criterion]
+2. [Testable criterion]
+
+**Definition of Done:**
+- [ ] All acceptance criteria met
+- [ ] Tests written and passing
+- [ ] Code reviewed
+- [ ] Documentation updated
+- [ ] Build succeeds
+
+**Technical Notes:**
+- **Files affected:** [list with paths]
+- **Existing patterns:** [reference with file:line]
+- **Builds on previous work:** [reference completed tasks that this extends]
+- **Recommended skill:** [feature/bugfix/refactor with justification]
+- **Complexity:** [1-10 with reasoning]
+
+---
+
+### Task N+2: [User Capability]
+
+[Same structure as Task N+1]
+
+---
+
+## Updated Success Criteria
+[How we know the ENTIRE epic is complete, including new tasks]
+
+## Epic Completion Checklist
+- [ ] All original tasks complete
+- [ ] All new tasks complete
+- [ ] Integration tested end-to-end
+- [ ] Documentation updated
+- [ ] Ready for release
+```
+
+**Key differences from new epic format:**
+- References the parent epic ID
+- Lists completed and in-progress work
+- Includes learnings from scratchpad
+- Tasks are numbered as N+1, N+2, etc. to continue from existing tasks
+- "Builds on previous work" in technical notes
+- Updated success criteria for the entire epic
+
+---
+
 ## Context Window Management (CRITICAL)
 
 **You have a 200k token context window (input + output combined).** You MUST stay under this limit.
@@ -1086,10 +1248,232 @@ You have access to these environment variables:
 - `$ARGUMENTS` - The user's request/arguments
 - `$CLIVE_PLAN_FILE` - Path where you should write the plan
 - `$CLIVE_PROGRESS_FILE` - Path for tracking progress
-- `$CLIVE_PARENT_ID` - Parent epic/issue ID if this is sub-planning
+- `$CLIVE_PARENT_ID` - **CRITICAL**: If set, this is the Linear issue ID of an existing epic. You MUST add new tasks under this epic, not create a new one. The user selected this epic in the TUI to continue working on it.
 - `$CLIVE_TRACKER` - Configured tracker (beads or linear)
 
 Check these as needed to understand context and where to write files.
+
+---
+
+## Step 0: Check for Existing Epic Context (BEFORE INTERVIEW)
+
+**CRITICAL: Before starting the interview, determine if this is a NEW epic or CONTINUING an existing one.**
+
+### Check for Existing Parent ID
+
+If `$CLIVE_PARENT_ID` is set, you are in EPIC CONTINUATION MODE.
+
+### If Continuing an Existing Epic (CLIVE_PARENT_ID is set)
+
+**YOU MUST:**
+
+1. **Fetch the parent epic details:**
+   Use `mcp__linear__get_issue` with `id: $CLIVE_PARENT_ID` and `includeRelations: true`
+
+2. **Fetch all existing tasks under this epic:**
+   Use `mcp__linear__list_issues` with `parentId: $CLIVE_PARENT_ID` and `includeArchived: false`
+
+3. **Evaluate Issue Quality (GROOMING CHECK):**
+
+   **IMPORTANT:** External issues created outside this planning skill often lack proper structure.
+   After fetching issues, evaluate whether each has sufficient detail for implementation.
+
+   **Quality Checklist - An issue is "sparse" if missing:**
+   - User Story statement (As a / I want / So that)
+   - Acceptance Criteria section (need 3+ testable criteria)
+   - Definition of Done checklist
+   - Technical Notes section
+
+   **Detection Heuristics:**
+   - **User Story**: Look for "As a", "I want", "So that" patterns
+   - **Acceptance Criteria**: Look for numbered list (1. 2. 3.) or "Acceptance Criteria" heading
+   - **Definition of Done**: Look for checkbox items (- [ ]) or "Definition of Done" heading
+   - **Technical Notes**: Look for "Technical Notes" heading, file paths, or code blocks
+
+   **Categorize each issue:**
+   - ✅ **Well-formed**: Has all required sections, ready for implementation
+   - ⚠️ **Sparse**: Missing 1-2 sections, needs refinement
+   - 🔴 **Minimal**: Missing most sections (title only or brief description), needs full grooming
+
+4. **Display epic progress WITH quality assessment:**
+   ```
+   EXISTING EPIC: [Epic Title]
+
+   Epic Quality: [✅ Well-formed | ⚠️ Sparse | 🔴 Minimal]
+   Missing: [list what's missing, if any]
+
+   Sub-Tasks:
+   ✅ [TRI-101] Task 1 title - Done, Well-formed
+   ✅ [TRI-102] Task 2 title - Done, Well-formed
+   🔄 [TRI-103] Task 3 title - In Progress, ⚠️ Sparse (missing: technical notes)
+   ⏳ [TRI-104] Task 4 title - Pending, 🔴 Minimal (needs grooming)
+
+   [N] issues may need grooming before implementation.
+   ```
+
+5. **Offer Grooming Session (if sparse/minimal issues found):**
+
+   **If the parent epic OR any pending tasks are Sparse or Minimal, ask the user:**
+
+   "I found [N] issues that need more detail before implementation can begin effectively.
+
+   Issues needing attention:
+   - [TRI-100] Epic: Missing acceptance criteria, technical notes
+   - [TRI-104] Task 4: Missing user story, DoD, technical notes
+
+   Would you like to:
+   1. Groom these issues now (recommended - I'll help flesh out the details)
+   2. Skip grooming and plan new tasks (existing sparse issues will be harder to implement)
+   "
+
+   **If user chooses to groom, proceed to Step 6 (Grooming Process).**
+   **If user skips grooming, proceed to Step 7.**
+
+6. **Interactive Grooming Process (if requested):**
+
+   For each sparse/minimal issue (starting with parent epic, then pending tasks):
+
+   **Step 6a: Display current content and gaps**
+   ```
+   GROOMING: [TRI-104] [Issue Title]
+
+   Current Content:
+   [Show existing description - may be empty or brief]
+
+   Missing Sections:
+   - User Story (As a / I want / So that)
+   - Acceptance Criteria (need 3+ testable)
+   - Definition of Done
+   - Technical Notes
+   ```
+
+   **Step 6b: Research codebase for context**
+   - Use Glob/Grep to find related files based on issue title/description
+   - Identify existing patterns that apply
+   - Find similar implementations to reference
+   - This gives you material for Technical Notes
+
+   **Step 6c: Interview user for missing details**
+   Ask ONE question at a time:
+   - "What user problem does [issue title] solve?" → builds User Story
+   - "How will we know it's working correctly?" → builds Acceptance Criteria
+   - "Are there specific files or patterns to follow?" → validates Technical Notes
+
+   **Step 6d: Generate enhanced description**
+   Combine user input + codebase research to create full issue content:
+   ```
+   User Story:
+   As a [role from user input]
+   I want [capability from user input]
+   So that [benefit from user input]
+
+   Acceptance Criteria:
+   1. [Testable criterion from user input]
+   2. [Testable criterion from user input]
+   3. [Testable criterion from user input]
+
+   Definition of Done:
+   - [ ] All acceptance criteria met
+   - [ ] Tests written and passing
+   - [ ] Code reviewed
+   - [ ] Documentation updated
+   - [ ] Build succeeds
+
+   Technical Notes:
+   - Files affected: [from codebase research]
+   - Existing patterns: [from codebase research with file:line]
+   - Dependencies: [identified from research]
+   - Complexity: [1-10 based on research]
+   ```
+
+   **Step 6e: Update the Linear issue**
+   ```typescript
+   await mcp__linear__update_issue({
+     id: issueId,
+     description: enhancedDescription
+   })
+   ```
+
+   **Step 6f: Confirm and continue**
+   ```
+   ✅ [TRI-104] has been groomed and updated in Linear.
+
+   Added:
+   - User Story: As a [role] I want [capability]...
+   - 3 Acceptance Criteria
+   - Definition of Done checklist
+   - Technical Notes with codebase references
+
+   [N-1] issues remaining. Proceeding to next...
+   ```
+
+   **Repeat for each sparse/minimal issue.**
+
+7. **Read the epic scratchpad for learnings (if exists):**
+   Check for `.claude/epics/$CLIVE_PARENT_ID/scratchpad.md`
+   If it exists, read it to understand learnings from previous iterations.
+
+8. **Adjust interview accordingly:**
+   - If epic was well-formed: Skip "problem understanding" phase (epic already defines this)
+   - If epic was just groomed: You already have context, focus on "what's next"
+   - Focus on what additional user value should be delivered
+   - Reference completed work: "Given that X is done, what should we tackle next?"
+
+### Interview Adjustments for Epic Continuation
+
+**When continuing an epic, modify your interview approach based on context:**
+
+**Scenario A: Well-formed epic with completed tasks (standard continuation)**
+
+**Phase 1: Progress Review (replace Problem Understanding)**
+- "Looking at the completed tasks, does this match your expectations?"
+- "Are there any gaps or issues with the completed work?"
+- "What's the next priority for this epic?"
+
+**Phase 2: Scope Expansion**
+- "What additional capabilities should we add?"
+- "Are there edge cases or error handling we missed?"
+- "Should we add any testing or documentation?"
+
+**Phase 3: Acceptance Criteria**
+- "How will we know when this epic is truly complete?"
+- "What's the minimum viable next step?"
+
+**Phase 4: Technical Context**
+- "Did we discover any patterns or issues during implementation that affect next steps?"
+- Reference learnings from scratchpad if available
+
+**Scenario B: After grooming sparse/external issues**
+
+If you just groomed the epic and/or tasks, you already gathered significant context during grooming.
+Adjust the interview to avoid redundant questions:
+
+**Phase 1: Confirm Understanding**
+- "Based on what we just defined, is there anything else about the problem I should know?"
+- "Are there related features or dependencies we should consider?"
+
+**Phase 2: Plan New Work**
+- "Beyond the tasks we just groomed, what additional work is needed?"
+- "Should we add any new tasks to this epic?"
+
+**Phase 3: Prioritization**
+- "Which of these tasks should be tackled first?"
+- "Are there any blockers or dependencies between tasks?"
+
+**Scenario C: Minimal/external epic that was NOT groomed**
+
+If user skipped grooming on a sparse epic, you need MORE context, not less:
+
+**Phase 1: Deep Problem Understanding**
+- "This epic doesn't have much detail. Can you explain the problem you're trying to solve?"
+- "Who is the user and what value does this deliver?"
+- "What's the scope of this work?"
+
+Then proceed with standard interview phases 2-4.
+
+### If Starting a New Epic (CLIVE_PARENT_ID is NOT set)
+
+Proceed with the standard interview flow in Phase 1 below.
 
 ---
 
@@ -1175,7 +1559,26 @@ This is a **conversation** with **5 MANDATORY PHASES**. Your goal is to:
 
 **Your output after creating issues should be:**
 
-If a Linear project was created:
+**If continuing an existing epic (EPIC CONTINUATION MODE):**
+```
+Planning complete! Added [N] new tasks to existing epic:
+
+Epic: [Epic Title] ([CLIVE_PARENT_ID])
+
+Previously Completed:
+- [TRI-101] Task 1 ✓
+- [TRI-102] Task 2 ✓
+
+NEW Tasks Added:
+- [TRI-105] [New Task 1 title]
+- [TRI-106] [New Task 2 title]
+
+The continuation plan has been saved to [plan-file-path].
+
+To start implementation, use: /build
+```
+
+**If a Linear project was created (NEW EPIC MODE):**
 ```
 Planning complete! Created Linear project and [N] issues:
 
@@ -1193,7 +1596,7 @@ The plan has been saved to [plan-file-path].
 To start implementation, use: /build
 ```
 
-If no project was created (issues only):
+**If no project was created (issues only, NEW EPIC MODE):**
 ```
 Planning complete! Created [N] issues in [Linear/Beads]:
 - [Epic title] ([ID])

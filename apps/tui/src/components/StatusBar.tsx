@@ -27,7 +27,7 @@ export function StatusBar({ width, height, isRunning, inputFocused = false, work
   if (inputFocused) {
     helpHint = 'Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit';
   } else if (isRunning) {
-    helpHint = 'i message  •  /add task  •  c cancel  •  Ctrl+C quit';
+    helpHint = 'Ctrl+G scroll bottom  •  Ctrl+C quit';
   } else {
     helpHint = '/ input  •  ? help  •  Esc back  •  Ctrl+C quit';
   }

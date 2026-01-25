@@ -139,6 +139,8 @@ const viewModeMachine = setup({
     events: {} as
       | { type: 'GO_TO_SETUP' }
       | { type: 'GO_TO_SELECTION' }
+      | { type: 'GO_TO_MODE_SELECTION' }
+      | { type: 'GO_TO_REVIEW_CREDENTIALS' }
       | { type: 'GO_TO_MAIN' }
       | { type: 'GO_TO_HELP' }
       | { type: 'GO_BACK' }
@@ -177,6 +179,7 @@ const viewModeMachine = setup({
     selection: {
       on: {
         GO_TO_SETUP: 'setup',
+        GO_TO_MODE_SELECTION: 'modeSelection',
         GO_TO_MAIN: 'main',
         GO_TO_HELP: {
           target: 'help',
@@ -187,16 +190,31 @@ const viewModeMachine = setup({
         GO_BACK: 'setup',
       },
     },
+    modeSelection: {
+      on: {
+        GO_TO_MAIN: 'main',
+        GO_TO_REVIEW_CREDENTIALS: 'reviewCredentials',
+        GO_TO_SELECTION: 'selection',
+        GO_BACK: 'selection',
+      },
+    },
+    reviewCredentials: {
+      on: {
+        GO_TO_MAIN: 'main',
+        GO_BACK: 'modeSelection',
+      },
+    },
     main: {
       on: {
         GO_TO_SELECTION: 'selection',
+        GO_TO_MODE_SELECTION: 'modeSelection',
         GO_TO_HELP: {
           target: 'help',
           actions: assign({
             previousView: 'main',
           }),
         },
-        GO_BACK: 'selection',
+        GO_BACK: 'modeSelection',
       },
     },
     help: {
@@ -227,6 +245,8 @@ export interface ViewModeState {
   // Actions
   goToSetup: () => void;
   goToSelection: () => void;
+  goToModeSelection: () => void;
+  goToReviewCredentials: () => void;
   goToMain: () => void;
   goToHelp: () => void;
   goBack: () => void;
@@ -259,6 +279,8 @@ export function useViewMode(): ViewModeState {
     config: state.context.config,
     goToSetup: () => send({ type: 'GO_TO_SETUP' }),
     goToSelection: () => send({ type: 'GO_TO_SELECTION' }),
+    goToModeSelection: () => send({ type: 'GO_TO_MODE_SELECTION' }),
+    goToReviewCredentials: () => send({ type: 'GO_TO_REVIEW_CREDENTIALS' }),
     goToMain: () => send({ type: 'GO_TO_MAIN' }),
     goToHelp: () => send({ type: 'GO_TO_HELP' }),
     goBack: () => send({ type: 'GO_BACK' }),

@@ -28,7 +28,7 @@ export interface CliManagerOptions {
   workspaceRoot: string;
   model?: string;
   systemPrompt?: string;
-  mode?: 'plan' | 'build';
+  mode?: 'plan' | 'build' | 'review';
   resumeSessionId?: string;
 }
 

@@ -15,7 +15,7 @@ export class ConversationLogger {
   /**
    * Start logging to a new file
    */
-  start(workspaceRoot: string, mode: 'plan' | 'build'): void {
+  start(workspaceRoot: string, mode: 'plan' | 'build' | 'review'): void {
     const workspaceName = path.basename(workspaceRoot);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const logDir = path.join(os.homedir(), '.clive', 'logs', workspaceName);

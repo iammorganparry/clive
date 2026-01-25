@@ -416,7 +416,7 @@ describe('useConfig', () => {
           issue_tracker: 'linear',
           setup_completed: true,
           linear: {
-            api_key: 'lin_api_fake_test_key_for_unit_tests_only',
+            api_key: 'lin_api_test_fake_key_for_unit_testing_only',
             team_id: '820895fa-6dca-4faa-85be-81106080397a',
             team_slug: 'TRI',
             team_name: 'Product',
@@ -433,7 +433,7 @@ describe('useConfig', () => {
       expect(result.current.data).toEqual({
         issueTracker: 'linear',
         linear: {
-          apiKey: 'lin_api_fake_test_key_for_unit_tests_only',
+          apiKey: 'lin_api_test_fake_key_for_unit_testing_only',
           teamID: '820895fa-6dca-4faa-85be-81106080397a',
         },
         beads: undefined,

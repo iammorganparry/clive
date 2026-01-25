@@ -23,10 +23,12 @@ export interface PtyCliManagerOptions {
   workspaceRoot: string;
   systemPrompt?: string;
   model?: string; // 'sonnet', 'opus', 'haiku', or full model name
-  mode?: 'plan' | 'build';
+  mode?: 'plan' | 'build' | 'review';
   mcpConfig?: any; // MCP server configuration
   addDirs?: string[]; // Additional directories to allow access
   betas?: string[]; // Beta features to enable
+  cols?: number; // Explicit terminal columns (for direct mode)
+  rows?: number; // Explicit terminal rows (for direct mode)
 }
 
 export interface PtyDimensions {
@@ -39,8 +41,9 @@ export interface PtyDimensions {
 export class PtyCliManager extends EventEmitter {
   private nodeProcess: ChildProcess | null = null;
   private ansiBuffer = '';
-  private activeMode: 'plan' | 'build' | null = null;
+  private activeMode: 'plan' | 'build' | 'review' | null = null;
   private ptyDimensions: PtyDimensions | null = null;
+  private directMode = false;
 
   /**
    * Execute Claude CLI in interactive mode with PTY via Node.js subprocess
@@ -100,12 +103,24 @@ export class PtyCliManager extends EventEmitter {
 
     debugLog('PtyCliManager', 'Node.js subprocess ready, spawning PTY');
 
-    // Calculate terminal dimensions - use all available space
+    // Calculate terminal dimensions
     const termWidth = process.stdout.columns || 80;
     const termHeight = process.stdout.rows || 24;
 
-    // Calculate available space by subtracting TUI chrome
-    const dimensions = this.calculateDimensions(termWidth, termHeight, options.mode);
+    // Use explicit dimensions if provided (direct mode), otherwise calculate
+    let dimensions: PtyDimensions;
+    if (this.directMode && options.cols && options.rows) {
+      // Direct mode: use full terminal
+      dimensions = {
+        cols: options.cols,
+        rows: options.rows,
+        maxWidth: options.cols,
+        maxHeight: options.rows,
+      };
+    } else {
+      // Normal mode: Calculate available space by subtracting TUI chrome
+      dimensions = this.calculateDimensions(termWidth, termHeight, options.mode);
+    }
 
     // Store dimensions for OutputPanel
     this.ptyDimensions = dimensions;
@@ -120,6 +135,11 @@ export class PtyCliManager extends EventEmitter {
     // Emit dimensions for OutputPanel to use for centering
     this.emit('dimensions', this.ptyDimensions);
 
+    // If direct mode is enabled, send the setting first
+    if (this.directMode) {
+      this.nodeProcess.send({ type: 'set-direct-mode', enabled: true });
+    }
+
     // Send spawn message to subprocess
     this.nodeProcess.send({
       type: 'spawn',
@@ -132,7 +152,7 @@ export class PtyCliManager extends EventEmitter {
         mcpConfig: options.mcpConfig,
         addDirs: options.addDirs,
         betas: options.betas,
-        debug: true, // Enable debug for conversation file watching
+        debug: false, // Debug mode disabled - not needed for normal operation
         cols: dimensions.cols,
         rows: dimensions.rows,
       },
@@ -142,7 +162,7 @@ export class PtyCliManager extends EventEmitter {
   /**
    * Calculate PTY dimensions based on terminal size and TUI chrome
    */
-  private calculateDimensions(termWidth: number, termHeight: number, mode?: 'plan' | 'build'): PtyDimensions {
+  private calculateDimensions(termWidth: number, termHeight: number, mode?: 'plan' | 'build' | 'review'): PtyDimensions {
     // TUI chrome constants
     const INPUT_HEIGHT = 3;
     const STATUS_HEIGHT = 1;
@@ -203,6 +223,11 @@ export class PtyCliManager extends EventEmitter {
         debugLog('PtyCliManager', 'PTY ready', {
           pid: message.pid,
         });
+        break;
+
+      case 'input-ready':
+        debugLog('PtyCliManager', 'Claude Code input ready');
+        this.emit('input-ready');
         break;
 
       case 'log':
@@ -308,7 +333,10 @@ export class PtyCliManager extends EventEmitter {
     if (!this.nodeProcess) return;
 
     // Recalculate PTY dimensions based on new terminal size
-    const newDimensions = this.calculateDimensions(termWidth, termHeight, this.activeMode || undefined);
+    // In direct mode, use full terminal; otherwise calculate with TUI chrome
+    const newDimensions = this.directMode
+      ? { cols: termWidth, rows: termHeight, maxWidth: termWidth, maxHeight: termHeight }
+      : this.calculateDimensions(termWidth, termHeight, this.activeMode || undefined);
 
     // Check if dimensions actually changed
     if (this.ptyDimensions &&
@@ -398,5 +426,88 @@ export class PtyCliManager extends EventEmitter {
    */
   getDimensions(): PtyDimensions | null {
     return this.ptyDimensions;
+  }
+
+  /**
+   * Enable or disable direct mode
+   * In direct mode, PTY output goes directly to stdout and stdin is passed through
+   */
+  setDirectMode(enabled: boolean): void {
+    this.directMode = enabled;
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: 'set-direct-mode', enabled });
+    }
+  }
+
+  /**
+   * Check if direct mode is enabled
+   */
+  isDirectMode(): boolean {
+    return this.directMode;
+  }
+
+  /**
+   * Set terminal scroll region for embedded direct mode
+   * This confines Claude Code's scrolling to a specific row range
+   */
+  setScrollRegion(top: number, bottom: number): void {
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: 'set-scroll-region', top, bottom });
+    }
+  }
+
+  /**
+   * Reset scroll region to full terminal
+   */
+  resetScrollRegion(): void {
+    if (this.nodeProcess) {
+      this.nodeProcess.send({ type: 'reset-scroll-region' });
+    }
+  }
+
+  /**
+   * Enable embedded direct mode with scroll region
+   * This lets Claude Code render directly while confining it to a specific area
+   */
+  enableEmbeddedDirectMode(region: { top: number; bottom: number; cols: number; rows: number }): void {
+    this.directMode = true;
+
+    if (this.nodeProcess) {
+      // Enable direct mode first
+      this.nodeProcess.send({ type: 'set-direct-mode', enabled: true });
+
+      // Set the scroll region
+      this.nodeProcess.send({
+        type: 'set-scroll-region',
+        top: region.top,
+        bottom: region.bottom,
+      });
+
+      // Resize PTY to match the region dimensions
+      this.nodeProcess.send({
+        type: 'resize',
+        cols: region.cols,
+        rows: region.rows,
+      });
+    }
+
+    debugLog('PtyCliManager', 'Enabled embedded direct mode', region);
+  }
+
+  /**
+   * Disable embedded direct mode and restore normal buffered mode
+   */
+  disableEmbeddedDirectMode(): void {
+    this.directMode = false;
+
+    if (this.nodeProcess) {
+      // Reset scroll region
+      this.nodeProcess.send({ type: 'reset-scroll-region' });
+
+      // Disable direct mode
+      this.nodeProcess.send({ type: 'set-direct-mode', enabled: false });
+    }
+
+    debugLog('PtyCliManager', 'Disabled embedded direct mode');
   }
 }

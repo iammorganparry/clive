@@ -23,6 +23,21 @@ const os = require('os');
 
 let ptyProcess = null;
 let ansiBuffer = '';
+let directMode = false; // When true, write PTY output directly to stdout
+let inputReadyEmitted = false; // Track if we've sent the input-ready signal
+
+// Buffer size limit to prevent memory issues with long-running sessions
+// Keep approximately the last 500KB of output (enough for scrollback)
+const MAX_BUFFER_SIZE = 500 * 1024;
+
+// Patterns that indicate Claude Code is ready for input
+// Claude Code shows ">" prompt when ready, or specific UI elements
+const INPUT_READY_PATTERNS = [
+  /^>/m,                           // Standard prompt
+  /\x1b\[\?25h/,                   // Cursor show (often indicates input ready)
+  /What would you like to do\?/,   // First-run prompt
+  /How can I help/,                // Greeting prompt
+];
 
 // Send message to parent process
 function send(message) {
@@ -55,6 +70,9 @@ function findClaudeCli() {
 
 // Spawn PTY process
 function spawnPty(options) {
+  // Reset input ready flag for new session
+  inputReadyEmitted = false;
+
   try {
     const cliPath = findClaudeCli();
     const args = [];
@@ -119,8 +137,38 @@ function spawnPty(options) {
 
     // Listen for data
     ptyProcess.onData((data) => {
-      ansiBuffer += data;
-      send({ type: 'output', data: ansiBuffer });
+      if (directMode) {
+        // Write directly to stdout - PTY has full terminal control
+        process.stdout.write(data);
+      } else {
+        // Normal mode: accumulate and send via IPC
+        ansiBuffer += data;
+
+        // Trim buffer if it exceeds max size to prevent memory issues
+        // Trim from the beginning (oldest content) to keep recent output
+        if (ansiBuffer.length > MAX_BUFFER_SIZE) {
+          // Find a good break point (newline) near the trim point
+          const trimPoint = ansiBuffer.length - MAX_BUFFER_SIZE;
+          const newlineIndex = ansiBuffer.indexOf('\n', trimPoint);
+          if (newlineIndex !== -1 && newlineIndex < trimPoint + 1000) {
+            ansiBuffer = ansiBuffer.slice(newlineIndex + 1);
+          } else {
+            ansiBuffer = ansiBuffer.slice(trimPoint);
+          }
+        }
+
+        send({ type: 'output', data: ansiBuffer });
+
+        // Check if Claude Code is ready for input (only emit once per session)
+        if (!inputReadyEmitted) {
+          const isReady = INPUT_READY_PATTERNS.some(pattern => pattern.test(ansiBuffer));
+          if (isReady) {
+            inputReadyEmitted = true;
+            send({ type: 'input-ready' });
+            send({ type: 'log', message: 'Claude Code input ready detected' });
+          }
+        }
+      }
     });
 
     // Listen for exit
@@ -168,12 +216,47 @@ process.on('message', (message) => {
           ptyProcess.kill();
           ptyProcess = null;
         }
+        // Clear buffer to free memory
+        ansiBuffer = '';
+        break;
+
+      case 'clear-buffer':
+        // Allow parent to clear buffer manually to free memory
+        ansiBuffer = '';
+        send({ type: 'log', message: 'Buffer cleared', data: { freedSize: ansiBuffer.length } });
         break;
 
       case 'interrupt':
         if (ptyProcess) {
           ptyProcess.write('\x03');
         }
+        break;
+
+      case 'set-direct-mode':
+        directMode = message.enabled;
+        if (directMode) {
+          // Clear buffer when entering direct mode - PTY will render directly
+          ansiBuffer = '';
+        }
+        send({ type: 'log', message: 'Direct mode set', data: { directMode } });
+        break;
+
+      case 'set-scroll-region':
+        // Set terminal scroll region for embedded direct mode
+        // This confines Claude Code's scrolling to a specific area
+        if (message.top && message.bottom) {
+          const setRegion = `\x1b[${message.top};${message.bottom}r`;
+          process.stdout.write(setRegion);
+          // Move cursor to top of scroll region
+          process.stdout.write(`\x1b[${message.top};1H`);
+          send({ type: 'log', message: 'Scroll region set', data: { top: message.top, bottom: message.bottom } });
+        }
+        break;
+
+      case 'reset-scroll-region':
+        // Reset scroll region to full terminal
+        process.stdout.write('\x1b[r');
+        send({ type: 'log', message: 'Scroll region reset' });
         break;
 
       default:
