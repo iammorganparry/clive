@@ -220,11 +220,15 @@ export class WorkerSessionManager extends EventEmitter {
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
+    const systemPrompt = getSystemPromptForMode(mode);
+    const modelToUse = request.model || getModelForMode(mode);
+
     const program = Effect.gen(
       this.createExecutionProgram(
         sessionId,
         prompt,
-        request.model || "opus",
+        modelToUse,
+        systemPrompt,
         onEvent,
         [userMessage],
       ),
@@ -258,6 +262,7 @@ export class WorkerSessionManager extends EventEmitter {
     sessionId: string,
     prompt: string,
     model: string,
+    systemPrompt: string,
     onEvent: (event: InterviewEvent) => void,
     initialMessages: ChatMessage[],
   ) {
