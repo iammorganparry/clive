@@ -16,7 +16,6 @@ import {
   formatPhaseIndicator,
   formatQuestionData,
   formatTimeoutMessage,
-  formatWelcomeMessage,
 } from "../formatters/question-formatter";
 import type { ClaudeManager } from "../services/claude-manager";
 import type { SlackService } from "../services/slack-service";
@@ -114,8 +113,7 @@ export function registerMentionHandler(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "An interview is already in progress in this thread. Please continue answering questions or wait for it to complete.",
-          threadTs,
+          text: `<@${userId}> An interview is already in progress. Please continue answering questions or wait for it to complete.`,
         }),
       );
       return;
@@ -134,53 +132,66 @@ export function registerMentionHandler(
       await Effect.runPromise(
         slackService.postMessage({
           channel: timedOutSession.channel,
-          text: "Interview timed out after 30 minutes of inactivity.",
-          threadTs: timedOutSession.threadTs,
-          blocks: formatTimeoutMessage(),
+          text: `<@${timedOutSession.initiatorId}> Interview timed out after 30 minutes of inactivity.`,
+          blocks: formatTimeoutMessage(timedOutSession.initiatorId),
         }),
       );
       store.close(threadTs);
     });
 
-    // Post welcome message
-    await Effect.runPromise(
-      slackService.postMessage({
-        channel,
-        text: "Starting planning interview...",
-        threadTs,
-        blocks: formatWelcomeMessage(!!description),
-      }),
-    );
-
-    // Start Claude interview
+    // Start greeting conversation
     try {
-      store.setPhase(threadTs, "problem");
+      // If user provided a description, skip greeting and go straight to planning
+      if (description) {
+        // Don't post welcome message - wait for Claude's first response
+        store.setMode(threadTs, "plan");
+        store.setPhase(threadTs, "problem");
 
-      const handle = await claudeManager.startInterview(
-        threadTs,
-        description,
-        async (event: InterviewEvent) => {
-          await handleInterviewEvent(
-            event,
-            threadTs,
-            channel,
-            store,
-            slackService,
-          );
-        },
-      );
+        const handle = await claudeManager.startInterview(
+          threadTs,
+          description,
+          async (event: InterviewEvent) => {
+            await handleInterviewEvent(
+              event,
+              threadTs,
+              channel,
+              store,
+              slackService,
+            );
+          },
+        );
 
-      store.setClaudeHandle(threadTs, handle);
+        store.setClaudeHandle(threadTs, handle);
+      } else {
+        // No description - start with conversational greeting
+        // Don't post welcome message - Claude will respond naturally
+        const handle = await claudeManager.startGreeting(
+          threadTs,
+          channel,
+          userId,
+          undefined,
+          async (event: InterviewEvent) => {
+            await handleInterviewEvent(
+              event,
+              threadTs,
+              channel,
+              store,
+              slackService,
+            );
+          },
+        );
+
+        store.setClaudeHandle(threadTs, handle);
+      }
     } catch (error) {
-      console.error(`[MentionHandler] Failed to start interview:`, error);
+      console.error(`[MentionHandler] Failed to start session:`, error);
       store.setError(threadTs, String(error));
 
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Failed to start interview: ${error}`,
-          threadTs,
-          blocks: formatErrorMessage(String(error)),
+          text: `<@${userId}> Failed to start: ${error}`,
+          blocks: formatErrorMessage(String(error), userId),
         }),
       );
 
@@ -201,18 +212,21 @@ async function handleInterviewEvent(
 ): Promise<void> {
   console.log(`[MentionHandler] Interview event: ${event.type}`);
 
+  // Get userId from session for tagging
+  const session = store.get(threadTs);
+  const userId = session?.initiatorId;
+
   switch (event.type) {
     case "question": {
       // Store pending question
       store.setPendingQuestion(threadTs, event.data, event.data.toolUseID);
 
-      // Post question to Slack
+      // Post question to Slack (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Please answer the following question:",
-          threadTs,
-          blocks: formatQuestionData(event.data),
+          text: `<@${userId}> Please answer the following question:`,
+          blocks: formatQuestionData(event.data, userId),
         }),
       );
       break;
@@ -221,13 +235,12 @@ async function handleInterviewEvent(
     case "phase_change": {
       store.setPhase(threadTs, event.phase);
 
-      // Post phase indicator
+      // Post phase indicator (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Phase: ${event.phase}`,
-          threadTs,
-          blocks: formatPhaseIndicator(event.phase),
+          text: `<@${userId}> Phase: ${event.phase}`,
+          blocks: formatPhaseIndicator(event.phase, userId),
         }),
       );
       break;
@@ -239,9 +252,8 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `${event.content.substring(0, 200)}...`,
-          threadTs,
-          blocks: [section(formattedText)],
+          text: `<@${userId}> ${event.content.substring(0, 200)}...`,
+          blocks: [section(`<@${userId}> ${formattedText}`)],
         }),
       );
       break;
@@ -251,15 +263,14 @@ async function handleInterviewEvent(
       store.setPhase(threadTs, "reviewing");
       store.setPlanContent(threadTs, event.content);
 
-      // Post plan preview with approval buttons
+      // Post plan preview with approval buttons (channel reply with user tag)
       const formattedPlan = formatMarkdown(event.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Plan ready for review",
-          threadTs,
+          text: `<@${userId}> Plan ready for review`,
           blocks: [
-            section("*Plan Ready for Review*"),
+            section(`<@${userId}> *Plan Ready for Review*`),
             section(formattedPlan.substring(0, 2900)),
           ],
         }),
@@ -273,13 +284,12 @@ async function handleInterviewEvent(
         store.addLinearIssueUrl(threadTs, url);
       }
 
-      // Post completion message with links
+      // Post completion message with links (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Planning complete! Issues created.",
-          threadTs,
-          blocks: formatCompletionMessage(event.urls),
+          text: `<@${userId}> Planning complete! Issues created.`,
+          blocks: formatCompletionMessage(event.urls, userId),
         }),
       );
 
@@ -294,31 +304,29 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Error: ${event.message}`,
-          threadTs,
-          blocks: formatErrorMessage(event.message),
+          text: `<@${userId}> Error: ${event.message}`,
+          blocks: formatErrorMessage(event.message, userId),
         }),
       );
       break;
     }
 
     case "complete": {
-      const session = store.get(threadTs);
+      const currentSession = store.get(threadTs);
       if (
-        session &&
-        session.phase !== "completed" &&
-        session.phase !== "error"
+        currentSession &&
+        currentSession.phase !== "completed" &&
+        currentSession.phase !== "error"
       ) {
         store.setPhase(threadTs, "completed");
 
         // If we have Linear URLs, show them with build transition
-        if (session.linearIssueUrls && session.linearIssueUrls.length > 0) {
+        if (currentSession.linearIssueUrls && currentSession.linearIssueUrls.length > 0) {
           await Effect.runPromise(
             slackService.postMessage({
               channel,
-              text: "Planning complete!",
-              threadTs,
-              blocks: formatCompletionMessage(session.linearIssueUrls),
+              text: `<@${currentSession.initiatorId}> Planning complete!`,
+              blocks: formatCompletionMessage(currentSession.linearIssueUrls, currentSession.initiatorId),
             }),
           );
           // Don't close - wait for user choice
@@ -333,9 +341,8 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Interview timed out.",
-          threadTs,
-          blocks: formatTimeoutMessage(),
+          text: `<@${userId}> Interview timed out.`,
+          blocks: formatTimeoutMessage(userId),
         }),
       );
       store.close(threadTs);
@@ -383,8 +390,7 @@ export function registerMentionHandlerDistributed(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "An interview is already in progress in this thread. Please continue answering questions or wait for it to complete.",
-          threadTs,
+          text: `<@${userId}> An interview is already in progress. Please continue answering questions or wait for it to complete.`,
         }),
       );
       return;
@@ -410,23 +416,15 @@ export function registerMentionHandlerDistributed(
       await Effect.runPromise(
         slackService.postMessage({
           channel: timedOutSession.channel,
-          text: "Interview timed out after 30 minutes of inactivity.",
-          threadTs: timedOutSession.threadTs,
-          blocks: formatTimeoutMessage(),
+          text: `<@${timedOutSession.initiatorId}> Interview timed out after 30 minutes of inactivity.`,
+          blocks: formatTimeoutMessage(timedOutSession.initiatorId),
         }),
       );
       store.close(threadTs);
     });
 
-    // Post welcome message
-    await Effect.runPromise(
-      slackService.postMessage({
-        channel,
-        text: "Starting planning interview...",
-        threadTs,
-        blocks: formatWelcomeMessage(!!description),
-      }),
-    );
+    // Don't post welcome message - wait for Claude's first response
+    // This avoids the "Starting Planning Interview" message appearing before Claude responds
 
     // Start interview via worker
     try {
@@ -462,9 +460,8 @@ export function registerMentionHandlerDistributed(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Failed to start interview: ${error}`,
-          threadTs,
-          blocks: formatErrorMessage(String(error)),
+          text: `<@${userId}> Failed to start interview: ${error}`,
+          blocks: formatErrorMessage(String(error), userId),
         }),
       );
 
@@ -487,18 +484,21 @@ async function handleWorkerInterviewEvent(
 
   const payload = event.payload;
 
+  // Get userId from session for tagging
+  const session = store.get(threadTs);
+  const userId = session?.initiatorId;
+
   switch (payload.type) {
     case "question": {
       // Store pending question
       store.setPendingQuestion(threadTs, payload.data, payload.data.toolUseID);
 
-      // Post question to Slack
+      // Post question to Slack (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Please answer the following question:",
-          threadTs,
-          blocks: formatQuestionData(payload.data),
+          text: `<@${userId}> Please answer the following question:`,
+          blocks: formatQuestionData(payload.data, userId),
         }),
       );
       break;
@@ -507,13 +507,12 @@ async function handleWorkerInterviewEvent(
     case "phase_change": {
       store.setPhase(threadTs, payload.phase);
 
-      // Post phase indicator
+      // Post phase indicator (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Phase: ${payload.phase}`,
-          threadTs,
-          blocks: formatPhaseIndicator(payload.phase),
+          text: `<@${userId}> Phase: ${payload.phase}`,
+          blocks: formatPhaseIndicator(payload.phase, userId),
         }),
       );
       break;
@@ -525,9 +524,8 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `${payload.content.substring(0, 200)}...`,
-          threadTs,
-          blocks: [section(formattedText)],
+          text: `<@${userId}> ${payload.content.substring(0, 200)}...`,
+          blocks: [section(`<@${userId}> ${formattedText}`)],
         }),
       );
       break;
@@ -537,15 +535,14 @@ async function handleWorkerInterviewEvent(
       store.setPhase(threadTs, "reviewing");
       store.setPlanContent(threadTs, payload.content);
 
-      // Post plan preview
+      // Post plan preview (channel reply with user tag)
       const formattedPlan = formatMarkdown(payload.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Plan ready for review",
-          threadTs,
+          text: `<@${userId}> Plan ready for review`,
           blocks: [
-            section("*Plan Ready for Review*"),
+            section(`<@${userId}> *Plan Ready for Review*`),
             section(formattedPlan.substring(0, 2900)),
           ],
         }),
@@ -559,13 +556,12 @@ async function handleWorkerInterviewEvent(
         store.addLinearIssueUrl(threadTs, url);
       }
 
-      // Post completion message with mode transition buttons
+      // Post completion message with mode transition buttons (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Planning complete! Issues created.",
-          threadTs,
-          blocks: formatCompletionMessage(payload.urls),
+          text: `<@${userId}> Planning complete! Issues created.`,
+          blocks: formatCompletionMessage(payload.urls, userId),
         }),
       );
 
@@ -577,14 +573,13 @@ async function handleWorkerInterviewEvent(
       // Store the PR URL
       store.setPrUrl(threadTs, payload.url);
 
-      // Post PR link to Slack
+      // Post PR link to Slack (channel reply with user tag)
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `PR created: ${payload.url}`,
-          threadTs,
+          text: `<@${userId}> PR created: ${payload.url}`,
           blocks: [
-            section(`:rocket: *Pull Request Created*`),
+            section(`<@${userId}> :rocket: *Pull Request Created*`),
             section(`<${payload.url}|View PR on GitHub>`),
           ],
         })
@@ -598,60 +593,52 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Error: ${payload.message}`,
-          threadTs,
-          blocks: formatErrorMessage(payload.message),
+          text: `<@${userId}> Error: ${payload.message}`,
+          blocks: formatErrorMessage(payload.message, userId),
         }),
       );
       break;
     }
 
     case "complete": {
-      const session = store.get(threadTs);
+      const currentSession = store.get(threadTs);
       if (
-        session &&
-        session.phase !== "completed" &&
-        session.phase !== "error"
+        currentSession &&
+        currentSession.phase !== "completed" &&
+        currentSession.phase !== "error"
       ) {
         store.setPhase(threadTs, "completed");
+        const initiatorId = currentSession.initiatorId;
 
-        if (session.mode === "build") {
-          // Build PR info block if we have a PR
-          const prBlock = session.prUrl
-            ? section(`:white_check_mark: *PR:* <${session.prUrl}|View on GitHub>`)
-            : section(`:information_source: No PR was created (possibly working on branch)`);
-
+        if (currentSession.mode === "build") {
           // Offer review mode after build completes
           await Effect.runPromise(
             slackService.postMessage({
               channel,
-              text: "Build complete! Ready for review?",
-              threadTs,
-              blocks: formatCompletionMessage(session.linearIssueUrls ?? []),
+              text: `<@${initiatorId}> Build complete! Ready for review?`,
+              blocks: formatCompletionMessage(currentSession.linearIssueUrls ?? [], initiatorId),
             }),
           );
           // Don't close session yet - wait for user choice
-        } else if (session.mode === "review") {
+        } else if (currentSession.mode === "review") {
           // Review complete - show summary and close
           await Effect.runPromise(
             slackService.postMessage({
               channel,
-              text: "Review complete!",
-              threadTs,
-              blocks: [section("*Review Complete*\nAll verification phases finished. Check Linear for any created tasks.")],
+              text: `<@${initiatorId}> Review complete!`,
+              blocks: [section(`<@${initiatorId}> *Review Complete*\nAll verification phases finished. Check Linear for any created tasks.`)],
             })
           );
           store.close(threadTs);
         } else {
           // Plan complete - if we have Linear URLs, show them with transition buttons
-          if (session.linearIssueUrls && session.linearIssueUrls.length > 0) {
+          if (currentSession.linearIssueUrls && currentSession.linearIssueUrls.length > 0) {
             await Effect.runPromise(
               slackService.postMessage({
                 channel,
-                text: "Planning complete!",
-                threadTs,
+                text: `<@${initiatorId}> Planning complete!`,
                 blocks: [
-                  ...formatCompletionMessage(session.linearIssueUrls ?? []),
+                  ...formatCompletionMessage(currentSession.linearIssueUrls ?? [], initiatorId),
                   {
                     type: "actions",
                     block_id: `mode_transition_${threadTs}`,
@@ -661,7 +648,7 @@ async function handleWorkerInterviewEvent(
                         text: { type: "plain_text", text: "Start Building", emoji: true },
                         style: "primary",
                         action_id: "start_build_mode",
-                        value: JSON.stringify({ threadTs, channel, urls: session.linearIssueUrls }),
+                        value: JSON.stringify({ threadTs, channel, urls: currentSession.linearIssueUrls }),
                       },
                       {
                         type: "button",
@@ -687,9 +674,8 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: "Interview timed out.",
-          threadTs,
-          blocks: formatTimeoutMessage(),
+          text: `<@${userId}> Interview timed out.`,
+          blocks: formatTimeoutMessage(userId),
         }),
       );
       store.close(threadTs);
