@@ -112,7 +112,28 @@ if [ "$TRACKER" = "beads" ] && [ -d ".beads" ]; then
 fi
 ```
 
-### 1.4 Understand Existing Architecture
+### 1.4 Detect Worktree Context
+
+**Check if you're working in a git worktree:**
+```bash
+# Check for worktree state files (created by build.sh)
+if [ -f ".claude/.worktree-path" ]; then
+    WORKTREE_PATH=$(cat .claude/.worktree-path)
+    WORKTREE_BRANCH=$(cat .claude/.worktree-branch 2>/dev/null)
+    MAIN_REPO=$(cat .claude/.worktree-origin 2>/dev/null)
+    echo "🌲 Working in worktree: $WORKTREE_PATH"
+    echo "   Branch: $WORKTREE_BRANCH"
+    echo "   Main repo: $MAIN_REPO"
+fi
+```
+
+**If in a worktree:**
+- All commits are isolated on the worktree branch
+- Changes don't affect the main repo until merged
+- Document the worktree path in your scratchpad
+- Remember to note which branch you're on in commit messages
+
+### 1.5 Understand Existing Architecture
 
 **Before writing new code, understand the codebase:**
 - Read similar existing implementations
@@ -130,7 +151,7 @@ grep -rn "similar-pattern" --include="*.ts" src/
 cat src/path/to/similar-feature.ts
 ```
 
-### 1.5 Mark Task In Progress (REQUIRED - DO NOT SKIP)
+### 1.6 Mark Task In Progress (REQUIRED - DO NOT SKIP)
 
 **You MUST update the tracker status before starting implementation. This is NON-NEGOTIABLE.**
 
@@ -649,6 +670,66 @@ Task "[name]" complete. Feature implemented and verified.
 
 ---
 
+## Epic Completion & Worktree Cleanup
+
+**When the current task is the LAST task in the epic:**
+
+After completing the final task, check if the epic should be marked Done:
+
+```bash
+# Check if all sibling tasks under the epic are complete
+EPIC_ID=$(echo "$TASK_ID" | sed 's/\.[0-9]*$//')  # Derive parent from task ID
+REMAINING=$(bd ready --json 2>/dev/null | jq -r --arg epic "$EPIC_ID" '
+  [.[] | select((.parent // (.id | split(".") | if length > 1 then .[:-1] | join(".") else "" end)) == $epic)] | length
+')
+
+if [ "$REMAINING" = "0" ]; then
+    echo "✅ All tasks under epic $EPIC_ID are complete!"
+
+    # Mark epic as Done
+    bd close "$EPIC_ID"
+
+    # Cleanup worktree if active
+    if [ -f ".claude/.worktree-path" ]; then
+        WORKTREE_PATH=$(cat .claude/.worktree-path)
+        WORKTREE_BRANCH=$(cat .claude/.worktree-branch 2>/dev/null)
+        MAIN_REPO=$(cat .claude/.worktree-origin 2>/dev/null)
+
+        echo "🧹 Epic complete - cleaning up worktree"
+        echo "   Worktree: $WORKTREE_PATH"
+        echo "   Branch: $WORKTREE_BRANCH"
+
+        # Return to main repo
+        cd "$MAIN_REPO"
+
+        # Push the branch before cleanup (so work isn't lost)
+        git -C "$WORKTREE_PATH" push -u origin "$WORKTREE_BRANCH" 2>/dev/null || \
+            echo "   Note: Could not push branch (may need manual push)"
+
+        # Remove worktree
+        git worktree remove "$WORKTREE_PATH" --force 2>/dev/null && \
+            echo "✅ Worktree removed" || \
+            echo "⚠️  Could not remove worktree (may need manual cleanup)"
+
+        # Optionally delete local branch (keep remote for PR)
+        # git branch -D "$WORKTREE_BRANCH" 2>/dev/null
+
+        echo ""
+        echo "📝 Next steps:"
+        echo "   1. Create PR for branch: $WORKTREE_BRANCH"
+        echo "   2. Review and merge"
+        echo "   3. Delete remote branch after merge"
+    fi
+fi
+```
+
+**Important:**
+- Always push the branch before removing the worktree
+- The remote branch is preserved for PR creation
+- Local branch deletion is optional (commented out by default)
+
+---
+
 ## Common Pitfalls
 
 - **Scope creep** - Don't add features not in the task
@@ -657,3 +738,4 @@ Task "[name]" complete. Feature implemented and verified.
 - **Forgetting types** - Add proper TypeScript types
 - **Ignoring tests** - Phase 3 is mandatory, not optional
 - **Skipping review** - Phase 4 catches quality issues before they merge
+- **Worktree cleanup** - Don't forget to push before removing worktree

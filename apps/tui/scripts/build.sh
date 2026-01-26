@@ -35,6 +35,7 @@ STREAMING=false
 SKILL_OVERRIDE=""
 EPIC_FILTER=""
 EXTRA_CONTEXT=""
+WORKTREE_PATH_OVERRIDE=""
 
 # Check for tailspin (tspin) for prettier log output
 if command -v tspin &>/dev/null; then
@@ -91,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             EPIC_FILTER="$2"
             shift 2
             ;;
+        --worktree-path)
+            WORKTREE_PATH_OVERRIDE="$2"
+            shift 2
+            ;;
         *)
             EXTRA_CONTEXT="$EXTRA_CONTEXT $1"
             shift
@@ -103,6 +108,157 @@ if [ ! -d "$SKILLS_DIR" ]; then
     echo "❌ Error: Skills directory not found at $SKILLS_DIR"
     exit 1
 fi
+
+# ============================================================================
+# WORKTREE SETUP - Creates isolated git worktree for epic execution
+# ============================================================================
+#
+# This enables multiple workers to run on the same machine independently.
+# Each epic gets its own worktree directory with separate git branch.
+#
+# Directory structure created:
+#   ~/repos/
+#   ├── project/                    # Main repo
+#   └── project-worktrees/          # Worktree parent dir
+#       ├── feature-one/            # Epic 1 worktree
+#       └── feature-two/            # Epic 2 worktree
+
+# Helper: slugify text (convert to lowercase, replace non-alphanumeric with dashes)
+slugify() {
+    echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+}
+
+# Track original directory for reference
+ORIGINAL_WORKING_DIR="$(pwd)"
+WORKING_DIR="$ORIGINAL_WORKING_DIR"
+WORKTREE_ACTIVE=false
+BRANCH_NAME=""
+
+# Setup worktree if epic filter is specified
+if [ -n "$EPIC_FILTER" ]; then
+    # Get epic metadata from beads
+    EPIC_METADATA=$(bd show "$EPIC_FILTER" --json 2>/dev/null || echo "{}")
+
+    # Try to get worktree metadata from epic
+    WORKTREE_NAME=$(echo "$EPIC_METADATA" | jq -r '.metadata.worktreeName // empty' 2>/dev/null)
+    WORKTREE_PATH=$(echo "$EPIC_METADATA" | jq -r '.metadata.worktreePath // empty' 2>/dev/null)
+    BASE_BRANCH=$(echo "$EPIC_METADATA" | jq -r '.metadata.baseBranch // "main"' 2>/dev/null)
+    BRANCH_NAME=$(echo "$EPIC_METADATA" | jq -r '.metadata.branchName // empty' 2>/dev/null)
+
+    # Override worktree path if provided via CLI
+    if [ -n "$WORKTREE_PATH_OVERRIDE" ]; then
+        WORKTREE_PATH="$WORKTREE_PATH_OVERRIDE"
+    fi
+
+    # If no worktree metadata, derive from epic title
+    if [ -z "$WORKTREE_NAME" ] && [ -n "$EPIC_METADATA" ]; then
+        EPIC_TITLE=$(echo "$EPIC_METADATA" | jq -r '.title // empty' 2>/dev/null)
+        if [ -n "$EPIC_TITLE" ]; then
+            WORKTREE_NAME=$(slugify "$EPIC_TITLE")
+        fi
+    fi
+
+    # If we have a worktree name, setup the worktree
+    if [ -n "$WORKTREE_NAME" ]; then
+        # Get repo info from current directory
+        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+        if [ -z "$REPO_ROOT" ]; then
+            echo "⚠️  Warning: Not in a git repository, skipping worktree setup"
+        else
+            REPO_NAME=$(basename "$REPO_ROOT")
+            WORKTREES_DIR="$(dirname "$REPO_ROOT")/${REPO_NAME}-worktrees"
+
+            # Set worktree path if not already set
+            if [ -z "$WORKTREE_PATH" ]; then
+                WORKTREE_PATH="${WORKTREES_DIR}/${WORKTREE_NAME}"
+            fi
+
+            # Generate branch name if not provided
+            if [ -z "$BRANCH_NAME" ]; then
+                # Use epic filter ID as branch prefix (e.g., "TRI-123-feature-name")
+                BRANCH_NAME="${EPIC_FILTER}-${WORKTREE_NAME}"
+            fi
+
+            # Create worktrees parent directory if needed
+            if [ ! -d "$WORKTREES_DIR" ]; then
+                echo "📁 Creating worktrees directory: $WORKTREES_DIR"
+                mkdir -p "$WORKTREES_DIR"
+            fi
+
+            # Check if worktree already exists
+            if [ -d "$WORKTREE_PATH" ]; then
+                echo "📂 Worktree exists: $WORKTREE_PATH"
+
+                # Check if on correct branch
+                CURRENT_BRANCH=$(git -C "$WORKTREE_PATH" branch --show-current 2>/dev/null)
+                if [ "$CURRENT_BRANCH" != "$BRANCH_NAME" ]; then
+                    echo "⚠️  Worktree on branch '$CURRENT_BRANCH', switching to '$BRANCH_NAME'"
+                    git -C "$WORKTREE_PATH" checkout "$BRANCH_NAME" 2>/dev/null || \
+                    git -C "$WORKTREE_PATH" checkout -b "$BRANCH_NAME" 2>/dev/null || \
+                    echo "   Note: Could not switch branches, continuing on $CURRENT_BRANCH"
+                fi
+            else
+                # Create new worktree with branch
+                echo "📂 Creating worktree: $WORKTREE_NAME"
+                echo "   Path: $WORKTREE_PATH"
+                echo "   Branch: $BRANCH_NAME"
+                echo "   Base: $BASE_BRANCH"
+
+                # Fetch latest from remote
+                git fetch origin "$BASE_BRANCH" 2>/dev/null || true
+
+                # Create worktree with new branch based on origin/main (or base branch)
+                if git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" "origin/$BASE_BRANCH" 2>/dev/null; then
+                    echo "✅ Worktree created successfully"
+
+                    # Install dependencies in fresh worktree
+                    echo "📦 Installing dependencies in new worktree..."
+                    if [ -f "$WORKTREE_PATH/yarn.lock" ]; then
+                        (cd "$WORKTREE_PATH" && yarn install --frozen-lockfile 2>/dev/null || yarn install)
+                        echo "✅ Dependencies installed"
+
+                        # Build packages if this is a monorepo with a build:packages script
+                        if [ -f "$WORKTREE_PATH/package.json" ] && grep -q '"build:packages"' "$WORKTREE_PATH/package.json" 2>/dev/null; then
+                            echo "🔨 Building packages..."
+                            (cd "$WORKTREE_PATH" && yarn build:packages 2>/dev/null || yarn build 2>/dev/null || true)
+                            echo "✅ Packages built"
+                        fi
+                    elif [ -f "$WORKTREE_PATH/package-lock.json" ]; then
+                        (cd "$WORKTREE_PATH" && npm ci 2>/dev/null || npm install)
+                        echo "✅ Dependencies installed"
+                    elif [ -f "$WORKTREE_PATH/pnpm-lock.yaml" ]; then
+                        (cd "$WORKTREE_PATH" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
+                        echo "✅ Dependencies installed"
+                    fi
+                else
+                    # Fallback: try creating without -b flag (branch might exist)
+                    if git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>/dev/null; then
+                        echo "✅ Worktree created (existing branch)"
+                    else
+                        echo "⚠️  Warning: Could not create worktree, continuing in main repo"
+                        WORKTREE_PATH=""
+                    fi
+                fi
+            fi
+
+            # Change to worktree directory if setup succeeded
+            if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+                echo "📍 Working in: $WORKTREE_PATH"
+                cd "$WORKTREE_PATH"
+                WORKING_DIR="$WORKTREE_PATH"
+                WORKTREE_ACTIVE=true
+
+                # Write worktree state for other tools
+                mkdir -p .claude
+                echo "$WORKTREE_PATH" > .claude/.worktree-path
+                echo "$BRANCH_NAME" > .claude/.worktree-branch
+                echo "$ORIGINAL_WORKING_DIR" > .claude/.worktree-origin
+            fi
+        fi
+    fi
+fi
+
+echo ""
 
 # Clear progress if --fresh
 if [ "$FRESH" = true ]; then
@@ -131,6 +287,10 @@ if [ -d "$LOCAL_SKILLS_DIR" ] && [ -n "$(ls -A "$LOCAL_SKILLS_DIR" 2>/dev/null)"
 fi
 if [ -n "$EPIC_FILTER" ]; then
     echo "   Epic: $EPIC_FILTER"
+fi
+if [ "$WORKTREE_ACTIVE" = true ]; then
+    echo "   🌲 Worktree: $WORKTREE_PATH"
+    echo "   🌿 Branch: $BRANCH_NAME"
 fi
 if [ -n "$SKILL_OVERRIDE" ]; then
     echo "   Skill override: $SKILL_OVERRIDE"
@@ -283,6 +443,17 @@ for ((i=1; i<=MAX_ITERATIONS; i++)); do
         if [ -n "$TASK_ID" ]; then
             echo "- Task ID: $TASK_ID"
             echo "- Task: $TASK_TITLE"
+        fi
+        if [ "$WORKTREE_ACTIVE" = true ]; then
+            echo ""
+            echo "## Worktree Context"
+            echo "- **Worktree Active:** Yes"
+            echo "- **Worktree Path:** \`$WORKTREE_PATH\`"
+            echo "- **Branch:** \`$BRANCH_NAME\`"
+            echo "- **Main Repo:** \`$ORIGINAL_WORKING_DIR\`"
+            echo ""
+            echo "**Important:** You are working in an isolated git worktree. All changes are on branch \`$BRANCH_NAME\`."
+            echo "Commits in this worktree do not affect the main repo until the branch is merged."
         fi
         echo ""
         echo "**Note:** All bash commands execute from the working directory above. File paths are relative to this directory."
