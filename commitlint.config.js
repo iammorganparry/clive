@@ -18,22 +18,9 @@ module.exports = {
         "revert", // Revert a previous commit
       ],
     ],
-    "scope-enum": [
-      2,
-      "always",
-      [
-        "extension", // Extension code
-        "webview", // Webview/React code
-        "services", // Service layer
-        "commands", // Commands
-        "views", // View providers
-        "docs", // Documentation
-        "config", // Configuration files
-        "build", // Build system
-        "deps", // Dependencies
-      ],
-    ],
-    "scope-empty": [1, "never"], // Warn if scope is empty
+    // Scope is optional and freeform - no enum restriction
+    "scope-enum": [0], // Disabled - allow any scope
+    "scope-empty": [0], // Disabled - scope is optional
     "subject-empty": [2, "never"], // Subject is required
     "subject-full-stop": [2, "never", "."], // No period at end
     "header-max-length": [2, "always", 100], // Max header length
