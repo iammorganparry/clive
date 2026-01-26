@@ -37,8 +37,20 @@ export function registerMessageHandler(
       channel: string;
     };
 
+    // Debug: Log all incoming messages
+    console.log(`[MessageHandler] Received message event:`, {
+      hasSubtype: !!msg.subtype,
+      subtype: msg.subtype,
+      hasThreadTs: !!msg.thread_ts,
+      threadTs: msg.thread_ts,
+      hasBotId: !!msg.bot_id,
+      user: msg.user,
+      textPreview: msg.text?.substring(0, 50),
+    });
+
     // Only handle regular user messages (not bot messages, not edits)
     if (msg.subtype || !msg.thread_ts || msg.bot_id) {
+      console.log(`[MessageHandler] Skipping message: subtype=${msg.subtype}, thread_ts=${msg.thread_ts}, bot_id=${msg.bot_id}`);
       return;
     }
 
@@ -53,11 +65,11 @@ export function registerMessageHandler(
 
     // Check if this thread has an active interview
     if (!store.has(threadTs)) {
-      // No active interview in this thread
+      console.log(`[MessageHandler] No active session for thread ${threadTs}, ignoring`);
       return;
     }
 
-    console.log(`[MessageHandler] Thread reply from ${userId} in ${threadTs}`);
+    console.log(`[MessageHandler] Thread reply from ${userId} in ${threadTs} - session found!`);
 
     // Check if user is the initiator
     if (!store.isInitiator(threadTs, userId)) {
@@ -171,8 +183,20 @@ export function registerMessageHandlerDistributed(
       channel: string;
     };
 
+    // Debug: Log all incoming messages
+    console.log(`[MessageHandler] Received message event:`, {
+      hasSubtype: !!msg.subtype,
+      subtype: msg.subtype,
+      hasThreadTs: !!msg.thread_ts,
+      threadTs: msg.thread_ts,
+      hasBotId: !!msg.bot_id,
+      user: msg.user,
+      textPreview: msg.text?.substring(0, 50),
+    });
+
     // Only handle regular user messages (not bot messages, not edits)
     if (msg.subtype || !msg.thread_ts || msg.bot_id) {
+      console.log(`[MessageHandler] Skipping message: subtype=${msg.subtype}, thread_ts=${msg.thread_ts}, bot_id=${msg.bot_id}`);
       return;
     }
 
@@ -187,10 +211,11 @@ export function registerMessageHandlerDistributed(
 
     // Check if this thread has an active interview
     if (!store.has(threadTs)) {
+      console.log(`[MessageHandler] No active session for thread ${threadTs}, ignoring`);
       return;
     }
 
-    console.log(`[MessageHandler] Thread reply from ${userId} in ${threadTs}`);
+    console.log(`[MessageHandler] Thread reply from ${userId} in ${threadTs} - session found!`);
 
     // Check if user is the initiator
     if (!store.isInitiator(threadTs, userId)) {
