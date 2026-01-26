@@ -81,6 +81,10 @@ export interface InterviewSession {
   claudeHandle?: CliExecutionHandle;
   /** Worker ID handling this session (distributed mode) */
   workerId?: string;
+  /** Claude CLI session ID for resuming conversations */
+  claudeSessionId?: string;
+  /** Original worker ID that started the session (for resume matching) */
+  originalWorkerId?: string;
   /** Session creation timestamp */
   createdAt: Date;
   /** Last activity timestamp */
@@ -108,6 +112,7 @@ export interface AnswerPayload {
  * Event types emitted during interview
  */
 export type InterviewEvent =
+  | { type: "session_started"; claudeSessionId: string }
   | { type: "question"; data: QuestionData }
   | { type: "phase_change"; phase: InterviewPhase }
   | { type: "text"; content: string }

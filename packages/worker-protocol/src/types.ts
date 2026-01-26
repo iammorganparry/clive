@@ -144,6 +144,8 @@ export interface InterviewRequest {
   mode?: SessionMode;
   /** Linear issue URLs for context in build/review modes */
   linearIssueUrls?: string[];
+  /** Claude CLI session ID for resuming conversations (only works on same worker) */
+  claudeSessionId?: string;
 }
 
 /**
@@ -167,6 +169,7 @@ export type InterviewPhase =
  * Event types emitted by worker during interview
  */
 export type InterviewEventType =
+  | "session_started"
   | "question"
   | "phase_change"
   | "text"
@@ -195,6 +198,7 @@ export interface InterviewEvent {
  * Interview event payloads by type
  */
 export type InterviewEventPayload =
+  | { type: "session_started"; claudeSessionId: string }
   | { type: "question"; data: QuestionData }
   | { type: "phase_change"; phase: InterviewPhase }
   | { type: "text"; content: string }

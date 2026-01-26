@@ -13,6 +13,7 @@ import { WorkerToCentralMessageSchema } from "@clive/worker-protocol";
 import { WebSocket, WebSocketServer } from "ws";
 import type { WorkerProxy } from "../services/worker-proxy";
 import type { WorkerRegistry } from "../services/worker-registry";
+import type { InterviewStore } from "../store/interview-store";
 
 /**
  * WebSocket event server configuration
@@ -34,15 +35,18 @@ export class EventServer {
   private registry: WorkerRegistry;
   private proxy: WorkerProxy;
   private apiToken: string;
+  private store?: InterviewStore;
 
   constructor(
     config: EventServerConfig,
     registry: WorkerRegistry,
     proxy: WorkerProxy,
+    store?: InterviewStore,
   ) {
     this.registry = registry;
     this.proxy = proxy;
     this.apiToken = config.apiToken;
+    this.store = store;
 
     // Create WebSocket server attached to HTTP server
     this.wss = new WebSocketServer({
@@ -152,7 +156,7 @@ export class EventServer {
           break;
 
         case "event":
-          this.proxy.handleWorkerEvent(message.payload);
+          this.proxy.handleWorkerEvent(message.payload, this.store);
           break;
 
         case "pong":

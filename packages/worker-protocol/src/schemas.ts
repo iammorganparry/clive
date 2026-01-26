@@ -123,9 +123,12 @@ export const InterviewRequestSchema = z.object({
   mode: SessionModeSchema.optional().default("plan"),
   /** Linear issue URLs for context in build/review modes */
   linearIssueUrls: z.array(z.string()).optional(),
+  /** Claude CLI session ID for resuming conversations */
+  claudeSessionId: z.string().optional(),
 });
 
 export const InterviewEventPayloadSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("session_started"), claudeSessionId: z.string() }),
   z.object({ type: z.literal("question"), data: QuestionDataSchema }),
   z.object({ type: z.literal("phase_change"), phase: InterviewPhaseSchema }),
   z.object({ type: z.literal("text"), content: z.string() }),
@@ -140,6 +143,7 @@ export const InterviewEventPayloadSchema = z.discriminatedUnion("type", [
 export const InterviewEventSchema = z.object({
   sessionId: z.string(),
   type: z.enum([
+    "session_started",
     "question",
     "phase_change",
     "text",

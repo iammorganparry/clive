@@ -16,6 +16,7 @@ import type {
   SessionMode,
 } from "@clive/worker-protocol";
 import type { WebSocket } from "ws";
+import type { InterviewStore } from "../store/interview-store";
 import type { AnswerPayload } from "../store/types";
 import type { SessionRouter } from "./session-router";
 import type { WorkerRegistry } from "./worker-registry";
@@ -32,6 +33,8 @@ interface PendingInterview {
   sessionId: string;
   workerId: string;
   onEvent: InterviewEventCallback;
+  /** Claude CLI session ID for resume support */
+  claudeSessionId?: string;
 }
 
 /**
@@ -73,6 +76,7 @@ export class WorkerProxy extends EventEmitter {
    * @param projectId - Optional project ID/name for routing to specific worker
    * @param mode - Session mode: plan, build, or review (defaults to 'plan')
    * @param linearIssueUrls - Linear issue URLs for context in build/review modes
+   * @param store - Optional InterviewStore for tracking session state
    */
   async startInterview(
     threadTs: string,
@@ -83,6 +87,7 @@ export class WorkerProxy extends EventEmitter {
     projectId?: string,
     mode?: SessionMode,
     linearIssueUrls?: string[],
+    store?: InterviewStore,
   ): Promise<{ workerId: string } | { error: string }> {
     console.log(
       `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
@@ -135,6 +140,11 @@ export class WorkerProxy extends EventEmitter {
       onEvent,
     });
 
+    // Store original worker ID for resume support
+    if (store) {
+      store.setOriginalWorkerId(threadTs, workerId);
+    }
+
     // Send to worker
     this.sendToWorker(worker.socket, {
       type: "start_interview",
@@ -150,7 +160,7 @@ export class WorkerProxy extends EventEmitter {
   /**
    * Handle event from worker
    */
-  handleWorkerEvent(event: InterviewEvent): void {
+  handleWorkerEvent(event: InterviewEvent, store?: InterviewStore): void {
     const pending = this.pendingInterviews.get(event.sessionId);
     if (!pending) {
       console.warn(
@@ -160,6 +170,22 @@ export class WorkerProxy extends EventEmitter {
     }
 
     console.log(`[WorkerProxy] Event for ${event.sessionId}: ${event.type}`);
+
+    // Handle session_started event - store Claude session ID for resume support
+    if (event.payload.type === "session_started") {
+      const { claudeSessionId } = event.payload;
+      pending.claudeSessionId = claudeSessionId;
+
+      // Also update the InterviewStore if provided
+      if (store) {
+        store.setClaudeSessionId(event.sessionId, claudeSessionId);
+        store.setOriginalWorkerId(event.sessionId, pending.workerId);
+      }
+
+      console.log(
+        `[WorkerProxy] Session ${event.sessionId} started with Claude session ID: ${claudeSessionId}`,
+      );
+    }
 
     // Forward to callback
     pending.onEvent(event);
@@ -298,7 +324,10 @@ export class WorkerProxy extends EventEmitter {
 
   /**
    * Resume an orphaned session by reassigning to a new worker
-   * Returns the new worker ID or an error
+   * Returns the new worker ID, whether true resume was possible, or an error
+   *
+   * True resume (using Claude CLI --resume) only works when the same worker reconnects,
+   * since Claude CLI stores sessions locally on the worker's filesystem.
    */
   async resumeSession(
     threadTs: string,
@@ -308,10 +337,15 @@ export class WorkerProxy extends EventEmitter {
     onEvent: InterviewEventCallback,
     mode?: SessionMode,
     linearIssueUrls?: string[],
-  ): Promise<{ workerId: string } | { error: string }> {
+    store?: InterviewStore,
+  ): Promise<{ workerId: string; resumed: boolean } | { error: string }> {
     console.log(`[WorkerProxy] Attempting to resume session ${threadTs}`);
 
-    // Assign to a new worker
+    // Get session state to check if we can do a true resume
+    const originalWorkerId = store?.getOriginalWorkerId(threadTs);
+    const claudeSessionId = store?.getClaudeSessionId(threadTs);
+
+    // Assign to a worker (preferably the original one if available)
     const workerId = this.router.assignSession(threadTs);
     if (!workerId) {
       return { error: "No workers available to resume session." };
@@ -324,11 +358,19 @@ export class WorkerProxy extends EventEmitter {
       return { error: "Worker not found. Please try again." };
     }
 
+    // Check if we can do a true resume (same worker reconnected)
+    const canResume = workerId === originalWorkerId && !!claudeSessionId;
+
+    console.log(
+      `[WorkerProxy] Resume check: originalWorker=${originalWorkerId}, newWorker=${workerId}, claudeSessionId=${claudeSessionId}, canResume=${canResume}`,
+    );
+
     // Determine effective mode and model
     const effectiveMode = mode ?? "plan";
     const model = effectiveMode === "build" ? "sonnet" : "opus";
 
-    // Create interview request (essentially restarting with context)
+    // Create interview request
+    // If same worker reconnected, include claudeSessionId for true resume
     const request: InterviewRequest = {
       sessionId: threadTs,
       threadTs,
@@ -338,6 +380,7 @@ export class WorkerProxy extends EventEmitter {
       model,
       mode: effectiveMode,
       linearIssueUrls,
+      claudeSessionId: canResume ? claudeSessionId : undefined,
     };
 
     // Track pending interview with new callback
@@ -345,6 +388,7 @@ export class WorkerProxy extends EventEmitter {
       sessionId: threadTs,
       workerId,
       onEvent,
+      claudeSessionId: canResume ? claudeSessionId : undefined,
     });
 
     // Send to worker
@@ -353,8 +397,17 @@ export class WorkerProxy extends EventEmitter {
       payload: request,
     });
 
-    console.log(`[WorkerProxy] Session ${threadTs} resumed on worker ${workerId}`);
-    return { workerId };
+    if (canResume) {
+      console.log(
+        `[WorkerProxy] Session ${threadTs} RESUMED on original worker ${workerId} with Claude session ${claudeSessionId}`,
+      );
+    } else {
+      console.log(
+        `[WorkerProxy] Session ${threadTs} RESTARTED on worker ${workerId} (different worker or no Claude session)`,
+      );
+    }
+
+    return { workerId, resumed: canResume };
   }
 
   /**

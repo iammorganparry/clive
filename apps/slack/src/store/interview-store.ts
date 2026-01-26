@@ -208,6 +208,48 @@ export class InterviewStore {
   }
 
   /**
+   * Set Claude session ID for resume support
+   */
+  setClaudeSessionId(threadTs: string, claudeSessionId: string): void {
+    const session = this.sessions.get(threadTs);
+    if (session) {
+      session.claudeSessionId = claudeSessionId;
+      console.log(
+        `[InterviewStore] Session ${threadTs} Claude session ID: ${claudeSessionId}`,
+      );
+    }
+  }
+
+  /**
+   * Get Claude session ID for the session
+   */
+  getClaudeSessionId(threadTs: string): string | undefined {
+    const session = this.sessions.get(threadTs);
+    return session?.claudeSessionId;
+  }
+
+  /**
+   * Set original worker ID that started the session
+   */
+  setOriginalWorkerId(threadTs: string, workerId: string): void {
+    const session = this.sessions.get(threadTs);
+    if (session) {
+      session.originalWorkerId = workerId;
+      console.log(
+        `[InterviewStore] Session ${threadTs} original worker: ${workerId}`,
+      );
+    }
+  }
+
+  /**
+   * Get original worker ID for the session
+   */
+  getOriginalWorkerId(threadTs: string): string | undefined {
+    const session = this.sessions.get(threadTs);
+    return session?.originalWorkerId;
+  }
+
+  /**
    * Set plan content
    */
   setPlanContent(threadTs: string, content: string): void {

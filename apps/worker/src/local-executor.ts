@@ -5,6 +5,7 @@
  * Streams events back to the central service via callback.
  */
 
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   type ClaudeCliEvent,
@@ -53,6 +54,8 @@ interface ActiveSession {
   sessionId: string;
   handle: CliExecutionHandle;
   startedAt: Date;
+  /** Claude CLI session ID for resume support */
+  claudeSessionId?: string;
 }
 
 /**
@@ -83,9 +86,9 @@ export class LocalExecutor extends EventEmitter {
     request: InterviewRequest,
     onEvent: (event: InterviewEvent) => void,
   ): Promise<void> {
-    const { sessionId, initialPrompt } = request;
+    const { sessionId, initialPrompt, claudeSessionId: resumeSessionId } = request;
 
-    console.log(`[LocalExecutor] Starting interview ${sessionId}`);
+    console.log(`[LocalExecutor] Starting interview ${sessionId}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
 
     if (this.activeSessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already exists`);
@@ -95,12 +98,17 @@ export class LocalExecutor extends EventEmitter {
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
+    // Generate a new Claude session ID if not resuming
+    const claudeSessionId = resumeSessionId || randomUUID();
+
     const program = Effect.gen(
       this.createExecutionProgram(
         sessionId,
         prompt,
         request.model || "opus",
         onEvent,
+        claudeSessionId,
+        resumeSessionId,
       ),
     );
 
@@ -130,6 +138,8 @@ export class LocalExecutor extends EventEmitter {
     prompt: string,
     model: string,
     onEvent: (event: InterviewEvent) => void,
+    claudeSessionId: string,
+    resumeSessionId?: string,
   ) {
     const self = this;
 
@@ -141,16 +151,28 @@ export class LocalExecutor extends EventEmitter {
         systemPrompt: PLANNING_SKILL_PROMPT,
         workspaceRoot: self.workspaceRoot,
         model,
+        resumeSessionId,
       });
 
       self.activeSessions.set(sessionId, {
         sessionId,
         handle,
         startedAt: new Date(),
+        claudeSessionId,
       });
 
       console.log(
-        `[LocalExecutor] CLI process started for session ${sessionId}`,
+        `[LocalExecutor] CLI process started for session ${sessionId}${resumeSessionId ? ` (resumed from ${resumeSessionId})` : ` (new session ${claudeSessionId})`}`,
+      );
+
+      // Emit session_started event so central service can track the Claude session ID
+      self.emitEvent(
+        sessionId,
+        {
+          type: "session_started",
+          claudeSessionId,
+        },
+        onEvent,
       );
 
       yield* handle.stream.pipe(
@@ -356,6 +378,13 @@ export class LocalExecutor extends EventEmitter {
    */
   getActiveSessions(): string[] {
     return Array.from(this.activeSessions.keys());
+  }
+
+  /**
+   * Get Claude session ID for a session
+   */
+  getClaudeSessionId(sessionId: string): string | undefined {
+    return this.activeSessions.get(sessionId)?.claudeSessionId;
   }
 
   /**

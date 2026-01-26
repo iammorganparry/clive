@@ -234,6 +234,7 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     },
     workerRegistry,
     workerProxy,
+    interviewStore, // Pass store for session resume tracking
   );
 
   console.log(`\nWaiting for workers to connect...`);

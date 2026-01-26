@@ -454,6 +454,7 @@ export function registerMentionHandlerDistributed(
             },
             existingSession.mode !== "greeting" ? existingSession.mode : "plan",
             existingSession.linearIssueUrls,
+            store,
           );
 
           if ("error" in result) {
@@ -550,6 +551,9 @@ export function registerMentionHandlerDistributed(
           );
         },
         projectName, // Pass detected project for routing
+        undefined, // mode
+        undefined, // linearIssueUrls
+        store, // Pass store for tracking originalWorkerId
       );
 
       if ("error" in result) {
@@ -595,6 +599,15 @@ export async function handleWorkerInterviewEvent(
   const userId = session?.initiatorId;
 
   switch (payload.type) {
+    case "session_started": {
+      // Session started with Claude CLI session ID
+      // This is handled internally by WorkerProxy, no Slack message needed
+      console.log(
+        `[MentionHandler] Session ${threadTs} started with Claude session: ${payload.claudeSessionId}`,
+      );
+      break;
+    }
+
     case "question": {
       // Store pending question
       store.setPendingQuestion(threadTs, payload.data, payload.data.toolUseID);
