@@ -18,6 +18,8 @@ interface OutputPanelProps {
   isRunning?: boolean;
   mode?: "none" | "plan" | "build";
   modeColor?: string;
+  /** Enable auto-scroll to bottom when new content is added (default: true) */
+  stickyScroll?: boolean;
 }
 
 export interface OutputPanelRef {
@@ -26,7 +28,7 @@ export interface OutputPanelRef {
 
 export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
   (
-    { width, height, lines, isRunning = false, mode = "none", modeColor },
+    { width, height, lines, isRunning = false, mode = "none", modeColor, stickyScroll = true },
     ref,
   ) => {
     const scrollBoxRef = useRef<any>(null);
@@ -68,7 +70,7 @@ export const OutputPanel = forwardRef<OutputPanelRef, OutputPanelProps>(
             width={width}
             height={terminalHeight}
             scrollY={true}
-            stickyScroll={false}
+            stickyScroll={stickyScroll}
           >
             {lines.length === 0 ? (
               <box padding={2}>

@@ -17,7 +17,6 @@ import { SetupView } from "./components/SetupView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { WorkerConfigFlow } from "./components/WorkerConfigFlow";
-import { WorkerView } from "./components/WorkerView";
 import { useAppState } from "./hooks/useAppState";
 import { useAllConversations } from "./hooks/useConversations";
 import { useSelectionState } from "./hooks/useSelectionState";
@@ -118,13 +117,10 @@ function AppContent() {
   // Output panel ref for scroll control
   const outputPanelRef = useRef<OutputPanelRef>(null);
 
-  // User scroll intent tracking
-  const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
-  const lastScrollHeight = useRef(0);
-
-  // Worker mode state
-  const [workerOutputLines, setWorkerOutputLines] = useState<OutputLine[]>([]);
-  const [workerIsRunning, setWorkerIsRunning] = useState(false);
+  // Worker mode state - per-session tracking for multi-session support
+  const [workerSessionOutputs, setWorkerSessionOutputs] = useState<Map<string, OutputLine[]>>(new Map());
+  const [workerSessionRunning, setWorkerSessionRunning] = useState<Map<string, boolean>>(new Map());
+  const [activeWorkerSessionId, setActiveWorkerSessionId] = useState<string | null>(null);
   const sessionManagerRef = useRef<WorkerSessionManager | null>(null);
 
   // Clear preFillValue after it's been used
@@ -144,8 +140,20 @@ function AppContent() {
   // Worker callbacks for handling messages from central service
   const handleWorkerInterviewRequest = useCallback(
     (request: InterviewRequest) => {
-      setWorkerIsRunning(true);
-      setWorkerOutputLines([]); // Clear previous output
+      const sessionId = request.sessionId;
+      // Initialize session output and mark as running
+      setWorkerSessionOutputs((prev) => {
+        const next = new Map(prev);
+        next.set(sessionId, []);
+        return next;
+      });
+      setWorkerSessionRunning((prev) => {
+        const next = new Map(prev);
+        next.set(sessionId, true);
+        return next;
+      });
+      // Auto-select new session if no active session
+      setActiveWorkerSessionId((current) => current ?? sessionId);
       sessionManagerRef.current?.startInterview(request, (event) => {
         workerConnectionRef.current?.sendEvent(event);
       });
@@ -169,7 +177,11 @@ function AppContent() {
 
   const handleWorkerCancel = useCallback((sessionId: string) => {
     sessionManagerRef.current?.cancelSession(sessionId);
-    setWorkerIsRunning(false);
+    setWorkerSessionRunning((prev) => {
+      const next = new Map(prev);
+      next.set(sessionId, false);
+      return next;
+    });
   }, []);
 
   // Worker connection (only active when in worker mode or when config.worker.enabled)
@@ -190,28 +202,62 @@ function AppContent() {
     workerConnectionRef.current = workerConnection;
   }, [workerConnection]);
 
+  // Cycle between worker sessions (must be after workerConnection is declared)
+  const cycleWorkerSession = useCallback((direction: 'next' | 'prev') => {
+    const sessions = workerConnection.activeSessions;
+    if (sessions.length <= 1) return;
+
+    const currentIndex = activeWorkerSessionId
+      ? sessions.indexOf(activeWorkerSessionId) : -1;
+
+    const nextIndex = direction === 'next'
+      ? (currentIndex + 1) % sessions.length
+      : (currentIndex - 1 + sessions.length) % sessions.length;
+
+    setActiveWorkerSessionId(sessions[nextIndex] ?? null);
+  }, [workerConnection.activeSessions, activeWorkerSessionId]);
+
+  // Get output lines for the active session
+  const activeWorkerOutputLines = activeWorkerSessionId
+    ? workerSessionOutputs.get(activeWorkerSessionId) ?? []
+    : [];
+  const activeWorkerIsRunning = activeWorkerSessionId
+    ? workerSessionRunning.get(activeWorkerSessionId) ?? false
+    : false;
+
   // Initialize WorkerSessionManager when in worker mode
   useEffect(() => {
     if (viewMode === "worker") {
       const sessionManager = new WorkerSessionManager(workspaceRoot);
       sessionManagerRef.current = sessionManager;
 
-      // Listen for messages from session manager
-      const handleMessage = (_sessionId: string, msg: ChatMessage) => {
+      // Listen for messages from session manager - store per-session
+      const handleMessage = (sessionId: string, msg: ChatMessage) => {
         const outputLine = convertChatMessageToOutputLine(msg);
-        setWorkerOutputLines((prev) => [...prev, outputLine]);
+        setWorkerSessionOutputs((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(sessionId) ?? [];
+          next.set(sessionId, [...existing, outputLine]);
+          return next;
+        });
       };
 
       const handleComplete = (sessionId: string) => {
-        setWorkerIsRunning(false);
+        setWorkerSessionRunning((prev) => {
+          const next = new Map(prev);
+          next.set(sessionId, false);
+          return next;
+        });
         workerConnectionRef.current?.completeSession(sessionId);
       };
 
-      const handleError = (_sessionId: string, error: string) => {
-        setWorkerOutputLines((prev) => [
-          ...prev,
-          { type: "stderr", text: error },
-        ]);
+      const handleError = (sessionId: string, error: string) => {
+        setWorkerSessionOutputs((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(sessionId) ?? [];
+          next.set(sessionId, [...existing, { type: "stderr" as const, text: error }]);
+          return next;
+        });
       };
 
       sessionManager.on("message", handleMessage);
@@ -264,52 +310,7 @@ function AppContent() {
     cleanup,
   } = useAppState(workspaceRoot, config?.issueTracker);
 
-  // Detect when user manually scrolls up
-  useEffect(() => {
-    const panel = outputPanelRef.current;
-    if (!panel) return;
-
-    // Check if at bottom whenever output changes
-    const checkScrollPosition = () => {
-      // Get scroll metrics (OpenTUI may not have all properties)
-      const scrollMetrics = panel.getScrollMetrics?.() || {
-        scrollTop: panel.scrollTop || 0,
-        scrollHeight: panel.scrollHeight || 0,
-        clientHeight: panel.clientHeight || 0,
-      };
-
-      const { scrollTop, scrollHeight, clientHeight } = scrollMetrics;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
-
-      // User scrolled up if not at bottom and content hasn't changed
-      if (!isAtBottom && scrollHeight === lastScrollHeight.current) {
-        setUserHasScrolledUp(true);
-      }
-      // User scrolled back to bottom
-      else if (isAtBottom) {
-        setUserHasScrolledUp(false);
-      }
-
-      lastScrollHeight.current = scrollHeight;
-    };
-
-    checkScrollPosition();
-  }, []);
-
-  // Auto-scroll to bottom when new output lines arrive (only if user hasn't scrolled up)
-  useEffect(() => {
-    if (
-      outputPanelRef.current &&
-      outputLines.length > 0 &&
-      !userHasScrolledUp
-    ) {
-      // Small delay to ensure DOM has updated before scrolling
-      const timer = setTimeout(() => {
-        outputPanelRef.current?.scrollToBottom();
-      }, 10);
-      return () => clearTimeout(timer);
-    }
-  }, [outputLines.length, userHasScrolledUp]);
+  // Note: Auto-scrolling is handled by scrollbox's stickyScroll prop in OutputPanel
 
   // Selection state using XState machine
   const selectionState = useSelectionState(sessions, conversations);
@@ -475,7 +476,12 @@ function AppContent() {
         handleModeSelect(modeOptions[modeSelectedIndex]);
       }
     } else if (viewMode === "worker") {
-      if (event.name === "escape" || event.sequence === "q") {
+      // Allow escape to unfocus input OR exit worker mode
+      if (event.name === "escape") {
+        goToModeSelection();
+        return;
+      }
+      if (event.sequence === "q") {
         goToModeSelection();
         return;
       }
@@ -490,6 +496,28 @@ function AppContent() {
         cleanup();
         workerConnection.disconnect();
         process.exit(0);
+      }
+      // Session cycling: Tab or n for next, Shift+Tab or p for previous
+      if (event.name === "tab" || event.sequence === "n") {
+        cycleWorkerSession('next');
+        return;
+      }
+      if ((event.shift && event.name === "tab") || event.sequence === "p") {
+        cycleWorkerSession('prev');
+        return;
+      }
+      // Number keys 1-9 for direct session jump
+      if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence, 10) - 1;
+        if (index < workerConnection.activeSessions.length) {
+          setActiveWorkerSessionId(workerConnection.activeSessions[index] ?? null);
+        }
+        return;
+      }
+      // Allow input focus when there's a pending question (i or : to focus)
+      if (event.sequence === "i" || event.sequence === ":") {
+        setInputFocused(true);
+        return;
       }
     } else if (viewMode === "selection") {
       // Escape - clear search, go back to level 1, or go back
@@ -803,24 +831,7 @@ function AppContent() {
     );
   }
 
-  // Worker view
-  if (viewMode === "worker") {
-    return (
-      <WorkerView
-        width={width}
-        height={height}
-        workerStatus={workerConnection.status}
-        workerId={workerConnection.workerId}
-        activeSessions={workerConnection.activeSessions}
-        error={workerConnection.error}
-        outputLines={workerOutputLines}
-        isRunning={workerIsRunning}
-        workspaceRoot={workspaceRoot}
-        onExit={goToModeSelection}
-        onReconnect={workerConnection.connect}
-      />
-    );
-  }
+  // Worker mode is now handled in the main view with unified layout
 
   if (viewMode === "selection") {
     return (
@@ -864,13 +875,26 @@ function AppContent() {
     return <HelpView width={width} height={height} onClose={goBack} />;
   }
 
-  // Main view (chat interface)
+  // Main view (chat interface) - also handles worker mode with unified layout
+  const isWorkerMode = viewMode === "worker";
+
+  // Choose data source based on mode
+  const displayOutputLines = isWorkerMode ? activeWorkerOutputLines : outputLines;
+  const displayIsRunning = isWorkerMode ? activeWorkerIsRunning : isRunning;
+  const displayMode = isWorkerMode ? "none" : mode;
+
+  // Get pending question for worker mode
+  const workerPendingQuestion = isWorkerMode && activeWorkerOutputLines.length > 0
+    ? activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.question
+    : undefined;
+  const displayPendingQuestion = isWorkerMode ? workerPendingQuestion : pendingQuestion;
+
   const baseInputHeight = 3;
   const statusHeight = 1;
-  const isInMode = mode !== "none";
+  const isInMode = displayMode !== "none";
 
   // Calculate dynamic input height based on pending question
-  const questionHeight = pendingQuestion ? Math.min(25, 20) : 0;
+  const questionHeight = displayPendingQuestion ? Math.min(25, 20) : 0;
   const dynamicInputHeight = baseInputHeight + questionHeight;
 
   // When border is present, it takes 2 rows (top+bottom) and 2 cols (left+right)
@@ -885,9 +909,19 @@ function AppContent() {
 
   // Mode colors
   const getModeColor = () => {
-    if (mode === "plan") return "#3B82F6"; // blue-500
-    if (mode === "build") return "#F59E0B"; // amber-500
+    if (displayMode === "plan") return "#3B82F6"; // blue-500
+    if (displayMode === "build") return "#F59E0B"; // amber-500
     return undefined;
+  };
+
+  // Handle worker mode question answers
+  const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
+    if (isWorkerMode && workerPendingQuestion && activeWorkerSessionId) {
+      const toolUseID = activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.toolUseID;
+      if (toolUseID) {
+        sessionManagerRef.current?.sendAnswer(activeWorkerSessionId, toolUseID, answers);
+      }
+    }
   };
 
   return (
@@ -910,38 +944,91 @@ function AppContent() {
         />
 
         {/* Output Panel */}
-        <OutputPanel
-          ref={outputPanelRef}
-          width={outputWidth}
-          height={bodyHeight}
-          lines={outputLines}
-          isRunning={isRunning}
-          mode={mode}
-          modeColor={getModeColor()}
-        />
+        {displayOutputLines.length > 0 || !isWorkerMode ? (
+          <OutputPanel
+            ref={outputPanelRef}
+            width={outputWidth}
+            height={bodyHeight}
+            lines={displayOutputLines}
+            isRunning={displayIsRunning}
+            mode={displayMode}
+            modeColor={getModeColor()}
+          />
+        ) : (
+          // Worker mode waiting state
+          <box
+            width={outputWidth}
+            height={bodyHeight}
+            alignItems="center"
+            justifyContent="center"
+            flexDirection="column"
+            backgroundColor={OneDarkPro.background.primary}
+          >
+            <text fg={OneDarkPro.foreground.muted}>
+              Waiting for Slack requests...
+            </text>
+            <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+              Mention @clive in Slack to start a planning session
+            </text>
+            {workerConnection.status === "ready" && (
+              <box
+                marginTop={3}
+                padding={1}
+                backgroundColor={OneDarkPro.background.secondary}
+              >
+                <text fg={OneDarkPro.syntax.green}>
+                  Ready to receive requests
+                </text>
+              </box>
+            )}
+            {workerConnection.error && (
+              <text fg={OneDarkPro.syntax.red} marginTop={2}>
+                Error: {workerConnection.error}
+              </text>
+            )}
+          </box>
+        )}
       </box>
 
       {/* Input Bar */}
       <DynamicInput
         width={innerWidth}
-        onSubmit={handleExecuteCommand}
-        disabled={!!pendingQuestion}
-        isRunning={isRunning}
+        onSubmit={isWorkerMode
+          ? (msg) => {
+              if (activeWorkerSessionId) {
+                sessionManagerRef.current?.sendMessage(activeWorkerSessionId, msg);
+              }
+            }
+          : handleExecuteCommand}
+        disabled={isWorkerMode ? !workerPendingQuestion : !!pendingQuestion}
+        isRunning={displayIsRunning}
         inputFocused={inputFocused}
         onFocusChange={setInputFocused}
         preFillValue={preFillValue}
-        pendingQuestion={pendingQuestion}
-        onQuestionAnswer={handleQuestionAnswer}
-        onQuestionCancel={() => interrupt()}
+        pendingQuestion={displayPendingQuestion}
+        onQuestionAnswer={isWorkerMode ? handleWorkerQuestionAnswer : handleQuestionAnswer}
+        onQuestionCancel={() => {
+          if (isWorkerMode && activeWorkerSessionId) {
+            sessionManagerRef.current?.cancelSession(activeWorkerSessionId);
+          } else {
+            interrupt();
+          }
+        }}
       />
 
       {/* Status Bar */}
       <StatusBar
         width={innerWidth}
         height={statusHeight}
-        isRunning={isRunning}
+        isRunning={displayIsRunning}
         inputFocused={inputFocused}
         workspaceRoot={workspaceRoot}
+        workerMode={isWorkerMode}
+        workerStatus={isWorkerMode ? workerConnection.status : undefined}
+        workerId={isWorkerMode ? workerConnection.workerId : undefined}
+        activeSessions={isWorkerMode ? workerConnection.activeSessions : undefined}
+        activeSessionId={isWorkerMode ? activeWorkerSessionId : undefined}
+        workerError={isWorkerMode ? workerConnection.error : undefined}
       />
     </box>
   );

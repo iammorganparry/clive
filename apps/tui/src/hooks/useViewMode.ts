@@ -139,6 +139,7 @@ function saveWorkerToken(token: string): void {
 /**
  * Save config to ~/.clive/config.json
  * API keys and tokens are saved separately in ~/.clive/.env for security
+ * IMPORTANT: This merges with existing config to prevent data loss
  */
 function saveConfig(config: IssueTrackerConfig): void {
   try {
@@ -147,10 +148,29 @@ function saveConfig(config: IssueTrackerConfig): void {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Deep clone to avoid mutating the original
-    const configToSave = JSON.parse(
-      JSON.stringify(config),
-    ) as IssueTrackerConfig;
+    // Load existing config from disk to merge with (prevents data loss)
+    let existingConfig: IssueTrackerConfig = {};
+    try {
+      if (fs.existsSync(CONFIG_PATH)) {
+        const content = fs.readFileSync(CONFIG_PATH, "utf-8");
+        existingConfig = JSON.parse(content) as IssueTrackerConfig;
+      }
+    } catch {
+      // Ignore errors reading existing config
+    }
+
+    // Deep clone the new config to avoid mutating the original
+    const newConfig = JSON.parse(JSON.stringify(config)) as IssueTrackerConfig;
+
+    // Merge: new config takes precedence, but preserve fields not in new config
+    const configToSave: IssueTrackerConfig = {
+      ...existingConfig,
+      ...newConfig,
+      // Preserve linear config if not explicitly set in new config
+      linear: newConfig.linear ?? existingConfig.linear,
+      // Preserve worker config if not explicitly set in new config
+      worker: newConfig.worker ?? existingConfig.worker,
+    };
 
     // Extract API key if present and save separately
     if (configToSave.linear?.apiKey) {

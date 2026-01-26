@@ -16,6 +16,16 @@ interface StatusBarProps {
   workerStatus?: WorkerStatus;
   /** Number of active Slack sessions on this worker */
   workerSessions?: number;
+  /** Whether we're in worker mode (unified layout) */
+  workerMode?: boolean;
+  /** Worker ID */
+  workerId?: string | null;
+  /** Active worker session IDs */
+  activeSessions?: string[];
+  /** Currently active session ID */
+  activeSessionId?: string | null;
+  /** Connection error message */
+  workerError?: string | null;
 }
 
 export function StatusBar({
@@ -26,6 +36,11 @@ export function StatusBar({
   workspaceRoot,
   workerStatus,
   workerSessions = 0,
+  workerMode = false,
+  workerId,
+  activeSessions = [],
+  activeSessionId,
+  workerError,
 }: StatusBarProps) {
   const statusText = isRunning ? "⏳ Executing..." : "✓ Ready";
   const statusColor = isRunning
@@ -37,9 +52,45 @@ export function StatusBar({
     ? workspaceRoot.split("/").filter(Boolean).pop() || workspaceRoot
     : "unknown";
 
-  // Worker status display
+  // Worker mode status display (for unified layout)
+  const getWorkerModeStatusDisplay = (): { text: string; color: string; icon: string } => {
+    switch (workerStatus) {
+      case "ready":
+        return {
+          text: "Ready",
+          color: OneDarkPro.syntax.green,
+          icon: "●",
+        };
+      case "busy":
+        return {
+          text: "Busy",
+          color: OneDarkPro.syntax.yellow,
+          icon: "●",
+        };
+      case "connecting":
+        return {
+          text: "Connecting",
+          color: OneDarkPro.syntax.yellow,
+          icon: "○",
+        };
+      case "disconnected":
+        return {
+          text: "Disconnected",
+          color: OneDarkPro.syntax.red,
+          icon: "×",
+        };
+      default:
+        return {
+          text: "Unknown",
+          color: OneDarkPro.foreground.muted,
+          icon: "?",
+        };
+    }
+  };
+
+  // Worker status display (for sidebar indicator)
   const getWorkerStatusDisplay = (): { text: string; color: string } | null => {
-    if (!workerStatus) return null;
+    if (!workerStatus || workerMode) return null; // Don't show sidebar indicator in worker mode
 
     switch (workerStatus) {
       case "ready":
@@ -65,10 +116,26 @@ export function StatusBar({
   };
 
   const workerDisplay = getWorkerStatusDisplay();
+  const workerModeDisplay = workerMode ? getWorkerModeStatusDisplay() : null;
+
+  // Calculate session info for worker mode
+  const hasMultipleSessions = activeSessions.length > 1;
+  const currentSessionIndex = activeSessionId
+    ? activeSessions.indexOf(activeSessionId)
+    : -1;
 
   // Context-sensitive help hints
   let helpHint = "";
-  if (inputFocused) {
+  if (workerMode) {
+    // Worker mode specific hints
+    if (workerStatus === "disconnected") {
+      helpHint = "r Reconnect  •  q Exit  •  Ctrl+C Quit";
+    } else if (hasMultipleSessions) {
+      helpHint = "n/p Cycle  •  q Exit  •  Ctrl+C Quit";
+    } else {
+      helpHint = "q Exit  •  Ctrl+C Quit";
+    }
+  } else if (inputFocused) {
     helpHint = "Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit";
   } else if (isRunning) {
     helpHint = "Ctrl+G scroll bottom  •  Ctrl+C quit";
@@ -88,17 +155,54 @@ export function StatusBar({
     >
       {/* Left: Status, workspace, and worker status */}
       <box flexDirection="row">
-        <text fg={statusColor}>{statusText}</text>
-        {workspaceRoot && (
+        {workerMode && workerModeDisplay ? (
           <>
-            <text fg={OneDarkPro.foreground.muted}> • </text>
-            <text fg={OneDarkPro.syntax.cyan}>📁 {workspaceName}</text>
+            {/* Worker mode: Show connection status prominently */}
+            <text fg={workerModeDisplay.color}>
+              [{workerModeDisplay.icon}] {workerModeDisplay.text}
+            </text>
+            {/* Show session info if we have sessions */}
+            {activeSessions.length > 0 && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.cyan}>
+                  {hasMultipleSessions
+                    ? `Sess ${currentSessionIndex + 1}/${activeSessions.length}`
+                    : `Sess: ${activeSessionId?.slice(0, 8) || "none"}`}
+                </text>
+              </>
+            )}
+            {/* Show running indicator */}
+            {isRunning && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.yellow}>⏳ Running</text>
+              </>
+            )}
+            {/* Show error if any */}
+            {workerError && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.red}>⚠ {workerError}</text>
+              </>
+            )}
           </>
-        )}
-        {workerDisplay && (
+        ) : (
           <>
-            <text fg={OneDarkPro.foreground.muted}> • </text>
-            <text fg={workerDisplay.color}>[{workerDisplay.text}]</text>
+            {/* Normal mode: Show execution status */}
+            <text fg={statusColor}>{statusText}</text>
+            {workspaceRoot && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.cyan}>📁 {workspaceName}</text>
+              </>
+            )}
+            {workerDisplay && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={workerDisplay.color}>[{workerDisplay.text}]</text>
+              </>
+            )}
           </>
         )}
       </box>
