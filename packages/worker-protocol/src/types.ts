@@ -14,7 +14,7 @@ export type WorkerStatus = "connecting" | "ready" | "busy" | "disconnected";
 /**
  * Session mode for different workflow phases
  */
-export type SessionMode = "plan" | "build" | "review";
+export type SessionMode = "greeting" | "plan" | "build" | "review";
 
 /**
  * Project/workspace that a worker has access to

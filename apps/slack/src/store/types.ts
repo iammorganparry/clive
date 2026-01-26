@@ -9,7 +9,7 @@ import type { CliExecutionHandle } from "@clive/claude-services";
 /**
  * Session mode for different workflow phases
  */
-export type SessionMode = "plan" | "build" | "review";
+export type SessionMode = "greeting" | "plan" | "build" | "review";
 
 /**
  * Question data from AskUserQuestion tool
@@ -41,6 +41,7 @@ export interface QuestionOption {
  * Interview phase
  */
 export type InterviewPhase =
+  | "greeting"
   | "starting"
   | "problem"
   | "scope"

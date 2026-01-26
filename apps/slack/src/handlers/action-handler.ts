@@ -866,9 +866,8 @@ export function registerActionHandlerDistributed(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Failed to start build mode: ${error}`,
-          threadTs,
-          blocks: formatErrorMessage(String(error)),
+          text: `<@${userId}> Failed to start build mode: ${error}`,
+          blocks: formatErrorMessage(String(error), userId),
         })
       );
     }
@@ -955,9 +954,8 @@ export function registerActionHandlerDistributed(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
-          text: `Failed to start review mode: ${error}`,
-          threadTs,
-          blocks: formatErrorMessage(String(error)),
+          text: `<@${userId}> Failed to start review mode: ${error}`,
+          blocks: formatErrorMessage(String(error), userId),
         })
       );
     }

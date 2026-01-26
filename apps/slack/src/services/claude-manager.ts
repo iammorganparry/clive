@@ -19,6 +19,22 @@ import type {
 } from "../store/types";
 
 /**
+ * Greeting/conversational system prompt
+ * For initial conversational interaction before entering plan mode
+ */
+const GREETING_PROMPT = `You are Clive, a friendly AI assistant for software development.
+
+Greet the user warmly and ask how you can help them today. You can help with:
+- Planning new features (say "let's plan" or describe what you want to build)
+- Fixing bugs (describe the issue)
+- Code reviews
+- General questions about the codebase
+
+Keep responses brief and friendly. When the user describes a feature or bug to work on, respond with: "Great! Let me start a planning session for that." and then invoke the /clive:plan skill.
+
+Do NOT immediately start planning. Have a brief conversation first.`;
+
+/**
  * Planning skill system prompt
  * Invokes the /clive:plan skill for conducting interviews
  */
@@ -105,6 +121,86 @@ export class ClaudeManager extends EventEmitter {
       });
       throw error;
     }
+  }
+
+  /**
+   * Start a greeting/conversational session
+   *
+   * @param threadTs - Slack thread timestamp (session identifier)
+   * @param channel - Slack channel
+   * @param userId - User who initiated
+   * @param initialPrompt - Initial user message (if any)
+   * @param onEvent - Callback for events
+   * @returns Claude CLI execution handle
+   */
+  async startGreeting(
+    threadTs: string,
+    _channel: string,
+    _userId: string,
+    initialPrompt: string | undefined,
+    onEvent: (event: InterviewEvent) => void,
+  ): Promise<CliExecutionHandle> {
+    console.log(`[ClaudeManager] Starting greeting for thread ${threadTs}`);
+
+    // Build the prompt
+    const prompt = initialPrompt
+      ? `The user mentioned you with: "${initialPrompt}"`
+      : "The user mentioned you. Greet them and ask how you can help.";
+
+    const program = Effect.gen(
+      this.createGreetingProgram(threadTs, prompt, onEvent),
+    );
+
+    try {
+      const handle = await Effect.runPromise(
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      );
+      this.activeHandles.set(threadTs, handle);
+      return handle;
+    } catch (error) {
+      console.error(`[ClaudeManager] Failed to start greeting:`, error);
+      onEvent({
+        type: "error",
+        message: `Failed to start greeting: ${String(error)}`,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Create the greeting execution program generator
+   */
+  private createGreetingProgram(
+    threadTs: string,
+    prompt: string,
+    onEvent: (event: InterviewEvent) => void,
+  ) {
+    const self = this;
+
+    return function* () {
+      const cliService = yield* ClaudeCliService;
+
+      // Spawn CLI process with greeting prompt
+      const handle = yield* cliService.execute({
+        prompt,
+        systemPrompt: GREETING_PROMPT,
+        workspaceRoot: self.workspaceRoot,
+        model: "sonnet", // Use Sonnet for conversational greeting
+      });
+
+      console.log(`[ClaudeManager] Greeting started for thread ${threadTs}`);
+
+      // Process stream events
+      yield* handle.stream.pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            self.processEvent(event, onEvent);
+          }),
+        ),
+      );
+
+      return handle;
+    };
   }
 
   /**

@@ -21,9 +21,9 @@ interface WorkerViewProps {
   activeSessions: string[];
   /** Connection error message */
   error: string | null;
-  /** Output lines from CLI execution */
+  /** Output lines from CLI execution (for active session) */
   outputLines: OutputLine[];
-  /** Whether CLI is currently running */
+  /** Whether CLI is currently running (for active session) */
   isRunning: boolean;
   /** Workspace root path */
   workspaceRoot: string;
@@ -31,6 +31,18 @@ interface WorkerViewProps {
   onExit: () => void;
   /** Called to reconnect */
   onReconnect: () => void;
+  /** Currently active session ID */
+  activeSessionId: string | null;
+  /** Output lines per session */
+  sessionOutputs: Map<string, OutputLine[]>;
+  /** Running state per session */
+  sessionRunningStates: Map<string, boolean>;
+  /** Called to cycle to next session */
+  onNextSession: () => void;
+  /** Called to cycle to previous session */
+  onPrevSession: () => void;
+  /** Called to select a specific session */
+  onSelectSession: (sessionId: string) => void;
 }
 
 export function WorkerView({
@@ -45,6 +57,12 @@ export function WorkerView({
   workspaceRoot,
   onExit,
   onReconnect,
+  activeSessionId,
+  sessionOutputs,
+  sessionRunningStates,
+  onNextSession,
+  onPrevSession,
+  onSelectSession,
 }: WorkerViewProps) {
   const outputPanelRef = useRef<OutputPanelRef>(null);
 
@@ -102,7 +120,14 @@ export function WorkerView({
   const status = getStatusDisplay();
   const headerHeight = 5;
   const footerHeight = 3;
-  const outputHeight = height - headerHeight - footerHeight;
+  const hasMultipleSessions = activeSessions.length > 1;
+  const sessionTabHeight = hasMultipleSessions ? 2 : 0;
+  const outputHeight = height - headerHeight - footerHeight - sessionTabHeight;
+
+  // Get current session index for display
+  const currentSessionIndex = activeSessionId
+    ? activeSessions.indexOf(activeSessionId)
+    : -1;
 
   // Get workspace name
   const workspaceName =
@@ -151,6 +176,36 @@ export function WorkerView({
           </text>
         )}
       </box>
+
+      {/* Session Tab Bar (only show when multiple sessions) */}
+      {hasMultipleSessions && (
+        <box
+          width={width}
+          height={sessionTabHeight}
+          backgroundColor={OneDarkPro.background.secondary}
+          flexDirection="row"
+          paddingLeft={2}
+          alignItems="center"
+        >
+          <text fg={OneDarkPro.foreground.muted}>Sessions: </text>
+          {activeSessions.map((sessionId, index) => {
+            const isActive = sessionId === activeSessionId;
+            const isRunning = sessionRunningStates.get(sessionId) ?? false;
+            const shortId = sessionId.slice(0, 8);
+            return (
+              <box key={sessionId} flexDirection="row">
+                <text
+                  fg={isActive ? OneDarkPro.syntax.cyan : OneDarkPro.foreground.muted}
+                  bold={isActive}
+                  backgroundColor={isActive ? OneDarkPro.background.primary : undefined}
+                >
+                  {` ${index + 1}:${shortId}${isRunning ? '*' : ''} `}
+                </text>
+              </box>
+            );
+          })}
+        </box>
+      )}
 
       {/* Output Panel */}
       {activeSessions.length > 0 || outputLines.length > 0 ? (
@@ -202,19 +257,27 @@ export function WorkerView({
         paddingRight={2}
       >
         <box flexDirection="row">
-          {activeSessions.length > 0 && (
+          {hasMultipleSessions && activeSessionId && (
+            <text fg={OneDarkPro.syntax.cyan}>
+              Session {currentSessionIndex + 1}/{activeSessions.length} ({activeSessionId.slice(0, 8)})
+            </text>
+          )}
+          {activeSessions.length === 1 && (
             <text fg={OneDarkPro.syntax.yellow}>
-              Active: {activeSessions.join(", ")}
+              Active: {activeSessions[0]?.slice(0, 8) ?? ''}
             </text>
           )}
         </box>
 
         <box flexDirection="row">
+          {hasMultipleSessions && (
+            <text fg={OneDarkPro.foreground.muted}>n/p Cycle | </text>
+          )}
           {workerStatus === "disconnected" && (
-            <text fg={OneDarkPro.foreground.muted}>r Reconnect |</text>
+            <text fg={OneDarkPro.foreground.muted}>r Reconnect | </text>
           )}
           <text fg={OneDarkPro.foreground.muted}>
-            q Exit Worker Mode | Ctrl+C Quit
+            q Exit | Ctrl+C Quit
           </text>
         </box>
       </box>

@@ -19,12 +19,14 @@ export const WorkerStatusSchema = z.enum([
 ]);
 
 export const SessionModeSchema = z.enum([
+  "greeting",
   "plan",
   "build",
   "review",
 ]);
 
 export const InterviewPhaseSchema = z.enum([
+  "greeting",
   "starting",
   "problem",
   "scope",

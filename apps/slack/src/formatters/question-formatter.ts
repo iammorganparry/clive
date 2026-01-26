@@ -99,8 +99,13 @@ export function formatQuestion(
 /**
  * Format complete question data as Slack blocks
  */
-export function formatQuestionData(questionData: QuestionData): KnownBlock[] {
+export function formatQuestionData(questionData: QuestionData, userId?: string): KnownBlock[] {
   const allBlocks: KnownBlock[] = [];
+
+  // Add user mention at the start if provided
+  if (userId) {
+    allBlocks.push(section(`<@${userId}>`));
+  }
 
   for (let i = 0; i < questionData.questions.length; i++) {
     const question = questionData.questions[i];
@@ -154,8 +159,9 @@ export function formatPlanApproval(planPreview: string): KnownBlock[] {
 /**
  * Format phase indicator
  */
-export function formatPhaseIndicator(phase: string): KnownBlock[] {
+export function formatPhaseIndicator(phase: string, userId?: string): KnownBlock[] {
   const phaseEmojis: Record<string, string> = {
+    greeting: ":wave:",
     starting: ":rocket:",
     problem: ":thinking_face:",
     scope: ":mag:",
@@ -170,20 +176,22 @@ export function formatPhaseIndicator(phase: string): KnownBlock[] {
     error: ":x:",
   };
 
+  const mention = userId ? `<@${userId}> ` : '';
   const emoji = phaseEmojis[phase] || ":question:";
   const phaseText = phase
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-  return [context([`${emoji} *Phase:* ${phaseText}`])];
+  return [context([`${mention}${emoji} *Phase:* ${phaseText}`])];
 }
 
 /**
  * Format timeout message
  */
-export function formatTimeoutMessage(): KnownBlock[] {
+export function formatTimeoutMessage(userId?: string): KnownBlock[] {
+  const mention = userId ? `<@${userId}> ` : '';
   return blocks(
-    section(":hourglass: *Interview Timed Out*"),
+    section(`${mention}:hourglass: *Interview Timed Out*`),
     section(
       "This planning interview has been inactive for 30 minutes and has been closed.\n\n" +
         "To start a new interview, mention @clive again.",
@@ -194,9 +202,10 @@ export function formatTimeoutMessage(): KnownBlock[] {
 /**
  * Format error message
  */
-export function formatErrorMessage(error: string): KnownBlock[] {
+export function formatErrorMessage(error: string, userId?: string): KnownBlock[] {
+  const mention = userId ? `<@${userId}> ` : '';
   return blocks(
-    section(":x: *Error*"),
+    section(`${mention}:x: *Error*`),
     section(error),
     context(["Try starting a new interview by mentioning @clive again."]),
   );
@@ -205,11 +214,13 @@ export function formatErrorMessage(error: string): KnownBlock[] {
 /**
  * Format welcome message
  */
-export function formatWelcomeMessage(hasDescription: boolean): KnownBlock[] {
+export function formatWelcomeMessage(hasDescription: boolean, userId?: string): KnownBlock[] {
+  const mention = userId ? `<@${userId}> ` : '';
+
   if (hasDescription) {
     return [
       section(
-        ":wave: *Starting Planning Interview*\n\n" +
+        `${mention}:wave: *Starting Planning Interview*\n\n` +
           "I'll guide you through a structured interview to understand your requirements. " +
           "Please answer each question to help me create a detailed plan.",
       ),
@@ -218,7 +229,7 @@ export function formatWelcomeMessage(hasDescription: boolean): KnownBlock[] {
 
   return [
     section(
-      ":wave: *Hi! I'm Clive, your planning assistant.*\n\n" +
+      `${mention}:wave: *Hi! I'm Clive, your planning assistant.*\n\n` +
         "I'll help you plan your next feature or project through a structured interview. " +
         "What would you like to build?",
     ),
@@ -228,11 +239,12 @@ export function formatWelcomeMessage(hasDescription: boolean): KnownBlock[] {
 /**
  * Format completion message with Linear links
  */
-export function formatCompletionMessage(linearUrls: string[]): KnownBlock[] {
+export function formatCompletionMessage(linearUrls: string[], userId?: string): KnownBlock[] {
+  const mention = userId ? `<@${userId}> ` : '';
   const urlList = linearUrls.map((url) => `• <${url}|View Issue>`).join("\n");
 
   return blocks(
-    section(":white_check_mark: *Planning Complete!*"),
+    section(`${mention}:white_check_mark: *Planning Complete!*`),
     section(
       "Your plan has been created and Linear issues have been generated:\n\n" +
         urlList,

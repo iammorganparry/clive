@@ -120,6 +120,26 @@ export function registerMessageHandler(
         `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
       );
 
+      // Check if in greeting mode and user wants to start planning
+      if (session.mode === "greeting") {
+        // Detect planning intent from user message
+        const planningKeywords = [
+          "build", "create", "add", "implement", "make", "develop",
+          "feature", "fix", "bug", "issue", "problem", "plan",
+          "want to", "need to", "let's", "can you", "help me"
+        ];
+        const lowerText = text.toLowerCase();
+        const hasPlanningIntent = planningKeywords.some(keyword =>
+          lowerText.includes(keyword)
+        );
+
+        if (hasPlanningIntent) {
+          console.log(`[MessageHandler] Planning intent detected, transitioning to plan mode`);
+          store.setMode(threadTs, "plan");
+          store.setPhase(threadTs, "problem");
+        }
+      }
+
       // Send message to Claude
       claudeManager.sendMessage(threadTs, text);
 
@@ -232,6 +252,26 @@ export function registerMessageHandlerDistributed(
       console.log(
         `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
       );
+
+      // Check if in greeting mode and user wants to start planning
+      if (session.mode === "greeting") {
+        // Detect planning intent from user message
+        const planningKeywords = [
+          "build", "create", "add", "implement", "make", "develop",
+          "feature", "fix", "bug", "issue", "problem", "plan",
+          "want to", "need to", "let's", "can you", "help me"
+        ];
+        const lowerText = text.toLowerCase();
+        const hasPlanningIntent = planningKeywords.some(keyword =>
+          lowerText.includes(keyword)
+        );
+
+        if (hasPlanningIntent) {
+          console.log(`[MessageHandler] Planning intent detected, transitioning to plan mode`);
+          store.setMode(threadTs, "plan");
+          store.setPhase(threadTs, "problem");
+        }
+      }
 
       // Send message to worker
       workerProxy.sendMessage(threadTs, text);
