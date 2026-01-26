@@ -15,8 +15,11 @@ interface ModeSelectionViewProps {
   onNavigate: (index: number) => void;
   onSelectWorker: () => void;
   onSelectInteractive: () => void;
+  onSelectLinearSettings?: () => void;
   /** Whether worker config exists and is enabled */
   workerConfigured?: boolean;
+  /** Whether Linear is configured (show settings option) */
+  linearConfigured?: boolean;
 }
 
 export function ModeSelectionView({
@@ -26,9 +29,11 @@ export function ModeSelectionView({
   onNavigate,
   onSelectWorker,
   onSelectInteractive,
+  onSelectLinearSettings,
   workerConfigured = false,
+  linearConfigured = false,
 }: ModeSelectionViewProps) {
-  const options = [
+  const baseOptions = [
     {
       id: "interactive",
       name: "Interactive Mode",
@@ -50,6 +55,21 @@ export function ModeSelectionView({
       color: OneDarkPro.syntax.green,
     },
   ];
+
+  // Add Linear Settings option if Linear is configured
+  const options = linearConfigured
+    ? [
+        ...baseOptions,
+        {
+          id: "linear_settings",
+          name: "Linear Settings",
+          description: "Edit Linear API key and team",
+          detail: "Update your Linear integration configuration",
+          icon: "* ",
+          color: OneDarkPro.syntax.yellow,
+        },
+      ]
+    : baseOptions;
 
   return (
     <box
@@ -121,7 +141,8 @@ export function ModeSelectionView({
         {/* Shortcuts */}
         <box marginTop={4} flexDirection="column" alignItems="center">
           <text fg={OneDarkPro.foreground.secondary}>
-            1-2 Select | Up/Down Navigate | Enter Confirm | Esc Back
+            1-{options.length} Select | Up/Down Navigate | Enter Confirm | Esc
+            Back
           </text>
         </box>
       </box>

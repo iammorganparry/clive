@@ -676,12 +676,33 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // communication (sending tool results back to CLI)
             // stdin will be closed via handle.close() when execution completes
 
+            // Track if the stream has ended to prevent double-emitting errors
+            let streamEnded = false;
+
             // Create a stream from the CLI process stdout
             const stream = Stream.async<
               ClaudeCliEvent,
               ClaudeCliExecutionError
             >((emit) => {
               let buffer = "";
+
+              // Monitor stdin for errors and unexpected closure
+              child.stdin.on("error", (error) => {
+                logToOutput(`[ClaudeCliService] stdin error: ${error.message}`);
+                if (!streamEnded) {
+                  emit.fail(
+                    new ClaudeCliExecutionError({
+                      message: `stdin error: ${error.message}`,
+                    }),
+                  );
+                }
+              });
+
+              child.stdin.on("close", () => {
+                logToOutput("[ClaudeCliService] stdin closed");
+                // stdin closing is expected when the CLI process exits normally
+                // Only treat it as an error if the stream hasn't ended yet
+              });
 
               child.stdout.on("data", (data: Buffer) => {
                 const chunk = data.toString();
@@ -745,6 +766,9 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 logToOutput(
                   `[ClaudeCliService] Process closed with code: ${code}`,
                 );
+
+                // Mark stream as ended to prevent stdin error handlers from emitting
+                streamEnded = true;
 
                 // Clear sent tool results for next execution
                 sentToolResultMessages.clear();
@@ -824,10 +848,11 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 );
 
                 if (!child.stdin?.writable) {
-                  console.error(
-                    "[ClaudeCliService] Cannot send tool result - stdin not writable",
-                  );
-                  return;
+                  const errorMsg = "Cannot send tool result - stdin not writable (CLI may have crashed)";
+                  console.error(`[ClaudeCliService] ${errorMsg}`);
+                  throw new ClaudeCliExecutionError({
+                    message: errorMsg,
+                  });
                 }
 
                 // Tool results must be wrapped in a user message with tool_result content blocks
@@ -869,10 +894,11 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                */
               sendMessage: (message: string) => {
                 if (!child.stdin?.writable) {
-                  console.error(
-                    "[ClaudeCliService] Cannot send message - stdin not writable",
-                  );
-                  return;
+                  const errorMsg = "Cannot send message - stdin not writable (CLI may have crashed)";
+                  console.error(`[ClaudeCliService] ${errorMsg}`);
+                  throw new ClaudeCliExecutionError({
+                    message: errorMsg,
+                  });
                 }
 
                 // User messages are sent in stream-json format

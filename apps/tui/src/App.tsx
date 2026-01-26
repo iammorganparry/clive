@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DynamicInput } from "./components/DynamicInput";
 import { HelpView } from "./components/HelpView";
 import { LinearConfigFlow } from "./components/LinearConfigFlow";
+import { LinearSettingsView } from "./components/LinearSettingsView";
 import { Logo } from "./components/Logo";
 import { ModeSelectionView } from "./components/ModeSelectionView";
 import { OutputPanel, type OutputPanelRef } from "./components/OutputPanel";
@@ -96,13 +97,20 @@ function AppContent() {
     goToSelection,
     goToMain,
     goToHelp,
+    goToLinearSettings,
     goBack,
     updateConfig,
   } = useViewMode();
 
   // Mode selection state
   const [modeSelectedIndex, setModeSelectedIndex] = useState(0);
-  const modeOptions = ["interactive", "worker"];
+  // Check if Linear is configured - either by issueTracker field or presence of linear config
+  const isLinearConfigured =
+    config?.issueTracker === "linear" ||
+    !!(config?.linear?.apiKey && config?.linear?.teamID);
+  const modeOptions = isLinearConfigured
+    ? ["interactive", "worker", "linear_settings"]
+    : ["interactive", "worker"];
 
   // Setup view state
   const [setupSelectedIndex, setSetupSelectedIndex] = useState(0);
@@ -119,9 +127,15 @@ function AppContent() {
   const outputPanelRef = useRef<OutputPanelRef>(null);
 
   // Worker mode state - per-session tracking for multi-session support
-  const [workerSessionOutputs, setWorkerSessionOutputs] = useState<Map<string, OutputLine[]>>(new Map());
-  const [workerSessionRunning, setWorkerSessionRunning] = useState<Map<string, boolean>>(new Map());
-  const [activeWorkerSessionId, setActiveWorkerSessionId] = useState<string | null>(null);
+  const [workerSessionOutputs, setWorkerSessionOutputs] = useState<
+    Map<string, OutputLine[]>
+  >(new Map());
+  const [workerSessionRunning, setWorkerSessionRunning] = useState<
+    Map<string, boolean>
+  >(new Map());
+  const [activeWorkerSessionId, setActiveWorkerSessionId] = useState<
+    string | null
+  >(null);
   const sessionManagerRef = useRef<WorkerSessionManager | null>(null);
 
   // Clear preFillValue after it's been used
@@ -164,14 +178,40 @@ function AppContent() {
 
   const handleWorkerAnswer = useCallback(
     (sessionId: string, toolUseId: string, answers: Record<string, string>) => {
-      sessionManagerRef.current?.sendAnswer(sessionId, toolUseId, answers);
+      const success = sessionManagerRef.current?.sendAnswer(sessionId, toolUseId, answers) ?? false;
+      if (!success && workerConnectionRef.current) {
+        // Send error event to central service before cleaning up
+        workerConnectionRef.current.sendEvent({
+          sessionId,
+          type: "error",
+          payload: {
+            type: "error",
+            message: "Failed to send answer - CLI session may have crashed",
+          },
+          timestamp: new Date().toISOString(),
+        });
+        workerConnectionRef.current.completeSession(sessionId);
+      }
     },
     [],
   );
 
   const handleWorkerMessage = useCallback(
     (sessionId: string, message: string) => {
-      sessionManagerRef.current?.sendMessage(sessionId, message);
+      const success = sessionManagerRef.current?.sendMessage(sessionId, message) ?? false;
+      if (!success && workerConnectionRef.current) {
+        // Send error event to central service before cleaning up
+        workerConnectionRef.current.sendEvent({
+          sessionId,
+          type: "error",
+          payload: {
+            type: "error",
+            message: "Failed to send message - CLI session may have crashed",
+          },
+          timestamp: new Date().toISOString(),
+        });
+        workerConnectionRef.current.completeSession(sessionId);
+      }
     },
     [],
   );
@@ -204,26 +244,31 @@ function AppContent() {
   }, [workerConnection]);
 
   // Cycle between worker sessions (must be after workerConnection is declared)
-  const cycleWorkerSession = useCallback((direction: 'next' | 'prev') => {
-    const sessions = workerConnection.activeSessions;
-    if (sessions.length <= 1) return;
+  const cycleWorkerSession = useCallback(
+    (direction: "next" | "prev") => {
+      const sessions = workerConnection.activeSessions;
+      if (sessions.length <= 1) return;
 
-    const currentIndex = activeWorkerSessionId
-      ? sessions.indexOf(activeWorkerSessionId) : -1;
+      const currentIndex = activeWorkerSessionId
+        ? sessions.indexOf(activeWorkerSessionId)
+        : -1;
 
-    const nextIndex = direction === 'next'
-      ? (currentIndex + 1) % sessions.length
-      : (currentIndex - 1 + sessions.length) % sessions.length;
+      const nextIndex =
+        direction === "next"
+          ? (currentIndex + 1) % sessions.length
+          : (currentIndex - 1 + sessions.length) % sessions.length;
 
-    setActiveWorkerSessionId(sessions[nextIndex] ?? null);
-  }, [workerConnection.activeSessions, activeWorkerSessionId]);
+      setActiveWorkerSessionId(sessions[nextIndex] ?? null);
+    },
+    [workerConnection.activeSessions, activeWorkerSessionId],
+  );
 
   // Get output lines for the active session
   const activeWorkerOutputLines = activeWorkerSessionId
-    ? workerSessionOutputs.get(activeWorkerSessionId) ?? []
+    ? (workerSessionOutputs.get(activeWorkerSessionId) ?? [])
     : [];
   const activeWorkerIsRunning = activeWorkerSessionId
-    ? workerSessionRunning.get(activeWorkerSessionId) ?? false
+    ? (workerSessionRunning.get(activeWorkerSessionId) ?? false)
     : false;
 
   // Initialize WorkerSessionManager when in worker mode
@@ -256,9 +301,25 @@ function AppContent() {
         setWorkerSessionOutputs((prev) => {
           const next = new Map(prev);
           const existing = next.get(sessionId) ?? [];
-          next.set(sessionId, [...existing, { type: "stderr" as const, text: error }]);
+          next.set(sessionId, [
+            ...existing,
+            { type: "stderr" as const, text: error },
+          ]);
           return next;
         });
+        // Notify central service of the error
+        if (workerConnectionRef.current) {
+          workerConnectionRef.current.sendEvent({
+            sessionId,
+            type: "error",
+            payload: {
+              type: "error",
+              message: error,
+            },
+            timestamp: new Date().toISOString(),
+          });
+          workerConnectionRef.current.completeSession(sessionId);
+        }
       };
 
       sessionManager.on("message", handleMessage);
@@ -405,6 +466,20 @@ function AppContent() {
       return;
     }
 
+    // Global shortcut for Linear settings (comma key, like many apps use for settings)
+    if (event.sequence === "," && isLinearConfigured) {
+      if (viewMode === "linear_settings") {
+        goToModeSelection();
+      } else if (
+        viewMode !== "setup" &&
+        viewMode !== "worker_setup" &&
+        viewMode !== "help"
+      ) {
+        goToLinearSettings();
+      }
+      return;
+    }
+
     // Scroll to bottom (Ctrl+B, Cmd+B, or End key)
     if (
       ((event.ctrl || event.meta) && event.sequence === "b") ||
@@ -468,14 +543,19 @@ function AppContent() {
           prev < modeOptions.length - 1 ? prev + 1 : 0,
         );
       }
-      // Number key selection
-      if (event.sequence && /^[1-2]$/.test(event.sequence)) {
+      // Number key selection (1-3 depending on options)
+      if (event.sequence && /^[1-3]$/.test(event.sequence)) {
         const index = parseInt(event.sequence, 10) - 1;
-        handleModeSelect(modeOptions[index]);
+        if (index < modeOptions.length) {
+          handleModeSelect(modeOptions[index]);
+        }
       }
       if (event.name === "return") {
         handleModeSelect(modeOptions[modeSelectedIndex]);
       }
+    } else if (viewMode === "linear_settings") {
+      // LinearSettingsView handles its own keyboard events
+      return;
     } else if (viewMode === "worker") {
       // Allow escape to unfocus input OR exit worker mode
       if (event.name === "escape") {
@@ -500,18 +580,20 @@ function AppContent() {
       }
       // Session cycling: Tab or n for next, Shift+Tab or p for previous
       if (event.name === "tab" || event.sequence === "n") {
-        cycleWorkerSession('next');
+        cycleWorkerSession("next");
         return;
       }
       if ((event.shift && event.name === "tab") || event.sequence === "p") {
-        cycleWorkerSession('prev');
+        cycleWorkerSession("prev");
         return;
       }
       // Number keys 1-9 for direct session jump
       if (event.sequence && /^[1-9]$/.test(event.sequence)) {
         const index = parseInt(event.sequence, 10) - 1;
         if (index < workerConnection.activeSessions.length) {
-          setActiveWorkerSessionId(workerConnection.activeSessions[index] ?? null);
+          setActiveWorkerSessionId(
+            workerConnection.activeSessions[index] ?? null,
+          );
         }
         return;
       }
@@ -692,7 +774,8 @@ function AppContent() {
   });
 
   // Handler for mode selection
-  const handleModeSelect = (mode: string) => {
+  const handleModeSelect = (mode: string | undefined) => {
+    if (!mode) return;
     if (mode === "interactive") {
       goToSelection();
     } else if (mode === "worker") {
@@ -702,6 +785,8 @@ function AppContent() {
       } else {
         goToWorkerSetup();
       }
+    } else if (mode === "linear_settings") {
+      goToLinearSettings();
     }
   };
 
@@ -814,7 +899,9 @@ function AppContent() {
           }
         }}
         onSelectInteractive={goToSelection}
+        onSelectLinearSettings={goToLinearSettings}
         workerConfigured={!!(config?.worker?.enabled && config?.worker?.token)}
+        linearConfigured={isLinearConfigured}
       />
     );
   }
@@ -827,6 +914,29 @@ function AppContent() {
         height={height}
         existingConfig={config?.worker}
         onComplete={handleWorkerConfigComplete}
+        onCancel={goToModeSelection}
+      />
+    );
+  }
+
+  // Linear settings view
+  if (viewMode === "linear_settings") {
+    return (
+      <LinearSettingsView
+        width={width}
+        height={height}
+        currentConfig={{
+          apiKey: config?.linear?.apiKey || "",
+          teamID: config?.linear?.teamID || "",
+        }}
+        onSave={(linearConfig) => {
+          updateConfig({
+            ...config!,
+            issueTracker: "linear",
+            linear: linearConfig,
+          });
+          goToModeSelection();
+        }}
         onCancel={goToModeSelection}
       />
     );
@@ -880,15 +990,20 @@ function AppContent() {
   const isWorkerMode = viewMode === "worker";
 
   // Choose data source based on mode
-  const displayOutputLines = isWorkerMode ? activeWorkerOutputLines : outputLines;
+  const displayOutputLines = isWorkerMode
+    ? activeWorkerOutputLines
+    : outputLines;
   const displayIsRunning = isWorkerMode ? activeWorkerIsRunning : isRunning;
   const displayMode = isWorkerMode ? "none" : mode;
 
   // Get pending question for worker mode
-  const workerPendingQuestion = isWorkerMode && activeWorkerOutputLines.length > 0
-    ? activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.question
-    : undefined;
-  const displayPendingQuestion = isWorkerMode ? workerPendingQuestion : pendingQuestion;
+  const workerPendingQuestion =
+    isWorkerMode && activeWorkerOutputLines.length > 0
+      ? activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.question
+      : undefined;
+  const displayPendingQuestion = isWorkerMode
+    ? workerPendingQuestion
+    : pendingQuestion;
 
   const baseInputHeight = 3;
   const statusHeight = 1;
@@ -918,9 +1033,14 @@ function AppContent() {
   // Handle worker mode question answers
   const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
     if (isWorkerMode && workerPendingQuestion && activeWorkerSessionId) {
-      const toolUseID = activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.toolUseID;
+      const toolUseID =
+        activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.toolUseID;
       if (toolUseID) {
-        sessionManagerRef.current?.sendAnswer(activeWorkerSessionId, toolUseID, answers);
+        sessionManagerRef.current?.sendAnswer(
+          activeWorkerSessionId,
+          toolUseID,
+          answers,
+        );
       }
     }
   };
@@ -998,20 +1118,27 @@ function AppContent() {
       {/* Input Bar */}
       <DynamicInput
         width={innerWidth}
-        onSubmit={isWorkerMode
-          ? (msg) => {
-              if (activeWorkerSessionId) {
-                sessionManagerRef.current?.sendMessage(activeWorkerSessionId, msg);
+        onSubmit={
+          isWorkerMode
+            ? (msg) => {
+                if (activeWorkerSessionId) {
+                  sessionManagerRef.current?.sendMessage(
+                    activeWorkerSessionId,
+                    msg,
+                  );
+                }
               }
-            }
-          : handleExecuteCommand}
+            : handleExecuteCommand
+        }
         disabled={isWorkerMode ? !workerPendingQuestion : !!pendingQuestion}
         isRunning={displayIsRunning}
         inputFocused={inputFocused}
         onFocusChange={setInputFocused}
         preFillValue={preFillValue}
         pendingQuestion={displayPendingQuestion}
-        onQuestionAnswer={isWorkerMode ? handleWorkerQuestionAnswer : handleQuestionAnswer}
+        onQuestionAnswer={
+          isWorkerMode ? handleWorkerQuestionAnswer : handleQuestionAnswer
+        }
         onQuestionCancel={() => {
           if (isWorkerMode && activeWorkerSessionId) {
             sessionManagerRef.current?.cancelSession(activeWorkerSessionId);
@@ -1031,7 +1158,9 @@ function AppContent() {
         workerMode={isWorkerMode}
         workerStatus={isWorkerMode ? workerConnection.status : undefined}
         workerId={isWorkerMode ? workerConnection.workerId : undefined}
-        activeSessions={isWorkerMode ? workerConnection.activeSessions : undefined}
+        activeSessions={
+          isWorkerMode ? workerConnection.activeSessions : undefined
+        }
         activeSessionId={isWorkerMode ? activeWorkerSessionId : undefined}
         workerError={isWorkerMode ? workerConnection.error : undefined}
       />

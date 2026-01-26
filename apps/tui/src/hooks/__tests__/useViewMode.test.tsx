@@ -305,7 +305,7 @@ describe("App.tsx handleConfigComplete pattern", () => {
     const buggyUpdate = {
       issueTracker: configFlow as "linear" | "beads",
       [configFlow]: configData,
-    };
+    } as IssueTrackerConfig;
 
     expect(buggyUpdate.worker).toBeUndefined(); // BUG: lost!
   });
@@ -340,7 +340,7 @@ describe("App.tsx handleConfigComplete pattern", () => {
     const buggyUpdate = {
       issueTracker: "beads" as const,
       beads: {},
-    };
+    } as IssueTrackerConfig;
 
     expect(buggyUpdate.worker).toBeUndefined(); // BUG: lost!
   });

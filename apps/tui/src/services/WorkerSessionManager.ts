@@ -489,18 +489,19 @@ export class WorkerSessionManager extends EventEmitter {
 
   /**
    * Send an answer to a session
+   * Returns true if successful, false if the session failed
    */
   sendAnswer(
     sessionId: string,
     toolUseId: string,
     answers: Record<string, string>,
-  ): void {
+  ): boolean {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
       console.error(
         `[WorkerSessionManager] No session ${sessionId} for answer`,
       );
-      return;
+      return false;
     }
 
     console.log(`[WorkerSessionManager] Sending answer for ${toolUseId}`);
@@ -518,20 +519,34 @@ export class WorkerSessionManager extends EventEmitter {
     session.messages.push(userMessage);
     this.emit("message", sessionId, userMessage);
 
-    const answerJson = JSON.stringify(answers);
-    session.handle.sendToolResult(toolUseId, answerJson);
+    try {
+      const answerJson = JSON.stringify(answers);
+      session.handle.sendToolResult(toolUseId, answerJson);
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[WorkerSessionManager] Failed to send answer for session ${sessionId}: ${errorMessage}`);
+
+      // Emit error event so WorkerConnectionManager can notify central service
+      this.emit("error", sessionId, errorMessage);
+
+      // Clean up the failed session
+      this.cancelSession(sessionId);
+      return false;
+    }
   }
 
   /**
    * Send a message to a session
+   * Returns true if successful, false if the session failed
    */
-  sendMessage(sessionId: string, message: string): void {
+  sendMessage(sessionId: string, message: string): boolean {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
       console.error(
         `[WorkerSessionManager] No session ${sessionId} for message`,
       );
-      return;
+      return false;
     }
 
     console.log(`[WorkerSessionManager] Sending message to ${sessionId}`);
@@ -546,7 +561,20 @@ export class WorkerSessionManager extends EventEmitter {
     session.messages.push(userMessage);
     this.emit("message", sessionId, userMessage);
 
-    session.handle.sendMessage(message);
+    try {
+      session.handle.sendMessage(message);
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[WorkerSessionManager] Failed to send message for session ${sessionId}: ${errorMessage}`);
+
+      // Emit error event so WorkerConnectionManager can notify central service
+      this.emit("error", sessionId, errorMessage);
+
+      // Clean up the failed session
+      this.cancelSession(sessionId);
+      return false;
+    }
   }
 
   /**

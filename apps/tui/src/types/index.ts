@@ -78,14 +78,21 @@ export interface QuestionOption {
   description: string;
 }
 
+export interface LinearConfig {
+  apiKey: string;
+  teamID: string;
+}
+
+export interface WorkerConfig {
+  enabled: boolean;
+  centralUrl: string;
+  token: string;
+  autoConnect?: boolean;
+}
+
 export interface Config {
-  issueTracker?: "linear" | "beads";
-  linear?: {
-    apiKey: string;
-    teamID: string;
-  };
-  beads?: {
-    // Beads uses local git-based issue tracking
-    // No additional config needed
-  };
+  issueTracker?: "linear" | "beads" | null;
+  linear?: LinearConfig;
+  beads?: Record<string, unknown>;
+  worker?: WorkerConfig;
 }

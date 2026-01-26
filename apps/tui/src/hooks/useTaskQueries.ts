@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Runtime } from "effect";
 import { createTaskService } from "../services/TaskService";
 import type { Config, Session, Task } from "../types";
+import { loadConfig as loadConfigFromFile } from "../utils/config-loader";
 
 // Query keys
 export const taskQueryKeys = {
@@ -19,36 +20,15 @@ export const taskQueryKeys = {
 };
 
 /**
- * Normalize nested Linear config fields
- * Handles both snake_case and camelCase field names for backwards compatibility
- * Priority: LINEAR_API_KEY env var > config file apiKey
- */
-function normalizeLinearConfig(linear: any): Config["linear"] {
-  if (!linear) return undefined;
-
-  // Check for API key in environment variable first, then fall back to config file
-  const apiKey = process.env.LINEAR_API_KEY || linear.apiKey || linear.api_key;
-
-  return {
-    apiKey,
-    teamID: linear.teamID || linear.team_id || linear.teamId,
-  };
-}
-
-/**
- * Hook to load config
+ * Hook to load config using the unified config loader
  * Priority: workspace .clive/config.json -> global ~/.clive/config.json
- * Each workspace must have complete Linear config (no merging with global)
+ * API key priority: LINEAR_API_KEY env var > ~/.clive/.env > config file
  */
 export function useConfig() {
   return useQuery({
     queryKey: taskQueryKeys.config(),
     queryFn: async (): Promise<Config> => {
-      // Load config from file system
-      const fs = await import("node:fs/promises");
       const fsSync = await import("node:fs");
-      const os = await import("node:os");
-      const path = await import("node:path");
 
       const logToFile = (msg: string) => {
         fsSync.appendFileSync(
@@ -57,69 +37,22 @@ export function useConfig() {
         );
       };
 
-      const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
-      const workspaceConfigPath = path.join(
-        workspaceRoot,
-        ".clive",
-        "config.json",
-      );
-      const globalConfigPath = path.join(os.homedir(), ".clive", "config.json");
+      // Use unified config loader
+      const loadedConfig = loadConfigFromFile();
 
-      let config: Config | null = null;
-      let configSource: "workspace" | "global" | "none" = "none";
-
-      // Try workspace config first (project-specific)
-      try {
-        const content = await fs.readFile(workspaceConfigPath, "utf-8");
-        const raw = JSON.parse(content);
-
-        config = {
-          issueTracker: raw.issueTracker || raw.issue_tracker,
-          linear: normalizeLinearConfig(raw.linear),
-          beads: raw.beads,
-        };
-        configSource = "workspace";
-
-        logToFile(
-          `[useConfig] Loaded config from workspace: ${workspaceConfigPath}`,
-        );
-      } catch (_error) {
-        logToFile(
-          `[useConfig] No workspace config found at ${workspaceConfigPath}`,
-        );
-        // Workspace config doesn't exist or invalid, try global
-      }
-
-      // Try global config only if no workspace config
-      if (!config) {
-        try {
-          const content = await fs.readFile(globalConfigPath, "utf-8");
-          const raw = JSON.parse(content);
-
-          config = {
-            issueTracker: raw.issueTracker || raw.issue_tracker,
-            linear: normalizeLinearConfig(raw.linear),
-            beads: raw.beads,
-          };
-          configSource = "global";
-
-          logToFile(
-            `[useConfig] Loaded config from global: ${globalConfigPath}`,
-          );
-        } catch (_error) {
-          logToFile("[useConfig] No global config found");
-          // No config found
-        }
-      }
-
-      // Return empty config if nothing found
-      if (!config) {
+      if (!loadedConfig) {
         logToFile("[useConfig] No config found, returning defaults");
         return {
           issueTracker: undefined,
           linear: undefined,
         };
       }
+
+      const config: Config = {
+        issueTracker: loadedConfig.issueTracker ?? undefined,
+        linear: loadedConfig.linear,
+        beads: loadedConfig.beads,
+      };
 
       logToFile(`[useConfig] Final config: ${JSON.stringify(config)}`);
 
@@ -133,15 +66,13 @@ export function useConfig() {
         }
         if (!config.linear.apiKey) {
           const errorMsg =
-            `Linear API key is missing in ${configSource} config. ` +
-            `Please run the Linear setup flow in this workspace.`;
+            "Linear API key is missing. Please run Linear setup or set LINEAR_API_KEY env var.";
           logToFile(`[useConfig] Validation error: ${errorMsg}`);
           throw new Error(errorMsg);
         }
         if (!config.linear.teamID) {
           const errorMsg =
-            `Linear team ID is missing in ${configSource} config. ` +
-            `Please run the Linear setup flow in this workspace.`;
+            "Linear team ID is missing. Please run Linear setup.";
           logToFile(`[useConfig] Validation error: ${errorMsg}`);
           throw new Error(errorMsg);
         }

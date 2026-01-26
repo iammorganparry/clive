@@ -39,50 +39,35 @@ export function createTaskService(config: Config) {
     loadSessions: provide(
       Effect.gen(function* () {
         if (config.issueTracker === "linear" && config.linear) {
-          // Match Go TUI logic: fetch parent issues + assigned issues
+          // Fetch all top-level issues in the team
           const linearService = yield* LinearService;
 
-          // Get current user ID first
-          const viewer = yield* linearService.getCurrentUser;
-
-          // Fetch all issues for the team (we'll filter client-side)
+          // Fetch all issues in the team (top-level only - no parent)
           const allIssues = yield* linearService.listIssues({
             teamId: config.linear.teamID,
+            filter: { parent: { null: true } },
             limit: 100,
           });
 
-          // Filter for parent issues (top-level with no parent that have children)
-          const parentIssues = allIssues.filter(
-            (issue) =>
-              !issue.parent &&
-              issue.children &&
-              issue.children.nodes.length > 0,
-          );
-
-          // Fetch issues assigned to current user
-          const assignedIssues = yield* linearService.listIssues({
-            teamId: config.linear.teamID,
-            assigneeId: viewer.id,
-            limit: 100,
-          });
-
-          // Merge and deduplicate by ID
-          const issueMap = new Map<string, LinearIssue>();
-
-          // Add parent issues (already filtered for those with children)
-          for (const issue of parentIssues) {
-            issueMap.set(issue.id, issue);
-          }
-
-          // Add assigned issues (filter for top-level only)
-          for (const issue of assignedIssues) {
-            if (!issue.parent) {
-              issueMap.set(issue.id, issue);
+          // Debug: log issues
+          yield* Effect.sync(() => {
+            const fs = require("node:fs");
+            fs.appendFileSync(
+              "/tmp/tui-debug.log",
+              `${new Date().toISOString()} [TaskService] Top-level issues from Linear: ${allIssues.length}\n`
+            );
+            for (const issue of allIssues.slice(0, 5)) {
+              fs.appendFileSync(
+                "/tmp/tui-debug.log",
+                `${new Date().toISOString()} [TaskService]   - ${issue.id}: "${issue.title}"\n`
+              );
             }
-          }
+          });
+
+          const topLevelIssues = allIssues;
 
           // Convert to sessions
-          const sessions = Array.from(issueMap.values()).map(
+          const sessions = topLevelIssues.map(
             (issue): Session => ({
               id: issue.id,
               name: issue.title,
