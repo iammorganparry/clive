@@ -289,6 +289,75 @@ export class WorkerProxy extends EventEmitter {
   }
 
   /**
+   * Check if a session is orphaned (exists in pending but no active worker)
+   */
+  isSessionOrphaned(threadTs: string): boolean {
+    // Session has no worker assigned in router
+    return !this.router.isSessionAssigned(threadTs);
+  }
+
+  /**
+   * Resume an orphaned session by reassigning to a new worker
+   * Returns the new worker ID or an error
+   */
+  async resumeSession(
+    threadTs: string,
+    channel: string,
+    initiatorId: string,
+    initialPrompt: string,
+    onEvent: InterviewEventCallback,
+    mode?: SessionMode,
+    linearIssueUrls?: string[],
+  ): Promise<{ workerId: string } | { error: string }> {
+    console.log(`[WorkerProxy] Attempting to resume session ${threadTs}`);
+
+    // Assign to a new worker
+    const workerId = this.router.assignSession(threadTs);
+    if (!workerId) {
+      return { error: "No workers available to resume session." };
+    }
+
+    // Get worker socket
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      this.router.unassignSession(threadTs, "worker not found");
+      return { error: "Worker not found. Please try again." };
+    }
+
+    // Determine effective mode and model
+    const effectiveMode = mode ?? "plan";
+    const model = effectiveMode === "build" ? "sonnet" : "opus";
+
+    // Create interview request (essentially restarting with context)
+    const request: InterviewRequest = {
+      sessionId: threadTs,
+      threadTs,
+      channel,
+      initiatorId,
+      initialPrompt,
+      model,
+      mode: effectiveMode,
+      linearIssueUrls,
+    };
+
+    // Track pending interview with new callback
+    this.pendingInterviews.set(threadTs, {
+      sessionId: threadTs,
+      workerId,
+      onEvent,
+    });
+
+    // Send to worker
+    this.sendToWorker(worker.socket, {
+      type: "start_interview",
+      payload: request,
+    });
+
+    console.log(`[WorkerProxy] Session ${threadTs} resumed on worker ${workerId}`);
+    return { workerId };
+  }
+
+  /**
    * Get worker ID for a session
    */
   getWorkerForSession(threadTs: string): string | undefined {

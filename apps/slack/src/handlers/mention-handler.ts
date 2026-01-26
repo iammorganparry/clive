@@ -423,18 +423,69 @@ export function registerMentionHandlerDistributed(
         store.close(threadTs);
         // Fall through to create new session
       } else if (existingSession) {
-        // Active session exists - treat this @mention as a follow-up message
+        // Check if user is the initiator
+        if (!store.isInitiator(threadTs, userId)) {
+          console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
+          return;
+        }
+
+        // Check if session has an active worker or is orphaned
+        if (workerProxy.isSessionOrphaned(threadTs)) {
+          console.log(`[MentionHandler] Session ${threadTs} is orphaned, attempting to resume`);
+
+          // Extract the message text for the resume
+          const messageText = extractDescription(text, botUserId);
+          const resumePrompt = messageText || existingSession.initialDescription || "Continue the conversation";
+
+          // Try to resume with a new worker
+          const result = await workerProxy.resumeSession(
+            threadTs,
+            channel,
+            userId,
+            resumePrompt,
+            async (event: WorkerInterviewEvent) => {
+              await handleWorkerInterviewEvent(
+                event,
+                threadTs,
+                channel,
+                store,
+                slackService,
+              );
+            },
+            existingSession.mode !== "greeting" ? existingSession.mode : "plan",
+            existingSession.linearIssueUrls,
+          );
+
+          if ("error" in result) {
+            console.error(`[MentionHandler] Failed to resume session: ${result.error}`);
+            await Effect.runPromise(
+              slackService.postMessage({
+                channel,
+                threadTs,
+                text: `<@${userId}> Failed to resume: ${result.error}`,
+                blocks: formatErrorMessage(result.error, userId),
+              }),
+            );
+            return;
+          }
+
+          // Update session with new worker
+          store.setWorkerId(threadTs, result.workerId);
+          store.setPhase(threadTs, "problem");
+
+          // Add thinking indicator
+          await Effect.runPromise(
+            slackService.addReaction(channel, messageTs, "thinking_face"),
+          );
+          return;
+        }
+
+        // Active session with worker exists - treat this @mention as a follow-up message
         console.log(`[MentionHandler] Session exists for thread ${threadTs}, forwarding as message`);
 
         // Extract the message text (without the @mention)
         const messageText = extractDescription(text, botUserId);
         if (messageText) {
-          // Check if user is the initiator
-          if (!store.isInitiator(threadTs, userId)) {
-            console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
-            return;
-          }
-
           // Update activity timestamp
           store.touch(threadTs);
 
@@ -526,8 +577,9 @@ export function registerMentionHandlerDistributed(
 
 /**
  * Handle events from worker interview
+ * Exported for use by message-handler when resuming orphaned sessions
  */
-async function handleWorkerInterviewEvent(
+export async function handleWorkerInterviewEvent(
   event: WorkerInterviewEvent,
   threadTs: string,
   channel: string,
