@@ -5,6 +5,7 @@
  * Interactive Mode: Full TUI experience with issue tracking
  */
 
+import { Logo } from "./Logo";
 import { OneDarkPro } from "../styles/theme";
 
 interface ModeSelectionViewProps {
@@ -61,14 +62,12 @@ export function ModeSelectionView({
     >
       <box flexDirection="column" alignItems="center">
         {/* Logo */}
-        <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} bold>
-            CLIVE
-          </text>
-          <text fg={OneDarkPro.foreground.muted}>{" · Select Mode"}</text>
-        </box>
+        <Logo />
+        <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+          Select Mode
+        </text>
 
-        <text fg={OneDarkPro.foreground.secondary} marginTop={1}>
+        <text fg={OneDarkPro.foreground.secondary} marginTop={2}>
           How would you like to use Clive?
         </text>
 

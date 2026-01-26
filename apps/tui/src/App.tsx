@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DynamicInput } from "./components/DynamicInput";
 import { HelpView } from "./components/HelpView";
 import { LinearConfigFlow } from "./components/LinearConfigFlow";
+import { Logo } from "./components/Logo";
 import { ModeSelectionView } from "./components/ModeSelectionView";
 import { OutputPanel, type OutputPanelRef } from "./components/OutputPanel";
 import { SelectionView } from "./components/SelectionView";
@@ -964,10 +965,14 @@ function AppContent() {
             flexDirection="column"
             backgroundColor={OneDarkPro.background.primary}
           >
-            <text fg={OneDarkPro.foreground.muted}>
+            <Logo />
+            <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+              Worker Mode
+            </text>
+            <text fg={OneDarkPro.foreground.muted} marginTop={3}>
               Waiting for Slack requests...
             </text>
-            <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+            <text fg={OneDarkPro.foreground.muted} marginTop={1}>
               Mention @clive in Slack to start a planning session
             </text>
             {workerConnection.status === "ready" && (

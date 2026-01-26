@@ -4,6 +4,7 @@
  * Flow: Tracker Selection -> Configuration -> Save
  */
 
+import { Logo } from "./Logo";
 import { OneDarkPro } from "../styles/theme";
 import type { IssueTrackerConfig } from "../types/views";
 
@@ -50,16 +51,12 @@ export function SetupView({
     >
       <box flexDirection="column" alignItems="center">
         {/* Logo */}
-        <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} bold>
-            CLIVE
-          </text>
-          <text fg={OneDarkPro.foreground.muted}>
-            {" · Issue Tracker Setup"}
-          </text>
-        </box>
+        <Logo />
+        <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+          Issue Tracker Setup
+        </text>
 
-        <text fg={OneDarkPro.foreground.secondary} marginTop={1}>
+        <text fg={OneDarkPro.foreground.secondary} marginTop={2}>
           Configure your issue tracker integration
         </text>
 

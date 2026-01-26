@@ -3,6 +3,7 @@
  * Shows keyboard shortcuts and commands
  */
 
+import { Logo } from "./Logo";
 import { OneDarkPro } from "../styles/theme";
 
 interface HelpViewProps {
@@ -26,8 +27,11 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
         flexDirection="column"
         alignItems="center"
       >
+        {/* Logo */}
+        <Logo />
+
         {/* Title */}
-        <text fg={OneDarkPro.syntax.blue} bold>
+        <text fg={OneDarkPro.syntax.blue} marginTop={1}>
           Keyboard Shortcuts
         </text>
 

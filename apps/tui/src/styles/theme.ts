@@ -3,6 +3,21 @@
  * Ported from apps/tui-go/internal/tui/styles.go
  */
 
+/**
+ * ASCII Art CLIVE Logo
+ * Display with OneDarkPro.syntax.red for brand consistency
+ */
+export const CLIVE_LOGO = `░█████╗░██╗░░░░░██╗██╗░░░██╗███████╗
+██╔══██╗██║░░░░░██║██║░░░██║██╔════╝
+██║░░╚═╝██║░░░░░██║╚██╗░██╔╝█████╗░░
+██║░░██╗██║░░░░░██║░╚████╔╝░██╔══╝░░
+╚█████╔╝███████╗██║░░╚██╔╝░░███████╗
+░╚════╝░╚══════╝╚═╝░░░╚═╝░░░╚══════╝`;
+
+export const CLIVE_LOGO_LINES = CLIVE_LOGO.split('\n');
+export const CLIVE_LOGO_WIDTH = 36;
+export const CLIVE_LOGO_HEIGHT = 6;
+
 export const OneDarkPro = {
   background: {
     primary: "#282C34",
