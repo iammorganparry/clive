@@ -8,11 +8,96 @@
  * - Distributed: Central service with worker swarm for multi-user support
  */
 
-import type { Server } from "node:http";
+import type { Server, IncomingMessage, ServerResponse } from "node:http";
 import { LogLevel, App as SlackApp } from "@slack/bolt";
 import HTTPReceiverModule from "@slack/bolt/dist/receivers/HTTPReceiver.js";
 import { Effect, pipe } from "effect";
 import { loadConfig, type SlackConfig } from "./config";
+
+// ============================================================
+// Rate Limiting (Security: prevent API abuse)
+// ============================================================
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const RATE_LIMIT_CONFIG = {
+  maxRequests: 100,     // Max requests per window
+  windowMs: 60_000,     // 1 minute window
+  cleanupIntervalMs: 60_000, // Cleanup old entries every minute
+};
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+// Periodically clean up expired entries to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitStore.entries()) {
+    if (now > entry.resetAt) {
+      rateLimitStore.delete(ip);
+    }
+  }
+}, RATE_LIMIT_CONFIG.cleanupIntervalMs);
+
+/**
+ * Get client IP from request (handles proxies)
+ */
+function getClientIp(req: IncomingMessage): string {
+  // Check X-Forwarded-For header (common for proxies/load balancers)
+  const forwardedFor = req.headers["x-forwarded-for"];
+  if (forwardedFor) {
+    const ips = Array.isArray(forwardedFor)
+      ? forwardedFor[0]
+      : forwardedFor.split(",")[0];
+    return ips?.trim() || "unknown";
+  }
+  // Fallback to socket address
+  return req.socket?.remoteAddress || "unknown";
+}
+
+/**
+ * Check if request should be rate limited
+ * Returns true if request is allowed, false if rate limited
+ */
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    // New window or expired entry
+    rateLimitStore.set(ip, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_CONFIG.windowMs,
+    });
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT_CONFIG.maxRequests) {
+    // Rate limit exceeded
+    return false;
+  }
+
+  // Increment counter
+  entry.count++;
+  return true;
+}
+
+/**
+ * Send rate limit exceeded response
+ */
+function sendRateLimitResponse(res: ServerResponse): void {
+  res.writeHead(429, {
+    "Content-Type": "application/json",
+    "Retry-After": String(Math.ceil(RATE_LIMIT_CONFIG.windowMs / 1000)),
+  });
+  res.end(JSON.stringify({
+    error: "Too Many Requests",
+    message: "Rate limit exceeded. Please try again later.",
+    retryAfter: Math.ceil(RATE_LIMIT_CONFIG.windowMs / 1000),
+  }));
+}
 
 // Handle CommonJS default export in ESM
 const HTTPReceiver =
@@ -133,7 +218,9 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     process.exit(1);
   }
 
-  // Create HTTP receiver with custom routes for health checks and worker token
+  // Create HTTP receiver with custom routes for health checks
+  // SECURITY: Worker token endpoint removed - tokens must be configured via environment variable
+  // See: https://github.com/clawdbot/clawdbot/issues/1796 (similar vulnerability)
   const receiver = new HTTPReceiver({
     signingSecret: config.slackSigningSecret,
     port: config.port,
@@ -141,19 +228,15 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
       {
         path: "/health",
         method: "GET",
-        handler: (_req, res) => {
+        handler: (req, res) => {
+          // SECURITY: Apply rate limiting to prevent abuse
+          const clientIp = getClientIp(req);
+          if (!checkRateLimit(clientIp)) {
+            sendRateLimitResponse(res);
+            return;
+          }
           res.writeHead(200);
           res.end("OK");
-        },
-      },
-      {
-        path: "/api/worker-token",
-        method: "GET",
-        handler: (_req, res) => {
-          // Return the worker token for seamless TUI setup
-          // This allows workers to auto-configure without manual token entry
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ token: config.workerApiToken }));
         },
       },
     ],

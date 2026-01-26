@@ -7,6 +7,14 @@
 
 import type { App, BlockAction, ButtonAction } from "@slack/bolt";
 import { Data, Effect } from "effect";
+import {
+  OtherInputModalMetadataSchema,
+  ChangeRequestModalMetadataSchema,
+  BuildModeActionMetadataSchema,
+  ReviewModeActionMetadataSchema,
+  MAX_USER_INPUT_LENGTH,
+  BLOCKED_INPUT_PATTERNS,
+} from "@clive/worker-protocol";
 import { otherInputModal, section } from "../formatters/block-builder";
 
 /**
@@ -38,6 +46,52 @@ function parseActionValue(
   try {
     return JSON.parse(value);
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Sanitize user input before sending to AI
+ * SECURITY: Prevents prompt injection and limits input length
+ */
+function sanitizeUserInput(input: string): { valid: boolean; sanitized: string; error?: string } {
+  // Truncate to max length
+  const sanitized = input.slice(0, MAX_USER_INPUT_LENGTH);
+
+  // Check for blocked patterns (potential prompt injection)
+  for (const pattern of BLOCKED_INPUT_PATTERNS) {
+    if (pattern.test(sanitized)) {
+      console.warn("[ActionHandler] Blocked input pattern detected:", pattern.toString());
+      return {
+        valid: false,
+        sanitized: "",
+        error: "Input contains blocked content. Please rephrase your response.",
+      };
+    }
+  }
+
+  return { valid: true, sanitized };
+}
+
+/**
+ * Parse and validate modal private_metadata with Zod schema
+ * SECURITY: Validates structure to prevent injection attacks
+ */
+function parsePrivateMetadata<T>(
+  privateMetadata: string | undefined,
+  schema: { safeParse: (data: unknown) => { success: boolean; data?: T; error?: unknown } },
+): T | null {
+  if (!privateMetadata) return null;
+  try {
+    const parsed = JSON.parse(privateMetadata);
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      console.error("[ActionHandler] Invalid private_metadata structure:", result.error);
+      return null;
+    }
+    return result.data ?? null;
+  } catch (error) {
+    console.error("[ActionHandler] Failed to parse private_metadata:", error);
     return null;
   }
 }
@@ -201,12 +255,13 @@ export function registerActionHandler(
   app.view("other_input_modal", async ({ body, ack, view }) => {
     await ack();
 
-    const metadata = JSON.parse(view.private_metadata || "{}");
-    const { threadTs, toolUseId, questionHeader } = metadata as {
-      threadTs: string;
-      toolUseId: string;
-      questionHeader: string;
-    };
+    // SECURITY: Validate private_metadata with Zod schema
+    const metadata = parsePrivateMetadata(view.private_metadata, OtherInputModalMetadataSchema);
+    if (!metadata) {
+      console.error("[ActionHandler] Invalid other_input_modal metadata");
+      return;
+    }
+    const { threadTs, questionHeader } = metadata;
 
     const userId = body.user.id;
 
@@ -216,10 +271,17 @@ export function registerActionHandler(
     }
 
     // Get the custom answer from the input
-    const customAnswer =
+    const rawAnswer =
       view.state.values.custom_answer_block?.custom_answer_input?.value;
 
-    if (!customAnswer) {
+    if (!rawAnswer) {
+      return;
+    }
+
+    // SECURITY: Sanitize user input before sending to AI
+    const { valid, sanitized: customAnswer, error } = sanitizeUserInput(rawAnswer);
+    if (!valid) {
+      console.warn(`[ActionHandler] Blocked custom answer: ${error}`);
       return;
     }
 
@@ -381,8 +443,13 @@ export function registerActionHandler(
   app.view("change_request_modal", async ({ body, ack, view }) => {
     await ack();
 
-    const metadata = JSON.parse(view.private_metadata || "{}");
-    const { threadTs } = metadata as { threadTs: string };
+    // SECURITY: Validate private_metadata with Zod schema
+    const metadata = parsePrivateMetadata(view.private_metadata, ChangeRequestModalMetadataSchema);
+    if (!metadata) {
+      console.error("[ActionHandler] Invalid change_request_modal metadata");
+      return;
+    }
+    const { threadTs } = metadata;
     const userId = body.user.id;
 
     // Check if user is initiator
@@ -391,9 +458,16 @@ export function registerActionHandler(
     }
 
     // Get the change request
-    const changeRequest = view.state.values.changes_block?.changes_input?.value;
+    const rawChangeRequest = view.state.values.changes_block?.changes_input?.value;
 
-    if (!changeRequest) {
+    if (!rawChangeRequest) {
+      return;
+    }
+
+    // SECURITY: Sanitize user input before sending to AI
+    const { valid, sanitized: changeRequest, error } = sanitizeUserInput(rawChangeRequest);
+    if (!valid) {
+      console.warn(`[ActionHandler] Blocked change request: ${error}`);
       return;
     }
 
@@ -572,12 +646,13 @@ export function registerActionHandlerDistributed(
   app.view("other_input_modal", async ({ body, ack, view }) => {
     await ack();
 
-    const metadata = JSON.parse(view.private_metadata || "{}");
-    const { threadTs, toolUseId, questionHeader } = metadata as {
-      threadTs: string;
-      toolUseId: string;
-      questionHeader: string;
-    };
+    // SECURITY: Validate private_metadata with Zod schema
+    const metadata = parsePrivateMetadata(view.private_metadata, OtherInputModalMetadataSchema);
+    if (!metadata) {
+      console.error("[ActionHandler] Invalid other_input_modal metadata");
+      return;
+    }
+    const { threadTs, questionHeader } = metadata;
 
     const userId = body.user.id;
 
@@ -587,10 +662,17 @@ export function registerActionHandlerDistributed(
     }
 
     // Get the custom answer from the input
-    const customAnswer =
+    const rawAnswer =
       view.state.values.custom_answer_block?.custom_answer_input?.value;
 
-    if (!customAnswer) {
+    if (!rawAnswer) {
+      return;
+    }
+
+    // SECURITY: Sanitize user input before sending to AI
+    const { valid, sanitized: customAnswer, error } = sanitizeUserInput(rawAnswer);
+    if (!valid) {
+      console.warn(`[ActionHandler] Blocked custom answer: ${error}`);
       return;
     }
 
@@ -748,8 +830,13 @@ export function registerActionHandlerDistributed(
   app.view("change_request_modal", async ({ body, ack, view }) => {
     await ack();
 
-    const metadata = JSON.parse(view.private_metadata || "{}");
-    const { threadTs } = metadata as { threadTs: string };
+    // SECURITY: Validate private_metadata with Zod schema
+    const metadata = parsePrivateMetadata(view.private_metadata, ChangeRequestModalMetadataSchema);
+    if (!metadata) {
+      console.error("[ActionHandler] Invalid change_request_modal metadata");
+      return;
+    }
+    const { threadTs } = metadata;
     const userId = body.user.id;
 
     // Check if user is initiator
@@ -758,9 +845,16 @@ export function registerActionHandlerDistributed(
     }
 
     // Get the change request
-    const changeRequest = view.state.values.changes_block?.changes_input?.value;
+    const rawChangeRequest = view.state.values.changes_block?.changes_input?.value;
 
-    if (!changeRequest) {
+    if (!rawChangeRequest) {
+      return;
+    }
+
+    // SECURITY: Sanitize user input before sending to AI
+    const { valid, sanitized: changeRequest, error } = sanitizeUserInput(rawChangeRequest);
+    if (!valid) {
+      console.warn(`[ActionHandler] Blocked change request: ${error}`);
       return;
     }
 
@@ -792,11 +886,14 @@ export function registerActionHandlerDistributed(
       return;
     }
 
-    const { threadTs, channel, urls } = actionValue as {
-      threadTs: string;
-      channel: string;
-      urls: string[];
-    };
+    // SECURITY: Validate action value with Zod schema
+    const parseResult = BuildModeActionMetadataSchema.safeParse(actionValue);
+    if (!parseResult.success) {
+      console.error("[ActionHandler] Invalid start_build_mode action value:", parseResult.error);
+      return;
+    }
+
+    const { threadTs, channel, urls } = parseResult.data;
 
     // Run the handler logic as an Effect
     await runHandlerEffect(
@@ -906,11 +1003,14 @@ export function registerActionHandlerDistributed(
       return;
     }
 
-    const { threadTs, channel, urls } = actionValue as {
-      threadTs: string;
-      channel: string;
-      urls: string[];
-    };
+    // SECURITY: Validate action value with Zod schema
+    const parseResult = ReviewModeActionMetadataSchema.safeParse(actionValue);
+    if (!parseResult.success) {
+      console.error("[ActionHandler] Invalid start_review_mode action value:", parseResult.error);
+      return;
+    }
+
+    const { threadTs, channel, urls } = parseResult.data;
 
     // Run the handler logic as an Effect
     await runHandlerEffect(

@@ -635,10 +635,82 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             // Note: Prompt is NOT passed via CLI args when using --input-format stream-json
             // It will be sent via stdin after spawn (see spawn event handler below)
 
-            // Spawn the CLI process with inherited environment for auth
+            // SECURITY: Filter environment variables to prevent leaking secrets to subprocess
+            // Only allow necessary variables for Claude CLI operation
+            // See: https://github.com/clawdbot/clawdbot/issues/1796 (similar vulnerability)
+            const ALLOWED_ENV_VARS = [
+              // System essentials
+              "PATH",
+              "HOME",
+              "USER",
+              "SHELL",
+              "TERM",
+              "LANG",
+              "LC_ALL",
+              "LC_CTYPE",
+              "TMPDIR",
+              "TMP",
+              "TEMP",
+              // Node.js
+              "NODE_ENV",
+              "NODE_PATH",
+              "NODE_OPTIONS",
+              // Claude CLI auth (required)
+              "ANTHROPIC_API_KEY",
+              "CLAUDE_CONFIG_DIR",
+              // Editor/Git (commonly used by CLI)
+              "EDITOR",
+              "VISUAL",
+              "GIT_AUTHOR_NAME",
+              "GIT_AUTHOR_EMAIL",
+              "GIT_COMMITTER_NAME",
+              "GIT_COMMITTER_EMAIL",
+              // XDG directories
+              "XDG_CONFIG_HOME",
+              "XDG_DATA_HOME",
+              "XDG_CACHE_HOME",
+              "XDG_RUNTIME_DIR",
+            ];
+
+            // Also allow CLIVE_* prefixed vars that are explicitly meant for the workspace
+            const filteredEnv = Object.fromEntries(
+              Object.entries(process.env).filter(([key]) =>
+                ALLOWED_ENV_VARS.includes(key) ||
+                key.startsWith("CLIVE_WORKSPACE") ||
+                key.startsWith("CLIVE_SOCKET"),
+              ),
+            );
+
+            // Explicitly exclude sensitive tokens even if they somehow match patterns
+            const EXCLUDED_ENV_VARS = [
+              "LINEAR_API_KEY",
+              "CLIVE_WORKER_TOKEN",
+              "CLIVE_WORKER_API_TOKEN",
+              "SLACK_BOT_TOKEN",
+              "SLACK_SIGNING_SECRET",
+              "DATABASE_URL",
+              "POSTGRES_URL",
+              "SUPABASE_URL",
+              "SUPABASE_SERVICE_KEY",
+              "AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "GITHUB_TOKEN",
+              "GH_TOKEN",
+              "NPM_TOKEN",
+            ];
+
+            for (const key of EXCLUDED_ENV_VARS) {
+              delete filteredEnv[key];
+            }
+
+            logToOutput(
+              `[ClaudeCliService] Filtered env vars: ${Object.keys(filteredEnv).length} allowed`,
+            );
+
+            // Spawn the CLI process with filtered environment for security
             const child = spawn(cliPath, args, {
               stdio: ["pipe", "pipe", "pipe"],
-              env: { ...process.env },
+              env: filteredEnv,
               cwd: options.workspaceRoot || process.cwd(),
             });
 

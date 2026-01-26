@@ -29,6 +29,14 @@ export {
   WorkerRegistrationSchema,
   WorkerStatusSchema,
   WorkerToCentralMessageSchema,
+  // Security: Modal metadata validation schemas
+  OtherInputModalMetadataSchema,
+  ChangeRequestModalMetadataSchema,
+  BuildModeActionMetadataSchema,
+  ReviewModeActionMetadataSchema,
+  // Security: Input sanitization constants
+  MAX_USER_INPUT_LENGTH,
+  BLOCKED_INPUT_PATTERNS,
 } from "./schemas.js";
 // Export all types
 export type {

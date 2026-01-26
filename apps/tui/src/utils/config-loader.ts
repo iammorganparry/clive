@@ -2,15 +2,16 @@
  * Unified config loading utility
  * Single source of truth for loading Linear/issue tracker configuration
  *
- * Priority:
- * 1. Workspace config (.clive/config.json in current workspace)
- * 2. Global config (~/.clive/config.json)
+ * All config is loaded from and saved to workspace .clive/ directory only.
+ * Global ~/.clive/ directory is NOT used (no fallback, no merging).
  *
- * API Key priority:
- * 1. LINEAR_API_KEY environment variable (already set)
+ * API Key Priority:
+ * 1. LINEAR_API_KEY environment variable (if already set externally)
  * 2. Workspace .clive/.env file
- * 3. Global ~/.clive/.env file
- * 4. Config file's apiKey field
+ * 3. Config file's apiKey field
+ *
+ * SECURITY: Path traversal validation is performed on all workspace paths
+ * to prevent directory escape attacks.
  */
 
 import * as fs from "node:fs";
@@ -50,6 +51,61 @@ function isPlaceholderValue(value: string): boolean {
 }
 
 /**
+ * SECURITY: Validate that a path doesn't escape the base directory (path traversal prevention)
+ * Returns true if the path is safe (stays within basePath), false otherwise.
+ *
+ * Examples:
+ * - validatePathTraversal("/home/user/project/.clive", "/home/user/project") -> true
+ * - validatePathTraversal("/home/user/project/../../../etc/passwd", "/home/user/project") -> false
+ * - validatePathTraversal("/home/user/other/config", "/home/user/project") -> false
+ */
+export function validatePathTraversal(targetPath: string, basePath: string): boolean {
+  try {
+    // Resolve both paths to absolute, normalized paths
+    const resolvedTarget = path.resolve(targetPath);
+    const resolvedBase = path.resolve(basePath);
+
+    // Ensure the target path starts with the base path
+    // Add path separator to avoid matching partial directory names
+    // e.g., "/home/user/project-evil" should not match base "/home/user/project"
+    const normalizedBase = resolvedBase.endsWith(path.sep)
+      ? resolvedBase
+      : resolvedBase + path.sep;
+
+    // Target is safe if:
+    // 1. It equals the base path exactly, OR
+    // 2. It starts with the base path followed by separator
+    return resolvedTarget === resolvedBase || resolvedTarget.startsWith(normalizedBase);
+  } catch {
+    // If path resolution fails, treat as unsafe
+    return false;
+  }
+}
+
+/**
+ * Get a safe workspace path, validating it doesn't escape expected boundaries.
+ * Returns the validated workspace path or throws an error if path traversal detected.
+ */
+function getSafeWorkspacePath(workspaceRoot?: string): string {
+  const workspace = workspaceRoot || process.env.CLIVE_WORKSPACE || process.cwd();
+
+  // Resolve to absolute path
+  const resolvedWorkspace = path.resolve(workspace);
+
+  // Basic sanity checks
+  if (!resolvedWorkspace || resolvedWorkspace === "/") {
+    throw new Error("[config-loader] Invalid workspace path: cannot be root directory");
+  }
+
+  // Check for null bytes (common injection technique)
+  if (resolvedWorkspace.includes("\0")) {
+    throw new Error("[config-loader] Invalid workspace path: contains null bytes");
+  }
+
+  return resolvedWorkspace;
+}
+
+/**
  * Parse an .env file and return key-value pairs
  */
 function parseEnvFile(envPath: string): Record<string, string> {
@@ -78,54 +134,55 @@ function parseEnvFile(envPath: string): Record<string, string> {
 }
 
 /**
- * Load environment variables with priority: workspace .env > global .env
+ * Load environment variables from workspace .clive/.env only
  * Sets process.env values
+ * SECURITY: Validates workspace path to prevent path traversal
  */
 export function loadEnvFile(workspaceRoot?: string): void {
-  const workspace = workspaceRoot || process.env.CLIVE_WORKSPACE || process.cwd();
+  let workspace: string;
+  try {
+    workspace = getSafeWorkspacePath(workspaceRoot);
+  } catch (error) {
+    console.error("[config-loader] Path validation failed in loadEnvFile:", error);
+    return;
+  }
   const workspaceEnvPath = path.join(workspace, ".clive", ".env");
 
-  // Load global env first (lower priority)
-  const globalEnv = parseEnvFile(GLOBAL_ENV_PATH);
-
-  // Load workspace env (higher priority, but only if not a placeholder)
+  // Load workspace env only - no global fallback
   const workspaceEnv = parseEnvFile(workspaceEnvPath);
 
-  // Merge: workspace takes precedence UNLESS it's a placeholder value
-  // This prevents example/template configs from overriding real API keys
-  const mergedEnv: Record<string, string> = { ...globalEnv };
+  // Set in process.env (always update to ensure workspace values take effect)
   for (const [key, value] of Object.entries(workspaceEnv)) {
-    // Only use workspace value if it's not a placeholder
-    // OR if there's no global value to preserve
-    if (!isPlaceholderValue(value) || !globalEnv[key]) {
-      mergedEnv[key] = value;
+    // Skip placeholder values
+    if (isPlaceholderValue(value)) {
+      continue;
     }
-  }
-
-  // Set in process.env (only if not already set by actual env var)
-  for (const [key, value] of Object.entries(mergedEnv)) {
-    // Don't override if already set by real environment variable
-    // Check if it was set before we started (not by previous loadEnvFile call)
-    if (!process.env[key] || process.env[`_CLIVE_LOADED_${key}`]) {
-      process.env[key] = value;
-      process.env[`_CLIVE_LOADED_${key}`] = "1"; // Mark as loaded by us
-    }
+    process.env[key] = value;
   }
 }
 
 /**
- * Save a sensitive value to ~/.clive/.env file
+ * Save a sensitive value to workspace .clive/.env file
+ * @param key - The environment variable key
+ * @param value - The value to save
+ * @param workspaceRoot - Optional workspace root (defaults to CLIVE_WORKSPACE or cwd)
+ * SECURITY: Validates workspace path to prevent path traversal
  */
-export function saveEnvValue(key: string, value: string): void {
+export function saveEnvValue(key: string, value: string, workspaceRoot?: string): void {
   try {
-    if (!fs.existsSync(GLOBAL_CONFIG_DIR)) {
-      fs.mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
+    const workspace = getSafeWorkspacePath(workspaceRoot);
+    const workspaceConfigDir = path.join(workspace, ".clive");
+    const workspaceEnvPath = path.join(workspaceConfigDir, ".env");
+
+    // Create workspace .clive directory if needed
+    if (!fs.existsSync(workspaceConfigDir)) {
+      fs.mkdirSync(workspaceConfigDir, { recursive: true });
     }
 
-    // Read existing .env content
+    // Read existing workspace .env content
     let envContent = "";
-    if (fs.existsSync(GLOBAL_ENV_PATH)) {
-      envContent = fs.readFileSync(GLOBAL_ENV_PATH, "utf-8");
+    if (fs.existsSync(workspaceEnvPath)) {
+      envContent = fs.readFileSync(workspaceEnvPath, "utf-8");
     }
 
     // Update or add the key
@@ -150,9 +207,9 @@ export function saveEnvValue(key: string, value: string): void {
       updatedLines.push(`${key}=${value}`);
     }
 
-    fs.writeFileSync(GLOBAL_ENV_PATH, updatedLines.join("\n"), "utf-8");
+    fs.writeFileSync(workspaceEnvPath, updatedLines.join("\n"), "utf-8");
     // Set restrictive permissions (owner read/write only)
-    fs.chmodSync(GLOBAL_ENV_PATH, 0o600);
+    fs.chmodSync(workspaceEnvPath, 0o600);
 
     // Also set in current process env
     process.env[key] = value;
@@ -208,23 +265,25 @@ function loadConfigFromPath(configPath: string): IssueTrackerConfig | null {
 }
 
 /**
- * Load config with priority: workspace > global
+ * Load config from workspace .clive/config.json only
  * Also loads env file to ensure LINEAR_API_KEY is available
+ * SECURITY: Validates workspace path to prevent path traversal
  */
 export function loadConfig(workspaceRoot?: string): IssueTrackerConfig | null {
-  const workspace = workspaceRoot || process.env.CLIVE_WORKSPACE || process.cwd();
+  let workspace: string;
+  try {
+    workspace = getSafeWorkspacePath(workspaceRoot);
+  } catch (error) {
+    console.error("[config-loader] Path validation failed in loadConfig:", error);
+    return null;
+  }
 
-  // Load env file with workspace context (workspace .env takes priority over global)
+  // Load env file from workspace only
   loadEnvFile(workspace);
   const workspaceConfigPath = path.join(workspace, ".clive", "config.json");
 
-  // Try workspace config first
-  let config = loadConfigFromPath(workspaceConfigPath);
-
-  // Fall back to global config
-  if (!config) {
-    config = loadConfigFromPath(GLOBAL_CONFIG_PATH);
-  }
+  // Load workspace config only - no global fallback
+  const config = loadConfigFromPath(workspaceConfigPath);
 
   // If we have a config but Linear is missing API key, try to get it from env
   if (config?.issueTracker === "linear" && config.linear) {
@@ -239,20 +298,28 @@ export function loadConfig(workspaceRoot?: string): IssueTrackerConfig | null {
 }
 
 /**
- * Save config to global ~/.clive/config.json
- * API keys and tokens are saved separately in ~/.clive/.env for security
+ * Save config to workspace .clive/config.json
+ * API keys and tokens are saved separately in workspace .clive/.env for security
+ * @param config - The config to save
+ * @param workspaceRoot - Optional workspace root (defaults to CLIVE_WORKSPACE or cwd)
+ * SECURITY: Validates workspace path to prevent path traversal
  */
-export function saveConfig(config: IssueTrackerConfig): void {
+export function saveConfig(config: IssueTrackerConfig, workspaceRoot?: string): void {
   try {
-    if (!fs.existsSync(GLOBAL_CONFIG_DIR)) {
-      fs.mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
+    const workspace = getSafeWorkspacePath(workspaceRoot);
+    const workspaceConfigDir = path.join(workspace, ".clive");
+    const workspaceConfigPath = path.join(workspaceConfigDir, "config.json");
+
+    // Create workspace .clive directory if needed
+    if (!fs.existsSync(workspaceConfigDir)) {
+      fs.mkdirSync(workspaceConfigDir, { recursive: true });
     }
 
-    // Load existing config from disk to merge with (prevents data loss)
+    // Load existing config from workspace to merge with (prevents data loss)
     let existingConfig: IssueTrackerConfig = {};
     try {
-      if (fs.existsSync(GLOBAL_CONFIG_PATH)) {
-        const content = fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
+      if (fs.existsSync(workspaceConfigPath)) {
+        const content = fs.readFileSync(workspaceConfigPath, "utf-8");
         existingConfig = JSON.parse(content) as IssueTrackerConfig;
       }
     } catch {
@@ -272,22 +339,22 @@ export function saveConfig(config: IssueTrackerConfig): void {
       worker: newConfig.worker ?? existingConfig.worker,
     };
 
-    // Extract API key if present and save separately
+    // Extract API key if present and save separately to workspace .env
     if (configToSave.linear?.apiKey) {
-      saveEnvValue("LINEAR_API_KEY", configToSave.linear.apiKey);
+      saveEnvValue("LINEAR_API_KEY", configToSave.linear.apiKey, workspace);
       // Remove apiKey from config before saving
       delete (configToSave.linear as { apiKey?: string }).apiKey;
     }
 
-    // Extract worker token if present and save separately
+    // Extract worker token if present and save separately to workspace .env
     if (configToSave.worker?.token) {
-      saveEnvValue("CLIVE_WORKER_TOKEN", configToSave.worker.token);
+      saveEnvValue("CLIVE_WORKER_TOKEN", configToSave.worker.token, workspace);
       // Remove token from config before saving
       delete (configToSave.worker as { token?: string }).token;
     }
 
     fs.writeFileSync(
-      GLOBAL_CONFIG_PATH,
+      workspaceConfigPath,
       JSON.stringify(configToSave, null, 2),
       "utf-8",
     );

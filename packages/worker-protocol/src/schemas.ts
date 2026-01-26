@@ -249,3 +249,67 @@ export const SessionInfoSchema = z.object({
   createdAt: z.string(),
   lastActivityAt: z.string(),
 });
+
+// ============================================================
+// Slack Modal Metadata Schemas (Security: validate private_metadata)
+// ============================================================
+
+/**
+ * Metadata for "Other..." input modal
+ * Used when user wants to provide custom answer to a question
+ */
+export const OtherInputModalMetadataSchema = z.object({
+  threadTs: z.string(),
+  toolUseId: z.string(),
+  questionHeader: z.string(),
+});
+
+/**
+ * Metadata for change request modal
+ * Used when user requests changes to a plan
+ */
+export const ChangeRequestModalMetadataSchema = z.object({
+  threadTs: z.string(),
+});
+
+/**
+ * Metadata for build mode action
+ */
+export const BuildModeActionMetadataSchema = z.object({
+  threadTs: z.string(),
+  channel: z.string(),
+  urls: z.array(z.string()),
+});
+
+/**
+ * Metadata for review mode action
+ */
+export const ReviewModeActionMetadataSchema = z.object({
+  threadTs: z.string(),
+  channel: z.string(),
+  urls: z.array(z.string()),
+});
+
+// ============================================================
+// Input Sanitization Schemas (Security: prevent prompt injection)
+// ============================================================
+
+/** Maximum length for user input to AI */
+export const MAX_USER_INPUT_LENGTH = 10000;
+
+/**
+ * Patterns that may indicate prompt injection attempts
+ * These are checked case-insensitively
+ */
+export const BLOCKED_INPUT_PATTERNS = [
+  /ignore\s+(all\s+)?previous\s+instructions/i,
+  /disregard\s+(all\s+)?.*system\s+prompt/i,
+  /you\s+are\s+now\s+(a|an|in)/i,
+  /forget\s+(all\s+)?your\s+(previous\s+)?instructions/i,
+  /new\s+instructions:/i,
+  /override\s+(your\s+)?system/i,
+  /jailbreak/i,
+  /DAN\s+mode/i,
+  /pretend\s+you\s+are/i,
+  /act\s+as\s+if\s+you\s+were/i,
+];
