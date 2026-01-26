@@ -221,10 +221,11 @@ async function handleInterviewEvent(
       // Store pending question
       store.setPendingQuestion(threadTs, event.data, event.data.toolUseID);
 
-      // Post question to Slack (channel reply with user tag)
+      // Post question to Slack thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Please answer the following question:`,
           blocks: formatQuestionData(event.data, userId),
         }),
@@ -235,10 +236,11 @@ async function handleInterviewEvent(
     case "phase_change": {
       store.setPhase(threadTs, event.phase);
 
-      // Post phase indicator (channel reply with user tag)
+      // Post phase indicator to thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Phase: ${event.phase}`,
           blocks: formatPhaseIndicator(event.phase, userId),
         }),
@@ -247,11 +249,12 @@ async function handleInterviewEvent(
     }
 
     case "text": {
-      // Post text content (plan, explanations, etc.)
+      // Post text content to thread
       const formattedText = formatMarkdown(event.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> ${event.content.substring(0, 200)}...`,
           blocks: [section(`<@${userId}> ${formattedText}`)],
         }),
@@ -263,11 +266,12 @@ async function handleInterviewEvent(
       store.setPhase(threadTs, "reviewing");
       store.setPlanContent(threadTs, event.content);
 
-      // Post plan preview with approval buttons (channel reply with user tag)
+      // Post plan preview to thread
       const formattedPlan = formatMarkdown(event.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Plan ready for review`,
           blocks: [
             section(`<@${userId}> *Plan Ready for Review*`),
@@ -284,10 +288,11 @@ async function handleInterviewEvent(
         store.addLinearIssueUrl(threadTs, url);
       }
 
-      // Post completion message with links (channel reply with user tag)
+      // Post completion message to thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Planning complete! Issues created.`,
           blocks: formatCompletionMessage(event.urls, userId),
         }),
@@ -304,6 +309,7 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Error: ${event.message}`,
           blocks: formatErrorMessage(event.message, userId),
         }),
@@ -325,6 +331,7 @@ async function handleInterviewEvent(
           await Effect.runPromise(
             slackService.postMessage({
               channel,
+              threadTs,
               text: `<@${currentSession.initiatorId}> Planning complete!`,
               blocks: formatCompletionMessage(currentSession.linearIssueUrls, currentSession.initiatorId),
             }),
@@ -341,6 +348,7 @@ async function handleInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Interview timed out.`,
           blocks: formatTimeoutMessage(userId),
         }),
@@ -493,10 +501,11 @@ async function handleWorkerInterviewEvent(
       // Store pending question
       store.setPendingQuestion(threadTs, payload.data, payload.data.toolUseID);
 
-      // Post question to Slack (channel reply with user tag)
+      // Post question to Slack thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Please answer the following question:`,
           blocks: formatQuestionData(payload.data, userId),
         }),
@@ -507,10 +516,11 @@ async function handleWorkerInterviewEvent(
     case "phase_change": {
       store.setPhase(threadTs, payload.phase);
 
-      // Post phase indicator (channel reply with user tag)
+      // Post phase indicator to thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Phase: ${payload.phase}`,
           blocks: formatPhaseIndicator(payload.phase, userId),
         }),
@@ -519,11 +529,12 @@ async function handleWorkerInterviewEvent(
     }
 
     case "text": {
-      // Post text content (plan, explanations, etc.)
+      // Post text content to thread
       const formattedText = formatMarkdown(payload.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> ${payload.content.substring(0, 200)}...`,
           blocks: [section(`<@${userId}> ${formattedText}`)],
         }),
@@ -535,11 +546,12 @@ async function handleWorkerInterviewEvent(
       store.setPhase(threadTs, "reviewing");
       store.setPlanContent(threadTs, payload.content);
 
-      // Post plan preview (channel reply with user tag)
+      // Post plan preview to thread
       const formattedPlan = formatMarkdown(payload.content);
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Plan ready for review`,
           blocks: [
             section(`<@${userId}> *Plan Ready for Review*`),
@@ -556,10 +568,11 @@ async function handleWorkerInterviewEvent(
         store.addLinearIssueUrl(threadTs, url);
       }
 
-      // Post completion message with mode transition buttons (channel reply with user tag)
+      // Post completion message to thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Planning complete! Issues created.`,
           blocks: formatCompletionMessage(payload.urls, userId),
         }),
@@ -573,10 +586,11 @@ async function handleWorkerInterviewEvent(
       // Store the PR URL
       store.setPrUrl(threadTs, payload.url);
 
-      // Post PR link to Slack (channel reply with user tag)
+      // Post PR link to thread
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> PR created: ${payload.url}`,
           blocks: [
             section(`<@${userId}> :rocket: *Pull Request Created*`),
@@ -593,6 +607,7 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Error: ${payload.message}`,
           blocks: formatErrorMessage(payload.message, userId),
         }),
@@ -615,6 +630,7 @@ async function handleWorkerInterviewEvent(
           await Effect.runPromise(
             slackService.postMessage({
               channel,
+              threadTs,
               text: `<@${initiatorId}> Build complete! Ready for review?`,
               blocks: formatCompletionMessage(currentSession.linearIssueUrls ?? [], initiatorId),
             }),
@@ -625,6 +641,7 @@ async function handleWorkerInterviewEvent(
           await Effect.runPromise(
             slackService.postMessage({
               channel,
+              threadTs,
               text: `<@${initiatorId}> Review complete!`,
               blocks: [section(`<@${initiatorId}> *Review Complete*\nAll verification phases finished. Check Linear for any created tasks.`)],
             })
@@ -636,6 +653,7 @@ async function handleWorkerInterviewEvent(
             await Effect.runPromise(
               slackService.postMessage({
                 channel,
+                threadTs,
                 text: `<@${initiatorId}> Planning complete!`,
                 blocks: [
                   ...formatCompletionMessage(currentSession.linearIssueUrls ?? [], initiatorId),
@@ -674,6 +692,7 @@ async function handleWorkerInterviewEvent(
       await Effect.runPromise(
         slackService.postMessage({
           channel,
+          threadTs,
           text: `<@${userId}> Interview timed out.`,
           blocks: formatTimeoutMessage(userId),
         }),
