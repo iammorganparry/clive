@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InterviewEvent } from "@clive/worker-protocol";
+import { Effect } from "effect";
 import { InterviewStore } from "../../store/interview-store";
 import { SessionRouter } from "../session-router";
 import { WorkerProxy } from "../worker-proxy";
@@ -112,15 +113,17 @@ describe("WorkerProxy Session Resume", () => {
 
       // Resume session
       const onEvent = vi.fn();
-      const result = await proxy.resumeSession(
-        "thread-123",
-        "channel-456",
-        "user-789",
-        "Continue the conversation",
-        onEvent,
-        "plan",
-        undefined,
-        store,
+      const result = await Effect.runPromise(
+        proxy.resumeSession(
+          "thread-123",
+          "channel-456",
+          "user-789",
+          "Continue the conversation",
+          onEvent,
+          "plan",
+          undefined,
+          store,
+        ),
       );
 
       expect(result).toHaveProperty("workerId", "worker-123");
@@ -128,7 +131,7 @@ describe("WorkerProxy Session Resume", () => {
 
       // Verify the message sent to worker includes claudeSessionId
       expect(socket.send).toHaveBeenCalled();
-      const sentMessage = JSON.parse(socket.send.mock.calls[0][0]);
+      const sentMessage = JSON.parse(socket.send.mock.calls[0]?.[0]);
       expect(sentMessage.type).toBe("start_interview");
       expect(sentMessage.payload.claudeSessionId).toBe("claude-abc-123");
     });
@@ -167,15 +170,17 @@ describe("WorkerProxy Session Resume", () => {
 
       // Resume session - should get worker-456 now
       const onEvent = vi.fn();
-      const result = await proxy.resumeSession(
-        "thread-123",
-        "channel-456",
-        "user-789",
-        "Continue the conversation",
-        onEvent,
-        "plan",
-        undefined,
-        store,
+      const result = await Effect.runPromise(
+        proxy.resumeSession(
+          "thread-123",
+          "channel-456",
+          "user-789",
+          "Continue the conversation",
+          onEvent,
+          "plan",
+          undefined,
+          store,
+        ),
       );
 
       expect(result).toHaveProperty("workerId", "worker-456");
@@ -183,7 +188,7 @@ describe("WorkerProxy Session Resume", () => {
 
       // Verify the message sent does NOT include claudeSessionId
       expect(socket2.send).toHaveBeenCalled();
-      const sentMessage = JSON.parse(socket2.send.mock.calls[0][0]);
+      const sentMessage = JSON.parse(socket2.send.mock.calls[0]?.[0]);
       expect(sentMessage.type).toBe("start_interview");
       expect(sentMessage.payload.claudeSessionId).toBeUndefined();
     });
@@ -205,22 +210,24 @@ describe("WorkerProxy Session Resume", () => {
 
       // Resume session without store
       const onEvent = vi.fn();
-      const result = await proxy.resumeSession(
-        "thread-123",
-        "channel-456",
-        "user-789",
-        "Continue the conversation",
-        onEvent,
-        "plan",
-        undefined,
-        undefined, // No store
+      const result = await Effect.runPromise(
+        proxy.resumeSession(
+          "thread-123",
+          "channel-456",
+          "user-789",
+          "Continue the conversation",
+          onEvent,
+          "plan",
+          undefined,
+          undefined, // No store
+        ),
       );
 
       expect(result).toHaveProperty("workerId", "worker-123");
       expect(result).toHaveProperty("resumed", false);
 
       // Verify no claudeSessionId in message
-      const sentMessage = JSON.parse(socket.send.mock.calls[0][0]);
+      const sentMessage = JSON.parse(socket.send.mock.calls[0]?.[0]);
       expect(sentMessage.payload.claudeSessionId).toBeUndefined();
     });
   });
@@ -244,16 +251,18 @@ describe("WorkerProxy Session Resume", () => {
 
       // Start interview with store
       const onEvent = vi.fn();
-      const result = await proxy.startInterview(
-        "thread-123",
-        "channel-456",
-        "user-789",
-        "Build a feature",
-        onEvent,
-        undefined,
-        undefined,
-        undefined,
-        store,
+      const result = await Effect.runPromise(
+        proxy.startInterview(
+          "thread-123",
+          "channel-456",
+          "user-789",
+          "Build a feature",
+          onEvent,
+          undefined,
+          undefined,
+          undefined,
+          store,
+        ),
       );
 
       expect(result).toHaveProperty("workerId", "worker-123");

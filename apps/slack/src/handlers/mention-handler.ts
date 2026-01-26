@@ -22,6 +22,7 @@ import type { SlackService } from "../services/slack-service";
 import type { WorkerProxy } from "../services/worker-proxy";
 import type { InterviewStore } from "../store/interview-store";
 import type { InterviewEvent } from "../store/types";
+import { runHandlerEffect } from "./handler-utils";
 
 /**
  * Extract description from @mention text
@@ -162,64 +163,86 @@ export function registerMentionHandler(
       store.close(threadTs);
     });
 
-    // Start greeting conversation
-    try {
-      // If user provided a description, skip greeting and go straight to planning
-      if (description) {
-        // Don't post welcome message - wait for Claude's first response
-        store.setMode(threadTs, "plan");
-        store.setPhase(threadTs, "problem");
+    // Start greeting conversation using Effect
+    await runHandlerEffect(
+      Effect.gen(function* () {
+        // If user provided a description, skip greeting and go straight to planning
+        if (description) {
+          // Don't post welcome message - wait for Claude's first response
+          store.setMode(threadTs, "plan");
+          store.setPhase(threadTs, "problem");
 
-        const handle = await claudeManager.startInterview(
-          threadTs,
-          description,
-          async (event: InterviewEvent) => {
-            await handleInterviewEvent(
-              event,
-              threadTs,
-              channel,
-              store,
-              slackService,
-            );
-          },
-        );
+          const handle = yield* claudeManager.startInterview(
+            threadTs,
+            description,
+            async (event: InterviewEvent) => {
+              await handleInterviewEvent(
+                event,
+                threadTs,
+                channel,
+                store,
+                slackService,
+              );
+            },
+          ).pipe(
+            Effect.catchTag("ClaudeManagerError", (error) =>
+              Effect.gen(function* () {
+                console.error(`[MentionHandler] Failed to start interview:`, error.message);
+                store.setError(threadTs, error.message);
+                yield* slackService.postMessage({
+                  channel,
+                  text: `<@${userId}> Failed to start: ${error.message}`,
+                  blocks: formatErrorMessage(error.message, userId),
+                });
+                store.close(threadTs);
+                return undefined;
+              }),
+            ),
+          );
 
-        store.setClaudeHandle(threadTs, handle);
-      } else {
-        // No description - start with conversational greeting
-        // Don't post welcome message - Claude will respond naturally
-        const handle = await claudeManager.startGreeting(
-          threadTs,
-          channel,
-          userId,
-          undefined,
-          async (event: InterviewEvent) => {
-            await handleInterviewEvent(
-              event,
-              threadTs,
-              channel,
-              store,
-              slackService,
-            );
-          },
-        );
+          if (handle) {
+            store.setClaudeHandle(threadTs, handle);
+          }
+        } else {
+          // No description - start with conversational greeting
+          // Don't post welcome message - Claude will respond naturally
+          const handle = yield* claudeManager.startGreeting(
+            threadTs,
+            channel,
+            userId,
+            undefined,
+            async (event: InterviewEvent) => {
+              await handleInterviewEvent(
+                event,
+                threadTs,
+                channel,
+                store,
+                slackService,
+              );
+            },
+          ).pipe(
+            Effect.catchTag("ClaudeManagerError", (error) =>
+              Effect.gen(function* () {
+                console.error(`[MentionHandler] Failed to start greeting:`, error.message);
+                store.setError(threadTs, error.message);
+                yield* slackService.postMessage({
+                  channel,
+                  text: `<@${userId}> Failed to start: ${error.message}`,
+                  blocks: formatErrorMessage(error.message, userId),
+                });
+                store.close(threadTs);
+                return undefined;
+              }),
+            ),
+          );
 
-        store.setClaudeHandle(threadTs, handle);
-      }
-    } catch (error) {
-      console.error(`[MentionHandler] Failed to start session:`, error);
-      store.setError(threadTs, String(error));
-
-      await Effect.runPromise(
-        slackService.postMessage({
-          channel,
-          text: `<@${userId}> Failed to start: ${error}`,
-          blocks: formatErrorMessage(String(error), userId),
-        }),
-      );
-
-      store.close(threadTs);
-    }
+          if (handle) {
+            store.setClaudeHandle(threadTs, handle);
+          }
+        }
+      }),
+      "local_mention",
+    );
   });
 }
 
@@ -413,169 +436,172 @@ export function registerMentionHandlerDistributed(
     // Use the original message ts as thread, or if already in thread, use existing thread_ts
     const threadTs = threadTsFromEvent || messageTs;
 
-    // Check for existing session in this thread
-    if (store.has(threadTs)) {
-      const existingSession = store.get(threadTs);
+    // Run the handler logic as an Effect
+    await runHandlerEffect(
+      Effect.gen(function* () {
+        // Check for existing session in this thread
+        if (store.has(threadTs)) {
+          const existingSession = store.get(threadTs);
 
-      // If session is in error or completed state, close it and allow new session
-      if (existingSession && (existingSession.phase === "error" || existingSession.phase === "completed")) {
-        console.log(`[MentionHandler] Closing stale session ${threadTs} (phase: ${existingSession.phase})`);
-        store.close(threadTs);
-        // Fall through to create new session
-      } else if (existingSession) {
-        // Check if user is the initiator
-        if (!store.isInitiator(threadTs, userId)) {
-          console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
-          return;
-        }
+          // If session is in error or completed state, close it and allow new session
+          if (existingSession && (existingSession.phase === "error" || existingSession.phase === "completed")) {
+            console.log(`[MentionHandler] Closing stale session ${threadTs} (phase: ${existingSession.phase})`);
+            store.close(threadTs);
+            // Fall through to create new session
+          } else if (existingSession) {
+            // Check if user is the initiator
+            if (!store.isInitiator(threadTs, userId)) {
+              console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
+              return;
+            }
 
-        // Check if session has an active worker or is orphaned
-        if (workerProxy.isSessionOrphaned(threadTs)) {
-          console.log(`[MentionHandler] Session ${threadTs} is orphaned, attempting to resume`);
+            // Check if session has an active worker or is orphaned
+            if (workerProxy.isSessionOrphaned(threadTs)) {
+              console.log(`[MentionHandler] Session ${threadTs} is orphaned, attempting to resume`);
 
-          // Extract the message text for the resume
-          const messageText = extractDescription(text, botUserId);
-          const resumePrompt = messageText || existingSession.initialDescription || "Continue the conversation";
+              // Extract the message text for the resume
+              const messageText = extractDescription(text, botUserId);
+              const resumePrompt = messageText || existingSession.initialDescription || "Continue the conversation";
 
-          // Try to resume with a new worker
-          const result = await workerProxy.resumeSession(
-            threadTs,
-            channel,
-            userId,
-            resumePrompt,
-            async (event: WorkerInterviewEvent) => {
-              await handleWorkerInterviewEvent(
-                event,
+              // Try to resume with a new worker
+              const result = yield* workerProxy.resumeSession(
                 threadTs,
                 channel,
+                userId,
+                resumePrompt,
+                async (event: WorkerInterviewEvent) => {
+                  await handleWorkerInterviewEvent(
+                    event,
+                    threadTs,
+                    channel,
+                    store,
+                    slackService,
+                  );
+                },
+                existingSession.mode !== "greeting" ? existingSession.mode : "plan",
+                existingSession.linearIssueUrls,
                 store,
-                slackService,
+              ).pipe(
+                Effect.catchTag("WorkerProxyError", (error) =>
+                  Effect.gen(function* () {
+                    console.error(`[MentionHandler] Failed to resume session: ${error.message}`);
+                    yield* slackService.postMessage({
+                      channel,
+                      threadTs,
+                      text: `<@${userId}> Failed to resume: ${error.message}`,
+                      blocks: formatErrorMessage(error.message, userId),
+                    });
+                    return undefined;
+                  }),
+                ),
               );
-            },
-            existingSession.mode !== "greeting" ? existingSession.mode : "plan",
-            existingSession.linearIssueUrls,
-            store,
-          );
 
-          if ("error" in result) {
-            console.error(`[MentionHandler] Failed to resume session: ${result.error}`);
-            await Effect.runPromise(
-              slackService.postMessage({
-                channel,
-                threadTs,
-                text: `<@${userId}> Failed to resume: ${result.error}`,
-                blocks: formatErrorMessage(result.error, userId),
-              }),
-            );
+              if (result) {
+                // Update session with new worker
+                store.setWorkerId(threadTs, result.workerId);
+                store.setPhase(threadTs, "problem");
+
+                // Add thinking indicator
+                yield* slackService.addReaction(channel, messageTs, "thinking_face");
+              }
+              return;
+            }
+
+            // Active session with worker exists - treat this @mention as a follow-up message
+            console.log(`[MentionHandler] Session exists for thread ${threadTs}, forwarding as message`);
+
+            // Extract the message text (without the @mention)
+            const messageText = extractDescription(text, botUserId);
+            if (messageText) {
+              // Update activity timestamp
+              store.touch(threadTs);
+
+              // Send as follow-up message to worker
+              workerProxy.sendMessage(threadTs, messageText);
+
+              // Add thinking indicator
+              yield* slackService.addReaction(channel, messageTs, "thinking_face");
+            }
             return;
           }
-
-          // Update session with new worker
-          store.setWorkerId(threadTs, result.workerId);
-          store.setPhase(threadTs, "problem");
-
-          // Add thinking indicator
-          await Effect.runPromise(
-            slackService.addReaction(channel, messageTs, "thinking_face"),
-          );
-          return;
         }
 
-        // Active session with worker exists - treat this @mention as a follow-up message
-        console.log(`[MentionHandler] Session exists for thread ${threadTs}, forwarding as message`);
+        // Extract description from mention
+        const description = extractDescription(text, botUserId);
+        console.log(`[MentionHandler] Description: "${description || "(none)"}"`);
 
-        // Extract the message text (without the @mention)
-        const messageText = extractDescription(text, botUserId);
-        if (messageText) {
-          // Update activity timestamp
-          store.touch(threadTs);
-
-          // Send as follow-up message to worker
-          workerProxy.sendMessage(threadTs, messageText);
-
-          // Add thinking indicator
-          await Effect.runPromise(
-            slackService.addReaction(channel, messageTs, "thinking_face"),
-          );
+        // Try to extract project name from description for routing
+        const projectName = extractProjectName(description);
+        if (projectName) {
+          console.log(`[MentionHandler] Detected project: "${projectName}"`);
         }
-        return;
-      }
-    }
 
-    // Extract description from mention
-    const description = extractDescription(text, botUserId);
-    console.log(`[MentionHandler] Description: "${description || "(none)"}"`);
+        // Create new session
+        const _session = store.create(threadTs, channel, userId, description);
 
-    // Try to extract project name from description for routing
-    const projectName = extractProjectName(description);
-    if (projectName) {
-      console.log(`[MentionHandler] Detected project: "${projectName}"`);
-    }
-
-    // Create new session
-    const _session = store.create(threadTs, channel, userId, description);
-
-    // Set up timeout handler
-    store.onTimeout(threadTs, async (timedOutSession) => {
-      console.log(`[MentionHandler] Session ${threadTs} timed out`);
-      workerProxy.cancelSession(threadTs, "timeout");
-      await Effect.runPromise(
-        slackService.postMessage({
-          channel: timedOutSession.channel,
-          text: `<@${timedOutSession.initiatorId}> Interview timed out after 30 minutes of inactivity.`,
-          blocks: formatTimeoutMessage(timedOutSession.initiatorId),
-        }),
-      );
-      store.close(threadTs);
-    });
-
-    // Don't post welcome message - wait for Claude's first response
-    // This avoids the "Starting Planning Interview" message appearing before Claude responds
-
-    // Start interview via worker
-    try {
-      store.setPhase(threadTs, "problem");
-
-      const result = await workerProxy.startInterview(
-        threadTs,
-        channel,
-        userId,
-        description,
-        async (event: WorkerInterviewEvent) => {
-          await handleWorkerInterviewEvent(
-            event,
-            threadTs,
-            channel,
-            store,
-            slackService,
+        // Set up timeout handler
+        store.onTimeout(threadTs, async (timedOutSession) => {
+          console.log(`[MentionHandler] Session ${threadTs} timed out`);
+          workerProxy.cancelSession(threadTs, "timeout");
+          await Effect.runPromise(
+            slackService.postMessage({
+              channel: timedOutSession.channel,
+              text: `<@${timedOutSession.initiatorId}> Interview timed out after 30 minutes of inactivity.`,
+              blocks: formatTimeoutMessage(timedOutSession.initiatorId),
+            }),
           );
-        },
-        projectName, // Pass detected project for routing
-        undefined, // mode
-        undefined, // linearIssueUrls
-        store, // Pass store for tracking originalWorkerId
-      );
+          store.close(threadTs);
+        });
 
-      if ("error" in result) {
-        throw new Error(result.error);
-      }
+        // Don't post welcome message - wait for Claude's first response
+        // This avoids the "Starting Planning Interview" message appearing before Claude responds
 
-      // Store worker ID in session
-      store.setWorkerId(threadTs, result.workerId);
-    } catch (error) {
-      console.error(`[MentionHandler] Failed to start interview:`, error);
-      store.setError(threadTs, String(error));
+        // Start interview via worker
+        store.setPhase(threadTs, "problem");
 
-      await Effect.runPromise(
-        slackService.postMessage({
+        const result = yield* workerProxy.startInterview(
+          threadTs,
           channel,
-          text: `<@${userId}> Failed to start interview: ${error}`,
-          blocks: formatErrorMessage(String(error), userId),
-        }),
-      );
+          userId,
+          description,
+          async (event: WorkerInterviewEvent) => {
+            await handleWorkerInterviewEvent(
+              event,
+              threadTs,
+              channel,
+              store,
+              slackService,
+            );
+          },
+          projectName, // Pass detected project for routing
+          undefined, // mode
+          undefined, // linearIssueUrls
+          store, // Pass store for tracking originalWorkerId
+        ).pipe(
+          Effect.catchTag("WorkerProxyError", (error) =>
+            Effect.gen(function* () {
+              console.error(`[MentionHandler] Failed to start interview:`, error.message);
+              store.setError(threadTs, error.message);
 
-      store.close(threadTs);
-    }
+              yield* slackService.postMessage({
+                channel,
+                text: `<@${userId}> Failed to start interview: ${error.message}`,
+                blocks: formatErrorMessage(error.message, userId),
+              });
+
+              store.close(threadTs);
+              return undefined;
+            }),
+          ),
+        );
+
+        if (result) {
+          // Store worker ID in session
+          store.setWorkerId(threadTs, result.workerId);
+        }
+      }),
+      "app_mention",
+    );
   });
 }
 

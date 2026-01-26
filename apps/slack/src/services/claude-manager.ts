@@ -11,12 +11,21 @@ import {
   ClaudeCliService,
   type CliExecutionHandle,
 } from "@clive/claude-services";
-import { Effect, type Runtime, Stream } from "effect";
+import { Data, Effect, type Runtime, Stream } from "effect";
 import type {
   AnswerPayload,
   InterviewEvent,
   QuestionData,
 } from "../store/types";
+
+/**
+ * Error when ClaudeManager operations fail
+ */
+export class ClaudeManagerError extends Data.TaggedError("ClaudeManagerError")<{
+  message: string;
+  operation: "start_interview" | "start_greeting";
+  cause?: unknown;
+}> {}
 
 /**
  * Greeting/conversational system prompt
@@ -89,38 +98,48 @@ export class ClaudeManager extends EventEmitter {
    * @param threadTs - Slack thread timestamp (session identifier)
    * @param initialPrompt - Initial user request/description
    * @param onEvent - Callback for interview events
-   * @returns Claude CLI execution handle
+   * @returns Effect yielding Claude CLI execution handle
    */
-  async startInterview(
+  startInterview(
     threadTs: string,
     initialPrompt: string,
     onEvent: (event: InterviewEvent) => void,
-  ): Promise<CliExecutionHandle> {
-    console.log(`[ClaudeManager] Starting interview for thread ${threadTs}`);
+  ): Effect.Effect<CliExecutionHandle, ClaudeManagerError> {
+    return Effect.gen(this, function* () {
+      console.log(`[ClaudeManager] Starting interview for thread ${threadTs}`);
 
-    // Build the prompt
-    const prompt = initialPrompt
-      ? `Plan the following: ${initialPrompt}`
-      : "Help me plan a new feature. What would you like to build?";
+      // Build the prompt
+      const prompt = initialPrompt
+        ? `Plan the following: ${initialPrompt}`
+        : "Help me plan a new feature. What would you like to build?";
 
-    const program = Effect.gen(
-      this.createExecutionProgram(threadTs, prompt, onEvent),
-    );
-
-    try {
-      const handle = await Effect.runPromise(
-        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      const program = Effect.gen(
+        this.createExecutionProgram(threadTs, prompt, onEvent),
       );
+
+      const handle = yield* program.pipe(
+        Effect.provide(ClaudeCliService.Default),
+        Effect.catchAll((error) =>
+          Effect.gen(this, function* () {
+            console.error(`[ClaudeManager] Failed to start interview:`, error);
+            onEvent({
+              type: "error",
+              message: `Failed to start interview: ${String(error)}`,
+            });
+            return yield* Effect.fail(
+              new ClaudeManagerError({
+                message: `Failed to start interview: ${String(error)}`,
+                operation: "start_interview",
+                cause: error,
+              }),
+            );
+          }),
+        ),
+      );
+
       this.activeHandles.set(threadTs, handle);
       return handle;
-    } catch (error) {
-      console.error(`[ClaudeManager] Failed to start interview:`, error);
-      onEvent({
-        type: "error",
-        message: `Failed to start interview: ${String(error)}`,
-      });
-      throw error;
-    }
+    });
   }
 
   /**
@@ -131,40 +150,50 @@ export class ClaudeManager extends EventEmitter {
    * @param userId - User who initiated
    * @param initialPrompt - Initial user message (if any)
    * @param onEvent - Callback for events
-   * @returns Claude CLI execution handle
+   * @returns Effect yielding Claude CLI execution handle
    */
-  async startGreeting(
+  startGreeting(
     threadTs: string,
     _channel: string,
     _userId: string,
     initialPrompt: string | undefined,
     onEvent: (event: InterviewEvent) => void,
-  ): Promise<CliExecutionHandle> {
-    console.log(`[ClaudeManager] Starting greeting for thread ${threadTs}`);
+  ): Effect.Effect<CliExecutionHandle, ClaudeManagerError> {
+    return Effect.gen(this, function* () {
+      console.log(`[ClaudeManager] Starting greeting for thread ${threadTs}`);
 
-    // Build the prompt
-    const prompt = initialPrompt
-      ? `The user mentioned you with: "${initialPrompt}"`
-      : "The user mentioned you. Greet them and ask how you can help.";
+      // Build the prompt
+      const prompt = initialPrompt
+        ? `The user mentioned you with: "${initialPrompt}"`
+        : "The user mentioned you. Greet them and ask how you can help.";
 
-    const program = Effect.gen(
-      this.createGreetingProgram(threadTs, prompt, onEvent),
-    );
-
-    try {
-      const handle = await Effect.runPromise(
-        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      const program = Effect.gen(
+        this.createGreetingProgram(threadTs, prompt, onEvent),
       );
+
+      const handle = yield* program.pipe(
+        Effect.provide(ClaudeCliService.Default),
+        Effect.catchAll((error) =>
+          Effect.gen(this, function* () {
+            console.error(`[ClaudeManager] Failed to start greeting:`, error);
+            onEvent({
+              type: "error",
+              message: `Failed to start greeting: ${String(error)}`,
+            });
+            return yield* Effect.fail(
+              new ClaudeManagerError({
+                message: `Failed to start greeting: ${String(error)}`,
+                operation: "start_greeting",
+                cause: error,
+              }),
+            );
+          }),
+        ),
+      );
+
       this.activeHandles.set(threadTs, handle);
       return handle;
-    } catch (error) {
-      console.error(`[ClaudeManager] Failed to start greeting:`, error);
-      onEvent({
-        type: "error",
-        message: `Failed to start greeting: ${String(error)}`,
-      });
-      throw error;
-    }
+    });
   }
 
   /**

@@ -21,21 +21,75 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as dotenvConfig } from "dotenv";
+import { Effect, Layer, Stream } from "effect";
 
 // Load env from monorepo root
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 dotenvConfig({ path: resolve(__dirname, "../../../.env") });
 
 import { loadConfig } from "./config.js";
-import { WorkerClient } from "./worker-client.js";
+import { makeWorkerClientLayer, WorkerClient } from "./worker-client.js";
 
-async function main(): Promise<void> {
-  console.log("Clive Worker starting...");
+/**
+ * Main program as an Effect (config already validated in run())
+ */
+const main = Effect.gen(function* () {
+  // Get the WorkerClient service
+  const client = yield* WorkerClient;
+
+  // Set up event handling in background
+  yield* Effect.fork(
+    Stream.runForEach(client.events, (event) =>
+      Effect.sync(() => {
+        switch (event.type) {
+          case "connected":
+            console.log("Connected to central service");
+            break;
+          case "disconnected":
+            console.log(`Disconnected: ${event.reason}`);
+            break;
+          case "registered":
+            console.log(`Registered as worker: ${event.workerId}`);
+            break;
+          case "error":
+            console.error("Worker error:", event.error.message);
+            break;
+          case "configUpdate":
+            console.log("Received config update:", event.config);
+            break;
+        }
+      }),
+    ),
+  );
+
+  // Connect to central service
+  yield* client.connect.pipe(
+    Effect.catchTag("WorkerClientError", (error) =>
+      Effect.gen(function* () {
+        console.error("Failed to connect:", error.message);
+        return yield* Effect.fail(error);
+      }),
+    ),
+  );
+
+  const workerId = yield* client.getWorkerId;
+  console.log("");
+  console.log(`Worker ${workerId} is ready`);
+  console.log("Waiting for interview requests...");
   console.log("");
 
-  // Load configuration
+  // Keep the worker running until interrupted
+  yield* Effect.never;
+});
+
+/**
+ * Run the worker with graceful shutdown
+ */
+async function run(): Promise<void> {
+  // Load configuration for layer
   const configResult = loadConfig();
   if (configResult._tag === "Left") {
+    // Config error - print message and exit
     console.error("Configuration error:", configResult.left);
     console.log("");
     console.log("Required environment variables:");
@@ -51,6 +105,8 @@ async function main(): Promise<void> {
 
   const config = configResult.right;
 
+  console.log("Clive Worker starting...");
+  console.log("");
   console.log("Configuration:");
   console.log(`  Central URL: ${config.centralServiceUrl}`);
   console.log(`  Projects:`);
@@ -63,55 +119,41 @@ async function main(): Promise<void> {
   console.log(`  Hostname:    ${config.hostname}`);
   console.log("");
 
-  // Create worker client
-  const worker = new WorkerClient(config);
+  // Create the layer with config
+  const WorkerClientLayer = makeWorkerClientLayer(config);
 
-  // Set up event handlers
-  worker.on("connected", () => {
-    console.log("Connected to central service");
-  });
+  // Set up graceful shutdown
+  let shutdownRequested = false;
 
-  worker.on("disconnected", (reason) => {
-    console.log(`Disconnected: ${reason}`);
-  });
-
-  worker.on("registered", (workerId) => {
-    console.log(`Registered as worker: ${workerId}`);
-  });
-
-  worker.on("error", (error) => {
-    console.error("Worker error:", error.message);
-  });
-
-  worker.on("configUpdate", (config) => {
-    console.log("Received config update:", config);
-  });
-
-  // Graceful shutdown
   const shutdown = async (): Promise<void> => {
+    if (shutdownRequested) return;
+    shutdownRequested = true;
     console.log("\nShutting down...");
-    await worker.shutdown();
+    // The Effect runtime will handle cleanup via scoped resources
     process.exit(0);
   };
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Connect to central service
+  // Run the main program with the layer
   try {
-    await worker.connect();
-    console.log("");
-    console.log(`Worker ${worker.getWorkerId()} is ready`);
-    console.log("Waiting for interview requests...");
-    console.log("");
+    await Effect.runPromise(
+      main.pipe(
+        Effect.provide(WorkerClientLayer),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Fatal error:", error);
+            process.exit(1);
+          }),
+        ),
+      ),
+    );
   } catch (error) {
-    console.error("Failed to connect:", error);
+    console.error("Fatal error:", error);
     process.exit(1);
   }
 }
 
 // Run the worker
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+run();

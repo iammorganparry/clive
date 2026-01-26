@@ -397,11 +397,11 @@ describe("WorkerRegistry", () => {
 
       const marketingWorkers = registry.getWorkersForProject("marketing");
       expect(marketingWorkers).toHaveLength(1);
-      expect(marketingWorkers[0].workerId).toBe("worker-1");
+      expect(marketingWorkers[0]?.workerId).toBe("worker-1");
 
       const backendWorkers = registry.getWorkersForProject("backend");
       expect(backendWorkers).toHaveLength(1);
-      expect(backendWorkers[0].workerId).toBe("worker-2");
+      expect(backendWorkers[0]?.workerId).toBe("worker-2");
     });
 
     it("finds workers by project alias", () => {
@@ -426,7 +426,7 @@ describe("WorkerRegistry", () => {
 
       const workers = registry.getWorkersForProject("cli");
       expect(workers).toHaveLength(1);
-      expect(workers[0].workerId).toBe("worker-1");
+      expect(workers[0]?.workerId).toBe("worker-1");
     });
 
     it("returns least busy worker", () => {

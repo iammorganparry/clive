@@ -3,8 +3,10 @@
  *
  * Manages interview sessions tracked by Slack thread timestamp.
  * Handles session lifecycle, timeout, and cleanup.
+ * Uses Effect-based Fibers for cancellable timeouts.
  */
 
+import { Duration, Effect, Fiber } from "effect";
 import type {
   AnswerPayload,
   InterviewPhase,
@@ -54,8 +56,8 @@ export class InterviewStore {
       lastActivityAt: now,
     };
 
-    // Start timeout timer
-    session.timeoutTimer = this.startTimeout(threadTs);
+    // Start timeout fiber
+    session.timeoutFiber = this.startTimeout(threadTs);
 
     this.sessions.set(threadTs, session);
     console.log(
@@ -322,9 +324,9 @@ export class InterviewStore {
   close(threadTs: string): void {
     const session = this.sessions.get(threadTs);
     if (session) {
-      // Clear timeout
-      if (session.timeoutTimer) {
-        clearTimeout(session.timeoutTimer);
+      // Interrupt timeout fiber
+      if (session.timeoutFiber) {
+        Effect.runFork(Fiber.interrupt(session.timeoutFiber));
       }
 
       // Kill Claude handle if active
@@ -365,24 +367,28 @@ export class InterviewStore {
   }
 
   /**
-   * Start timeout timer for a session
+   * Start timeout fiber for a session
    */
-  private startTimeout(threadTs: string): ReturnType<typeof setTimeout> {
-    return setTimeout(() => {
-      this.handleTimeout(threadTs);
-    }, this.timeoutMs);
+  private startTimeout(threadTs: string): Fiber.RuntimeFiber<void, never> {
+    return Effect.runFork(
+      Effect.sleep(Duration.millis(this.timeoutMs)).pipe(
+        Effect.andThen(() => Effect.sync(() => this.handleTimeout(threadTs))),
+      ),
+    );
   }
 
   /**
-   * Reset timeout timer for a session
+   * Reset timeout fiber for a session
    */
   private resetTimeout(threadTs: string): void {
     const session = this.sessions.get(threadTs);
     if (session) {
-      if (session.timeoutTimer) {
-        clearTimeout(session.timeoutTimer);
+      // Interrupt existing fiber
+      if (session.timeoutFiber) {
+        Effect.runFork(Fiber.interrupt(session.timeoutFiber));
       }
-      session.timeoutTimer = this.startTimeout(threadTs);
+      // Start new timeout fiber
+      session.timeoutFiber = this.startTimeout(threadTs);
     }
   }
 
@@ -409,19 +415,25 @@ export class InterviewStore {
   ): void {
     const session = this.sessions.get(threadTs);
     if (session) {
-      // Clear existing timeout
-      if (session.timeoutTimer) {
-        clearTimeout(session.timeoutTimer);
+      // Interrupt existing timeout fiber
+      if (session.timeoutFiber) {
+        Effect.runFork(Fiber.interrupt(session.timeoutFiber));
       }
 
-      // Set new timeout with callback
-      session.timeoutTimer = setTimeout(() => {
-        const currentSession = this.sessions.get(threadTs);
-        if (currentSession) {
-          currentSession.phase = "timed_out";
-          callback(currentSession);
-        }
-      }, this.timeoutMs);
+      // Set new timeout fiber with callback
+      session.timeoutFiber = Effect.runFork(
+        Effect.sleep(Duration.millis(this.timeoutMs)).pipe(
+          Effect.andThen(() =>
+            Effect.sync(() => {
+              const currentSession = this.sessions.get(threadTs);
+              if (currentSession) {
+                currentSession.phase = "timed_out";
+                callback(currentSession);
+              }
+            }),
+          ),
+        ),
+      );
     }
   }
 }

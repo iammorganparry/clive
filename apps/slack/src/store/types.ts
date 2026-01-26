@@ -5,6 +5,7 @@
  */
 
 import type { CliExecutionHandle } from "@clive/claude-services";
+import type { Fiber } from "effect";
 
 /**
  * Session mode for different workflow phases
@@ -89,8 +90,8 @@ export interface InterviewSession {
   createdAt: Date;
   /** Last activity timestamp */
   lastActivityAt: Date;
-  /** Timeout timer ID */
-  timeoutTimer?: ReturnType<typeof setTimeout>;
+  /** Timeout fiber (Effect-based cancellable timeout) */
+  timeoutFiber?: Fiber.RuntimeFiber<void, never>;
   /** Generated plan content (if any) */
   planContent?: string;
   /** Created Linear issue URLs */

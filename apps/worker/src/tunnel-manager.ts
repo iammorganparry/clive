@@ -3,10 +3,12 @@
  *
  * Manages ngrok tunnel for worker-to-central communication.
  * Receives configuration from central service during registration.
+ * Uses Effect-TS internally for error handling.
  */
 
 import { EventEmitter } from "node:events";
 import type { NgrokConfig } from "@clive/worker-protocol";
+import { Data, Effect } from "effect";
 
 /**
  * Dynamic import for ngrok (may not be available in all environments)
@@ -19,6 +21,15 @@ async function loadNgrok(): Promise<typeof import("@ngrok/ngrok")> {
   }
   return ngrok;
 }
+
+/**
+ * Error when TunnelManager operations fail
+ */
+export class TunnelManagerError extends Data.TaggedError("TunnelManagerError")<{
+  message: string;
+  reason: "no_config" | "connection_failed" | "disconnect_failed";
+  cause?: unknown;
+}> {}
 
 /**
  * Tunnel manager events
@@ -54,13 +65,28 @@ export class TunnelManager extends EventEmitter {
    * Connect the tunnel using the configured settings
    */
   async connect(): Promise<string | null> {
-    if (!this.config) {
-      console.log("[TunnelManager] No ngrok config provided - skipping tunnel");
-      return null;
-    }
+    return Effect.runPromise(this.connectEffect());
+  }
 
-    try {
-      const ngrokModule = await loadNgrok();
+  /**
+   * Connect effect for internal use
+   */
+  private connectEffect(): Effect.Effect<string | null, TunnelManagerError> {
+    return Effect.gen(this, function* () {
+      if (!this.config) {
+        console.log("[TunnelManager] No ngrok config provided - skipping tunnel");
+        return null;
+      }
+
+      const ngrokModule = yield* Effect.tryPromise({
+        try: () => loadNgrok(),
+        catch: (error) =>
+          new TunnelManagerError({
+            message: `Failed to load ngrok: ${String(error)}`,
+            reason: "connection_failed",
+            cause: error,
+          }),
+      });
 
       console.log("[TunnelManager] Connecting ngrok tunnel...");
 
@@ -83,7 +109,16 @@ export class TunnelManager extends EventEmitter {
         options.region = this.config.region;
       }
 
-      this.listener = await ngrokModule.forward(options);
+      this.listener = yield* Effect.tryPromise({
+        try: () => ngrokModule.forward(options),
+        catch: (error) =>
+          new TunnelManagerError({
+            message: `Failed to connect ngrok: ${String(error)}`,
+            reason: "connection_failed",
+            cause: error,
+          }),
+      });
+
       this.tunnelUrl = this.listener.url();
 
       if (this.tunnelUrl) {
@@ -92,14 +127,18 @@ export class TunnelManager extends EventEmitter {
       }
 
       return this.tunnelUrl;
-    } catch (error) {
-      console.error("[TunnelManager] Failed to connect:", error);
-      this.emit(
-        "error",
-        error instanceof Error ? error : new Error(String(error)),
-      );
-      return null;
-    }
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error("[TunnelManager] Failed to connect:", error);
+          this.emit(
+            "error",
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          return null;
+        }),
+      ),
+    );
   }
 
   /**

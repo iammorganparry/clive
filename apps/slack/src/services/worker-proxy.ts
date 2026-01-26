@@ -15,11 +15,20 @@ import type {
   MessageRequest,
   SessionMode,
 } from "@clive/worker-protocol";
+import { Data, Effect } from "effect";
 import type { WebSocket } from "ws";
 import type { InterviewStore } from "../store/interview-store";
 import type { AnswerPayload } from "../store/types";
 import type { SessionRouter } from "./session-router";
 import type { WorkerRegistry } from "./worker-registry";
+
+/**
+ * Error when WorkerProxy operations fail
+ */
+export class WorkerProxyError extends Data.TaggedError("WorkerProxyError")<{
+  message: string;
+  reason: "no_workers" | "worker_not_found" | "socket_closed" | "session_not_found";
+}> {}
 
 /**
  * Callback for interview events
@@ -78,7 +87,7 @@ export class WorkerProxy extends EventEmitter {
    * @param linearIssueUrls - Linear issue URLs for context in build/review modes
    * @param store - Optional InterviewStore for tracking session state
    */
-  async startInterview(
+  startInterview(
     threadTs: string,
     channel: string,
     initiatorId: string,
@@ -88,73 +97,83 @@ export class WorkerProxy extends EventEmitter {
     mode?: SessionMode,
     linearIssueUrls?: string[],
     store?: InterviewStore,
-  ): Promise<{ workerId: string } | { error: string }> {
-    console.log(
-      `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
-    );
+  ): Effect.Effect<{ workerId: string }, WorkerProxyError> {
+    return Effect.gen(this, function* () {
+      console.log(
+        `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
+      );
 
-    // Assign to worker (with project-based routing if provided)
-    const workerId = this.router.assignSession(threadTs, projectId);
-    if (!workerId) {
-      const projectMsg = projectId
-        ? ` No workers have access to project "${projectId}".`
-        : "";
-      return {
-        error: `No workers available.${projectMsg} Please try again later.`,
+      // Assign to worker (with project-based routing if provided)
+      const workerId = this.router.assignSession(threadTs, projectId);
+      if (!workerId) {
+        const projectMsg = projectId
+          ? ` No workers have access to project "${projectId}".`
+          : "";
+        return yield* Effect.fail(
+          new WorkerProxyError({
+            message: `No workers available.${projectMsg} Please try again later.`,
+            reason: "no_workers",
+          }),
+        );
+      }
+
+      // Get worker socket
+      const worker = this.registry.getWorker(workerId);
+      if (!worker) {
+        this.router.unassignSession(threadTs, "worker not found");
+        return yield* Effect.fail(
+          new WorkerProxyError({
+            message: "Worker not found. Please try again.",
+            reason: "worker_not_found",
+          }),
+        );
+      }
+
+      // Get the project path if we're routing to a specific project
+      const projectPath = projectId
+        ? this.router.getProjectPathForSession(threadTs)
+        : undefined;
+
+      // Get model based on mode (build uses sonnet, others use opus)
+      const effectiveMode = mode ?? "plan";
+      const model = effectiveMode === "build" ? "sonnet" : "opus";
+
+      // Create interview request
+      const request: InterviewRequest = {
+        sessionId: threadTs,
+        threadTs,
+        channel,
+        initiatorId,
+        initialPrompt,
+        model,
+        projectId,
+        mode: effectiveMode,
+        linearIssueUrls,
       };
-    }
 
-    // Get worker socket
-    const worker = this.registry.getWorker(workerId);
-    if (!worker) {
-      this.router.unassignSession(threadTs, "worker not found");
-      return { error: "Worker not found. Please try again." };
-    }
+      // Track pending interview
+      this.pendingInterviews.set(threadTs, {
+        sessionId: threadTs,
+        workerId,
+        onEvent,
+      });
 
-    // Get the project path if we're routing to a specific project
-    const projectPath = projectId
-      ? this.router.getProjectPathForSession(threadTs)
-      : undefined;
+      // Store original worker ID for resume support
+      if (store) {
+        store.setOriginalWorkerId(threadTs, workerId);
+      }
 
-    // Get model based on mode (build uses sonnet, others use opus)
-    const effectiveMode = mode ?? "plan";
-    const model = effectiveMode === "build" ? "sonnet" : "opus";
+      // Send to worker
+      this.sendToWorker(worker.socket, {
+        type: "start_interview",
+        payload: request,
+      });
 
-    // Create interview request
-    const request: InterviewRequest = {
-      sessionId: threadTs,
-      threadTs,
-      channel,
-      initiatorId,
-      initialPrompt,
-      model,
-      projectId,
-      mode: effectiveMode,
-      linearIssueUrls,
-    };
-
-    // Track pending interview
-    this.pendingInterviews.set(threadTs, {
-      sessionId: threadTs,
-      workerId,
-      onEvent,
+      console.log(
+        `[WorkerProxy] Interview ${threadTs} sent to worker ${workerId}${projectPath ? ` at ${projectPath}` : ""}`,
+      );
+      return { workerId };
     });
-
-    // Store original worker ID for resume support
-    if (store) {
-      store.setOriginalWorkerId(threadTs, workerId);
-    }
-
-    // Send to worker
-    this.sendToWorker(worker.socket, {
-      type: "start_interview",
-      payload: request,
-    });
-
-    console.log(
-      `[WorkerProxy] Interview ${threadTs} sent to worker ${workerId}${projectPath ? ` at ${projectPath}` : ""}`,
-    );
-    return { workerId };
   }
 
   /**
@@ -329,7 +348,7 @@ export class WorkerProxy extends EventEmitter {
    * True resume (using Claude CLI --resume) only works when the same worker reconnects,
    * since Claude CLI stores sessions locally on the worker's filesystem.
    */
-  async resumeSession(
+  resumeSession(
     threadTs: string,
     channel: string,
     initiatorId: string,
@@ -338,76 +357,88 @@ export class WorkerProxy extends EventEmitter {
     mode?: SessionMode,
     linearIssueUrls?: string[],
     store?: InterviewStore,
-  ): Promise<{ workerId: string; resumed: boolean } | { error: string }> {
-    console.log(`[WorkerProxy] Attempting to resume session ${threadTs}`);
+  ): Effect.Effect<{ workerId: string; resumed: boolean }, WorkerProxyError> {
+    return Effect.gen(this, function* () {
+      console.log(`[WorkerProxy] Attempting to resume session ${threadTs}`);
 
-    // Get session state to check if we can do a true resume
-    const originalWorkerId = store?.getOriginalWorkerId(threadTs);
-    const claudeSessionId = store?.getClaudeSessionId(threadTs);
+      // Get session state to check if we can do a true resume
+      const originalWorkerId = store?.getOriginalWorkerId(threadTs);
+      const claudeSessionId = store?.getClaudeSessionId(threadTs);
 
-    // Assign to a worker (preferably the original one if available)
-    const workerId = this.router.assignSession(threadTs);
-    if (!workerId) {
-      return { error: "No workers available to resume session." };
-    }
+      // Assign to a worker (preferably the original one if available)
+      const workerId = this.router.assignSession(threadTs);
+      if (!workerId) {
+        return yield* Effect.fail(
+          new WorkerProxyError({
+            message: "No workers available to resume session.",
+            reason: "no_workers",
+          }),
+        );
+      }
 
-    // Get worker socket
-    const worker = this.registry.getWorker(workerId);
-    if (!worker) {
-      this.router.unassignSession(threadTs, "worker not found");
-      return { error: "Worker not found. Please try again." };
-    }
+      // Get worker socket
+      const worker = this.registry.getWorker(workerId);
+      if (!worker) {
+        this.router.unassignSession(threadTs, "worker not found");
+        return yield* Effect.fail(
+          new WorkerProxyError({
+            message: "Worker not found. Please try again.",
+            reason: "worker_not_found",
+          }),
+        );
+      }
 
-    // Check if we can do a true resume (same worker reconnected)
-    const canResume = workerId === originalWorkerId && !!claudeSessionId;
+      // Check if we can do a true resume (same worker reconnected)
+      const canResume = workerId === originalWorkerId && !!claudeSessionId;
 
-    console.log(
-      `[WorkerProxy] Resume check: originalWorker=${originalWorkerId}, newWorker=${workerId}, claudeSessionId=${claudeSessionId}, canResume=${canResume}`,
-    );
-
-    // Determine effective mode and model
-    const effectiveMode = mode ?? "plan";
-    const model = effectiveMode === "build" ? "sonnet" : "opus";
-
-    // Create interview request
-    // If same worker reconnected, include claudeSessionId for true resume
-    const request: InterviewRequest = {
-      sessionId: threadTs,
-      threadTs,
-      channel,
-      initiatorId,
-      initialPrompt,
-      model,
-      mode: effectiveMode,
-      linearIssueUrls,
-      claudeSessionId: canResume ? claudeSessionId : undefined,
-    };
-
-    // Track pending interview with new callback
-    this.pendingInterviews.set(threadTs, {
-      sessionId: threadTs,
-      workerId,
-      onEvent,
-      claudeSessionId: canResume ? claudeSessionId : undefined,
-    });
-
-    // Send to worker
-    this.sendToWorker(worker.socket, {
-      type: "start_interview",
-      payload: request,
-    });
-
-    if (canResume) {
       console.log(
-        `[WorkerProxy] Session ${threadTs} RESUMED on original worker ${workerId} with Claude session ${claudeSessionId}`,
+        `[WorkerProxy] Resume check: originalWorker=${originalWorkerId}, newWorker=${workerId}, claudeSessionId=${claudeSessionId}, canResume=${canResume}`,
       );
-    } else {
-      console.log(
-        `[WorkerProxy] Session ${threadTs} RESTARTED on worker ${workerId} (different worker or no Claude session)`,
-      );
-    }
 
-    return { workerId, resumed: canResume };
+      // Determine effective mode and model
+      const effectiveMode = mode ?? "plan";
+      const model = effectiveMode === "build" ? "sonnet" : "opus";
+
+      // Create interview request
+      // If same worker reconnected, include claudeSessionId for true resume
+      const request: InterviewRequest = {
+        sessionId: threadTs,
+        threadTs,
+        channel,
+        initiatorId,
+        initialPrompt,
+        model,
+        mode: effectiveMode,
+        linearIssueUrls,
+        claudeSessionId: canResume ? claudeSessionId : undefined,
+      };
+
+      // Track pending interview with new callback
+      this.pendingInterviews.set(threadTs, {
+        sessionId: threadTs,
+        workerId,
+        onEvent,
+        claudeSessionId: canResume ? claudeSessionId : undefined,
+      });
+
+      // Send to worker
+      this.sendToWorker(worker.socket, {
+        type: "start_interview",
+        payload: request,
+      });
+
+      if (canResume) {
+        console.log(
+          `[WorkerProxy] Session ${threadTs} RESUMED on original worker ${workerId} with Claude session ${claudeSessionId}`,
+        );
+      } else {
+        console.log(
+          `[WorkerProxy] Session ${threadTs} RESTARTED on worker ${workerId} (different worker or no Claude session)`,
+        );
+      }
+
+      return { workerId, resumed: canResume };
+    });
   }
 
   /**

@@ -15,6 +15,7 @@ import type { ClaudeManager } from "../services/claude-manager";
 import type { SlackService } from "../services/slack-service";
 import type { WorkerProxy } from "../services/worker-proxy";
 import type { InterviewStore } from "../store/interview-store";
+import { runHandlerEffect } from "./handler-utils";
 import { handleWorkerInterviewEvent } from "./mention-handler";
 
 /**
@@ -219,141 +220,141 @@ export function registerMessageHandlerDistributed(
 
     console.log(`[MessageHandler] Thread reply from ${userId} in ${threadTs} - session found!`);
 
-    // Check if user is the initiator
-    if (!store.isInitiator(threadTs, userId)) {
-      console.log(`[MessageHandler] Non-initiator reply, sending notice`);
-      const session = store.get(threadTs);
-      if (session) {
-        await Effect.runPromise(
-          slackService.postEphemeral({
-            channel,
-            user: userId,
-            text: "This interview can only be answered by the person who started it.",
-            threadTs,
-            blocks: formatNonInitiatorNotice(session.initiatorId),
-          }),
-        );
-      }
-      return;
-    }
-
-    // Update activity timestamp
-    store.touch(threadTs);
-
-    const session = store.get(threadTs);
-    if (!session) {
-      return;
-    }
-
-    // Check if session is orphaned (no active worker) and try to resume
-    if (workerProxy.isSessionOrphaned(threadTs)) {
-      console.log(`[MessageHandler] Session ${threadTs} is orphaned, attempting to resume`);
-
-      const resumePrompt = text || session.initialDescription || "Continue the conversation";
-
-      const result = await workerProxy.resumeSession(
-        threadTs,
-        channel,
-        userId,
-        resumePrompt,
-        async (event: WorkerInterviewEvent) => {
-          await handleWorkerInterviewEvent(
-            event,
-            threadTs,
-            channel,
-            store,
-            slackService,
-          );
-        },
-        session.mode !== "greeting" ? session.mode : "plan",
-        session.linearIssueUrls,
-      );
-
-      if ("error" in result) {
-        console.error(`[MessageHandler] Failed to resume session: ${result.error}`);
-        await Effect.runPromise(
-          slackService.postMessage({
-            channel,
-            threadTs,
-            text: `<@${userId}> Failed to resume: ${result.error}`,
-            blocks: formatErrorMessage(result.error, userId),
-          }),
-        );
-        return;
-      }
-
-      // Update session with new worker
-      store.setWorkerId(threadTs, result.workerId);
-
-      // Add thinking indicator
-      await Effect.runPromise(
-        slackService.addReaction(channel, msg.ts, "thinking_face"),
-      );
-      return;
-    }
-
-    // If there's a pending question, treat this as an "Other" response
-    if (session.pendingQuestion && session.pendingToolUseId && text) {
-      console.log(`[MessageHandler] Text reply for pending question`);
-
-      // Get the first question's header (for "Other" response)
-      const firstQuestion = session.pendingQuestion.questions[0];
-      if (firstQuestion) {
-        // Record the answer
-        store.recordAnswer(threadTs, firstQuestion.header, text);
-
-        // Get answer payload
-        const answerPayload = store.getAnswerPayload(threadTs);
-        if (answerPayload) {
-          // Send to worker
-          workerProxy.sendAnswer(
-            threadTs,
-            session.pendingToolUseId,
-            answerPayload,
-          );
-
-          // Clear pending question
-          store.clearPendingQuestion(threadTs);
-
-          // Acknowledge the answer
-          await Effect.runPromise(
-            slackService.addReaction(channel, msg.ts, "white_check_mark"),
-          );
+    // Run the handler logic as an Effect
+    await runHandlerEffect(
+      Effect.gen(function* () {
+        // Check if user is the initiator
+        if (!store.isInitiator(threadTs, userId)) {
+          console.log(`[MessageHandler] Non-initiator reply, sending notice`);
+          const session = store.get(threadTs);
+          if (session) {
+            yield* slackService.postEphemeral({
+              channel,
+              user: userId,
+              text: "This interview can only be answered by the person who started it.",
+              threadTs,
+              blocks: formatNonInitiatorNotice(session.initiatorId),
+            });
+          }
+          return;
         }
-      }
-    } else if (text) {
-      // No pending question - send as follow-up message
-      console.log(
-        `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
-      );
 
-      // Check if in greeting mode and user wants to start planning
-      if (session.mode === "greeting") {
-        // Detect planning intent from user message
-        const planningKeywords = [
-          "build", "create", "add", "implement", "make", "develop",
-          "feature", "fix", "bug", "issue", "problem", "plan",
-          "want to", "need to", "let's", "can you", "help me"
-        ];
-        const lowerText = text.toLowerCase();
-        const hasPlanningIntent = planningKeywords.some(keyword =>
-          lowerText.includes(keyword)
-        );
+        // Update activity timestamp
+        store.touch(threadTs);
 
-        if (hasPlanningIntent) {
-          console.log(`[MessageHandler] Planning intent detected, transitioning to plan mode`);
-          store.setMode(threadTs, "plan");
-          store.setPhase(threadTs, "problem");
+        const session = store.get(threadTs);
+        if (!session) {
+          return;
         }
-      }
 
-      // Send message to worker
-      workerProxy.sendMessage(threadTs, text);
+        // Check if session is orphaned (no active worker) and try to resume
+        if (workerProxy.isSessionOrphaned(threadTs)) {
+          console.log(`[MessageHandler] Session ${threadTs} is orphaned, attempting to resume`);
 
-      // Add thinking indicator
-      await Effect.runPromise(
-        slackService.addReaction(channel, msg.ts, "thinking_face"),
-      );
-    }
+          const resumePrompt = text || session.initialDescription || "Continue the conversation";
+
+          const result = yield* workerProxy.resumeSession(
+            threadTs,
+            channel,
+            userId,
+            resumePrompt,
+            async (event: WorkerInterviewEvent) => {
+              await handleWorkerInterviewEvent(
+                event,
+                threadTs,
+                channel,
+                store,
+                slackService,
+              );
+            },
+            session.mode !== "greeting" ? session.mode : "plan",
+            session.linearIssueUrls,
+          ).pipe(
+            Effect.catchTag("WorkerProxyError", (error) =>
+              Effect.gen(function* () {
+                console.error(`[MessageHandler] Failed to resume session: ${error.message}`);
+                yield* slackService.postMessage({
+                  channel,
+                  threadTs,
+                  text: `<@${userId}> Failed to resume: ${error.message}`,
+                  blocks: formatErrorMessage(error.message, userId),
+                });
+                return undefined;
+              }),
+            ),
+          );
+
+          if (result) {
+            // Update session with new worker
+            store.setWorkerId(threadTs, result.workerId);
+
+            // Add thinking indicator
+            yield* slackService.addReaction(channel, msg.ts, "thinking_face");
+          }
+          return;
+        }
+
+        // If there's a pending question, treat this as an "Other" response
+        if (session.pendingQuestion && session.pendingToolUseId && text) {
+          console.log(`[MessageHandler] Text reply for pending question`);
+
+          // Get the first question's header (for "Other" response)
+          const firstQuestion = session.pendingQuestion.questions[0];
+          if (firstQuestion) {
+            // Record the answer
+            store.recordAnswer(threadTs, firstQuestion.header, text);
+
+            // Get answer payload
+            const answerPayload = store.getAnswerPayload(threadTs);
+            if (answerPayload) {
+              // Send to worker
+              workerProxy.sendAnswer(
+                threadTs,
+                session.pendingToolUseId,
+                answerPayload,
+              );
+
+              // Clear pending question
+              store.clearPendingQuestion(threadTs);
+
+              // Acknowledge the answer
+              yield* slackService.addReaction(channel, msg.ts, "white_check_mark");
+            }
+          }
+        } else if (text) {
+          // No pending question - send as follow-up message
+          console.log(
+            `[MessageHandler] Follow-up message: ${text.substring(0, 50)}...`,
+          );
+
+          // Check if in greeting mode and user wants to start planning
+          if (session.mode === "greeting") {
+            // Detect planning intent from user message
+            const planningKeywords = [
+              "build", "create", "add", "implement", "make", "develop",
+              "feature", "fix", "bug", "issue", "problem", "plan",
+              "want to", "need to", "let's", "can you", "help me"
+            ];
+            const lowerText = text.toLowerCase();
+            const hasPlanningIntent = planningKeywords.some(keyword =>
+              lowerText.includes(keyword)
+            );
+
+            if (hasPlanningIntent) {
+              console.log(`[MessageHandler] Planning intent detected, transitioning to plan mode`);
+              store.setMode(threadTs, "plan");
+              store.setPhase(threadTs, "problem");
+            }
+          }
+
+          // Send message to worker
+          workerProxy.sendMessage(threadTs, text);
+
+          // Add thinking indicator
+          yield* slackService.addReaction(channel, msg.ts, "thinking_face");
+        }
+      }),
+      "message",
+    );
   });
 }
