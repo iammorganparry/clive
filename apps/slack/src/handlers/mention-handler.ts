@@ -107,16 +107,39 @@ export function registerMentionHandler(
 
     // Check for existing session in this thread
     if (store.has(threadTs)) {
-      console.log(
-        `[MentionHandler] Session already exists for thread ${threadTs}`,
-      );
-      await Effect.runPromise(
-        slackService.postMessage({
-          channel,
-          text: `<@${userId}> An interview is already in progress. Please continue answering questions or wait for it to complete.`,
-        }),
-      );
-      return;
+      const existingSession = store.get(threadTs);
+
+      // If session is in error or completed state, close it and allow new session
+      if (existingSession && (existingSession.phase === "error" || existingSession.phase === "completed")) {
+        console.log(`[MentionHandler] Closing stale session ${threadTs} (phase: ${existingSession.phase})`);
+        store.close(threadTs);
+        // Fall through to create new session
+      } else if (existingSession) {
+        // Active session exists - treat this @mention as a follow-up message
+        console.log(`[MentionHandler] Session exists for thread ${threadTs}, forwarding as message`);
+
+        // Extract the message text (without the @mention)
+        const messageText = extractDescription(text, botUserId);
+        if (messageText) {
+          // Check if user is the initiator
+          if (!store.isInitiator(threadTs, userId)) {
+            console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
+            return;
+          }
+
+          // Update activity timestamp
+          store.touch(threadTs);
+
+          // Send as follow-up message to Claude
+          claudeManager.sendMessage(threadTs, messageText);
+
+          // Add thinking indicator
+          await Effect.runPromise(
+            slackService.addReaction(channel, messageTs, "thinking_face"),
+          );
+        }
+        return;
+      }
     }
 
     // Extract description from mention
@@ -392,16 +415,39 @@ export function registerMentionHandlerDistributed(
 
     // Check for existing session in this thread
     if (store.has(threadTs)) {
-      console.log(
-        `[MentionHandler] Session already exists for thread ${threadTs}`,
-      );
-      await Effect.runPromise(
-        slackService.postMessage({
-          channel,
-          text: `<@${userId}> An interview is already in progress. Please continue answering questions or wait for it to complete.`,
-        }),
-      );
-      return;
+      const existingSession = store.get(threadTs);
+
+      // If session is in error or completed state, close it and allow new session
+      if (existingSession && (existingSession.phase === "error" || existingSession.phase === "completed")) {
+        console.log(`[MentionHandler] Closing stale session ${threadTs} (phase: ${existingSession.phase})`);
+        store.close(threadTs);
+        // Fall through to create new session
+      } else if (existingSession) {
+        // Active session exists - treat this @mention as a follow-up message
+        console.log(`[MentionHandler] Session exists for thread ${threadTs}, forwarding as message`);
+
+        // Extract the message text (without the @mention)
+        const messageText = extractDescription(text, botUserId);
+        if (messageText) {
+          // Check if user is the initiator
+          if (!store.isInitiator(threadTs, userId)) {
+            console.log(`[MentionHandler] Non-initiator @mention, ignoring`);
+            return;
+          }
+
+          // Update activity timestamp
+          store.touch(threadTs);
+
+          // Send as follow-up message to worker
+          workerProxy.sendMessage(threadTs, messageText);
+
+          // Add thinking indicator
+          await Effect.runPromise(
+            slackService.addReaction(channel, messageTs, "thinking_face"),
+          );
+        }
+        return;
+      }
     }
 
     // Extract description from mention
