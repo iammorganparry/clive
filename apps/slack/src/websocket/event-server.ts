@@ -160,7 +160,7 @@ export class EventServer {
           break;
 
         case "pong":
-          // Heartbeat response - no action needed
+          this.registry.resetHeartbeatBySocket(socket);
           break;
 
         case "error":

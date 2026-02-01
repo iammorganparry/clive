@@ -168,6 +168,22 @@ export class WorkerRegistry extends EventEmitter {
   }
 
   /**
+   * Reset heartbeat timer by socket (called on pong responses)
+   */
+  resetHeartbeatBySocket(socket: WebSocket): void {
+    const workerId = this.socketToWorkerId.get(socket);
+    if (!workerId) return;
+    const worker = this.workers.get(workerId);
+    if (!worker) return;
+
+    worker.lastHeartbeat = new Date();
+    if (worker.heartbeatTimer) {
+      clearTimeout(worker.heartbeatTimer);
+    }
+    worker.heartbeatTimer = this.createHeartbeatTimer(workerId);
+  }
+
+  /**
    * Unregister worker by socket
    */
   unregisterBySocket(socket: WebSocket, reason: string): void {
