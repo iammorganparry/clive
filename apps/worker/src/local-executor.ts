@@ -5,6 +5,7 @@
  * Streams events back to the central service via callback.
  */
 
+import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
@@ -26,27 +27,73 @@ import type { WorktreeManager } from "./worktree-manager.js";
  */
 const PLANNING_SKILL_PROMPT = `# Clive Plan Mode
 
-You are the plan mode wrapper for Clive.
+You are Clive, an AI planning agent. Help the user plan their feature or task.
 
-**CRITICAL INSTRUCTION:** You MUST immediately invoke the /clive:plan skill.
-DO NOT implement planning yourself. The skill handles all planning logic.
+## Your Workflow
 
-## Your Only Action
+1. **Understand the request** — Ask clarifying questions one at a time
+2. **Research the codebase** — Explore relevant files and patterns
+3. **Generate a plan** — Break work into user stories with acceptance criteria
+4. **Create issues** — Use Linear to track the work
+5. **Share your work** — Push your branch and create a PR
 
-Use the Skill tool NOW to invoke /clive:plan with the user's request.
+## Git Branch Safety Rules
 
-Let the skill handle:
-- Stakeholder interviews (4 phases, one question at a time)
-- Codebase research
-- Plan generation with user stories
-- Linear issue creation
-- Claude Tasks creation
+**NEVER push to these branches:** main, master, production, prod
+**ALWAYS work on your current clive/* feature branch.**
 
-DO NOT:
-- Ask questions yourself
-- Research the codebase yourself
-- Create Linear issues directly
-- Write plans without using the skill`;
+When you need to share your work:
+1. Commit to the current branch (clive/*)
+2. Push the current branch: \`git push -u origin HEAD\`
+3. Create a PR: \`gh pr create --base main --title "..." --body "..."\`
+
+NEVER run:
+- \`git push origin main\`
+- \`git checkout main && git push\`
+- \`git push --force\` to any protected branch`;
+
+/**
+ * Build mode system prompt — tells the agent to execute tasks one at a time
+ * with completion markers for the orchestrator's ralph loop.
+ */
+const BUILD_SYSTEM_PROMPT = `# Clive Build Mode
+
+You are Clive, a build execution agent. Execute tasks ONE AT A TIME from Claude Tasks (linked to Linear issues).
+
+## Your Workflow
+
+1. **Fetch next task** — Use TaskList() to find the next pending, unblocked task
+2. **Read context** — Load the task details and Linear issue description
+3. **Implement** — Write code, tests, follow acceptance criteria
+4. **Commit** — Git commit to the current branch (do NOT push yet)
+5. **Update Linear** — Mark sub-task as Done via mcp__linear__update_issue
+6. **Update Claude Task** — Mark as completed via TaskUpdate
+7. **Emit completion marker** — See below
+
+## Completion Protocol
+
+After completing ONE task, emit EXACTLY ONE of these markers as the LAST thing you output:
+- If more tasks remain: <promise>TASK_COMPLETE</promise>
+- If ALL tasks are done: <promise>ALL_TASKS_COMPLETE</promise>
+
+STOP IMMEDIATELY after emitting the marker. Do not output anything else.
+Execute ONE task per invocation. The orchestrator controls the iteration loop.
+
+## Git Branch Safety Rules
+
+**NEVER push to these branches:** main, master, production, prod
+**ALWAYS work on your current clive/* feature branch.**
+Commit locally only. The orchestrator handles push + PR creation after all tasks complete.`;
+
+/** Marker constants for build loop detection */
+const TASK_COMPLETE_MARKER = "<promise>TASK_COMPLETE</promise>";
+const ALL_TASKS_COMPLETE_MARKER = "<promise>ALL_TASKS_COMPLETE</promise>";
+
+/** Maximum iterations for a build loop */
+const MAX_BUILD_ITERATIONS = 10;
+
+/** Delay between build iterations (ms) */
+const BUILD_ITERATION_DELAY = 1500;
 
 /**
  * Active interview session
@@ -91,9 +138,10 @@ export class LocalExecutor extends EventEmitter {
     request: InterviewRequest,
     onEvent: (event: InterviewEvent) => void,
   ): Promise<void> {
-    const { sessionId, initialPrompt, claudeSessionId: resumeSessionId } = request;
+    const { sessionId, initialPrompt, claudeSessionId: resumeSessionId, mode } = request;
+    const effectiveMode = mode ?? "plan";
 
-    console.log(`[LocalExecutor] Starting interview ${sessionId}${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
+    console.log(`[LocalExecutor] Starting interview ${sessionId} (mode=${effectiveMode})${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
 
     if (this.activeSessions.has(sessionId)) {
       throw new Error(`Session ${sessionId} already exists`);
@@ -115,17 +163,39 @@ export class LocalExecutor extends EventEmitter {
       }
     }
 
-    const prompt = initialPrompt
-      ? `Plan the following: ${initialPrompt}`
-      : "Help me plan a new feature. What would you like to build?";
+    // Select system prompt and initial prompt based on mode
+    const systemPrompt = effectiveMode === "build"
+      ? BUILD_SYSTEM_PROMPT
+      : PLANNING_SKILL_PROMPT;
 
-    // Generate a new Claude session ID if not resuming
+    const prompt = effectiveMode === "build"
+      ? initialPrompt || "Execute the next pending task from Claude Tasks."
+      : initialPrompt
+        ? `Plan the following: ${initialPrompt}`
+        : "Help me plan a new feature. What would you like to build?";
+
+    // Build mode: run the ralph loop (multiple iterations)
+    if (effectiveMode === "build") {
+      await this.runBuildLoop(
+        sessionId,
+        prompt,
+        systemPrompt,
+        request,
+        onEvent,
+        sessionWorkspace,
+        worktreePath,
+      );
+      return;
+    }
+
+    // Plan mode: single execution (existing flow)
     const claudeSessionId = resumeSessionId || randomUUID();
 
     const program = Effect.gen(
       this.createExecutionProgram(
         sessionId,
         prompt,
+        systemPrompt,
         request.model || "opus",
         onEvent,
         claudeSessionId,
@@ -159,6 +229,7 @@ export class LocalExecutor extends EventEmitter {
   private createExecutionProgram(
     sessionId: string,
     prompt: string,
+    systemPrompt: string,
     model: string,
     onEvent: (event: InterviewEvent) => void,
     claudeSessionId: string,
@@ -173,7 +244,7 @@ export class LocalExecutor extends EventEmitter {
 
       const handle = yield* cliService.execute({
         prompt,
-        systemPrompt: PLANNING_SKILL_PROMPT,
+        systemPrompt,
         workspaceRoot: sessionWorkspace || self.workspaceRoot,
         model,
         resumeSessionId,
@@ -213,6 +284,298 @@ export class LocalExecutor extends EventEmitter {
       self.cleanupSession(sessionId);
       console.log(`[LocalExecutor] Session ${sessionId} completed`);
     };
+  }
+
+  /**
+   * Run the build ralph loop — spawns Claude CLI sessions iteratively,
+   * detecting completion markers to advance to the next task.
+   */
+  private async runBuildLoop(
+    sessionId: string,
+    initialPrompt: string,
+    systemPrompt: string,
+    request: InterviewRequest,
+    onEvent: (event: InterviewEvent) => void,
+    sessionWorkspace: string,
+    worktreePath?: string,
+  ): Promise<void> {
+    const model = request.model || "opus";
+
+    // Append Linear issue context to the first iteration prompt
+    const linearContext = request.linearIssueUrls?.length
+      ? `\n\nLinear issues to execute:\n${request.linearIssueUrls.map((u) => `- ${u}`).join("\n")}`
+      : "";
+
+    let iteration = 1;
+
+    this.emitEvent(
+      sessionId,
+      {
+        type: "text",
+        content: `Starting build loop (max ${MAX_BUILD_ITERATIONS} iterations)...`,
+      },
+      onEvent,
+    );
+
+    while (iteration <= MAX_BUILD_ITERATIONS) {
+      const iterationPrompt =
+        iteration === 1
+          ? `${initialPrompt}${linearContext}`
+          : `Continue with the next task. This is iteration ${iteration} of ${MAX_BUILD_ITERATIONS}.`;
+
+      // Each iteration gets a fresh Claude CLI session
+      const claudeSessionId = randomUUID();
+
+      this.emitEvent(
+        sessionId,
+        {
+          type: "text",
+          content: `Build iteration ${iteration}/${MAX_BUILD_ITERATIONS} starting...`,
+        },
+        onEvent,
+      );
+
+      console.log(
+        `[LocalExecutor] Build iteration ${iteration}/${MAX_BUILD_ITERATIONS} for session ${sessionId}`,
+      );
+
+      const marker = await this.runBuildIteration(
+        sessionId,
+        iterationPrompt,
+        systemPrompt,
+        model,
+        claudeSessionId,
+        onEvent,
+        sessionWorkspace,
+        worktreePath,
+      );
+
+      console.log(
+        `[LocalExecutor] Build iteration ${iteration} result: ${marker}`,
+      );
+
+      if (marker === "all-tasks-complete") {
+        this.emitEvent(
+          sessionId,
+          {
+            type: "text",
+            content: `All tasks complete after ${iteration} iteration(s). Pushing branch and creating PR...`,
+          },
+          onEvent,
+        );
+        break;
+      }
+
+      if (marker === "error") {
+        this.emitEvent(
+          sessionId,
+          {
+            type: "text",
+            content: `Build iteration ${iteration} ended without a completion marker. Stopping build loop.`,
+          },
+          onEvent,
+        );
+        break;
+      }
+
+      // TASK_COMPLETE — continue to next iteration
+      this.emitEvent(
+        sessionId,
+        {
+          type: "text",
+          content: `Task completed (iteration ${iteration}). Moving to next task...`,
+        },
+        onEvent,
+      );
+
+      iteration++;
+
+      if (iteration <= MAX_BUILD_ITERATIONS) {
+        await new Promise((r) => setTimeout(r, BUILD_ITERATION_DELAY));
+      }
+    }
+
+    if (iteration > MAX_BUILD_ITERATIONS) {
+      this.emitEvent(
+        sessionId,
+        {
+          type: "text",
+          content: `Reached max iterations (${MAX_BUILD_ITERATIONS}). Pushing branch and creating PR...`,
+        },
+        onEvent,
+      );
+    }
+
+    // Push branch and create PR
+    this.pushAndCreatePR(sessionWorkspace, sessionId, onEvent);
+
+    // Final cleanup
+    this.emitEvent(sessionId, { type: "complete" }, onEvent);
+    this.cleanupSession(sessionId);
+  }
+
+  /**
+   * Run a single build iteration — spawns one Claude CLI session and
+   * streams events until a completion marker is detected or the stream ends.
+   */
+  private runBuildIteration(
+    sessionId: string,
+    prompt: string,
+    systemPrompt: string,
+    model: string,
+    claudeSessionId: string,
+    onEvent: (event: InterviewEvent) => void,
+    sessionWorkspace: string,
+    worktreePath?: string,
+  ): Promise<"task-complete" | "all-tasks-complete" | "error"> {
+    return new Promise((resolve) => {
+      let accumulatedText = "";
+      let resolved = false;
+
+      const resolveOnce = (
+        result: "task-complete" | "all-tasks-complete" | "error",
+      ) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(result);
+        }
+      };
+
+      const self = this;
+
+      const program = Effect.gen(function* () {
+        const cliService = yield* ClaudeCliService;
+
+        const handle = yield* cliService.execute({
+          prompt,
+          systemPrompt,
+          workspaceRoot: sessionWorkspace,
+          model,
+        });
+
+        self.activeSessions.set(sessionId, {
+          sessionId,
+          handle,
+          startedAt: new Date(),
+          claudeSessionId,
+          worktreePath,
+        });
+
+        self.emitEvent(
+          sessionId,
+          { type: "session_started", claudeSessionId },
+          onEvent,
+        );
+
+        yield* handle.stream.pipe(
+          Stream.runForEach((event) =>
+            Effect.sync(() => {
+              // Forward events to Slack
+              self.processEvent(sessionId, event, onEvent);
+
+              // Accumulate text for marker detection
+              if (event.type === "text") {
+                accumulatedText += event.content;
+
+                if (accumulatedText.includes(ALL_TASKS_COMPLETE_MARKER)) {
+                  console.log(
+                    `[LocalExecutor] Detected ALL_TASKS_COMPLETE marker`,
+                  );
+                  handle.kill();
+                  resolveOnce("all-tasks-complete");
+                } else if (accumulatedText.includes(TASK_COMPLETE_MARKER)) {
+                  console.log(
+                    `[LocalExecutor] Detected TASK_COMPLETE marker`,
+                  );
+                  handle.kill();
+                  resolveOnce("task-complete");
+                }
+              }
+            }),
+          ),
+        );
+
+        // Stream ended without a marker
+        resolveOnce("error");
+      });
+
+      Effect.runPromise(
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      ).catch((error) => {
+        // Stream interruption from kill() is expected for marker detection
+        if (!resolved) {
+          console.error(
+            `[LocalExecutor] Build iteration error for ${sessionId}:`,
+            error,
+          );
+          resolveOnce("error");
+        }
+      });
+    });
+  }
+
+  /**
+   * Push the feature branch and create a PR after build loop completes.
+   */
+  private pushAndCreatePR(
+    workspacePath: string,
+    sessionId: string,
+    onEvent: (event: InterviewEvent) => void,
+  ): void {
+    try {
+      // Get branch name for the PR title
+      const branchName = execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd: workspacePath,
+        encoding: "utf-8",
+      }).trim();
+
+      // Push the branch
+      execSync("git push -u origin HEAD", {
+        cwd: workspacePath,
+        stdio: "pipe",
+      });
+
+      console.log(
+        `[LocalExecutor] Pushed branch ${branchName} for session ${sessionId}`,
+      );
+
+      // Create PR
+      const prTitle = branchName.startsWith("clive/")
+        ? `feat: ${branchName.replace("clive/", "").replace(/-/g, " ")}`
+        : `feat: ${branchName}`;
+
+      const prOutput = execSync(
+        `gh pr create --base main --title "${prTitle}" --body "Automated build from Clive build agent."`,
+        { cwd: workspacePath, encoding: "utf-8" },
+      ).trim();
+
+      const prUrlMatch = prOutput.match(
+        /https:\/\/github\.com\/[^\s]+\/pull\/\d+/,
+      );
+      if (prUrlMatch) {
+        this.emitEvent(
+          sessionId,
+          { type: "pr_created", url: prUrlMatch[0] },
+          onEvent,
+        );
+        console.log(
+          `[LocalExecutor] PR created: ${prUrlMatch[0]} for session ${sessionId}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[LocalExecutor] Push/PR creation failed for ${sessionId}:`,
+        error,
+      );
+      this.emitEvent(
+        sessionId,
+        {
+          type: "error",
+          message: `Push/PR failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        onEvent,
+      );
+    }
   }
 
   /**

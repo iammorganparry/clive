@@ -37,6 +37,10 @@ export class WorktreeManager {
       { cwd: this.repoPath, stdio: "pipe" },
     );
 
+    // Install branch protection and git safety defaults
+    this.installPrePushHook(worktreePath);
+    this.configureGitDefaults(worktreePath);
+
     console.log(
       `[WorktreeManager] Created worktree at ${worktreePath} on branch ${branchName}`,
     );
@@ -68,6 +72,54 @@ export class WorktreeManager {
         error,
       );
     }
+  }
+
+  /** Install pre-push hook that blocks pushes to protected branches */
+  private installPrePushHook(worktreePath: string): void {
+    // Worktrees use a .git *file* pointing to the main repo's worktree dir.
+    // The actual hooks dir is at the path in the .git file + /hooks
+    const gitFile = fs.readFileSync(
+      path.join(worktreePath, ".git"),
+      "utf-8",
+    );
+    const gitDirRelative = gitFile.replace("gitdir: ", "").trim();
+    const gitDir = path.resolve(worktreePath, gitDirRelative);
+    const hooksDir = path.join(gitDir, "hooks");
+
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    const hookScript = `#!/bin/sh
+# Branch protection — blocks pushes to main/master/production
+# Installed by Clive WorktreeManager
+
+PROTECTED_BRANCHES="main master production prod"
+
+while read local_ref local_sha remote_ref remote_sha; do
+  remote_branch=$(echo "$remote_ref" | sed 's|refs/heads/||')
+  for protected in $PROTECTED_BRANCHES; do
+    if [ "$remote_branch" = "$protected" ]; then
+      echo "BLOCKED: Push to protected branch '$protected' is not allowed."
+      echo "Push to your clive/* feature branch and create a PR instead."
+      exit 1
+    fi
+  done
+done
+
+exit 0
+`;
+
+    const hookPath = path.join(hooksDir, "pre-push");
+    fs.writeFileSync(hookPath, hookScript, { mode: 0o755 });
+  }
+
+  /** Configure git defaults for safety */
+  private configureGitDefaults(worktreePath: string): void {
+    // Set push.default=current so `git push` only pushes the current branch
+    // Prevents accidental pushes to a different remote branch
+    execSync("git config push.default current", {
+      cwd: worktreePath,
+      stdio: "pipe",
+    });
   }
 
   /** Prune stale worktrees */

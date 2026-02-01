@@ -1,40 +1,30 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
-
-## Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
-
 ## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, you MUST complete ALL steps below.
 
 **MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+4. **COMMIT AND PUSH your feature branch:**
    ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
+   git add -A
+   git commit -m "feat(scope): description"
+   git push -u origin HEAD
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Create a Pull Request:**
+   ```bash
+   gh pr create --base main --title "feat(scope): description" --body "## Summary\n- Changes made\n\n## Test plan\n- How to verify"
+   ```
+6. **Verify** - All changes committed, pushed, and PR created
+7. **Hand off** - Provide the PR URL and context for next session
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
+- **NEVER push to main, master, or production branches**
+- Always work on your `clive/*` feature branch
+- Work is NOT complete until changes are pushed and a PR is created
+- NEVER say "ready to push when you are" - YOU must push and create the PR
 - If push fails, resolve and retry until it succeeds
-
