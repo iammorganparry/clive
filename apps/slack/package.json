@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@clive/claude-services": "*",
+    "@clive/github-app": "*",
     "@clive/worker-protocol": "*",
     "@ngrok/ngrok": "^1.5.0",
     "@octokit/rest": "^21.1.1",

@@ -2,6 +2,7 @@
 # Shared utilities for Claude Code memory hooks.
 
 MEMORY_SERVER="${CLIVE_MEMORY_URL:-http://localhost:8741}"
+MEMORY_API_KEY="${CLIVE_MEMORY_API_KEY:-}"
 HOOK_TIMEOUT=5  # seconds
 
 # Read stdin JSON once and cache it. Call early in each hook.
@@ -45,6 +46,11 @@ api_call() {
 
   local url="${MEMORY_SERVER}${path}"
   local args=(-s -S --max-time "$HOOK_TIMEOUT" -X "$method")
+
+  # Add auth header if API key is set
+  if [ -n "$MEMORY_API_KEY" ]; then
+    args+=(-H "Authorization: Bearer ${MEMORY_API_KEY}")
+  fi
 
   if [ -n "$body" ]; then
     args+=(-H "Content-Type: application/json" -d "$body")

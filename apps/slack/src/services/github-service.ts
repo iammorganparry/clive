@@ -20,6 +20,13 @@ export class GitHubService {
   }
 
   /**
+   * Update the authentication token (used for GitHub App token refresh)
+   */
+  updateToken(token: string): void {
+    this.octokit = new Octokit({ auth: token });
+  }
+
+  /**
    * Parse "owner/repo" into separate parts
    */
   private parseRepo(repo: string): { owner: string; repo: string } {

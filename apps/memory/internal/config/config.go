@@ -35,6 +35,8 @@ type Config struct {
 	SummaryEnabled bool
 	// MCP adapter
 	MemoryServerURL string
+	// API authentication
+	APIKey string
 }
 
 func Load() (*Config, error) {
@@ -60,6 +62,7 @@ func Load() (*Config, error) {
 		SummaryModel:        envStr("SUMMARY_MODEL", "qwen2.5:1.5b"),
 		SummaryEnabled:      envBool("SUMMARY_ENABLED", true),
 		MemoryServerURL:     envStr("MEMORY_SERVER_URL", "http://localhost:8741"),
+		APIKey:              envStr("MEMORY_API_KEY", ""),
 	}
 
 	if err := cfg.validate(); err != nil {

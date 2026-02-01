@@ -69,6 +69,25 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
+// BearerAuth validates Authorization: Bearer <token> header.
+// If apiKey is empty, auth is disabled (passthrough).
+func BearerAuth(apiKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if apiKey == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			auth := r.Header.Get("Authorization")
+			if auth == "" || auth != "Bearer "+apiKey {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 type statusWriter struct {
 	http.ResponseWriter
 	status int

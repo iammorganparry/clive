@@ -121,7 +121,7 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, func()) {
 	obsStore := sessions.NewObservationStore(db)
 	summarizer := sessions.NewSummarizer(ollamaSrv.URL, "test-model", false, logger)
 
-	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, nil, sessStore, obsStore, summarizer, logger)
+	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, nil, sessStore, obsStore, summarizer, "", logger)
 	srv := httptest.NewServer(router)
 
 	cleanup := func() {

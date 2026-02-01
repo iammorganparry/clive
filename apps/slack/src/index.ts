@@ -116,6 +116,7 @@ import {
   registerMessageHandler,
   registerMessageHandlerDistributed,
 } from "./handlers/message-handler";
+import { GitHubAppAuth } from "@clive/github-app";
 import { createGitHubWebhookHandler } from "./handlers/github-webhook-handler";
 import { ClaudeManager } from "./services/claude-manager";
 import { GitHubService } from "./services/github-service";
@@ -221,18 +222,55 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     process.exit(1);
   }
 
-  // Initialize PR feedback services (optional — requires GITHUB_WEBHOOK_SECRET and GITHUB_TOKEN)
+  // Initialize PR feedback services (optional)
+  // Token priority: GITHUB_TOKEN env var > GitHub App installation token
   const prSubscriptionRegistry = new PrSubscriptionRegistry();
   let githubService: GitHubService | undefined;
   let prServices: import("./handlers/mention-handler").PrServices | undefined;
+  let githubAppAuth: GitHubAppAuth | undefined;
 
-  if (config.githubWebhookSecret && config.githubToken) {
-    githubService = new GitHubService(config.githubToken);
+  let githubToken = config.githubToken;
+
+  // Generate installation token from GitHub App if credentials are available
+  if (config.githubAppId && config.githubAppPrivateKey && config.githubAppInstallationId) {
+    githubAppAuth = new GitHubAppAuth({
+      appId: config.githubAppId,
+      privateKey: config.githubAppPrivateKey,
+      installationId: config.githubAppInstallationId,
+    });
+
+    if (!githubToken) {
+      try {
+        githubToken = await githubAppAuth.getToken();
+        console.log("GitHub App installation token generated");
+      } catch (error) {
+        console.error("Failed to generate GitHub App token:", error);
+      }
+    }
+  }
+
+  if (config.githubWebhookSecret && githubToken) {
+    githubService = new GitHubService(githubToken);
     prServices = { subscriptionRegistry: prSubscriptionRegistry, githubService };
-    console.log("GitHub PR feedback subscriptions enabled");
+    console.log("GitHub PR feedback support enabled");
+
+    // Refresh GitHub App token every 50 min (tokens expire after 1h)
+    if (githubAppAuth && githubService) {
+      const svc = githubService;
+      const auth = githubAppAuth;
+      setInterval(async () => {
+        try {
+          const newToken = await auth.getToken();
+          svc.updateToken(newToken);
+          console.log("[GitHub] App installation token refreshed");
+        } catch (error) {
+          console.error("[GitHub] Token refresh failed:", error);
+        }
+      }, 50 * 60 * 1000);
+    }
   } else {
     console.log(
-      "GitHub PR feedback subscriptions disabled (set GITHUB_WEBHOOK_SECRET and GITHUB_TOKEN to enable)",
+      "GitHub PR feedback support disabled (need GITHUB_WEBHOOK_SECRET + either GITHUB_TOKEN or GitHub App credentials)",
     );
   }
 

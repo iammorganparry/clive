@@ -23,11 +23,12 @@ func NewRouter(
 	sessStore *sessions.SessionStore,
 	obsStore *sessions.ObservationStore,
 	summarizer *sessions.Summarizer,
+	apiKey string,
 	logger *slog.Logger,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Middleware
+	// Global middleware (runs on ALL routes including /health)
 	r.Use(CORS)
 	r.Use(RequestID)
 	r.Use(Logger(logger))
@@ -39,51 +40,56 @@ func NewRouter(
 	bulkH := NewBulkHandler(svc)
 	workspaceH := NewWorkspaceHandler(svc)
 
-	// Routes
+	// Unauthenticated routes
 	r.Get("/health", healthH.Health)
 
-	r.Route("/memories", func(r chi.Router) {
-		r.Get("/", memoryH.List)
-		r.Post("/", memoryH.Store)
-		r.Post("/search", memoryH.Search)
-		r.Post("/search/index", memoryH.SearchIndex)
-		r.Post("/timeline", memoryH.Timeline)
-		r.Post("/batch", memoryH.BatchGet)
-		r.Post("/bulk", bulkH.BulkStore)
-		r.Post("/compact", bulkH.Compact)
-		r.Get("/impact-leaders", memoryH.ImpactLeaders)
-		r.Get("/{id}", memoryH.Get)
-		r.Patch("/{id}", memoryH.Update)
-		r.Delete("/{id}", memoryH.Delete)
-		r.Post("/{id}/impact", memoryH.RecordImpact)
-		r.Get("/{id}/impact", memoryH.ImpactEvents)
-		r.Post("/{id}/supersede", memoryH.Supersede)
-	})
+	// Authenticated routes
+	r.Group(func(r chi.Router) {
+		r.Use(BearerAuth(apiKey))
 
-	r.Route("/workspaces", func(r chi.Router) {
-		r.Get("/", workspaceH.List)
-		r.Get("/{id}/stats", workspaceH.Stats)
-	})
-
-	// Session routes
-	if sessStore != nil {
-		sessionH := NewSessionHandler(svc, sessStore, obsStore, summarizer)
-		r.Route("/sessions", func(r chi.Router) {
-			r.Get("/", sessionH.ListSessions)
-			r.Post("/summarize", sessionH.Summarize)
-			r.Get("/{id}", sessionH.GetSession)
-			r.Post("/{id}/observations", sessionH.StoreObservation)
-			r.Get("/{id}/observations", sessionH.ListObservations)
+		r.Route("/memories", func(r chi.Router) {
+			r.Get("/", memoryH.List)
+			r.Post("/", memoryH.Store)
+			r.Post("/search", memoryH.Search)
+			r.Post("/search/index", memoryH.SearchIndex)
+			r.Post("/timeline", memoryH.Timeline)
+			r.Post("/batch", memoryH.BatchGet)
+			r.Post("/bulk", bulkH.BulkStore)
+			r.Post("/compact", bulkH.Compact)
+			r.Get("/impact-leaders", memoryH.ImpactLeaders)
+			r.Get("/{id}", memoryH.Get)
+			r.Patch("/{id}", memoryH.Update)
+			r.Delete("/{id}", memoryH.Delete)
+			r.Post("/{id}/impact", memoryH.RecordImpact)
+			r.Get("/{id}/impact", memoryH.ImpactEvents)
+			r.Post("/{id}/supersede", memoryH.Supersede)
 		})
-	}
 
-	if skillSync != nil {
-		skillH := NewSkillHandler(skillSync)
-		r.Route("/skills", func(r chi.Router) {
-			r.Post("/sync", skillH.Sync)
-			r.Get("/", skillH.List)
+		r.Route("/workspaces", func(r chi.Router) {
+			r.Get("/", workspaceH.List)
+			r.Get("/{id}/stats", workspaceH.Stats)
 		})
-	}
+
+		// Session routes
+		if sessStore != nil {
+			sessionH := NewSessionHandler(svc, sessStore, obsStore, summarizer)
+			r.Route("/sessions", func(r chi.Router) {
+				r.Get("/", sessionH.ListSessions)
+				r.Post("/summarize", sessionH.Summarize)
+				r.Get("/{id}", sessionH.GetSession)
+				r.Post("/{id}/observations", sessionH.StoreObservation)
+				r.Get("/{id}/observations", sessionH.ListObservations)
+			})
+		}
+
+		if skillSync != nil {
+			skillH := NewSkillHandler(skillSync)
+			r.Route("/skills", func(r chi.Router) {
+				r.Post("/sync", skillH.Sync)
+				r.Get("/", skillH.List)
+			})
+		}
+	})
 
 	return r
 }

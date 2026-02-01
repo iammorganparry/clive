@@ -99,7 +99,7 @@ func main() {
 	}
 
 	// Router
-	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, skillSync, sessStore, obsStore, summarizer, logger)
+	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, skillSync, sessStore, obsStore, summarizer, cfg.APIKey, logger)
 
 	// Server
 	addr := fmt.Sprintf(":%d", cfg.Port)

@@ -41,8 +41,14 @@ export interface SlackConfig {
   wsPath: string;
   /** GitHub webhook secret for verifying PR feedback webhooks (optional) */
   githubWebhookSecret?: string;
-  /** GitHub token for commenting on PRs (optional) */
+  /** GitHub token for commenting on PRs (optional, auto-generated from App if not set) */
   githubToken?: string;
+  /** GitHub App ID (optional, for generating installation tokens) */
+  githubAppId?: string;
+  /** GitHub App private key in PEM format (optional) */
+  githubAppPrivateKey?: string;
+  /** GitHub App installation ID (optional) */
+  githubAppInstallationId?: number;
 }
 
 /**
@@ -114,6 +120,15 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
   const githubWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET || undefined;
   const githubToken = process.env.GITHUB_TOKEN || undefined;
 
+  const githubAppId = process.env.GITHUB_APP_ID || undefined;
+  const githubAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY?.replace(
+    /\\n/g,
+    "\n",
+  );
+  const githubAppInstallationId = process.env.GITHUB_APP_INSTALLATION_ID
+    ? Number.parseInt(process.env.GITHUB_APP_INSTALLATION_ID, 10)
+    : undefined;
+
   return right({
     slackBotToken: slackBotToken!,
     slackSigningSecret: slackSigningSecret!,
@@ -126,6 +141,9 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
     wsPath,
     githubWebhookSecret,
     githubToken,
+    githubAppId,
+    githubAppPrivateKey,
+    githubAppInstallationId,
   });
 }
 

@@ -763,7 +763,8 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               Object.entries(process.env).filter(([key]) =>
                 ALLOWED_ENV_VARS.includes(key) ||
                 key.startsWith("CLIVE_WORKSPACE") ||
-                key.startsWith("CLIVE_SOCKET"),
+                key.startsWith("CLIVE_SOCKET") ||
+                key.startsWith("CLIVE_MEMORY"),
               ),
             );
 
