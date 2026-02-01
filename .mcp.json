@@ -3,6 +3,12 @@
     "linear": {
       "type": "http",
       "url": "https://mcp.linear.app/mcp"
+    },
+    "memory": {
+      "command": "apps/memory/bin/memory-mcp",
+      "env": {
+        "MEMORY_SERVER_URL": "http://localhost:8741"
+      }
     }
   }
 }
