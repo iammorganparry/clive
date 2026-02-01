@@ -12,4 +12,4 @@ watchPatterns = [
 startCommand = "npx tsx src/index.ts"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
-numReplicas = 3
+numReplicas = 0

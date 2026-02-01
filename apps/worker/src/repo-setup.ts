@@ -7,12 +7,16 @@
 
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { GitHubAppAuth } from "@clive/github-app";
 import type { WorkerConfig } from "./config.js";
 
-const REPO_DIR = "/workspace/repo";
-const WORKTREE_DIR = "/workspace/worktrees";
+const REPO_DIR =
+  process.env.CLIVE_REPO_DIR || path.join(os.homedir(), ".clive", "repo");
+const WORKTREE_DIR =
+  process.env.CLIVE_WORKTREE_DIR ||
+  path.join(os.homedir(), ".clive", "worktrees");
 
 export interface RepoSetupResult {
   repoPath: string;

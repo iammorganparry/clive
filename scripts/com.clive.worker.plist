@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Clive Worker launchd service.
+  Install via scripts/setup-mac-worker.sh, which replaces __HOME__
+  with the actual home directory path before copying to ~/Library/LaunchAgents/.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clive.worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+set -a
+source "__HOME__/.clive/worker.env"
+set +a
+export NVM_DIR="__HOME__/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+cd "__HOME__/.clive/repo" || exit 1
+exec npx tsx apps/worker/src/index.ts
+        </string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.clive/logs/worker-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.clive/logs/worker-stderr.log</string>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

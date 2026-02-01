@@ -89,6 +89,8 @@ RUN git init && \
     git commit -m "Initial workspace" --quiet
 
 ENV NODE_ENV=production
+ENV CLIVE_REPO_DIR=/workspace/repo
+ENV CLIVE_WORKTREE_DIR=/workspace/worktrees
 
 WORKDIR /workspace/apps/worker
 
