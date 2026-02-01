@@ -71,6 +71,15 @@ RUN npx tsc --project packages/github-app/tsconfig.json || true && \
     npx tsc --project packages/worker-protocol/tsconfig.json || true && \
     npx tsc --project packages/claude-services/tsconfig.json || true
 
+# Create worktree directory for per-session isolation
+RUN mkdir -p /workspace/worktrees
+
+# Switch to non-root user (node:22-slim provides UID 1000 'node' user).
+# Claude CLI refuses --dangerously-skip-permissions / bypassPermissions as root.
+# Matches Anthropic's reference devcontainer pattern.
+RUN chown -R node:node /workspace
+USER node
+
 # Initialize a fallback git repo for Claude CLI when CLIVE_REPO is not set.
 # When CLIVE_REPO IS set, setupRepo() clones the target repo and uses worktrees instead.
 RUN git init && \
@@ -78,9 +87,6 @@ RUN git init && \
     git config user.name "Clive Worker" && \
     git add -A && \
     git commit -m "Initial workspace" --quiet
-
-# Create worktree directory for per-session isolation
-RUN mkdir -p /workspace/worktrees
 
 ENV NODE_ENV=production
 
