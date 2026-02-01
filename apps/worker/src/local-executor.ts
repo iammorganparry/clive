@@ -106,6 +106,8 @@ interface ActiveSession {
   claudeSessionId?: string;
   /** Worktree path if using per-session worktrees */
   worktreePath?: string;
+  /** True when an AskUserQuestion tool_use has been emitted and we're waiting for the answer */
+  pendingQuestion?: boolean;
 }
 
 /**
@@ -144,7 +146,16 @@ export class LocalExecutor extends EventEmitter {
     console.log(`[LocalExecutor] Starting interview ${sessionId} (mode=${effectiveMode})${resumeSessionId ? ` (resuming ${resumeSessionId})` : ""}`);
 
     if (this.activeSessions.has(sessionId)) {
-      throw new Error(`Session ${sessionId} already exists`);
+      console.warn(`[LocalExecutor] Session ${sessionId} already exists, cleaning up stale session`);
+      const stale = this.activeSessions.get(sessionId);
+      if (stale?.handle) {
+        try {
+          stale.handle.kill();
+        } catch {
+          // ignore — handle may already be closed
+        }
+      }
+      this.cleanupSession(sessionId);
     }
 
     // Create session worktree if manager is available
@@ -280,9 +291,16 @@ export class LocalExecutor extends EventEmitter {
         ),
       );
 
-      // Cleanup after stream ends
-      self.cleanupSession(sessionId);
-      console.log(`[LocalExecutor] Session ${sessionId} completed`);
+      // Cleanup after stream ends — unless waiting for an answer
+      const endedSession = self.activeSessions.get(sessionId);
+      if (endedSession?.pendingQuestion) {
+        console.log(
+          `[LocalExecutor] Stream ended for ${sessionId} but pending question — keeping session alive`,
+        );
+      } else {
+        self.cleanupSession(sessionId);
+        console.log(`[LocalExecutor] Session ${sessionId} completed`);
+      }
     };
   }
 
@@ -610,6 +628,12 @@ export class LocalExecutor extends EventEmitter {
             })),
           };
 
+          // Mark session as waiting for an answer so we don't emit 'complete' when the CLI exits
+          const questionSession = this.activeSessions.get(sessionId);
+          if (questionSession) {
+            questionSession.pendingQuestion = true;
+          }
+
           this.emitEvent(
             sessionId,
             {
@@ -732,6 +756,17 @@ export class LocalExecutor extends EventEmitter {
       }
 
       case "done": {
+        const doneSession = this.activeSessions.get(sessionId);
+        if (doneSession?.pendingQuestion) {
+          // CLI exited while waiting for a user answer (AskUserQuestion).
+          // Don't emit 'complete' — the session must stay alive so the
+          // answer can resume the CLI via --resume.
+          console.log(
+            `[LocalExecutor] Session ${sessionId} has pending question, keeping alive for resume`,
+          );
+          break;
+        }
+
         this.emitEvent(
           sessionId,
           {
@@ -768,10 +803,45 @@ export class LocalExecutor extends EventEmitter {
     sessionId: string,
     toolUseId: string,
     answers: Record<string, string>,
+    onEvent?: (event: InterviewEvent) => void,
   ): void {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
       console.error(`[LocalExecutor] No session ${sessionId} for answer`);
+      return;
+    }
+
+    // If pending question, the CLI has exited — resume with --resume
+    if (session.pendingQuestion && session.claudeSessionId) {
+      console.log(
+        `[LocalExecutor] Resuming session ${sessionId} (claude session: ${session.claudeSessionId}) with answer`,
+      );
+      session.pendingQuestion = false;
+
+      const answerText = Object.values(answers).join(", ");
+      const resumePrompt = `User answered: ${answerText}`;
+
+      // Re-run the execution program with --resume
+      const program = Effect.gen(
+        this.createExecutionProgram(
+          sessionId,
+          resumePrompt,
+          "", // systemPrompt not needed for resume
+          "opus",
+          onEvent || (() => {}),
+          session.claudeSessionId,
+          session.claudeSessionId, // resumeSessionId
+          session.worktreePath || this.workspaceRoot,
+          session.worktreePath,
+        ),
+      );
+
+      Effect.runPromise(
+        program.pipe(Effect.provide(ClaudeCliService.Default)),
+      ).catch((error) => {
+        console.error(`[LocalExecutor] Resume failed for ${sessionId}:`, error);
+        this.cleanupSession(sessionId);
+      });
       return;
     }
 

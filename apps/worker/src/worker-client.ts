@@ -500,6 +500,11 @@ function makeWorkerClient(
                 answerPayload.sessionId,
                 answerPayload.toolUseId,
                 answerPayload.answers,
+                (event) => {
+                  Effect.runFork(
+                    sendEvent(event).pipe(Effect.catchAll(() => Effect.void)),
+                  );
+                },
               );
               break;
             }

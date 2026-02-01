@@ -140,16 +140,23 @@ export function registerMentionHandler(
             return;
           }
 
+          // Immediate acknowledgment before Claude processes
+          await Effect.runPromise(
+            slackService.addReaction(channel, messageTs, "thinking_face"),
+          );
+          await Effect.runPromise(
+            slackService.postMessage({
+              channel,
+              threadTs,
+              text: `<@${userId}> Got it — working on that now...`,
+            }),
+          );
+
           // Update activity timestamp
           store.touch(threadTs);
 
           // Send as follow-up message to Claude
           claudeManager.sendMessage(threadTs, messageText);
-
-          // Add thinking indicator
-          await Effect.runPromise(
-            slackService.addReaction(channel, messageTs, "thinking_face"),
-          );
         }
         return;
       }
@@ -178,9 +185,11 @@ export function registerMentionHandler(
     // Start greeting conversation using Effect
     await runHandlerEffect(
       Effect.gen(function* () {
+        // Immediate feedback — react before Claude CLI starts
+        yield* slackService.addReaction(channel, messageTs, "thinking_face");
+
         // If user provided a description, skip greeting and go straight to planning
         if (description) {
-          // Don't post welcome message - wait for Claude's first response
           store.setMode(threadTs, "plan");
           store.setPhase(threadTs, "problem");
 
@@ -535,14 +544,19 @@ export function registerMentionHandlerDistributed(
             // Extract the message text (without the @mention)
             const messageText = extractDescription(text, botUserId);
             if (messageText) {
+              // Immediate acknowledgment before worker processes
+              yield* slackService.addReaction(channel, messageTs, "thinking_face");
+              yield* slackService.postMessage({
+                channel,
+                threadTs,
+                text: `<@${userId}> Got it — working on that now...`,
+              });
+
               // Update activity timestamp
               store.touch(threadTs);
 
               // Send as follow-up message to worker
               workerProxy.sendMessage(threadTs, messageText);
-
-              // Add thinking indicator
-              yield* slackService.addReaction(channel, messageTs, "thinking_face");
             }
             return;
           }
@@ -575,8 +589,8 @@ export function registerMentionHandlerDistributed(
           store.close(threadTs);
         });
 
-        // Don't post welcome message - wait for Claude's first response
-        // This avoids the "Starting Planning Interview" message appearing before Claude responds
+        // Immediate feedback — react before the worker sets up worktrees / checkout
+        yield* slackService.addReaction(channel, messageTs, "thinking_face");
 
         // Start interview via worker
         store.setPhase(threadTs, "problem");
@@ -896,6 +910,16 @@ export async function handleWorkerInterviewEvent(
 
     case "complete": {
       const currentSession = store.get(threadTs);
+
+      // If there's a pending question, the CLI exited while waiting for user input.
+      // Don't close — the session will resume when the user answers.
+      if (currentSession?.pendingQuestion) {
+        console.log(
+          `[MentionHandler] Ignoring complete for ${threadTs} — pending question`,
+        );
+        break;
+      }
+
       if (
         currentSession &&
         currentSession.phase !== "completed" &&
