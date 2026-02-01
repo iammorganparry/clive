@@ -18,6 +18,8 @@ import {
   formatTimeoutMessage,
 } from "../formatters/question-formatter";
 import type { ClaudeManager } from "../services/claude-manager";
+import type { GitHubService } from "../services/github-service";
+import type { PrSubscriptionRegistry } from "../services/pr-subscription-registry";
 import type { SlackService } from "../services/slack-service";
 import type { WorkerProxy } from "../services/worker-proxy";
 import type { InterviewStore } from "../store/interview-store";
@@ -73,6 +75,16 @@ export function extractProjectName(description: string): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Parse a GitHub PR URL into owner/repo and PR number.
+ * e.g., "https://github.com/owner/repo/pull/123" → { repo: "owner/repo", prNumber: 123 }
+ */
+function parsePrUrl(url: string): { repo: string; prNumber: number } | null {
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (!match?.[1] || !match[2]) return null;
+  return { repo: match[1], prNumber: parseInt(match[2], 10) };
 }
 
 /**
@@ -406,6 +418,14 @@ async function handleInterviewEvent(
 }
 
 /**
+ * PR services for distributed mode (optional, enables PR feedback subscriptions)
+ */
+export interface PrServices {
+  subscriptionRegistry: PrSubscriptionRegistry;
+  githubService: GitHubService;
+}
+
+/**
  * Register the @mention handler for distributed mode
  */
 export function registerMentionHandlerDistributed(
@@ -413,6 +433,7 @@ export function registerMentionHandlerDistributed(
   store: InterviewStore,
   workerProxy: WorkerProxy,
   slackService: SlackService,
+  prServices?: PrServices,
 ): void {
   app.event("app_mention", async ({ event, context, say }) => {
     const mentionEvent = event as AppMentionEvent;
@@ -476,6 +497,7 @@ export function registerMentionHandlerDistributed(
                     channel,
                     store,
                     slackService,
+                    prServices,
                   );
                 },
                 existingSession.mode !== "greeting" ? existingSession.mode : "plan",
@@ -571,12 +593,38 @@ export function registerMentionHandlerDistributed(
               channel,
               store,
               slackService,
+              prServices,
             );
           },
           projectName, // Pass detected project for routing
           undefined, // mode
           undefined, // linearIssueUrls
           store, // Pass store for tracking originalWorkerId
+          {
+            onAssigned: (assignedWorkerId: string) => {
+              // Session was dequeued and assigned to a worker
+              store.setWorkerId(threadTs, assignedWorkerId);
+              store.setPhase(threadTs, "problem");
+              Effect.runFork(
+                slackService.postMessage({
+                  channel,
+                  threadTs,
+                  text: `<@${userId}> A worker is now available! Starting your request...`,
+                }),
+              );
+            },
+            onTimeout: () => {
+              Effect.runFork(
+                slackService.postMessage({
+                  channel,
+                  threadTs,
+                  text: `<@${userId}> Sorry, no workers became available within 2 minutes. Please try again later.`,
+                  blocks: formatErrorMessage("No workers became available. Please try again later.", userId),
+                }),
+              );
+              store.close(threadTs);
+            },
+          },
         ).pipe(
           Effect.catchTag("WorkerProxyError", (error) =>
             Effect.gen(function* () {
@@ -595,9 +643,16 @@ export function registerMentionHandlerDistributed(
           ),
         );
 
-        if (result) {
-          // Store worker ID in session
+        if (result && "workerId" in result) {
+          // Immediately assigned to a worker
           store.setWorkerId(threadTs, result.workerId);
+        } else if (result && "queued" in result) {
+          // Queued — notify user
+          yield* slackService.postMessage({
+            channel,
+            threadTs,
+            text: `<@${userId}> All workers are busy. You're #${result.position} in the queue — I'll start as soon as a worker is available.`,
+          });
         }
       }),
       "app_mention",
@@ -615,6 +670,7 @@ export async function handleWorkerInterviewEvent(
   channel: string,
   store: InterviewStore,
   slackService: SlackService,
+  prServices?: PrServices,
 ): Promise<void> {
   console.log(`[MentionHandler] Worker event: ${event.type}`);
 
@@ -735,6 +791,92 @@ export async function handleWorkerInterviewEvent(
           ],
         })
       );
+
+      // Auto-subscribe to PR feedback if PR services are available
+      if (prServices) {
+        const prUrl = payload.url;
+        const parsed = parsePrUrl(prUrl);
+        if (parsed) {
+          const session = store.get(threadTs);
+          const claudeSessionId = store.getClaudeSessionId(threadTs);
+          const workerId = store.getWorkerId(threadTs);
+
+          if (claudeSessionId && workerId && session) {
+            prServices.subscriptionRegistry.subscribe({
+              prUrl,
+              prNumber: parsed.prNumber,
+              repo: parsed.repo,
+              workerId,
+              claudeSessionId,
+              projectId: session.initialDescription ? "" : "", // Will be set from routing
+              channel,
+              threadTs,
+              initiatorId: session.initiatorId,
+            });
+
+            await Effect.runPromise(
+              slackService.postMessage({
+                channel,
+                threadTs,
+                text: `Subscribed to PR updates. I'll address any review feedback automatically.`,
+              }),
+            );
+          }
+        }
+      }
+      break;
+    }
+
+    case "pr_feedback_addressed": {
+      // Worker has addressed review feedback on a PR
+      const { prUrl, commitSha, summary, commentReplies } = payload;
+
+      // Notify Slack
+      const commitMsg = commitSha ? ` in commit \`${commitSha.slice(0, 7)}\`` : "";
+      const summaryMsg = summary ? `\n\n${summary}` : "";
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          threadTs,
+          text: `<@${userId}> Feedback addressed${commitMsg}.${summaryMsg}`,
+          blocks: [
+            section(`<@${userId}> :white_check_mark: *Feedback Addressed*${commitMsg}`),
+            ...(summary ? [section(summary)] : []),
+          ],
+        }),
+      );
+
+      // Comment on GitHub PR and reply to individual comments
+      if (prServices) {
+        const parsed = parsePrUrl(prUrl);
+        if (parsed) {
+          try {
+            // Post summary comment on PR
+            const prComment = summary
+              ? `✅ Addressed the review feedback${commitMsg}:\n\n${summary}`
+              : `✅ Addressed the review feedback${commitMsg}.`;
+            await prServices.githubService.commentOnPr(parsed.repo, parsed.prNumber, prComment);
+
+            // Reply to individual review comments
+            if (commentReplies) {
+              for (const { commentId, reply } of commentReplies) {
+                try {
+                  await prServices.githubService.replyToReviewComment(
+                    parsed.repo,
+                    parsed.prNumber,
+                    commentId,
+                    reply,
+                  );
+                } catch (error) {
+                  console.error(`[MentionHandler] Failed to reply to comment ${commentId}:`, error);
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`[MentionHandler] Failed to comment on PR:`, error);
+          }
+        }
+      }
       break;
     }
 

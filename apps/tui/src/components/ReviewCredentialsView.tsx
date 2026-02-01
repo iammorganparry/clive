@@ -88,7 +88,7 @@ export function ReviewCredentialsView({
       const currentField = FIELDS[focusedField];
       if (currentField === "skipAuth") {
         // Toggle checkbox
-        setSkipAuth((prev) => !prev);
+        setSkipAuth((prev: boolean) => !prev);
       } else {
         // Submit form
         handleSubmit();
@@ -98,7 +98,7 @@ export function ReviewCredentialsView({
 
     // Space to toggle checkbox when focused on skipAuth
     if (event.sequence === " " && FIELDS[focusedField] === "skipAuth") {
-      setSkipAuth((prev) => !prev);
+      setSkipAuth((prev: boolean) => !prev);
       return;
     }
   });
@@ -106,6 +106,7 @@ export function ReviewCredentialsView({
   // Handle paste events
   usePaste((event) => {
     const currentField = FIELDS[focusedField];
+    if (!currentField) return;
     const ref = getInputRef(currentField);
     if (ref?.current && event.text) {
       ref.current.insertText(event.text);
@@ -161,7 +162,7 @@ export function ReviewCredentialsView({
             onInput={onChange}
             value={isPassword ? "*".repeat(value.length) : value}
             style={{
-              fg: OneDarkPro.foreground.primary,
+              textColor: OneDarkPro.foreground.primary,
               backgroundColor: OneDarkPro.background.secondary,
               focusedBackgroundColor: OneDarkPro.background.secondary,
             }}
@@ -219,8 +220,8 @@ export function ReviewCredentialsView({
       <box flexDirection="column" alignItems="center" width={55}>
         {/* Header */}
         <box flexDirection="row" marginBottom={3}>
-          <text fg={OneDarkPro.syntax.red} bold>
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" · Review Setup"}</text>
         </box>

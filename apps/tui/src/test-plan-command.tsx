@@ -49,7 +49,7 @@ async function testPlanCommand() {
         console.log(`\n📝 [DIFF]`);
         // Show first few lines of diff
         const diffLines = line.text.split("\n").slice(0, 5);
-        diffLines.forEach((l) => console.log(`  ${l}`));
+        diffLines.forEach((l: string) => console.log(`  ${l}`));
         break;
       }
       case "exit":

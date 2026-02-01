@@ -86,6 +86,16 @@ export interface ClaudeCliExecuteOptions {
   resumeSessionId?: string;
   /** Beta features to enable (passed via --betas flag) */
   betas?: string[];
+  /** Permission mode for Claude CLI (default: "bypassPermissions") */
+  permissionMode?: string;
+  /** Tools to allow. Merged with MCP tools (mcp__clive-tools__* always included). */
+  allowedTools?: string[];
+  /** Tools to deny. Merged with default denials (TodoWrite always included). */
+  disallowedTools?: string[];
+  /** Linear issue UUID of active epic (injected as CLIVE_PARENT_ID env var) */
+  epicId?: string;
+  /** Linear issue identifier e.g. "CLIVE-123" (injected as CLIVE_EPIC_IDENTIFIER env var) */
+  epicIdentifier?: string;
 }
 
 /**
@@ -253,6 +263,24 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
       const pendingQuestionIds = new Set<string>();
 
       /**
+       * Accumulator for tool_use input_json_delta events.
+       * content_block_start for tool_use has empty input — the real JSON
+       * arrives via input_json_delta in content_block_delta events and is
+       * assembled here, then emitted as a complete tool_use on content_block_stop.
+       */
+      const pendingToolInputs = new Map<
+        number,
+        { id: string; name: string; inputJson: string }
+      >();
+
+      /**
+       * Guard against emitting multiple `done` events per message.
+       * Both message_delta (stop_reason) and message_stop can fire for
+       * the same message — only the first should produce a done event.
+       */
+      let doneEmitted = false;
+
+      /**
        * Parse a single line of NDJSON output from Claude CLI
        * Handles both Anthropic API format and Claude CLI stream-json format
        * @param onPermissionDenial - Callback for auto-approving permission denials (except AskUserQuestion)
@@ -287,12 +315,19 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 );
               }
 
-              return {
-                type: "tool_use",
+              // Store block metadata — do NOT emit yet.
+              // The actual input JSON arrives via input_json_delta events.
+              const index =
+                typeof data.index === "number" ? data.index : -1;
+              pendingToolInputs.set(index, {
                 id: data.content_block.id,
                 name: data.content_block.name,
-                input: data.content_block.input || {},
-              };
+                inputJson: "",
+              });
+              logToOutput(
+                `[ClaudeCliService] Stored pending tool_use at index ${index}: ${data.content_block.name}`,
+              );
+              return null;
             }
             if (data.content_block?.type === "thinking") {
               return {
@@ -311,14 +346,53 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               return { type: "thinking", content: data.delta.thinking };
             }
             if (data.delta?.type === "input_json_delta") {
-              // Tool input is being streamed - we'll get complete input later
+              // Accumulate partial JSON for the pending tool_use block
+              const index =
+                typeof data.index === "number" ? data.index : -1;
+              const pending = pendingToolInputs.get(index);
+              if (pending) {
+                pending.inputJson += data.delta.partial_json ?? "";
+              }
               return null;
             }
           }
 
-          // Handle message_start - contains model info
+          // Handle content_block_stop — emit complete tool_use with accumulated input
+          if (data.type === "content_block_stop") {
+            const index =
+              typeof data.index === "number" ? data.index : -1;
+            const pending = pendingToolInputs.get(index);
+            if (pending) {
+              pendingToolInputs.delete(index);
+
+              let parsedInput: unknown = {};
+              if (pending.inputJson) {
+                try {
+                  parsedInput = JSON.parse(pending.inputJson);
+                } catch {
+                  logToOutput(
+                    `[ClaudeCliService] Failed to parse accumulated tool input JSON for ${pending.name}: ${pending.inputJson.substring(0, 200)}`,
+                  );
+                }
+              }
+
+              logToOutput(
+                `[ClaudeCliService] Emitting complete tool_use: ${pending.name} (${pending.id})`,
+              );
+              return {
+                type: "tool_use",
+                id: pending.id,
+                name: pending.name,
+                input: parsedInput,
+              };
+            }
+            // Non-tool content_block_stop — ignore
+            return null;
+          }
+
+          // Handle message_start - contains model info, reset done guard
           if (data.type === "message_start") {
-            // Just acknowledge, no event needed
+            doneEmitted = false;
             return null;
           }
 
@@ -328,6 +402,8 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               data.delta?.stop_reason === "end_turn" ||
               data.delta?.stop_reason === "tool_use"
             ) {
+              if (doneEmitted) return null;
+              doneEmitted = true;
               return { type: "done" };
             }
             return null;
@@ -335,6 +411,8 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
 
           // Handle message_stop
           if (data.type === "message_stop" || data.type === "result") {
+            if (doneEmitted) return null;
+            doneEmitted = true;
             return { type: "done" };
           }
 
@@ -546,8 +624,6 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               "stream-json", // Stream JSON output
               "--input-format",
               "stream-json", // Enable stdin input for prompts and tool results
-              "--disallowedTools",
-              "TodoWrite", // Disable unsupported TodoWrite tool
             ];
 
             // Sandbox file access to workspace directory only
@@ -567,13 +643,23 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               );
             }
 
-            // Use bypassPermissions mode since we're only allowing MCP tools
-            // AskUserQuestion is disabled - Claude will ask questions in text instead
-            args.push("--permission-mode", "bypassPermissions");
+            // Permission mode — defaults to bypassPermissions
+            const permissionMode = options.permissionMode ?? "bypassPermissions";
+            args.push("--permission-mode", permissionMode);
 
-            // Only allow MCP tools - AskUserQuestion disabled to avoid permission bugs
-            // Claude will ask questions in text format instead
-            args.push("--allowedTools", "mcp__clive-tools__*");
+            // Allowed tools — always include MCP tools, optionally add more from caller
+            const allowedTools = ["mcp__clive-tools__*"];
+            if (options.allowedTools?.length) {
+              allowedTools.push(...options.allowedTools);
+            }
+            args.push("--allowedTools", allowedTools.join(","));
+
+            // Disallowed tools — always deny TodoWrite, optionally add more from caller
+            const disallowedTools = ["TodoWrite"];
+            if (options.disallowedTools?.length) {
+              disallowedTools.push(...options.disallowedTools);
+            }
+            args.push("--disallowedTools", disallowedTools.join(","));
 
             // Add MCP server configuration if provided
             if (
@@ -703,6 +789,14 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
               delete filteredEnv[key];
             }
 
+            // Inject epic context as environment variables for plan/build agents
+            if (options.epicId) {
+              filteredEnv.CLIVE_PARENT_ID = options.epicId;
+            }
+            if (options.epicIdentifier) {
+              filteredEnv.CLIVE_EPIC_IDENTIFIER = options.epicIdentifier;
+            }
+
             logToOutput(
               `[ClaudeCliService] Filtered env vars: ${Object.keys(filteredEnv).length} allowed`,
             );
@@ -786,14 +880,14 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                 buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
                 for (const line of lines) {
-                  // AskUserQuestion is disabled - permission denials should not occur
-                  // If they do, log them for debugging but don't auto-approve
+                  // AskUserQuestion availability depends on caller configuration
+                  // (allowed in plan mode, denied in build mode)
                   const event = parseCliOutput(
                     line,
                     (toolUseId, isAskUserQuestion) => {
                       if (isAskUserQuestion) {
                         logToOutput(
-                          `[ClaudeCliService] Unexpected permission denial for AskUserQuestion: ${toolUseId} (tool should be disabled)`,
+                          `[ClaudeCliService] Permission denial for AskUserQuestion: ${toolUseId}`,
                         );
                       } else {
                         logToOutput(

@@ -42,6 +42,20 @@ export const OneDarkPro = {
   ui: {
     border: "#3F4451",
   },
+  diff: {
+    addedFg: "#98C379",
+    addedBg: "#2a3525",
+    removedFg: "#E06C75",
+    removedBg: "#3c2a2a",
+    contextFg: "#ABB2BF",
+    hunkSeparatorFg: "#61AFEF",
+    gutterFg: "#4B5263",
+    headerFg: "#E5C07B",
+    statsAddFg: "#98C379",
+    statsDelFg: "#E06C75",
+    truncationFg: "#5C6370",
+    borderColor: "#3F4451",
+  },
 };
 
 export const ComponentStyles = {

@@ -38,64 +38,64 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
         {/* Shortcuts */}
         <box marginTop={2} flexDirection="column">
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              ?{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>?{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Toggle help</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              b{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>b{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Start build</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              c{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>c{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Cancel build</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              r{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>r{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Refresh status</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              n{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>n{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>New session</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              ↑/k{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>↑/k{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Scroll up</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              ↓/j{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>↓/j{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Scroll down</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              Esc{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>Esc{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Back/unfocus</text>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
-            <text fg={OneDarkPro.syntax.yellow} bold>
-              q{" "}
+            <text fg={OneDarkPro.syntax.yellow}>
+              <b>q{" "}</b>
             </text>
             <text fg={OneDarkPro.foreground.secondary}>Quit</text>
           </text>
@@ -103,8 +103,8 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
 
         {/* Mode Commands */}
         <box marginTop={3} flexDirection="column">
-          <text fg={OneDarkPro.syntax.green} bold>
-            Mode Commands:
+          <text fg={OneDarkPro.syntax.green}>
+            <b>Mode Commands:</b>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
@@ -131,8 +131,8 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
 
         {/* Planning Workflow */}
         <box marginTop={3} flexDirection="column">
-          <text fg={OneDarkPro.syntax.purple} bold>
-            Planning Workflow:
+          <text fg={OneDarkPro.syntax.magenta}>
+            <b>Planning Workflow:</b>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
@@ -182,8 +182,8 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
 
         {/* Other Commands */}
         <box marginTop={3} flexDirection="column">
-          <text fg={OneDarkPro.syntax.green} bold>
-            Other Commands:
+          <text fg={OneDarkPro.syntax.green}>
+            <b>Other Commands:</b>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>
@@ -204,8 +204,8 @@ export function HelpView({ width, height, onClose }: HelpViewProps) {
 
         {/* Debug info */}
         <box marginTop={3} flexDirection="column">
-          <text fg={OneDarkPro.syntax.green} bold>
-            Troubleshooting:
+          <text fg={OneDarkPro.syntax.green}>
+            <b>Troubleshooting:</b>
           </text>
 
           <text fg={OneDarkPro.foreground.primary}>

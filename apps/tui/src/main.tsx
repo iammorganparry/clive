@@ -18,7 +18,7 @@ const workspaceArgIndex = args.findIndex(
 );
 let userWorkspace: string | undefined;
 if (workspaceArgIndex !== -1) {
-  const argValue = args[workspaceArgIndex];
+  const argValue = args[workspaceArgIndex]!;
   userWorkspace = argValue.split("=")[1];
   debugLog("main", "User workspace specified via argument", { userWorkspace });
 }
@@ -110,6 +110,6 @@ process.on("unhandledRejection", (reason) => {
 
 // createCliRenderer is async - must await it
 // Set fullscreen: true to remove margins
-const renderer = await createCliRenderer({ fullscreen: true });
+const renderer = await createCliRenderer({ fullscreen: true } as any);
 const root = createRoot(renderer);
 root.render(<App />);

@@ -116,7 +116,10 @@ import {
   registerMessageHandler,
   registerMessageHandlerDistributed,
 } from "./handlers/message-handler";
+import { createGitHubWebhookHandler } from "./handlers/github-webhook-handler";
 import { ClaudeManager } from "./services/claude-manager";
+import { GitHubService } from "./services/github-service";
+import { PrSubscriptionRegistry } from "./services/pr-subscription-registry";
 import { SessionRouter } from "./services/session-router";
 import { SlackService } from "./services/slack-service";
 import { TunnelService } from "./services/tunnel-service";
@@ -218,28 +221,65 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     process.exit(1);
   }
 
-  // Create HTTP receiver with custom routes for health checks
+  // Initialize PR feedback services (optional — requires GITHUB_WEBHOOK_SECRET and GITHUB_TOKEN)
+  const prSubscriptionRegistry = new PrSubscriptionRegistry();
+  let githubService: GitHubService | undefined;
+  let prServices: import("./handlers/mention-handler").PrServices | undefined;
+
+  if (config.githubWebhookSecret && config.githubToken) {
+    githubService = new GitHubService(config.githubToken);
+    prServices = { subscriptionRegistry: prSubscriptionRegistry, githubService };
+    console.log("GitHub PR feedback subscriptions enabled");
+  } else {
+    console.log(
+      "GitHub PR feedback subscriptions disabled (set GITHUB_WEBHOOK_SECRET and GITHUB_TOKEN to enable)",
+    );
+  }
+
+  // Build custom routes — the GitHub webhook route handler is a closure
+  // that captures services initialized below, so we use a late-binding wrapper.
+  let githubWebhookHandler: ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
+
+  const customRoutes: Array<{ path: string; method: string; handler: (req: IncomingMessage, res: ServerResponse) => void }> = [
+    {
+      path: "/health",
+      method: "GET",
+      handler: (req, res) => {
+        const clientIp = getClientIp(req);
+        if (!checkRateLimit(clientIp)) {
+          sendRateLimitResponse(res);
+          return;
+        }
+        res.writeHead(200);
+        res.end("OK");
+      },
+    },
+  ];
+
+  // Add GitHub webhook route if configured
+  if (config.githubWebhookSecret && githubService) {
+    customRoutes.push({
+      path: "/github/webhook",
+      method: "POST",
+      handler: (req, res) => {
+        if (githubWebhookHandler) {
+          githubWebhookHandler(req, res);
+        } else {
+          res.writeHead(503);
+          res.end("Service not ready");
+        }
+      },
+    });
+    console.log("GitHub webhook endpoint registered at /github/webhook");
+  }
+
+  // Create HTTP receiver with custom routes
   // SECURITY: Worker token endpoint removed - tokens must be configured via environment variable
   // See: https://github.com/clawdbot/clawdbot/issues/1796 (similar vulnerability)
   const receiver = new HTTPReceiver({
     signingSecret: config.slackSigningSecret,
     port: config.port,
-    customRoutes: [
-      {
-        path: "/health",
-        method: "GET",
-        handler: (req, res) => {
-          // SECURITY: Apply rate limiting to prevent abuse
-          const clientIp = getClientIp(req);
-          if (!checkRateLimit(clientIp)) {
-            sendRateLimitResponse(res);
-            return;
-          }
-          res.writeHead(200);
-          res.end("OK");
-        },
-      },
-    ],
+    customRoutes,
   });
 
   // Initialize Slack app with Bolt.js using custom receiver
@@ -258,12 +298,25 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
   const sessionRouter = new SessionRouter(workerRegistry);
   const workerProxy = new WorkerProxy(workerRegistry, sessionRouter);
 
+  // Now that all services are initialized, create the actual webhook handler
+  if (config.githubWebhookSecret && githubService) {
+    githubWebhookHandler = createGitHubWebhookHandler({
+      webhookSecret: config.githubWebhookSecret,
+      subscriptionRegistry: prSubscriptionRegistry,
+      workerProxy,
+      slackService,
+      githubService,
+      interviewStore,
+    });
+  }
+
   // Register handlers (distributed mode)
   registerMentionHandlerDistributed(
     slackApp,
     interviewStore,
     workerProxy,
     slackService,
+    prServices,
   );
   registerMessageHandlerDistributed(
     slackApp,
@@ -329,11 +382,12 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
     // Close WebSocket connections
     eventServer.close();
 
-    // Close all interview sessions
+    // Close all interview sessions and subscriptions
     interviewStore.closeAll();
     workerProxy.closeAll();
     workerRegistry.closeAll();
     sessionRouter.clearAll();
+    prSubscriptionRegistry.closeAll();
 
     // Stop Slack app
     await slackApp.stop();

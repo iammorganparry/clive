@@ -11,17 +11,22 @@ import type {
   InterviewEvent,
   InterviewRequest,
   NgrokConfig,
+  PrFeedbackRequest,
+  PrReviewFeedback,
   WorkerHeartbeat,
   WorkerRegistration,
   WorkerStatus,
   WorkerToCentralMessage,
 } from "@clive/worker-protocol";
 import { CentralToWorkerMessageSchema } from "@clive/worker-protocol";
+import { execSync } from "node:child_process";
 import { Context, Data, Duration, Effect, Fiber, Layer, Queue, Ref, Stream } from "effect";
 import WebSocket from "ws";
 import type { WorkerConfig } from "./config.js";
 import { LocalExecutor } from "./local-executor.js";
+import { setupRepo } from "./repo-setup.js";
 import { TunnelManager } from "./tunnel-manager.js";
+import { WorktreeManager } from "./worktree-manager.js";
 
 /**
  * Error when WorkerClient operations fail
@@ -91,12 +96,52 @@ function makeWorkerClient(
   return Effect.gen(function* () {
     const workerId = generateWorkerId();
 
-    // Use default project path for executor
-    const defaultProject =
-      config.projects.find((p) => p.id === config.defaultProject) ||
-      config.projects[0];
-    const executor = new LocalExecutor(defaultProject.path);
+    // Set up repo if CLIVE_REPO configured
+    const repoSetup = yield* Effect.promise(() => setupRepo(config));
+
+    let worktreeManager: WorktreeManager | undefined;
+    let workspaceRoot: string;
+
+    if (repoSetup) {
+      workspaceRoot = repoSetup.repoPath;
+      worktreeManager = new WorktreeManager(
+        repoSetup.repoPath,
+        repoSetup.worktreeBaseDir,
+      );
+
+      // Override projects to use cloned repo path
+      const repoName = config.repo!.split("/").pop()!;
+      config.projects = [
+        {
+          id: repoName,
+          name: repoName,
+          path: repoSetup.repoPath,
+        },
+      ];
+    } else {
+      const defaultProject =
+        config.projects.find((p) => p.id === config.defaultProject) ||
+        config.projects[0];
+      workspaceRoot = defaultProject.path;
+    }
+
+    const executor = new LocalExecutor(workspaceRoot, worktreeManager);
     const tunnelManager = new TunnelManager();
+
+    // Refresh GitHub App token periodically (every 50 min — tokens last 1h)
+    if (repoSetup) {
+      setInterval(async () => {
+        try {
+          const token = await repoSetup.refreshToken();
+          execSync(`echo "${token}" | gh auth login --with-token`, {
+            stdio: "pipe",
+          });
+          console.log("[WorkerClient] GitHub App token refreshed");
+        } catch (error) {
+          console.error("[WorkerClient] Token refresh failed:", error);
+        }
+      }, 50 * 60 * 1000);
+    }
 
     // Create mutable state ref
     const stateRef = yield* Ref.make<WorkerClientState>({
@@ -155,6 +200,7 @@ function makeWorkerClient(
           projects: config.projects,
           defaultProject: config.defaultProject,
           hostname: config.hostname,
+          maxConcurrentSessions: config.maxConcurrentSessions,
         };
 
         yield* send({ type: "register", payload: registration });
@@ -232,7 +278,11 @@ function makeWorkerClient(
         console.log(
           `[WorkerClient] Starting interview ${request.sessionId}${request.projectId ? ` for project "${request.projectId}"` : ""}`,
         );
-        yield* Ref.update(stateRef, (s) => ({ ...s, status: "busy" as WorkerStatus }));
+        // Only set "busy" when at capacity
+        const sessionCount = executor.activeSessionCount + 1; // +1 for session about to start
+        if (sessionCount >= config.maxConcurrentSessions) {
+          yield* Ref.update(stateRef, (s) => ({ ...s, status: "busy" as WorkerStatus }));
+        }
 
         // Find the appropriate project path
         let workspacePath: string;
@@ -290,7 +340,115 @@ function makeWorkerClient(
           ),
         );
 
-        if (executor.activeSessionCount === 0) {
+        if (executor.activeSessionCount < config.maxConcurrentSessions) {
+          yield* Ref.update(stateRef, (s) => ({ ...s, status: "ready" as WorkerStatus }));
+        }
+      });
+
+    /**
+     * Format PR review feedback into a prompt for Claude
+     */
+    const formatPrFeedbackPrompt = (request: PrFeedbackRequest): string => {
+      const lines: string[] = [
+        `You previously created PR #${request.prNumber} for ${request.repo}.`,
+        `PR URL: ${request.prUrl}`,
+        "",
+        "The PR has received review feedback that needs to be addressed:",
+        "",
+      ];
+
+      for (const fb of request.feedback) {
+        lines.push(`**${fb.author}**${fb.state ? ` (${fb.state})` : ""}:`);
+        if (fb.path) {
+          lines.push(`  File: \`${fb.path}\`${fb.line ? `:${fb.line}` : ""}`);
+        }
+        lines.push(`  ${fb.body}`);
+        lines.push("");
+      }
+
+      lines.push(
+        "Please address each piece of feedback, push the fixes, and respond with a summary of changes made.",
+        "When you're done, provide a JSON block with the following structure for each addressed comment:",
+        "```json",
+        '{ "summary": "Brief description of all changes", "commentReplies": [{ "commentId": <id>, "reply": "What was changed" }] }',
+        "```",
+      );
+
+      return lines.join("\n");
+    };
+
+    /**
+     * Handle pr_feedback request — resume original Claude session to address review feedback
+     */
+    const handlePrFeedback = (request: PrFeedbackRequest): Effect.Effect<void, never> =>
+      Effect.gen(function* () {
+        console.log(
+          `[WorkerClient] Handling PR feedback for ${request.repo}#${request.prNumber} (session: ${request.sessionId})`,
+        );
+
+        // Find the appropriate project workspace
+        let workspacePath: string;
+        if (request.projectId) {
+          const project = config.projects.find(
+            (p) =>
+              p.id === request.projectId ||
+              p.name.toLowerCase() === request.projectId?.toLowerCase() ||
+              p.aliases?.some(
+                (a: string) => a.toLowerCase() === request.projectId?.toLowerCase(),
+              ),
+          );
+          workspacePath = project?.path ?? (config.projects.find((p) => p.id === config.defaultProject) || config.projects[0]).path;
+        } else {
+          workspacePath = (config.projects.find((p) => p.id === config.defaultProject) || config.projects[0]).path;
+        }
+
+        executor.setWorkspace(workspacePath);
+
+        // Format feedback into a prompt
+        const prompt = formatPrFeedbackPrompt(request);
+
+        // Create an InterviewRequest to reuse existing startInterview infrastructure
+        const interviewRequest: InterviewRequest = {
+          sessionId: request.sessionId,
+          threadTs: request.sessionId, // Use the feedback session ID
+          channel: "", // Not needed for worker-side execution
+          initiatorId: "",
+          initialPrompt: prompt,
+          model: "sonnet",
+          projectId: request.projectId,
+          mode: "build",
+          claudeSessionId: request.claudeSessionId, // Resume the original session
+        };
+
+        // Only set "busy" when at capacity
+        const sessionCount = executor.activeSessionCount + 1;
+        if (sessionCount >= config.maxConcurrentSessions) {
+          yield* Ref.update(stateRef, (s) => ({ ...s, status: "busy" as WorkerStatus }));
+        }
+
+        yield* Effect.tryPromise({
+          try: () =>
+            executor.startInterview(interviewRequest, (event) => {
+              Effect.runFork(
+                sendEvent(event).pipe(Effect.catchAll(() => Effect.void)),
+              );
+            }),
+          catch: (error) => error,
+        }).pipe(
+          Effect.catchAll((error) =>
+            Effect.gen(function* () {
+              console.error(`[WorkerClient] PR feedback handling failed:`, error);
+              yield* sendEvent({
+                sessionId: request.sessionId,
+                type: "error",
+                payload: { type: "error", message: String(error) },
+                timestamp: new Date().toISOString(),
+              }).pipe(Effect.catchAll(() => Effect.void));
+            }),
+          ),
+        );
+
+        if (executor.activeSessionCount < config.maxConcurrentSessions) {
           yield* Ref.update(stateRef, (s) => ({ ...s, status: "ready" as WorkerStatus }));
         }
       });
@@ -358,6 +516,12 @@ function makeWorkerClient(
             case "cancel": {
               const cancelPayload = message.payload as { sessionId: string };
               executor.cancelSession(cancelPayload.sessionId);
+              break;
+            }
+
+            case "pr_feedback": {
+              const prFeedbackPayload = message.payload as PrFeedbackRequest;
+              yield* handlePrFeedback(prFeedbackPayload);
               break;
             }
 

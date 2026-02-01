@@ -1,6 +1,7 @@
 /**
  * QuestionPanel Component
  * Displays AskUserQuestion tool prompt with navigation and submission
+ * Supports both single-select and multi-select question modes
  */
 
 import { useKeyboard } from "@opentui/react";
@@ -8,6 +9,33 @@ import { useEffect, useState } from "react";
 import { OneDarkPro } from "../styles/theme";
 import type { QuestionData } from "../types";
 import { debugLog } from "../utils/debug-logger";
+
+/**
+ * Calculate the height needed for a QuestionPanel based on its content.
+ * Used by both DynamicInput and App to allocate the right amount of vertical space.
+ */
+export function calculateQuestionHeight(question: QuestionData): number {
+  const current = question.questions[0];
+  if (!current) return 0;
+
+  const optionCount = current.options.length + 1; // +1 for "Other"
+  const hasDescriptions = current.options.some((o) => o.description);
+
+  let h = 0;
+  h += 2; // border top + bottom
+  h += 2; // padding top + bottom
+  if (question.questions.length > 1) h += 1; // progress indicator
+  h += 1; // header line
+  h += 1; // spacing after header
+  h += 1; // question text
+  h += 1; // spacing after question
+  h += optionCount * (hasDescriptions ? 3 : 2); // each option: label + margin (+ description line)
+  if (current.multiSelect) h += 1; // multi-select submit hint
+  h += 1; // help text
+  h += 1; // spacing before help text
+
+  return Math.min(25, h);
+}
 
 interface QuestionPanelProps {
   width: number;
@@ -27,10 +55,15 @@ export function QuestionPanel({
   // Current question index (for multi-question support)
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Selected option index for current question
+  // Selected option index for current question (cursor position)
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Collected answers (question header -> selected option value)
+  // Multi-select: set of toggled option indices
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
+    new Set(),
+  );
+
+  // Collected answers (question text -> selected option value)
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   // Custom input state for "Other" option
@@ -39,6 +72,10 @@ export function QuestionPanel({
 
   const currentQuestion = question.questions[currentIndex];
   const isLastQuestion = currentIndex === question.questions.length - 1;
+  const isMultiSelect = currentQuestion?.multiSelect ?? false;
+
+  // Guard: if no question at current index, render nothing
+  if (!currentQuestion) return null;
 
   // Add "Other" option to the end of options list
   const optionsWithOther = [
@@ -46,6 +83,45 @@ export function QuestionPanel({
     { label: "Other", description: "Enter a custom answer" },
   ];
   const isOtherSelected = selectedIndex === optionsWithOther.length - 1;
+
+  const advanceToNextQuestion = (newAnswers: Record<string, string>) => {
+    setAnswers(newAnswers);
+    if (isLastQuestion) {
+      onAnswer(newAnswers);
+    } else {
+      setCurrentIndex((prev) => prev + 1);
+      setSelectedIndex(0);
+      setSelectedIndices(new Set());
+    }
+  };
+
+  const submitMultiSelect = () => {
+    if (selectedIndices.size === 0) return;
+    const labels = [...selectedIndices]
+      .sort((a, b) => a - b)
+      .map((i) => currentQuestion.options[i]?.label)
+      .filter(Boolean)
+      .join(", ");
+    const newAnswers = { ...answers, [currentQuestion.question]: labels };
+    advanceToNextQuestion(newAnswers);
+  };
+
+  const toggleIndex = (index: number) => {
+    // Don't toggle "Other" in multi-select — it triggers custom input
+    if (index === optionsWithOther.length - 1) {
+      setShowCustomInput(true);
+      return;
+    }
+    setSelectedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
   // Keyboard navigation
   useKeyboard((key) => {
@@ -72,78 +148,92 @@ export function QuestionPanel({
       handleSelect();
     } else if (key.name === "escape") {
       onCancel?.();
-    } else if (/^[1-9]$/.test(key.key)) {
+    } else if (key.sequence === " " && isMultiSelect) {
+      // Space toggles selection in multi-select mode
+      toggleIndex(selectedIndex);
+    } else if (key.sequence === "d" && isMultiSelect) {
+      // 'd' submits multi-select
+      submitMultiSelect();
+    } else if (key.sequence && /^[1-9]$/.test(key.sequence)) {
       // Number key selection (1-9)
-      const index = parseInt(key.key, 10) - 1;
+      const index = parseInt(key.sequence, 10) - 1;
       if (index < optionsWithOther.length) {
         setSelectedIndex(index);
-        // Auto-submit on number key
-        setTimeout(() => {
-          if (index === optionsWithOther.length - 1) {
-            // Selected "Other" - show input
-            setShowCustomInput(true);
-          } else {
-            const selectedOption = currentQuestion.options[index];
-            const newAnswers = {
-              ...answers,
-              [currentQuestion.question]: selectedOption.label,
-            };
-            setAnswers(newAnswers);
 
-            if (isLastQuestion) {
-              onAnswer(newAnswers);
+        if (isMultiSelect) {
+          // In multi-select, number keys toggle
+          setTimeout(() => toggleIndex(index), 100);
+        } else {
+          // Auto-submit on number key in single-select
+          setTimeout(() => {
+            if (index === optionsWithOther.length - 1) {
+              setShowCustomInput(true);
             } else {
-              setCurrentIndex((prev) => prev + 1);
-              setSelectedIndex(0);
+              const selectedOption = currentQuestion.options[index];
+              if (!selectedOption) return;
+              const newAnswers = {
+                ...answers,
+                [currentQuestion.question]: selectedOption.label,
+              };
+              advanceToNextQuestion(newAnswers);
             }
-          }
-        }, 100);
+          }, 100);
+        }
       }
     }
   });
 
   const handleSelect = () => {
-    // Check if "Other" is selected
+    if (isMultiSelect) {
+      // In multi-select, Enter toggles the current option (or submits if "Other")
+      if (isOtherSelected) {
+        setShowCustomInput(true);
+      } else {
+        toggleIndex(selectedIndex);
+      }
+      return;
+    }
+
+    // Single-select: Check if "Other" is selected
     if (isOtherSelected) {
       setShowCustomInput(true);
       return;
     }
 
     const selectedOption = currentQuestion.options[selectedIndex];
+    if (!selectedOption) return;
     const newAnswers = {
       ...answers,
-      [currentQuestion.header]: selectedOption.label,
+      [currentQuestion.question]: selectedOption.label,
     };
-    setAnswers(newAnswers);
-
-    if (isLastQuestion) {
-      // Submit all answers
-      onAnswer(newAnswers);
-    } else {
-      // Move to next question
-      setCurrentIndex((prev) => prev + 1);
-      setSelectedIndex(0);
-    }
+    advanceToNextQuestion(newAnswers);
   };
 
   const handleCustomSubmit = () => {
     if (!customInput.trim()) return;
 
-    const newAnswers = {
-      ...answers,
-      [currentQuestion.question]: customInput.trim(),
-    };
-    setAnswers(newAnswers);
-    setShowCustomInput(false);
-    setCustomInput("");
-
-    if (isLastQuestion) {
-      // Submit all answers
-      onAnswer(newAnswers);
+    if (isMultiSelect) {
+      // In multi-select, add custom input to the selected labels
+      const existingLabels = [...selectedIndices]
+        .sort((a, b) => a - b)
+        .map((i) => currentQuestion.options[i]?.label)
+        .filter(Boolean);
+      existingLabels.push(customInput.trim());
+      const newAnswers = {
+        ...answers,
+        [currentQuestion.question]: existingLabels.join(", "),
+      };
+      setShowCustomInput(false);
+      setCustomInput("");
+      advanceToNextQuestion(newAnswers);
     } else {
-      // Move to next question
-      setCurrentIndex((prev) => prev + 1);
-      setSelectedIndex(0);
+      const newAnswers = {
+        ...answers,
+        [currentQuestion.question]: customInput.trim(),
+      };
+      setShowCustomInput(false);
+      setCustomInput("");
+      advanceToNextQuestion(newAnswers);
     }
   };
 
@@ -177,7 +267,10 @@ export function QuestionPanel({
 
       {/* Header */}
       <box marginBottom={1}>
-        <text fg={OneDarkPro.syntax.blue}>❓ {currentQuestion.header}</text>
+        <text fg={OneDarkPro.syntax.blue}>
+          {isMultiSelect ? "☑ " : "❓ "}
+          {currentQuestion.header}
+        </text>
       </box>
 
       {/* Question text */}
@@ -190,7 +283,8 @@ export function QuestionPanel({
       {/* Options */}
       <box flexDirection="column" flexGrow={1}>
         {optionsWithOther.map((option, i) => {
-          const isSelected = i === selectedIndex;
+          const isCursor = i === selectedIndex;
+          const isChecked = isMultiSelect && selectedIndices.has(i);
 
           return (
             <box
@@ -199,7 +293,7 @@ export function QuestionPanel({
               paddingLeft={1}
               paddingRight={1}
               backgroundColor={
-                isSelected ? OneDarkPro.background.highlight : "transparent"
+                isCursor ? OneDarkPro.background.highlight : "transparent"
               }
               flexDirection="column"
             >
@@ -212,12 +306,12 @@ export function QuestionPanel({
                 {/* Number shortcut badge */}
                 <text
                   bg={
-                    isSelected
+                    isCursor
                       ? OneDarkPro.syntax.blue
                       : OneDarkPro.background.secondary
                   }
                   fg={
-                    isSelected
+                    isCursor
                       ? OneDarkPro.background.primary
                       : OneDarkPro.foreground.muted
                   }
@@ -227,15 +321,29 @@ export function QuestionPanel({
                 {/* Spacing */}
                 <text> </text>
                 {/* Selection indicator */}
-                <text fg={isSelected ? OneDarkPro.syntax.green : "transparent"}>
-                  {isSelected ? "▸" : " "}
-                </text>
+                {isMultiSelect ? (
+                  <text
+                    fg={
+                      isChecked
+                        ? OneDarkPro.syntax.green
+                        : OneDarkPro.foreground.muted
+                    }
+                  >
+                    {isChecked ? "[x]" : "[ ]"}
+                  </text>
+                ) : (
+                  <text
+                    fg={isCursor ? OneDarkPro.syntax.green : "transparent"}
+                  >
+                    {isCursor ? "▸" : " "}
+                  </text>
+                )}
                 {/* Spacing */}
                 <text> </text>
                 {/* Option label */}
                 <text
                   fg={
-                    isSelected
+                    isCursor || isChecked
                       ? OneDarkPro.foreground.primary
                       : OneDarkPro.foreground.secondary
                   }
@@ -256,6 +364,15 @@ export function QuestionPanel({
           );
         })}
       </box>
+
+      {/* Multi-select submit hint */}
+      {isMultiSelect && selectedIndices.size > 0 && !showCustomInput && (
+        <box marginTop={1}>
+          <text fg={OneDarkPro.syntax.green}>
+            {selectedIndices.size} selected — press d to submit
+          </text>
+        </box>
+      )}
 
       {/* Custom input field (shown when "Other" is selected) */}
       {showCustomInput && (
@@ -286,7 +403,9 @@ export function QuestionPanel({
         <text fg={OneDarkPro.foreground.muted}>
           {showCustomInput
             ? "Type your answer • Enter Submit • Esc Cancel"
-            : `1-${optionsWithOther.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel`}
+            : isMultiSelect
+              ? `1-${optionsWithOther.length} Toggle • Space Toggle • ↑/↓ Navigate • d Submit • Esc Cancel`
+              : `1-${optionsWithOther.length} Select • ↑/↓ Navigate • Enter Confirm • Esc Cancel`}
         </text>
       </box>
     </box>

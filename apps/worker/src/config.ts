@@ -38,6 +38,16 @@ export interface WorkerConfig {
   reconnectDelay: number;
   /** Max reconnect attempts */
   maxReconnectAttempts: number;
+  /** Maximum concurrent sessions (default: 1) */
+  maxConcurrentSessions: number;
+  /** GitHub repo to work on (e.g., "owner/repo") */
+  repo?: string;
+  /** GitHub App ID */
+  githubAppId?: string;
+  /** GitHub App private key (PEM format) */
+  githubAppPrivateKey?: string;
+  /** GitHub App installation ID */
+  githubAppInstallationId?: number;
 }
 
 /**
@@ -151,6 +161,21 @@ export function loadConfig(): Either.Either<WorkerConfig, string> {
     10,
   );
 
+  const maxConcurrentSessions = Number.parseInt(
+    process.env.CLIVE_MAX_CONCURRENT_SESSIONS || "1",
+    10,
+  );
+
+  const repo = process.env.CLIVE_REPO;
+  const githubAppId = process.env.GITHUB_APP_ID;
+  const githubAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY?.replace(
+    /\\n/g,
+    "\n",
+  );
+  const githubAppInstallationId = process.env.GITHUB_APP_INSTALLATION_ID
+    ? Number.parseInt(process.env.GITHUB_APP_INSTALLATION_ID, 10)
+    : undefined;
+
   return Either.right({
     apiToken,
     centralServiceUrl,
@@ -160,5 +185,10 @@ export function loadConfig(): Either.Either<WorkerConfig, string> {
     heartbeatInterval,
     reconnectDelay,
     maxReconnectAttempts,
+    maxConcurrentSessions,
+    repo,
+    githubAppId,
+    githubAppPrivateKey,
+    githubAppInstallationId,
   });
 }

@@ -1,25 +1,27 @@
 /**
  * DiffDetector
- * Detects file modifications and generates diffs for display
- * Monitors Edit/Write tool operations and compares file states
+ * Detects file modifications and generates structured diffs for display.
+ * Uses the `diff` npm package (LCS-based) for proper diff computation.
+ * Monitors Edit/Write tool operations and compares file states.
  */
 
+import { structuredPatch } from "diff";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { DiffHunk, DiffLine, FileDiffData } from "../types";
 
-export interface DiffLine {
-  type: "add" | "remove" | "context";
-  content: string;
-  lineNumber?: number;
-}
+/** Max combined size (old + new) before we skip detailed diffing */
+const MAX_DIFF_BYTES = 50_000;
+/** Max lines to preview for newly created files */
+const CREATE_PREVIEW_LINES = 30;
 
 export class DiffDetector {
   // Store file snapshots before modifications
   private fileSnapshots = new Map<string, string>();
 
   /**
-   * Called when a tool_use event occurs for Edit or Write
-   * Captures file state before modification
+   * Called when a tool_use event occurs for Edit or Write.
+   * Captures file state before modification.
    */
   handleToolUse(toolName: string, input: any): void {
     if (toolName !== "Edit" && toolName !== "Write") {
@@ -31,13 +33,11 @@ export class DiffDetector {
       return;
     }
 
-    // Store old content before the edit happens
     if (fs.existsSync(filePath)) {
       try {
         const content = fs.readFileSync(filePath, "utf-8");
         this.fileSnapshots.set(filePath, content);
       } catch (_error) {
-        // File might not be readable, store empty
         this.fileSnapshots.set(filePath, "");
       }
     } else {
@@ -47,10 +47,10 @@ export class DiffDetector {
   }
 
   /**
-   * Generate diff for a file after modification
-   * Returns formatted diff string or null if not a file operation
+   * Generate structured diff data for a file after modification.
+   * Returns FileDiffData or null if not a file operation.
    */
-  generateDiff(toolName: string, input: any): string | null {
+  generateDiff(toolName: string, input: any): FileDiffData | null {
     if (toolName !== "Edit" && toolName !== "Write") {
       return null;
     }
@@ -62,138 +62,133 @@ export class DiffDetector {
 
     const oldContent = this.fileSnapshots.get(filePath) || "";
 
-    // Read new content
     let newContent = "";
     if (fs.existsSync(filePath)) {
       try {
         newContent = fs.readFileSync(filePath, "utf-8");
-      } catch (error) {
-        return `Error reading file: ${error}`;
+      } catch (_error) {
+        return null;
       }
     }
 
-    // Clear snapshot
     this.fileSnapshots.delete(filePath);
 
-    // Generate diff
-    return this.formatDiff(filePath, oldContent, newContent, toolName);
-  }
+    // No change
+    if (oldContent === newContent) {
+      return null;
+    }
 
-  /**
-   * Format diff for display (simplified line-based diff)
-   * Ports logic from apps/tui-go/internal/process/diff.go
-   */
-  private formatDiff(
-    filePath: string,
-    oldContent: string,
-    newContent: string,
-    operation: string,
-  ): string {
     const fileName = path.basename(filePath);
-    const lines: string[] = [];
+    const isCreate = !oldContent && newContent.length > 0;
 
-    // Header
-    const emoji = operation === "Write" && !oldContent ? "●" : "●";
-    const action = operation === "Write" && !oldContent ? "Create" : "Update";
-    lines.push(`${emoji} ${action}(${fileName})`);
-
-    // For new files, show first few lines
-    if (!oldContent && newContent) {
-      const newLines = newContent.split("\n").slice(0, 20);
-      newLines.forEach((line) => {
-        lines.push(`  + ${line}`);
-      });
-      if (newContent.split("\n").length > 20) {
-        lines.push(`  ... (${newContent.split("\n").length - 20} more lines)`);
+    // --- Create: preview first N lines ---
+    if (isCreate) {
+      const allLines = newContent.split("\n");
+      // Remove trailing empty line from split if file ends with newline
+      if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
+        allLines.pop();
       }
-      return lines.join("\n");
+      const preview = allLines.slice(0, CREATE_PREVIEW_LINES);
+      const truncated = allLines.length > CREATE_PREVIEW_LINES;
+
+      return {
+        filePath,
+        fileName,
+        operation: "create",
+        hunks: [],
+        stats: { additions: allLines.length, deletions: 0, totalLines: allLines.length },
+        newFilePreview: preview,
+        previewTruncated: truncated,
+      };
     }
 
-    // For edits, show changed sections
-    const oldLines = oldContent.split("\n");
-    const newLines = newContent.split("\n");
-
-    // Simple line-based diff (not perfect, but good enough)
-    const diff = this.simpleDiff(oldLines, newLines);
-
-    let changeCount = 0;
-    const maxChanges = 50; // Limit displayed changes
-
-    for (const item of diff) {
-      if (changeCount >= maxChanges) {
-        lines.push(`  ... (${diff.length - changeCount} more changes)`);
-        break;
-      }
-
-      if (item.type === "remove") {
-        lines.push(`  - ${item.content}`);
-        changeCount++;
-      } else if (item.type === "add") {
-        lines.push(`  + ${item.content}`);
-        changeCount++;
-      } else if (item.type === "context") {
-        // Show limited context
-        if (changeCount === 0 || changeCount > maxChanges - 3) {
-          lines.push(`    ${item.content}`);
-        }
-      }
+    // --- Large file safety ---
+    if (oldContent.length + newContent.length > MAX_DIFF_BYTES) {
+      const oldLineCount = oldContent.split("\n").length;
+      const newLineCount = newContent.split("\n").length;
+      const added = Math.max(0, newLineCount - oldLineCount);
+      const removed = Math.max(0, oldLineCount - newLineCount);
+      return {
+        filePath,
+        fileName,
+        operation: "edit",
+        hunks: [],
+        stats: { additions: added, deletions: removed },
+      };
     }
 
-    return lines.join("\n");
-  }
+    // --- Edit: LCS-based structured diff ---
+    const patch = structuredPatch(
+      fileName,
+      fileName,
+      oldContent,
+      newContent,
+      "",
+      "",
+      { context: 3 },
+    );
 
-  /**
-   * Simple line-based diff algorithm
-   * Returns array of diff operations
-   */
-  private simpleDiff(oldLines: string[], newLines: string[]): DiffLine[] {
-    const result: DiffLine[] = [];
+    let totalAdditions = 0;
+    let totalDeletions = 0;
 
-    // Create lookup for fast comparison
-    const oldSet = new Set(oldLines);
-    const newSet = new Set(newLines);
+    const hunks: DiffHunk[] = patch.hunks.map((hunk) => {
+      const lines: DiffLine[] = [];
+      let oldLine = hunk.oldStart;
+      let newLine = hunk.newStart;
 
-    let oldIdx = 0;
-    let newIdx = 0;
+      for (const raw of hunk.lines) {
+        const prefix = raw[0];
+        const content = raw.slice(1);
 
-    while (oldIdx < oldLines.length || newIdx < newLines.length) {
-      const oldLine = oldLines[oldIdx];
-      const newLine = newLines[newIdx];
-
-      if (oldIdx >= oldLines.length) {
-        // Remaining lines are additions
-        result.push({ type: "add", content: newLine });
-        newIdx++;
-      } else if (newIdx >= newLines.length) {
-        // Remaining lines are deletions
-        result.push({ type: "remove", content: oldLine });
-        oldIdx++;
-      } else if (oldLine === newLine) {
-        // Lines match
-        result.push({ type: "context", content: oldLine });
-        oldIdx++;
-        newIdx++;
-      } else {
-        // Lines differ - check if one was removed or added
-        if (!newSet.has(oldLine)) {
-          // Old line was removed
-          result.push({ type: "remove", content: oldLine });
-          oldIdx++;
-        } else if (!oldSet.has(newLine)) {
-          // New line was added
-          result.push({ type: "add", content: newLine });
-          newIdx++;
+        if (prefix === "+") {
+          lines.push({
+            type: "add",
+            content,
+            newLineNumber: newLine,
+          });
+          newLine++;
+          totalAdditions++;
+        } else if (prefix === "-") {
+          lines.push({
+            type: "remove",
+            content,
+            oldLineNumber: oldLine,
+          });
+          oldLine++;
+          totalDeletions++;
         } else {
-          // Both exist somewhere, treat as changed
-          result.push({ type: "remove", content: oldLine });
-          result.push({ type: "add", content: newLine });
-          oldIdx++;
-          newIdx++;
+          // context line (space prefix) or no-newline marker
+          if (prefix === "\\") {
+            // "\ No newline at end of file" — skip
+            continue;
+          }
+          lines.push({
+            type: "context",
+            content,
+            oldLineNumber: oldLine,
+            newLineNumber: newLine,
+          });
+          oldLine++;
+          newLine++;
         }
       }
-    }
 
-    return result;
+      return {
+        oldStart: hunk.oldStart,
+        oldLines: hunk.oldLines,
+        newStart: hunk.newStart,
+        newLines: hunk.newLines,
+        lines,
+      };
+    });
+
+    return {
+      filePath,
+      fileName,
+      operation: "edit",
+      hunks,
+      stats: { additions: totalAdditions, deletions: totalDeletions },
+    };
   }
 
   /**

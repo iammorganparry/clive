@@ -41,8 +41,8 @@ export function GitHubConfigFlow({
         handleSubmit();
       } else if (event.name === "backspace") {
         setInputValue((prev) => prev.slice(0, -1));
-      } else if (event.key.length === 1) {
-        setInputValue((prev) => prev + event.key);
+      } else if (event.sequence && event.sequence.length === 1) {
+        setInputValue((prev) => prev + event.sequence);
       }
     }
   });
@@ -83,8 +83,8 @@ export function GitHubConfigFlow({
       <box flexDirection="column" alignItems="center" width={60}>
         {/* Header */}
         <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} fontWeight="bold">
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" · GitHub Setup"}</text>
         </box>
@@ -138,7 +138,7 @@ export function GitHubConfigFlow({
         {/* Step: Success */}
         {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
-            <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
+            <text fg={OneDarkPro.syntax.green}>
               ✓ GitHub configured successfully!
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>

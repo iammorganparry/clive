@@ -109,9 +109,12 @@ export function ModeSelectionView({
                 borderColor={isSelected ? option.color : undefined}
               >
                 <box flexDirection="row" alignItems="center">
-                  <text fg={option.color} bold={isSelected}>
-                    {isSelected ? option.icon : "  "}
-                    {option.name}
+                  <text fg={option.color}>
+                    {isSelected ? (
+                      <b>{option.icon}{option.name}</b>
+                    ) : (
+                      <>{"  "}{option.name}</>
+                    )}
                   </text>
                 </box>
                 <text fg={OneDarkPro.foreground.primary} marginTop={1}>

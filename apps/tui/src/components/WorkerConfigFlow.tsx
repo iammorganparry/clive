@@ -88,20 +88,22 @@ export function WorkerConfigFlow({
 
     // Intro screen navigation
     if (step === "intro") {
-      if (event.name === "up" || event.key === "k") {
+      if (event.name === "up" || event.sequence === "k") {
         setIntroSelectedIndex((prev) =>
           prev > 0 ? prev - 1 : introOptions.length - 1,
         );
-      } else if (event.name === "down" || event.key === "j") {
+      } else if (event.name === "down" || event.sequence === "j") {
         setIntroSelectedIndex((prev) =>
           prev < introOptions.length - 1 ? prev + 1 : 0,
         );
       } else if (event.name === "return") {
-        handleIntroSelect(introOptions[introSelectedIndex].id);
-      } else if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key, 10) - 1;
-        if (index < introOptions.length) {
-          handleIntroSelect(introOptions[index].id);
+        const option = introOptions[introSelectedIndex];
+        if (option) handleIntroSelect(option.id);
+      } else if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence, 10) - 1;
+        const option = introOptions[index];
+        if (option && index < introOptions.length) {
+          handleIntroSelect(option.id);
         }
       }
     }
@@ -284,8 +286,8 @@ export function WorkerConfigFlow({
       <box flexDirection="column" alignItems="center" width={70}>
         {/* Header */}
         <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} fontWeight="bold">
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>
             {" · Slack Worker Setup"}
@@ -338,10 +340,12 @@ export function WorkerConfigFlow({
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      fontWeight={isSelected ? "bold" : "normal"}
                     >
-                      {isSelected ? "> " : "  "}
-                      {i + 1}. {option.label}
+                      {isSelected ? (
+                        <b>{"> "}{i + 1}. {option.label}</b>
+                      ) : (
+                        <>{"  "}{i + 1}. {option.label}</>
+                      )}
                     </text>
                     <text fg={OneDarkPro.foreground.muted}>
                       {"   "}
@@ -378,7 +382,7 @@ export function WorkerConfigFlow({
                 onSubmit={handleUrlSubmit}
                 value={inputValue}
                 style={{
-                  fg: OneDarkPro.foreground.primary,
+                  textColor: OneDarkPro.foreground.primary,
                   backgroundColor: OneDarkPro.background.secondary,
                   focusedBackgroundColor: OneDarkPro.background.secondary,
                 }}
@@ -416,7 +420,7 @@ export function WorkerConfigFlow({
         {/* Step: Success */}
         {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
-            <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
+            <text fg={OneDarkPro.syntax.green}>
               Connection successful!
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
@@ -428,7 +432,7 @@ export function WorkerConfigFlow({
         {/* Step: Error */}
         {step === "error" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
-            <text fg={OneDarkPro.syntax.red} fontSize={1.5}>
+            <text fg={OneDarkPro.syntax.red}>
               Connection failed
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>

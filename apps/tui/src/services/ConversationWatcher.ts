@@ -102,7 +102,7 @@ export class ConversationWatcher extends EventEmitter {
         }))
         .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-      return files.length > 0 ? files[0].path : null;
+      return files.length > 0 ? files[0]!.path : null;
     } catch (error) {
       debugLog("ConversationWatcher", "Error finding newest file", {
         error: String(error),

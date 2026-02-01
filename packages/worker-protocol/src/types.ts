@@ -48,6 +48,8 @@ export interface WorkerRegistration {
   hostname?: string;
   /** Worker capabilities/tags */
   capabilities?: string[];
+  /** Max concurrent sessions this worker can handle (default: 1) */
+  maxConcurrentSessions?: number;
 }
 
 /**
@@ -123,6 +125,46 @@ export interface QuestionOption {
 }
 
 /**
+ * PR review feedback from GitHub
+ */
+export interface PrReviewFeedback {
+  /** Author of the review comment */
+  author: string;
+  /** Review comment body */
+  body: string;
+  /** File path (for inline comments) */
+  path?: string;
+  /** Line number (for inline comments) */
+  line?: number;
+  /** Review state: APPROVED, CHANGES_REQUESTED, COMMENTED */
+  state?: string;
+  /** GitHub comment ID (for replying to specific comments) */
+  commentId?: number;
+}
+
+/**
+ * PR feedback request from central service to worker
+ */
+export interface PrFeedbackRequest {
+  /** New session ID for this feedback round */
+  sessionId: string;
+  /** Full PR URL */
+  prUrl: string;
+  /** PR number */
+  prNumber: number;
+  /** Repository (owner/repo) */
+  repo: string;
+  /** Original Claude session ID to resume */
+  claudeSessionId: string;
+  /** Project ID for worker routing */
+  projectId?: string;
+  /** Type of feedback received */
+  feedbackType: "review_comment" | "changes_requested" | "comment";
+  /** Review feedback items */
+  feedback: PrReviewFeedback[];
+}
+
+/**
  * Interview request from central service to worker
  */
 export interface InterviewRequest {
@@ -176,6 +218,7 @@ export type InterviewEventType =
   | "plan_ready"
   | "issues_created"
   | "pr_created"
+  | "pr_feedback_addressed"
   | "error"
   | "timeout"
   | "complete";
@@ -205,6 +248,7 @@ export type InterviewEventPayload =
   | { type: "plan_ready"; content: string }
   | { type: "issues_created"; urls: string[] }
   | { type: "pr_created"; url: string }
+  | { type: "pr_feedback_addressed"; prUrl: string; commitSha?: string; summary?: string; commentReplies?: Array<{ commentId: number; reply: string }> }
   | { type: "error"; message: string }
   | { type: "timeout" }
   | { type: "complete" };
@@ -253,6 +297,7 @@ export type CentralToWorkerMessage =
   | { type: "answer"; payload: AnswerRequest }
   | { type: "message"; payload: MessageRequest }
   | { type: "cancel"; payload: CancelRequest }
+  | { type: "pr_feedback"; payload: PrFeedbackRequest }
   | { type: "ping" }
   | { type: "config_update"; payload: { ngrokConfig?: NgrokConfig } };
 

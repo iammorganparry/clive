@@ -76,8 +76,8 @@ function TestApp() {
         justifyContent="space-between"
         padding={1}
       >
-        <text color={OneDarkPro.syntax.blue}>Clive TUI</text>
-        <text color={OneDarkPro.foreground.muted}>Press ? for help</text>
+        <text fg={OneDarkPro.syntax.blue}>Clive TUI</text>
+        <text fg={OneDarkPro.foreground.muted}>Press ? for help</text>
       </box>
       <text>Step 5a: Header inline (no border) ✅</text>
     </box>

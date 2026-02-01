@@ -30,8 +30,12 @@ export class PromptService extends Effect.Service<PromptService>()(
             yield* sections[SectionId.CommandFile](config);
           const workspaceContextContent =
             yield* sections[SectionId.WorkspaceContext](config);
+          const epicContextContent =
+            yield* sections[SectionId.EpicContext](config);
           const issueTrackerContextContent =
             yield* sections[SectionId.IssueTrackerContext](config);
+          const iterationContextContent =
+            yield* sections[SectionId.IterationContext](config);
           const terminalFormattingContent =
             yield* sections[SectionId.TerminalFormatting](config);
           const conversationContextContent =
@@ -41,7 +45,9 @@ export class PromptService extends Effect.Service<PromptService>()(
           const prompt = [
             commandFileContent,
             workspaceContextContent,
+            epicContextContent,
             issueTrackerContextContent,
+            iterationContextContent,
             terminalFormattingContent,
             conversationContextContent,
           ]

@@ -139,8 +139,8 @@ export function SelectionView({
         <box flexDirection="column" alignItems="center" width={50}>
           {/* Header */}
           <box flexDirection="row">
-            <text fg={OneDarkPro.syntax.red} bold>
-              CLIVE
+            <text fg={OneDarkPro.syntax.red}>
+              <b>CLIVE</b>
             </text>
             <text fg={OneDarkPro.foreground.muted}>{" · Select Issue"}</text>
           </box>
@@ -330,11 +330,12 @@ export function SelectionView({
                                   ? OneDarkPro.syntax.cyan
                                   : OneDarkPro.foreground.primary
                             }
-                            fontWeight={isUnattachedGroup ? "bold" : "normal"}
                           >
-                            {isSelected ? "▸ " : "  "}
-                            {icon} {identifier ? prefix : ""}
-                            {name}
+                            {isUnattachedGroup ? (
+                              <b>{isSelected ? "▸ " : "  "}{icon} {identifier ? prefix : ""}{name}</b>
+                            ) : (
+                              <>{isSelected ? "▸ " : "  "}{icon} {identifier ? prefix : ""}{name}</>
+                            )}
                           </text>
                         </box>
                       );
@@ -400,8 +401,8 @@ export function SelectionView({
       <box flexDirection="column" alignItems="center" width={50}>
         {/* Header with issue identifier or "Other Conversations" */}
         <box flexDirection="row">
-          <text fg={OneDarkPro.syntax.red} bold>
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" · "}</text>
           <text

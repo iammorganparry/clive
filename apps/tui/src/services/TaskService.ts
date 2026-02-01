@@ -31,7 +31,7 @@ export function createTaskService(config: Config) {
   // Helper to wrap effects with the layer
   const provide = <A, E>(
     effect: Effect.Effect<A, E, BeadsService | LinearService>,
-  ) => Effect.provide(effect, serviceLayer);
+  ): Effect.Effect<A, E, never> => Effect.provide(effect, serviceLayer as any) as Effect.Effect<A, E, never>;
 
   return {
     getConfig: Effect.succeed(config),

@@ -19,6 +19,7 @@ import type {
   QuestionData,
 } from "@clive/worker-protocol";
 import { Effect, type Runtime, Stream } from "effect";
+import type { WorktreeManager } from "./worktree-manager.js";
 
 /**
  * Planning skill system prompt
@@ -56,6 +57,8 @@ interface ActiveSession {
   startedAt: Date;
   /** Claude CLI session ID for resume support */
   claudeSessionId?: string;
+  /** Worktree path if using per-session worktrees */
+  worktreePath?: string;
 }
 
 /**
@@ -65,10 +68,12 @@ export class LocalExecutor extends EventEmitter {
   private runtime: Runtime.Runtime<ClaudeCliService>;
   private activeSessions = new Map<string, ActiveSession>();
   private workspaceRoot: string;
+  private worktreeManager?: WorktreeManager;
 
-  constructor(workspaceRoot: string) {
+  constructor(workspaceRoot: string, worktreeManager?: WorktreeManager) {
     super();
     this.workspaceRoot = workspaceRoot;
+    this.worktreeManager = worktreeManager;
 
     // Create Effect runtime with ClaudeCliService
     const layer = ClaudeCliService.Default;
@@ -94,6 +99,22 @@ export class LocalExecutor extends EventEmitter {
       throw new Error(`Session ${sessionId} already exists`);
     }
 
+    // Create session worktree if manager is available
+    let sessionWorkspace = this.workspaceRoot;
+    let worktreePath: string | undefined;
+    if (this.worktreeManager) {
+      try {
+        worktreePath = this.worktreeManager.create(sessionId);
+        sessionWorkspace = worktreePath;
+      } catch (error) {
+        console.error(
+          `[LocalExecutor] Failed to create worktree for ${sessionId}:`,
+          error,
+        );
+        // Fall back to main workspace
+      }
+    }
+
     const prompt = initialPrompt
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
@@ -109,6 +130,8 @@ export class LocalExecutor extends EventEmitter {
         onEvent,
         claudeSessionId,
         resumeSessionId,
+        sessionWorkspace,
+        worktreePath,
       ),
     );
 
@@ -126,7 +149,7 @@ export class LocalExecutor extends EventEmitter {
         },
         onEvent,
       );
-      this.activeSessions.delete(sessionId);
+      this.cleanupSession(sessionId);
     }
   }
 
@@ -140,6 +163,8 @@ export class LocalExecutor extends EventEmitter {
     onEvent: (event: InterviewEvent) => void,
     claudeSessionId: string,
     resumeSessionId?: string,
+    sessionWorkspace?: string,
+    worktreePath?: string,
   ) {
     const self = this;
 
@@ -149,7 +174,7 @@ export class LocalExecutor extends EventEmitter {
       const handle = yield* cliService.execute({
         prompt,
         systemPrompt: PLANNING_SKILL_PROMPT,
-        workspaceRoot: self.workspaceRoot,
+        workspaceRoot: sessionWorkspace || self.workspaceRoot,
         model,
         resumeSessionId,
       });
@@ -159,6 +184,7 @@ export class LocalExecutor extends EventEmitter {
         handle,
         startedAt: new Date(),
         claudeSessionId,
+        worktreePath,
       });
 
       console.log(
@@ -184,7 +210,7 @@ export class LocalExecutor extends EventEmitter {
       );
 
       // Cleanup after stream ends
-      self.activeSessions.delete(sessionId);
+      self.cleanupSession(sessionId);
       console.log(`[LocalExecutor] Session ${sessionId} completed`);
     };
   }
@@ -247,6 +273,40 @@ export class LocalExecutor extends EventEmitter {
             onEvent,
           );
         } else {
+          // Check for pr_feedback_addressed JSON block
+          const feedbackAddressedMatch = event.content.match(
+            /```json\s*\n\s*\{\s*"summary"\s*:/,
+          );
+          if (feedbackAddressedMatch) {
+            const jsonMatch = event.content.match(
+              /```json\s*\n([\s\S]*?)\n\s*```/,
+            );
+            if (jsonMatch?.[1]) {
+              try {
+                const parsed = JSON.parse(jsonMatch[1]) as {
+                  summary?: string;
+                  commentReplies?: Array<{ commentId: number; reply: string }>;
+                };
+                // Look up PR URL from session
+                const session = this.activeSessions.get(sessionId);
+                const prUrl =
+                  (session as { prUrl?: string } | undefined)?.prUrl ?? "";
+                this.emitEvent(
+                  sessionId,
+                  {
+                    type: "pr_feedback_addressed",
+                    prUrl,
+                    summary: parsed.summary,
+                    commentReplies: parsed.commentReplies,
+                  },
+                  onEvent,
+                );
+              } catch {
+                // Not valid JSON — emit as regular text
+              }
+            }
+          }
+
           this.emitEvent(
             sessionId,
             {
@@ -272,6 +332,22 @@ export class LocalExecutor extends EventEmitter {
               {
                 type: "issues_created",
                 urls: urlMatch,
+              },
+              onEvent,
+            );
+          }
+        }
+        // Detect PR creation from gh CLI output
+        if (content.includes("github.com") && content.includes("/pull/")) {
+          const prUrlMatch = content.match(
+            /https:\/\/github\.com\/[^\s]+\/pull\/\d+/,
+          );
+          if (prUrlMatch) {
+            this.emitEvent(
+              sessionId,
+              {
+                type: "pr_created",
+                url: prUrlMatch[0],
               },
               onEvent,
             );
@@ -370,6 +446,24 @@ export class LocalExecutor extends EventEmitter {
     } catch {
       // Ignore errors during cleanup
     }
+    this.cleanupSession(sessionId);
+  }
+
+  /**
+   * Clean up session resources including worktree
+   */
+  private cleanupSession(sessionId: string): void {
+    const session = this.activeSessions.get(sessionId);
+    if (session?.worktreePath && this.worktreeManager) {
+      try {
+        this.worktreeManager.remove(sessionId);
+      } catch (error) {
+        console.warn(
+          `[LocalExecutor] Worktree cleanup failed for ${sessionId}:`,
+          error,
+        );
+      }
+    }
     this.activeSessions.delete(sessionId);
   }
 
@@ -412,7 +506,7 @@ export class LocalExecutor extends EventEmitter {
    * Close all sessions
    */
   closeAll(): void {
-    for (const sessionId of this.activeSessions.keys()) {
+    for (const sessionId of Array.from(this.activeSessions.keys())) {
       this.cancelSession(sessionId);
     }
   }

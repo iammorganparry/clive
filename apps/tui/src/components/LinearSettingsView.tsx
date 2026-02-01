@@ -86,11 +86,11 @@ export function LinearSettingsView({
 
     // Form navigation
     if (viewState === "form") {
-      if (event.name === "tab" || event.name === "down" || event.key === "j") {
+      if (event.name === "tab" || event.name === "down" || event.sequence === "j") {
         setFocusedField((prev) => (prev === "api_key" ? "team" : "api_key"));
         return;
       }
-      if (event.name === "up" || event.key === "k") {
+      if (event.name === "up" || event.sequence === "k") {
         setFocusedField((prev) => (prev === "api_key" ? "team" : "api_key"));
         return;
       }
@@ -107,11 +107,11 @@ export function LinearSettingsView({
 
     // Team selection navigation
     if (viewState === "selecting_team") {
-      if (event.name === "up" || event.key === "k") {
+      if (event.name === "up" || event.sequence === "k") {
         setSelectedTeamIndex((prev) =>
           prev > 0 ? prev - 1 : teams.length - 1,
         );
-      } else if (event.name === "down" || event.key === "j") {
+      } else if (event.name === "down" || event.sequence === "j") {
         setSelectedTeamIndex((prev) =>
           prev < teams.length - 1 ? prev + 1 : 0,
         );
@@ -120,8 +120,8 @@ export function LinearSettingsView({
         if (team) {
           handleTeamSelect(team);
         }
-      } else if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key, 10) - 1;
+      } else if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence, 10) - 1;
         if (index < teams.length) {
           const team = teams[index];
           if (team) {
@@ -218,8 +218,8 @@ export function LinearSettingsView({
       <box flexDirection="column" alignItems="center" width={70}>
         {/* Header */}
         <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} fontWeight="bold">
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" · Linear Settings"}</text>
         </box>
@@ -326,7 +326,7 @@ export function LinearSettingsView({
                 onSubmit={handleApiKeySubmit}
                 value={inputValue}
                 style={{
-                  fg: OneDarkPro.foreground.primary,
+                  textColor: OneDarkPro.foreground.primary,
                   backgroundColor: OneDarkPro.background.secondary,
                   focusedBackgroundColor: OneDarkPro.background.secondary,
                 }}
@@ -387,10 +387,12 @@ export function LinearSettingsView({
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      fontWeight={isSelected ? "bold" : "normal"}
                     >
-                      {isSelected ? "▸ " : "  "}
-                      {i + 1}. {team.name} ({team.key}){isCurrent ? " ✓" : ""}
+                      {isSelected ? (
+                        <b>{"▸ "}{i + 1}. {team.name} ({team.key}){isCurrent ? " ✓" : ""}</b>
+                      ) : (
+                        <>{"  "}{i + 1}. {team.name} ({team.key}){isCurrent ? " ✓" : ""}</>
+                      )}
                     </text>
                   </box>
                 );

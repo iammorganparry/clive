@@ -150,8 +150,8 @@ export function WorkerView({
         paddingTop={1}
       >
         <box flexDirection="row" alignItems="center">
-          <text fg={OneDarkPro.syntax.red} bold>
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" - Worker Mode"}</text>
           <text fg={OneDarkPro.foreground.muted}>{" - "}</text>
@@ -196,10 +196,13 @@ export function WorkerView({
               <box key={sessionId} flexDirection="row">
                 <text
                   fg={isActive ? OneDarkPro.syntax.cyan : OneDarkPro.foreground.muted}
-                  bold={isActive}
-                  backgroundColor={isActive ? OneDarkPro.background.primary : undefined}
+                  bg={isActive ? OneDarkPro.background.primary : undefined}
                 >
-                  {` ${index + 1}:${shortId}${isRunning ? '*' : ''} `}
+                  {isActive ? (
+                    <b>{` ${index + 1}:${shortId}${isRunning ? '*' : ''} `}</b>
+                  ) : (
+                    ` ${index + 1}:${shortId}${isRunning ? '*' : ''} `
+                  )}
                 </text>
               </box>
             );

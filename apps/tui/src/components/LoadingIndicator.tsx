@@ -26,7 +26,7 @@ export function LoadingIndicator({
   }, []);
 
   return (
-    <box paddingLeft={2} paddingY={1}>
+    <box paddingLeft={2} paddingTop={1} paddingBottom={1}>
       <text fg={OneDarkPro.syntax.cyan}>
         {SPINNER_FRAMES[frame]} {text}...
       </text>

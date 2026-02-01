@@ -19,3 +19,12 @@ export type ViewMode =
   | "main"
   | "help"
   | "linear_settings";
+
+export type CliveMode = "plan" | "build" | "review";
+
+export interface ReviewCredentials {
+  baseUrl: string;
+  email?: string;
+  password?: string;
+  skipAuth?: boolean;
+}

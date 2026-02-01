@@ -6,8 +6,9 @@
 
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DynamicInput } from "./components/DynamicInput";
+import { calculateQuestionHeight } from "./components/QuestionPanel";
 import { HelpView } from "./components/HelpView";
 import { LinearConfigFlow } from "./components/LinearConfigFlow";
 import { LinearSettingsView } from "./components/LinearSettingsView";
@@ -33,7 +34,7 @@ import {
   WorkerSessionManager,
 } from "./services/WorkerSessionManager";
 import { OneDarkPro } from "./styles/theme";
-import type { OutputLine, Session } from "./types";
+import type { OutputLine, QuestionData, Session } from "./types";
 import type { WorkerConfig } from "./types/views";
 
 // Create QueryClient instance
@@ -117,7 +118,7 @@ function AppContent() {
   const setupOptions = ["linear", "beads"];
   const [configFlow, setConfigFlow] = useState<"linear" | "beads" | null>(null);
 
-  // Input focus state
+  // Input focus state — managed by viewMode effect below
   const [inputFocused, setInputFocused] = useState(false);
   const [preFillValue, setPreFillValue] = useState<string | undefined>(
     undefined,
@@ -138,6 +139,11 @@ function AppContent() {
   >(null);
   const sessionManagerRef = useRef<WorkerSessionManager | null>(null);
 
+  // Worker mode: dedicated question state per session (avoids fragile last-output-line derivation)
+  const [workerPendingQuestions, setWorkerPendingQuestions] = useState<
+    Map<string, { question: QuestionData; toolUseID: string }>
+  >(new Map());
+
   // Clear preFillValue after it's been used
   useEffect(() => {
     if (preFillValue && inputFocused) {
@@ -146,6 +152,15 @@ function AppContent() {
       return () => clearTimeout(timer);
     }
   }, [preFillValue, inputFocused]);
+
+  // Auto-focus input on main view, unfocus on other views
+  useEffect(() => {
+    if (viewMode === "main" || viewMode === "worker") {
+      setInputFocused(true);
+    } else {
+      setInputFocused(false);
+    }
+  }, [viewMode]);
 
   // State management
   // Get workspace root from user's current terminal directory
@@ -171,6 +186,25 @@ function AppContent() {
       setActiveWorkerSessionId((current) => current ?? sessionId);
       sessionManagerRef.current?.startInterview(request, (event) => {
         workerConnectionRef.current?.sendEvent(event);
+      }).catch((error) => {
+        // Handle any unhandled errors from startInterview
+        console.error(`[App] Interview ${sessionId} failed to start:`, error);
+        setWorkerSessionRunning((prev) => {
+          const next = new Map(prev);
+          next.set(sessionId, false);
+          return next;
+        });
+        // Notify central service of the error
+        workerConnectionRef.current?.sendEvent({
+          sessionId,
+          type: "error",
+          payload: {
+            type: "error",
+            message: `Failed to start interview: ${String(error)}`,
+          },
+          timestamp: new Date().toISOString(),
+        });
+        workerConnectionRef.current?.completeSession(sessionId);
       });
     },
     [],
@@ -286,12 +320,29 @@ function AppContent() {
           next.set(sessionId, [...existing, outputLine]);
           return next;
         });
+
+        // Track question state separately so it persists even if more output arrives
+        if (msg.type === "question" && msg.questionData) {
+          setWorkerPendingQuestions((prev) => {
+            const next = new Map(prev);
+            next.set(sessionId, {
+              question: msg.questionData!,
+              toolUseID: msg.questionData!.toolUseID,
+            });
+            return next;
+          });
+        }
       };
 
       const handleComplete = (sessionId: string) => {
         setWorkerSessionRunning((prev) => {
           const next = new Map(prev);
           next.set(sessionId, false);
+          return next;
+        });
+        setWorkerPendingQuestions((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
           return next;
         });
         workerConnectionRef.current?.completeSession(sessionId);
@@ -305,6 +356,11 @@ function AppContent() {
             ...existing,
             { type: "stderr" as const, text: error },
           ]);
+          return next;
+        });
+        setWorkerPendingQuestions((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
           return next;
         });
         // Notify central service of the error
@@ -348,10 +404,19 @@ function AppContent() {
     }
   }, [workspaceRoot]);
 
-  // Fetch ALL conversations across all projects (not just current workspace)
-  // This ensures "Other Conversations" shows all Claude Code conversations
-  const { data: conversations = [], isLoading: conversationsLoading } =
+  // Fetch ALL conversations across all projects
+  const { data: allConversations = [], isLoading: conversationsLoading } =
     useAllConversations(100);
+
+  // Scope conversations: keep all Linear-attached conversations (matched by issue),
+  // but limit unattached conversations to the current workspace
+  const conversations = useMemo(
+    () =>
+      allConversations.filter(
+        (c) => c.linearProjectId || c.linearTaskId || c.project === workspaceRoot,
+      ),
+    [allConversations, workspaceRoot],
+  );
 
   const {
     outputLines,
@@ -367,6 +432,7 @@ function AppContent() {
     activeSession,
     setActiveSession,
     executeCommand,
+    sendMessage,
     handleQuestionAnswer,
     interrupt,
     cleanup,
@@ -381,38 +447,12 @@ function AppContent() {
   const handleConversationResume = useCallback(
     (conversation: Conversation) => {
       console.log("[Clive TUI] Resuming conversation:", conversation.sessionId);
-      executeCommand(`/plan --resume=${conversation.sessionId}`);
+      const resumeMode = conversation.mode || "plan"; // fallback for old sessions
+      executeCommand(`/${resumeMode} --resume=${conversation.sessionId}`);
       goToMain();
     },
     [executeCommand, goToMain],
   );
-
-  // Auto-resume if exactly 1 conversation
-  useEffect(() => {
-    // Only auto-resume when in selection view and conversations are loaded
-    if (viewMode !== "selection" || conversationsLoading || sessionsLoading) {
-      return;
-    }
-
-    // If exactly 1 conversation and no sessions, auto-resume it
-    if (conversations.length === 1 && sessions.length === 0) {
-      const conversation = conversations[0];
-      if (conversation) {
-        handleConversationResume(conversation);
-      }
-      return;
-    }
-
-    // Otherwise, always show the selection view (including when 0 conversations)
-  }, [
-    viewMode,
-    conversations.length,
-    sessions.length,
-    conversationsLoading,
-    sessionsLoading,
-    conversations[0],
-    handleConversationResume,
-  ]);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
   useEffect(() => {
@@ -472,7 +512,6 @@ function AppContent() {
         goToModeSelection();
       } else if (
         viewMode !== "setup" &&
-        viewMode !== "worker_setup" &&
         viewMode !== "help"
       ) {
         goToLinearSettings();
@@ -693,8 +732,13 @@ function AppContent() {
           const displayIssues = filteredSessions.slice(0, 10);
           const issue = displayIssues[selectionState.selectedIndex];
           if (issue) {
-            // Go to Level 2 - show conversations for this issue
-            selectionState.selectIssue(issue);
+            if (issue.id === "__unattached__") {
+              // "Other Conversations" → go to Level 2 to browse
+              selectionState.selectIssue(issue);
+            } else {
+              // Linear issue → start fresh session immediately
+              handleCreateNewForIssue(issue);
+            }
           }
         } else if (selectionState.isLevel2) {
           // Level 2: Selecting a conversation for the issue
@@ -807,7 +851,6 @@ function AppContent() {
   const handleCreateNewWithoutIssue = () => {
     goToMain();
     setInputFocused(true);
-    setPreFillValue("/plan");
   };
 
   // Handler for creating new session for specific issue
@@ -815,18 +858,30 @@ function AppContent() {
     setActiveSession(issue);
     goToMain();
     setInputFocused(true);
-    setPreFillValue("/plan");
   };
 
-  // Wrapper for executeCommand to handle special commands
+  // Wrapper for executeCommand to handle special commands and message forwarding
   const handleExecuteCommand = (cmd: string) => {
-    // Check for /resume command
-    if (cmd.trim() === "/resume") {
-      goToSelection();
+    const trimmed = cmd.trim();
+
+    // Always handle slash commands
+    if (trimmed.startsWith("/")) {
+      const lower = trimmed.toLowerCase();
+      if (lower === "/resume" || lower.startsWith("/resume ")) {
+        goToSelection();
+        return;
+      }
+      executeCommand(cmd);
       return;
     }
 
-    // Otherwise, execute normally
+    // If running, send as message to guide the agent
+    if (isRunning) {
+      sendMessage(trimmed);
+      return;
+    }
+
+    // Otherwise, execute as new command
     executeCommand(cmd);
   };
 
@@ -996,13 +1051,12 @@ function AppContent() {
   const displayIsRunning = isWorkerMode ? activeWorkerIsRunning : isRunning;
   const displayMode = isWorkerMode ? "none" : mode;
 
-  // Get pending question for worker mode
-  const workerPendingQuestion =
-    isWorkerMode && activeWorkerOutputLines.length > 0
-      ? activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.question
-      : undefined;
+  // Get pending question for worker mode from dedicated state
+  const activeWorkerQuestion = isWorkerMode && activeWorkerSessionId
+    ? workerPendingQuestions.get(activeWorkerSessionId)
+    : undefined;
   const displayPendingQuestion = isWorkerMode
-    ? workerPendingQuestion
+    ? activeWorkerQuestion?.question
     : pendingQuestion;
 
   const baseInputHeight = 3;
@@ -1010,7 +1064,9 @@ function AppContent() {
   const isInMode = displayMode !== "none";
 
   // Calculate dynamic input height based on pending question
-  const questionHeight = displayPendingQuestion ? Math.min(25, 20) : 0;
+  const questionHeight = displayPendingQuestion
+    ? calculateQuestionHeight(displayPendingQuestion)
+    : 0;
   const dynamicInputHeight = baseInputHeight + questionHeight;
 
   // When border is present, it takes 2 rows (top+bottom) and 2 cols (left+right)
@@ -1019,9 +1075,14 @@ function AppContent() {
   const innerHeight = height - borderAdjustment;
   const bodyHeight = innerHeight - dynamicInputHeight - statusHeight;
 
-  // Sidebar layout
-  const sidebarWidth = 30;
-  const outputWidth = innerWidth - sidebarWidth;
+  // Sidebar layout — responsive breakpoint
+  const COMPACT_BREAKPOINT = 80;
+  const isCompact = innerWidth < COMPACT_BREAKPOINT;
+
+  const sidebarWidth = isCompact ? innerWidth : 30;
+  const sidebarHeight = isCompact ? Math.min(8, Math.floor(bodyHeight * 0.3)) : bodyHeight;
+  const outputWidth = isCompact ? innerWidth : innerWidth - sidebarWidth;
+  const outputHeight = isCompact ? bodyHeight - sidebarHeight : bodyHeight;
 
   // Mode colors
   const getModeColor = () => {
@@ -1032,16 +1093,19 @@ function AppContent() {
 
   // Handle worker mode question answers
   const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
-    if (isWorkerMode && workerPendingQuestion && activeWorkerSessionId) {
-      const toolUseID =
-        activeWorkerOutputLines[activeWorkerOutputLines.length - 1]?.toolUseID;
-      if (toolUseID) {
-        sessionManagerRef.current?.sendAnswer(
-          activeWorkerSessionId,
-          toolUseID,
-          answers,
-        );
-      }
+    if (isWorkerMode && activeWorkerQuestion && activeWorkerSessionId) {
+      const { toolUseID } = activeWorkerQuestion;
+      sessionManagerRef.current?.sendAnswer(
+        activeWorkerSessionId,
+        toolUseID,
+        answers,
+      );
+      // Clear the question state after answering
+      setWorkerPendingQuestions((prev) => {
+        const next = new Map(prev);
+        next.delete(activeWorkerSessionId);
+        return next;
+      });
     }
   };
 
@@ -1055,13 +1119,14 @@ function AppContent() {
       borderColor={isInMode ? getModeColor() : undefined}
     >
       {/* Body (Sidebar + Output) */}
-      <box width={innerWidth} height={bodyHeight} flexDirection="row">
+      <box width={innerWidth} height={bodyHeight} flexDirection={isCompact ? "column" : "row"}>
         {/* Sidebar */}
         <Sidebar
           width={sidebarWidth}
-          height={bodyHeight}
+          height={sidebarHeight}
           tasks={tasks}
           activeSession={activeSession}
+          layout={isCompact ? "horizontal" : "vertical"}
         />
 
         {/* Output Panel */}
@@ -1069,7 +1134,7 @@ function AppContent() {
           <OutputPanel
             ref={outputPanelRef}
             width={outputWidth}
-            height={bodyHeight}
+            height={outputHeight}
             lines={displayOutputLines}
             isRunning={displayIsRunning}
             mode={displayMode}
@@ -1079,7 +1144,7 @@ function AppContent() {
           // Worker mode waiting state
           <box
             width={outputWidth}
-            height={bodyHeight}
+            height={outputHeight}
             alignItems="center"
             justifyContent="center"
             flexDirection="column"
@@ -1130,7 +1195,7 @@ function AppContent() {
               }
             : handleExecuteCommand
         }
-        disabled={isWorkerMode ? !workerPendingQuestion : !!pendingQuestion}
+        disabled={isWorkerMode ? !activeWorkerQuestion : !!pendingQuestion}
         isRunning={displayIsRunning}
         inputFocused={inputFocused}
         onFocusChange={setInputFocused}
@@ -1146,6 +1211,7 @@ function AppContent() {
             interrupt();
           }
         }}
+        mode={displayMode}
       />
 
       {/* Status Bar */}

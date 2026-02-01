@@ -39,6 +39,10 @@ export interface SlackConfig {
   workerApiToken?: string;
   /** WebSocket path for worker connections (distributed mode) */
   wsPath: string;
+  /** GitHub webhook secret for verifying PR feedback webhooks (optional) */
+  githubWebhookSecret?: string;
+  /** GitHub token for commenting on PRs (optional) */
+  githubToken?: string;
 }
 
 /**
@@ -107,6 +111,9 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
   );
   const wsPath = process.env.CLIVE_WS_PATH || "/ws";
 
+  const githubWebhookSecret = process.env.GITHUB_WEBHOOK_SECRET || undefined;
+  const githubToken = process.env.GITHUB_TOKEN || undefined;
+
   return right({
     slackBotToken: slackBotToken!,
     slackSigningSecret: slackSigningSecret!,
@@ -117,6 +124,8 @@ export function loadConfig(): Either<ConfigError, SlackConfig> {
     mode,
     workerApiToken,
     wsPath,
+    githubWebhookSecret,
+    githubToken,
   });
 }
 

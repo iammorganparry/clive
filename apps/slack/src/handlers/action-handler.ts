@@ -982,7 +982,7 @@ export function registerActionHandlerDistributed(
           ),
         );
 
-        if (result) {
+        if (result && "workerId" in result) {
           store.setWorkerId(threadTs, result.workerId);
         }
       }),
@@ -1084,7 +1084,7 @@ export function registerActionHandlerDistributed(
           ),
         );
 
-        if (result) {
+        if (result && "workerId" in result) {
           store.setWorkerId(threadTs, result.workerId);
         }
       }),

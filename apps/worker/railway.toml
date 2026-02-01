@@ -1,7 +1,15 @@
 [build]
-builder = "railpack"
+builder = "DOCKERFILE"
+dockerfilePath = "apps/worker/Dockerfile"
+watchPatterns = [
+  "apps/worker/**",
+  "packages/worker-protocol/**",
+  "packages/claude-services/**",
+  "packages/github-app/**",
+]
 
 [deploy]
-startCommand = "yarn start"
+startCommand = "npx tsx src/index.ts"
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 5
+numReplicas = 3

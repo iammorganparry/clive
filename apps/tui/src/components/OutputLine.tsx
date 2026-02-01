@@ -7,6 +7,7 @@
 import { MetadataCalculator } from "../services/MetadataCalculator";
 import { OneDarkPro } from "../styles/theme";
 import type { OutputLine as OutputLineType } from "../types";
+import { DiffView } from "./DiffView";
 
 interface Props {
   line: OutputLineType;
@@ -22,7 +23,7 @@ export function OutputLine({ line }: Props) {
         const filename =
           toolInput.file_path.split("/").pop() || toolInput.file_path;
         return (
-          <box flexDirection="row">
+          <box flexDirection="row" marginTop={1}>
             <text fg={OneDarkPro.syntax.yellow}>Read 📄 </text>
             <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
@@ -34,7 +35,7 @@ export function OutputLine({ line }: Props) {
         const path = toolInput.path || ".";
         const filename = path.split("/").pop() || path;
         return (
-          <box flexDirection="row">
+          <box flexDirection="row" marginTop={1}>
             <text fg={OneDarkPro.syntax.yellow}>
               Grep 🔍 "{toolInput.pattern}" in{" "}
             </text>
@@ -46,19 +47,27 @@ export function OutputLine({ line }: Props) {
       // Glob tool - show pattern
       if (line.toolName === "Glob" && toolInput.pattern) {
         return (
-          <box flexDirection="row">
+          <box flexDirection="row" marginTop={1}>
             <text fg={OneDarkPro.syntax.yellow}>Glob 📁 </text>
             <text fg={OneDarkPro.foreground.muted}>{toolInput.pattern}</text>
           </box>
         );
       }
 
-      // Bash tool - show command
+      // Bash tool - show command (first line only, truncated)
       if (line.toolName === "Bash" && toolInput.command) {
+        const firstLine = toolInput.command.split("\n")[0] || toolInput.command;
+        const maxLen = 120;
+        const truncated = firstLine.length > maxLen
+          ? `${firstLine.substring(0, maxLen)}…`
+          : firstLine;
+        const isMultiline = toolInput.command.includes("\n");
         return (
-          <box flexDirection="row">
+          <box flexDirection="row" marginTop={1}>
             <text fg={OneDarkPro.syntax.cyan}>Bash $ </text>
-            <text fg={OneDarkPro.foreground.muted}>{toolInput.command}</text>
+            <text fg={OneDarkPro.foreground.muted}>
+              {truncated}{isMultiline && !truncated.endsWith("…") ? " …" : ""}
+            </text>
           </box>
         );
       }
@@ -71,7 +80,7 @@ export function OutputLine({ line }: Props) {
         const filename =
           toolInput.file_path.split("/").pop() || toolInput.file_path;
         return (
-          <box flexDirection="row">
+          <box flexDirection="row" marginTop={1}>
             <text fg={OneDarkPro.syntax.yellow}>{line.toolName} ✏️ </text>
             <text fg={OneDarkPro.foreground.muted}>{filename}</text>
           </box>
@@ -80,20 +89,24 @@ export function OutputLine({ line }: Props) {
 
       // Default: show tool name
       return (
-        <box>
+        <box marginTop={1}>
           <text fg={OneDarkPro.syntax.yellow}>● {line.toolName}</text>
         </box>
       );
     }
 
     case "tool_result": {
-      // Skip rendering tool results for Read/Grep/Glob/Bash tools
-      const isFileReadTool =
-        line.toolName === "Read" ||
-        line.toolName === "Grep" ||
-        line.toolName === "Glob";
-      const isBashTool = line.toolName === "Bash";
-      if (isFileReadTool || isBashTool) {
+      // Tools whose results we skip entirely (already represented by other line types)
+      const HIDDEN_TOOLS = new Set([
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "Task",          // subagent_spawn/subagent_complete handles display
+        "TodoWrite",
+        "TodoRead",
+      ]);
+      if (HIDDEN_TOOLS.has(line.toolName || "")) {
         return null;
       }
 
@@ -101,41 +114,67 @@ export function OutputLine({ line }: Props) {
       let displayText = line.text;
       let wasTruncated = false;
 
-      // Truncation limits per tool category
+      // Char limits per tool — keep tight for terminal readability
       const TRUNCATION_LIMITS: Record<string, number> = {
         // Web tools
-        WebSearch: 2000,
-        WebFetch: 1500,
+        WebSearch: 300,
+        WebFetch: 400,
 
         // MCP context tools (very verbose)
-        mcp__context7: 1500,
-        mcp__contextserver: 1500,
+        mcp__context7: 300,
+        mcp__contextserver: 300,
 
         // MCP Linear tools (JSON responses)
-        mcp__linear__create_issue: 800,
-        mcp__linear__update_issue: 800,
-        mcp__linear__create_project: 800,
-        mcp__linear__list_issues: 2000,
-        mcp__linear__get_issue: 1500,
+        mcp__linear__create_issue: 200,
+        mcp__linear__update_issue: 200,
+        mcp__linear__create_project: 200,
+        mcp__linear__list_issues: 400,
+        mcp__linear__get_issue: 300,
 
         // MCP Playwright tools (page snapshots are huge)
-        mcp__playwright__browser_snapshot: 2000,
-        mcp__playwright__browser_console_messages: 1500,
-        mcp__playwright__browser_network_requests: 1500,
+        mcp__playwright__browser_snapshot: 300,
+        mcp__playwright__browser_console_messages: 300,
+        mcp__playwright__browser_network_requests: 300,
+
+        // MCP Railway tools
+        mcp__railway__get_logs: 400,
+        mcp__railway__list_services: 300,
+        mcp__railway__list_deployments: 300,
+
+        // Edit/Write — diff view handles the detail
+        Edit: 200,
+        Write: 200,
 
         // Default for any unspecified tool
-        DEFAULT: 3000,
+        DEFAULT: 500,
       };
 
       if (displayText && displayText.length > 0) {
-        // Get tool-specific limit or default
+        // Get tool-specific limit or default (also match mcp prefix patterns)
         const toolName = line.toolName || "";
-        const maxChars =
-          TRUNCATION_LIMITS[toolName] || TRUNCATION_LIMITS.DEFAULT;
+        let maxChars = TRUNCATION_LIMITS[toolName];
+        if (maxChars === undefined) {
+          // Check prefix matches for MCP tool families
+          for (const [key, limit] of Object.entries(TRUNCATION_LIMITS)) {
+            if (key !== "DEFAULT" && toolName.startsWith(key)) {
+              maxChars = limit;
+              break;
+            }
+          }
+        }
+        maxChars = maxChars ?? TRUNCATION_LIMITS.DEFAULT ?? 500;
 
-        // Truncate if exceeds limit
+        // Truncate by char count
         if (displayText.length > maxChars) {
           displayText = displayText.slice(0, maxChars);
+          wasTruncated = true;
+        }
+
+        // Cap line count — collapse multi-line outputs to max 4 lines
+        const MAX_LINES = 4;
+        const lines = displayText.split("\n");
+        if (lines.length > MAX_LINES) {
+          displayText = lines.slice(0, MAX_LINES).join("\n");
           wasTruncated = true;
         }
       }
@@ -163,15 +202,16 @@ export function OutputLine({ line }: Props) {
         metadata.push(`💰 ${costText}`);
       }
 
+      const metaSuffix = metadata.length > 0 ? `  ${metadata.join(" ")}` : "";
+
       return (
         <box flexDirection="column">
           <text fg={OneDarkPro.foreground.muted}>
-            ↳ {displayText}
-            {metadata.length > 0 ? ` ${metadata.join(" ")}` : ""}
+            ↳ {displayText}{metaSuffix}
           </text>
           {wasTruncated && (
             <text fg={OneDarkPro.foreground.comment}>
-              ... (output truncated, check logs for full output)
+              … (truncated)
             </text>
           )}
         </box>
@@ -179,14 +219,15 @@ export function OutputLine({ line }: Props) {
     }
 
     case "file_diff": {
-      // Split diff into lines and color appropriately
+      if (line.diffData) {
+        return <DiffView diffData={line.diffData} duration={line.duration} />;
+      }
+      // Fallback for legacy pre-formatted strings
       const diffLines = line.text.split("\n");
       return (
         <box flexDirection="column">
           {diffLines.map((diffLine, i) => {
             let color = OneDarkPro.foreground.muted;
-
-            // Color based on diff prefix
             if (diffLine.includes(" + ") || diffLine.startsWith("  + ")) {
               color = OneDarkPro.syntax.green;
             } else if (
@@ -197,7 +238,6 @@ export function OutputLine({ line }: Props) {
             } else if (diffLine.startsWith("● ")) {
               color = OneDarkPro.syntax.yellow;
             }
-
             return (
               <text key={i} fg={color}>
                 {diffLine}

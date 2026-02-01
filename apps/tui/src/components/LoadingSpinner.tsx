@@ -61,7 +61,7 @@ export function PulsingDot({
       {
         opacity: 0.3,
         duration: 500,
-        ease: "easeInOutSine",
+        ease: "inOutSine",
         onUpdate: (animation) => {
           setOpacity(animation.targets[0].opacity);
         },
@@ -74,7 +74,7 @@ export function PulsingDot({
       {
         opacity: 1,
         duration: 500,
-        ease: "easeInOutSine",
+        ease: "inOutSine",
         onUpdate: (animation) => {
           setOpacity(animation.targets[0].opacity);
         },

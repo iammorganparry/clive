@@ -83,6 +83,7 @@ export const WorkerRegistrationSchema = z.object({
   defaultProject: z.string().optional(),
   hostname: z.string().optional(),
   capabilities: z.array(z.string()).optional(),
+  maxConcurrentSessions: z.number().int().min(1).optional(),
 });
 
 export const WorkerRegistrationResponseSchema = z.object({
@@ -104,6 +105,30 @@ export const WorkerHeartbeatSchema = z.object({
       uptime: z.number(),
     })
     .optional(),
+});
+
+// ============================================================
+// PR Feedback
+// ============================================================
+
+export const PrReviewFeedbackSchema = z.object({
+  author: z.string(),
+  body: z.string(),
+  path: z.string().optional(),
+  line: z.number().optional(),
+  state: z.string().optional(),
+  commentId: z.number().optional(),
+});
+
+export const PrFeedbackRequestSchema = z.object({
+  sessionId: z.string(),
+  prUrl: z.string(),
+  prNumber: z.number(),
+  repo: z.string(),
+  claudeSessionId: z.string(),
+  projectId: z.string().optional(),
+  feedbackType: z.enum(["review_comment", "changes_requested", "comment"]),
+  feedback: z.array(PrReviewFeedbackSchema),
 });
 
 // ============================================================
@@ -135,6 +160,16 @@ export const InterviewEventPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("plan_ready"), content: z.string() }),
   z.object({ type: z.literal("issues_created"), urls: z.array(z.string()) }),
   z.object({ type: z.literal("pr_created"), url: z.string() }),
+  z.object({
+    type: z.literal("pr_feedback_addressed"),
+    prUrl: z.string(),
+    commitSha: z.string().optional(),
+    summary: z.string().optional(),
+    commentReplies: z.array(z.object({
+      commentId: z.number(),
+      reply: z.string(),
+    })).optional(),
+  }),
   z.object({ type: z.literal("error"), message: z.string() }),
   z.object({ type: z.literal("timeout") }),
   z.object({ type: z.literal("complete") }),
@@ -150,6 +185,7 @@ export const InterviewEventSchema = z.object({
     "plan_ready",
     "issues_created",
     "pr_created",
+    "pr_feedback_addressed",
     "error",
     "timeout",
     "complete",
@@ -186,6 +222,7 @@ export const CentralToWorkerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("answer"), payload: AnswerRequestSchema }),
   z.object({ type: z.literal("message"), payload: MessageRequestSchema }),
   z.object({ type: z.literal("cancel"), payload: CancelRequestSchema }),
+  z.object({ type: z.literal("pr_feedback"), payload: PrFeedbackRequestSchema }),
   z.object({ type: z.literal("ping") }),
   z.object({
     type: z.literal("config_update"),

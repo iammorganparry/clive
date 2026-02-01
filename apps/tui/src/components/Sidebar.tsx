@@ -12,8 +12,7 @@ interface SidebarProps {
   height: number;
   tasks: Task[];
   activeSession?: Session | null;
-  x?: number;
-  y?: number;
+  layout?: "vertical" | "horizontal";
 }
 
 export function Sidebar({
@@ -21,16 +20,13 @@ export function Sidebar({
   height,
   tasks,
   activeSession,
-  x = 0,
-  y = 0,
+  layout = "vertical",
 }: SidebarProps) {
   // Group tasks by status
   const inProgress = tasks.filter((t) => getTaskStatus(t) === "in_progress");
   const pending = tasks.filter((t) => getTaskStatus(t) === "pending");
   const completed = tasks.filter((t) => getTaskStatus(t) === "completed");
   const blocked = tasks.filter((t) => getTaskStatus(t) === "blocked");
-
-  const maxDisplay = 8;
 
   const truncate = (text: string, maxLen: number) => {
     return text.length > maxLen ? `${text.substring(0, maxLen - 1)}…` : text;
@@ -42,10 +38,82 @@ export function Sidebar({
   const progressPercent =
     totalTasks > 0 ? Math.round((completedCount / totalTasks) * 100) : 0;
 
+  // --- Compact horizontal layout ---
+  if (layout === "horizontal") {
+    // Prioritized task list: in_progress, blocked, pending, completed
+    const allTasks = [...inProgress, ...blocked, ...pending, ...completed];
+    const barWidth = Math.max(width - 4, 10);
+    const filledBars = Math.floor(barWidth * (progressPercent / 100));
+    const emptyBars = barWidth - filledBars;
+
+    const getStatusIcon = (task: Task) => {
+      const status = getTaskStatus(task);
+      if (status === "in_progress") return "⚡";
+      if (status === "blocked") return "⊗";
+      if (status === "completed") return "✓";
+      return "○";
+    };
+
+    const getStatusColor = (task: Task) => {
+      const status = getTaskStatus(task);
+      if (status === "in_progress") return OneDarkPro.syntax.yellow;
+      if (status === "blocked") return OneDarkPro.syntax.red;
+      if (status === "completed") return OneDarkPro.syntax.green;
+      return OneDarkPro.syntax.cyan;
+    };
+
+    // Row 1 = progress summary, remaining rows = task list
+    const taskRows = Math.max(height - 2, 0);
+
+    return (
+      <box
+        width={width}
+        height={height}
+        backgroundColor={OneDarkPro.background.secondary}
+        paddingLeft={1}
+        paddingRight={1}
+        flexDirection="column"
+      >
+        {/* Row 1: Progress summary + bar */}
+        <box flexDirection="row">
+          <text fg={OneDarkPro.syntax.blue}>{"📋 "}</text>
+          <text fg={OneDarkPro.foreground.muted}>
+            {completedCount}/{totalTasks} {progressPercent}%{" "}
+          </text>
+          <text fg={OneDarkPro.syntax.green}>
+            {"█".repeat(filledBars)}
+          </text>
+          <text fg={OneDarkPro.ui.border}>
+            {"░".repeat(emptyBars)}
+          </text>
+        </box>
+
+        {/* Task rows */}
+        {allTasks.length === 0 && taskRows > 0 && (
+          <text fg={OneDarkPro.foreground.muted}>{"  No tasks yet"}</text>
+        )}
+        {allTasks.slice(0, taskRows).map((task, i) => (
+          <box key={i} flexDirection="row">
+            <text fg={getStatusColor(task)}>{getStatusIcon(task)} </text>
+            <text fg={OneDarkPro.foreground.primary}>
+              {truncate(task.title, width - 5)}
+            </text>
+          </box>
+        ))}
+        {allTasks.length > taskRows && taskRows > 0 && (
+          <text fg={OneDarkPro.foreground.comment}>
+            {"  … "}{allTasks.length - taskRows}{" more"}
+          </text>
+        )}
+      </box>
+    );
+  }
+
+  // --- Vertical layout (default) ---
+  const maxDisplay = 8;
+
   return (
     <box
-      x={x}
-      y={y}
       width={width}
       height={height}
       backgroundColor={OneDarkPro.background.secondary}
@@ -54,12 +122,11 @@ export function Sidebar({
       paddingRight={1}
       flexDirection="column"
     >
-      {/* Header with logo and epic name */}
+      {/* Header with CLIVE block logo */}
       <box flexDirection="column" marginBottom={1}>
-        <box flexDirection="row" alignItems="center">
-          <text fg={OneDarkPro.syntax.purple}>🎯 </text>
-          <text fg={OneDarkPro.syntax.cyan}>Clive</text>
-        </box>
+        <text fg={OneDarkPro.syntax.red}>{"█▀▀ █   █ █ █ █▀▀"}</text>
+        <text fg={OneDarkPro.syntax.red}>{"█   █   █ ▀▄▀ █▀▀"}</text>
+        <text fg={OneDarkPro.syntax.red}>{"▀▀▀ ▀▀▀ ▀  ▀  ▀▀▀"}</text>
         {activeSession && (
           <box flexDirection="column" marginTop={0}>
             <text fg={OneDarkPro.foreground.muted}>

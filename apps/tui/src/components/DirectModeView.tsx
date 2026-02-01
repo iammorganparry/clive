@@ -71,19 +71,20 @@ export function DirectModeView({
 
       {/* Minimal floating status bar at bottom */}
       <box
-        x={0}
-        y={height - 1}
+        position="absolute"
+        left={0}
+        top={height - 1}
         width={width}
         height={1}
-        backgroundColor={OneDarkPro.background.tertiary}
+        backgroundColor={OneDarkPro.background.secondary}
         paddingLeft={1}
         paddingRight={1}
         flexDirection="row"
         justifyContent="space-between"
       >
         <box flexDirection="row">
-          <text fg={modeColor} bold>
-            {mode === "plan" ? "PLAN" : mode === "build" ? "BUILD" : ""}
+          <text fg={modeColor}>
+            <b>{mode === "plan" ? "PLAN" : mode === "build" ? "BUILD" : ""}</b>
           </text>
           {taskProgress && (
             <text fg={OneDarkPro.foreground.muted}> Tasks: {taskProgress}</text>

@@ -1,0 +1,26 @@
+# Exclude development/CI artifacts but keep everything Claude CLI needs
+node_modules
+.turbo
+dist
+*.tsbuildinfo
+
+# Exclude large unnecessary directories
+apps/extension/dist
+apps/dashboard/.next
+apps/tui/dist
+
+# Git history (Dockerfile creates a fresh repo; when CLIVE_REPO is set, setupRepo clones the target repo at runtime)
+.git
+
+# IDE and OS files
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Keep these (important for Claude CLI):
+# .mcp.json - MCP server config
+# .claude/ - Claude settings
+# .clive/ - Project config
+# CLAUDE.md - Project instructions

@@ -16,6 +16,7 @@
     "@clive/claude-services": "*",
     "@clive/worker-protocol": "*",
     "@ngrok/ngrok": "^1.5.0",
+    "@octokit/rest": "^21.1.1",
     "@slack/bolt": "^4.1.0",
     "@slack/types": "^2.14.0",
     "@slack/web-api": "^7.8.0",

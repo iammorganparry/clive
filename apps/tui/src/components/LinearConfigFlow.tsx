@@ -55,20 +55,22 @@ export function LinearConfigFlow({
 
     // Team selection navigation
     if (step === "team_selection") {
-      if (event.name === "up" || event.key === "k") {
+      if (event.name === "up" || event.sequence === "k") {
         setSelectedTeamIndex((prev) =>
           prev > 0 ? prev - 1 : teams.length - 1,
         );
-      } else if (event.name === "down" || event.key === "j") {
+      } else if (event.name === "down" || event.sequence === "j") {
         setSelectedTeamIndex((prev) =>
           prev < teams.length - 1 ? prev + 1 : 0,
         );
       } else if (event.name === "return") {
-        handleTeamSelect(teams[selectedTeamIndex]);
-      } else if (/^[1-9]$/.test(event.key)) {
-        const index = parseInt(event.key, 10) - 1;
-        if (index < teams.length) {
-          handleTeamSelect(teams[index]);
+        const team = teams[selectedTeamIndex];
+        if (team) handleTeamSelect(team);
+      } else if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence, 10) - 1;
+        const team = teams[index];
+        if (team && index < teams.length) {
+          handleTeamSelect(team);
         }
       }
     }
@@ -148,8 +150,8 @@ export function LinearConfigFlow({
       <box flexDirection="column" alignItems="center" width={60}>
         {/* Header */}
         <box flexDirection="row" marginBottom={2}>
-          <text fg={OneDarkPro.syntax.red} fontWeight="bold">
-            CLIVE
+          <text fg={OneDarkPro.syntax.red}>
+            <b>CLIVE</b>
           </text>
           <text fg={OneDarkPro.foreground.muted}>{" · Linear Setup"}</text>
         </box>
@@ -175,7 +177,7 @@ export function LinearConfigFlow({
                 onSubmit={handleSubmit}
                 value={inputValue}
                 style={{
-                  fg: OneDarkPro.foreground.primary,
+                  textColor: OneDarkPro.foreground.primary,
                   backgroundColor: OneDarkPro.background.secondary,
                   focusedBackgroundColor: OneDarkPro.background.secondary,
                 }}
@@ -245,10 +247,12 @@ export function LinearConfigFlow({
                           ? OneDarkPro.syntax.blue
                           : OneDarkPro.foreground.primary
                       }
-                      fontWeight={isSelected ? "bold" : "normal"}
                     >
-                      {isSelected ? "▸ " : "  "}
-                      {i + 1}. {team.name} ({team.key})
+                      {isSelected ? (
+                        <b>{"▸ "}{i + 1}. {team.name} ({team.key})</b>
+                      ) : (
+                        <>{"  "}{i + 1}. {team.name} ({team.key})</>
+                      )}
                     </text>
                   </box>
                 );
@@ -276,7 +280,7 @@ export function LinearConfigFlow({
         {/* Step: Success */}
         {step === "success" && (
           <box marginTop={4} flexDirection="column" alignItems="center">
-            <text fg={OneDarkPro.syntax.green} fontSize={1.5}>
+            <text fg={OneDarkPro.syntax.green}>
               ✓ Linear configured successfully!
             </text>
             <text fg={OneDarkPro.foreground.muted} marginTop={1}>
@@ -335,7 +339,7 @@ async function fetchLinearTeams(apiKey: string): Promise<LinearTeam[]> {
     throw new Error(`Failed to fetch teams: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as any;
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || "Failed to fetch teams");
@@ -375,7 +379,7 @@ async function validateLinearConfig(
     throw new Error(`Validation failed: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as any;
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || "Invalid team ID");

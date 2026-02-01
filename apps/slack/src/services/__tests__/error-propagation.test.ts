@@ -128,7 +128,7 @@ describe("Error Propagation", () => {
       expect(Exit.isSuccess(result)).toBe(true);
 
       if (Exit.isSuccess(result)) {
-        expect(result.value.workerId).toBe("worker-123");
+        expect("workerId" in result.value && result.value.workerId).toBe("worker-123");
       }
     });
 
@@ -153,7 +153,7 @@ describe("Error Propagation", () => {
         ),
       );
 
-      expect(result.workerId).toBe("fallback");
+      expect("workerId" in result && result.workerId).toBe("fallback");
       expect("errorReason" in result && result.errorReason).toBe("no_workers");
     });
   });

@@ -50,7 +50,9 @@ export function InputBar({
 
   return (
     <box
-      y={y}
+      position="absolute"
+      top={y}
+      left={0}
       width={width}
       height={height}
       backgroundColor={OneDarkPro.background.secondary}
@@ -74,7 +76,7 @@ export function InputBar({
           value={input}
           style={{
             width: width - 4,
-            fg: OneDarkPro.foreground.primary,
+            textColor: OneDarkPro.foreground.primary,
             backgroundColor: OneDarkPro.background.secondary,
             focusedBackgroundColor: OneDarkPro.background.secondary,
           }}

@@ -120,6 +120,7 @@ export type InterviewEvent =
   | { type: "plan_ready"; content: string }
   | { type: "issues_created"; urls: string[] }
   | { type: "pr_created"; url: string }
+  | { type: "pr_feedback_addressed"; prUrl: string; commitSha?: string; summary?: string; commentReplies?: Array<{ commentId: number; reply: string }> }
   | { type: "error"; message: string }
   | { type: "timeout" }
   | { type: "complete" };

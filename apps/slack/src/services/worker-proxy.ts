@@ -13,13 +13,14 @@ import type {
   InterviewEvent,
   InterviewRequest,
   MessageRequest,
+  PrFeedbackRequest,
   SessionMode,
 } from "@clive/worker-protocol";
 import { Data, Effect } from "effect";
 import type { WebSocket } from "ws";
 import type { InterviewStore } from "../store/interview-store";
 import type { AnswerPayload } from "../store/types";
-import type { SessionRouter } from "./session-router";
+import type { QueueCallbacks, SessionRouter } from "./session-router";
 import type { WorkerRegistry } from "./worker-registry";
 
 /**
@@ -27,7 +28,7 @@ import type { WorkerRegistry } from "./worker-registry";
  */
 export class WorkerProxyError extends Data.TaggedError("WorkerProxyError")<{
   message: string;
-  reason: "no_workers" | "worker_not_found" | "socket_closed" | "session_not_found";
+  reason: "no_workers" | "worker_not_found" | "socket_closed" | "session_not_found" | "queued";
 }> {}
 
 /**
@@ -97,15 +98,75 @@ export class WorkerProxy extends EventEmitter {
     mode?: SessionMode,
     linearIssueUrls?: string[],
     store?: InterviewStore,
-  ): Effect.Effect<{ workerId: string }, WorkerProxyError> {
+    queueCallbacks?: QueueCallbacks,
+  ): Effect.Effect<{ workerId: string } | { queued: true; position: number }, WorkerProxyError> {
     return Effect.gen(this, function* () {
       console.log(
         `[WorkerProxy] Starting interview for thread ${threadTs}${projectId ? ` (project: ${projectId})` : ""}`,
       );
 
+      // Build a wrapper around queue callbacks that also sends the interview to the assigned worker
+      const effectiveMode = mode ?? "plan";
+      const model = effectiveMode === "build" ? "sonnet" : "opus";
+
+      const wrappedQueueCallbacks: QueueCallbacks | undefined = queueCallbacks
+        ? {
+            onAssigned: (assignedWorkerId: string) => {
+              // Worker became available — send interview request
+              const assignedWorker = this.registry.getWorker(assignedWorkerId);
+              if (!assignedWorker) {
+                console.error(`[WorkerProxy] Dequeued but worker ${assignedWorkerId} not found`);
+                queueCallbacks.onTimeout();
+                return;
+              }
+
+              const request: InterviewRequest = {
+                sessionId: threadTs,
+                threadTs,
+                channel,
+                initiatorId,
+                initialPrompt,
+                model,
+                projectId,
+                mode: effectiveMode,
+                linearIssueUrls,
+              };
+
+              this.pendingInterviews.set(threadTs, {
+                sessionId: threadTs,
+                workerId: assignedWorkerId,
+                onEvent,
+              });
+
+              if (store) {
+                store.setOriginalWorkerId(threadTs, assignedWorkerId);
+                store.setWorkerId(threadTs, assignedWorkerId);
+              }
+
+              this.sendToWorker(assignedWorker.socket, {
+                type: "start_interview",
+                payload: request,
+              });
+
+              console.log(
+                `[WorkerProxy] Dequeued interview ${threadTs} sent to worker ${assignedWorkerId}`,
+              );
+              queueCallbacks.onAssigned(assignedWorkerId);
+            },
+            onTimeout: queueCallbacks.onTimeout,
+          }
+        : undefined;
+
       // Assign to worker (with project-based routing if provided)
-      const workerId = this.router.assignSession(threadTs, projectId);
-      if (!workerId) {
+      const result = this.router.assignSession(threadTs, projectId, wrappedQueueCallbacks);
+
+      if (result === "queued") {
+        const position = this.router.getQueuePosition(threadTs);
+        console.log(`[WorkerProxy] Interview ${threadTs} queued at position ${position}`);
+        return { queued: true as const, position };
+      }
+
+      if (!result) {
         const projectMsg = projectId
           ? ` No workers have access to project "${projectId}".`
           : "";
@@ -116,6 +177,8 @@ export class WorkerProxy extends EventEmitter {
           }),
         );
       }
+
+      const workerId = result;
 
       // Get worker socket
       const worker = this.registry.getWorker(workerId);
@@ -133,10 +196,6 @@ export class WorkerProxy extends EventEmitter {
       const projectPath = projectId
         ? this.router.getProjectPathForSession(threadTs)
         : undefined;
-
-      // Get model based on mode (build uses sonnet, others use opus)
-      const effectiveMode = mode ?? "plan";
-      const model = effectiveMode === "build" ? "sonnet" : "opus";
 
       // Create interview request
       const request: InterviewRequest = {
@@ -439,6 +498,40 @@ export class WorkerProxy extends EventEmitter {
 
       return { workerId, resumed: canResume };
     });
+  }
+
+  /**
+   * Send PR feedback to a specific worker.
+   * Used by the GitHub webhook handler to route review feedback.
+   */
+  sendPrFeedback(
+    workerId: string,
+    request: PrFeedbackRequest,
+    onEvent: InterviewEventCallback,
+  ): boolean {
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) {
+      console.error(`[WorkerProxy] Worker ${workerId} not found for PR feedback`);
+      return false;
+    }
+
+    // Track as a pending interview so events are routed back
+    this.pendingInterviews.set(request.sessionId, {
+      sessionId: request.sessionId,
+      workerId,
+      onEvent,
+      claudeSessionId: request.claudeSessionId,
+    });
+
+    this.sendToWorker(worker.socket, {
+      type: "pr_feedback",
+      payload: request,
+    });
+
+    console.log(
+      `[WorkerProxy] PR feedback sent to worker ${workerId} for ${request.repo}#${request.prNumber}`,
+    );
+    return true;
   }
 
   /**

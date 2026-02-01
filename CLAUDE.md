@@ -93,6 +93,7 @@ packages/
   ├─ auth/               # Better Auth configuration
   ├─ core/               # Core business logic
   ├─ db/                 # Drizzle ORM & Supabase schema
+  ├─ memory/             # Persistent memory system with semantic search
   ├─ prompts/            # AI prompts and templates
   ├─ ui/                 # Shared UI components (shadcn/ui)
   ├─ validators/         # Shared Zod schemas
@@ -453,3 +454,87 @@ docker-compose down -v  # Reset database (deletes data)
 docker-compose up -d
 yarn db:push            # Re-apply schema
 ```
+
+## Memory System
+
+Clive has a persistent semantic memory server (`apps/memory`) that provides context continuity across all Claude Code sessions. Memory is **automatically injected** via Claude Code hooks — no manual searching required.
+
+### Architecture
+
+- **Server**: Go binary on port 8741, Dockerized with Qdrant + Ollama sidecars
+- **Storage**: SQLite (metadata + FTS5 BM25) + Qdrant (long-term vector HNSW)
+- **Embeddings**: Ollama `nomic-embed-text` (768-dim, local)
+- **Search**: Hybrid BM25 (30%) + vector (70%), long-term 1.2x boost
+- **Hooks**: 4 Claude Code hooks auto-inject/extract memories every session
+
+### How It Works (Automatic)
+
+Memory is injected and extracted automatically via hooks in `~/.claude/settings.json`:
+
+| Hook | What Happens |
+|------|-------------|
+| **SessionStart** | Loads workspace context + global memories |
+| **UserPromptSubmit** | Searches for memories relevant to each prompt |
+| **PreToolUse** | Warns about known gotchas before Write/Edit/MultiEdit |
+| **PreCompact** | Saves conversation context and runs lifecycle compaction |
+
+### Storing Memories Manually
+
+When you discover something worth remembering, store it via the API:
+
+```bash
+curl -s -X POST http://localhost:8741/memories -H 'Content-Type: application/json' -d '{
+  "workspace": "/absolute/path/to/project",
+  "content": "Description of the learning",
+  "memoryType": "WORKING_SOLUTION",
+  "tier": "short",
+  "confidence": 0.9,
+  "tags": ["relevant", "tags"],
+  "source": "manual"
+}'
+```
+
+### Memory Types
+
+| Type | Use For |
+|------|---------|
+| `WORKING_SOLUTION` | Proven approaches, commands that work |
+| `GOTCHA` | Bugs, edge cases, things that break |
+| `PATTERN` | Code conventions, recurring architectural patterns |
+| `DECISION` | Architectural choices with reasoning |
+| `FAILURE` | Approaches that didn't work (avoid repeating) |
+| `PREFERENCE` | User's stated preferences |
+| `CONTEXT` | General project information |
+| `APP_KNOWLEDGE` | Architecture, data flow, component roles, API contracts, business logic |
+
+### Short-Term vs Long-Term
+
+- **Short-term** (default): 72h TTL, stored in SQLite, auto-promoted if accessed 3+ times with confidence >= 0.85
+- **Long-term**: Permanent, stored in Qdrant with HNSW indexing, 1.2x search boost
+
+### Seeding Memory
+
+Use the `/seed-memory` skill to extract learnings from past Claude Code transcripts:
+
+```bash
+/seed-memory                    # All projects
+/seed-memory ~/.claude/projects clive  # Only clive workspace
+```
+
+### Running the Memory Server
+
+```bash
+cd apps/memory
+docker compose up -d            # Start memory + Qdrant + Ollama
+curl http://localhost:8741/health  # Verify
+```
+
+### Building (if modifying)
+
+```bash
+cd apps/memory
+CGO_ENABLED=1 go build -tags sqlite_fts5 -o bin/memory-server ./cmd/server
+CGO_ENABLED=1 go test -tags sqlite_fts5 ./...
+```
+
+**IMPORTANT**: The `-tags sqlite_fts5` flag is required for FTS5 full-text search support.

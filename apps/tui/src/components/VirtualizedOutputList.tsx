@@ -24,8 +24,9 @@ interface VirtualizedOutputListProps {
 // Configuration - tuned for terminal rendering performance
 const ESTIMATED_LINE_HEIGHT = 1.5; // Average lines per output (includes multi-line messages)
 const BUFFER_SIZE = 100; // Extra lines to render above/below viewport (larger buffer = smoother scroll)
-const SCROLL_POLL_INTERVAL = 50; // Poll scroll position every 50ms (20fps)
-const VIRTUALIZATION_THRESHOLD = 100; // Only virtualize if more than this many lines
+const SCROLL_POLL_INTERVAL = 100; // Poll scroll position every 100ms (10fps - reduces re-render churn)
+const VIRTUALIZATION_THRESHOLD = 500; // Only virtualize if more than this many lines
+const SCROLL_DELTA_THRESHOLD = 3; // Minimum scroll change (in lines) before triggering re-render
 
 export function VirtualizedOutputList({
   lines,
@@ -45,7 +46,7 @@ export function VirtualizedOutputList({
     (index: number, element: HTMLElement | null) => {
       if (element) {
         measureRefs.current.set(index, element);
-        const height = element.getBoundingClientRect?.()?.height;
+        const height = (element as any).getBoundingClientRect?.()?.height;
         if (height && height > 0) {
           itemHeights.current.set(index, height);
         }
@@ -78,7 +79,10 @@ export function VirtualizedOutputList({
 
     const handleScroll = () => {
       const currentScroll = scrollBox.scrollTop || 0;
-      if (currentScroll !== lastScrollTopRef.current) {
+      const delta = Math.abs(currentScroll - lastScrollTopRef.current);
+      // Only trigger re-render if scroll moved significantly (avoids feedback loops
+      // between stickyScroll auto-scrolling and virtualization recalculating spacers)
+      if (delta >= SCROLL_DELTA_THRESHOLD) {
         lastScrollTopRef.current = currentScroll;
         setScrollTop(currentScroll);
       }
@@ -120,16 +124,37 @@ export function VirtualizedOutputList({
     const viewportLines = Math.ceil(height / ESTIMATED_LINE_HEIGHT);
     const scrolledLines = Math.floor(scrollTop / ESTIMATED_LINE_HEIGHT);
 
-    // Determine render window with buffer
-    // Buffer extends both above and below visible area for smooth scrolling
+    // When near the bottom, render the tail directly without a bottom spacer.
+    // This avoids the feedback loop where estimated spacer heights mismatch
+    // actual content heights, causing stickyScroll to readjust, triggering
+    // re-renders, and producing visible flickering.
+    const nearBottom =
+      scrolledLines + viewportLines + BUFFER_SIZE >= totalLines;
+
+    if (nearBottom) {
+      const start = Math.max(0, totalLines - viewportLines - BUFFER_SIZE);
+
+      let topHeight = 0;
+      for (let i = 0; i < start; i++) {
+        topHeight += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;
+      }
+
+      return {
+        startIndex: start,
+        endIndex: totalLines,
+        topSpacerHeight: topHeight,
+        bottomSpacerHeight: 0,
+        visibleLines: lines.slice(start, totalLines),
+      };
+    }
+
+    // Mid-list: full virtualization with both spacers
     const start = Math.max(0, scrolledLines - BUFFER_SIZE);
     const end = Math.min(
       totalLines,
       scrolledLines + viewportLines + BUFFER_SIZE,
     );
 
-    // Calculate spacer heights using actual measured heights when available
-    // These invisible boxes fill the space of unrendered lines
     let topHeight = 0;
     for (let i = 0; i < start; i++) {
       topHeight += itemHeights.current.get(i) || ESTIMATED_LINE_HEIGHT;

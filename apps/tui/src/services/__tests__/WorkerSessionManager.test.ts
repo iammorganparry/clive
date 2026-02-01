@@ -2,8 +2,8 @@
  * WorkerSessionManager Tests
  *
  * Tests the helper functions for mode-based configuration:
- * - getSystemPromptForMode: Returns correct prompt for each mode
- * - getModelForMode: Returns correct model for each mode
+ * - getSystemPromptForMode: Loads full prompts from command files
+ * - getModelForMode: Returns default model (inherits from Claude Code)
  *
  * These are regression tests for the bug where systemPrompt was
  * referenced but not defined in createExecutionProgram.
@@ -18,77 +18,73 @@ import {
 
 describe("getSystemPromptForMode", () => {
   describe("plan mode", () => {
-    it("returns planning skill prompt", () => {
+    it("returns planning instructions from command file", () => {
       const prompt = getSystemPromptForMode("plan");
 
-      expect(prompt).toContain("Clive Plan Mode");
-      expect(prompt).toContain("/clive-plan");
-      expect(prompt).toContain("CRITICAL INSTRUCTION");
+      expect(prompt).toContain("Work Planning Agent");
+      expect(prompt).toContain("PLANNING ONLY");
     });
 
-    it("includes skill invocation instructions", () => {
+    it("includes interview protocol", () => {
       const prompt = getSystemPromptForMode("plan");
 
-      expect(prompt).toContain("Skill tool");
-      expect(prompt).toContain("Stakeholder interviews");
-      expect(prompt).toContain("Linear issue creation");
+      expect(prompt).toContain("Interview Phase");
+      expect(prompt).toContain("AskUserQuestion");
+      expect(prompt).toContain("Linear");
     });
 
-    it("includes DO NOT instructions", () => {
+    it("does not reference skill invocation", () => {
       const prompt = getSystemPromptForMode("plan");
 
-      expect(prompt).toContain("DO NOT");
-      expect(prompt).toContain("Ask questions yourself");
+      expect(prompt).not.toContain("invoke the /clive-plan skill");
+      expect(prompt).not.toContain("Skill tool NOW");
     });
   });
 
   describe("build mode", () => {
-    it("returns build skill prompt", () => {
+    it("returns build instructions from command file", () => {
       const prompt = getSystemPromptForMode("build");
 
-      expect(prompt).toContain("Clive Build Mode");
-      expect(prompt).toContain("/clive-build");
-      expect(prompt).toContain("CRITICAL INSTRUCTION");
+      expect(prompt).toContain("Task Execution Agent");
+      expect(prompt).toContain("Execution Workflow");
     });
 
-    it("includes task execution instructions", () => {
+    it("includes implementation guidance", () => {
       const prompt = getSystemPromptForMode("build");
 
-      expect(prompt).toContain("Claude Tasks");
-      expect(prompt).toContain("global learnings");
-      expect(prompt).toContain("Linear issue status");
+      expect(prompt).toContain("Implement Changes");
+      expect(prompt).toContain("Verify Implementation");
     });
 
-    it("includes DO NOT instructions", () => {
+    it("does not reference skill invocation", () => {
       const prompt = getSystemPromptForMode("build");
 
-      expect(prompt).toContain("DO NOT");
-      expect(prompt).toContain("Implement code yourself");
+      expect(prompt).not.toContain("invoke the /clive-build skill");
+      expect(prompt).not.toContain("Skill tool NOW");
     });
   });
 
   describe("review mode", () => {
-    it("returns review skill prompt", () => {
+    it("returns review instructions from command file", () => {
       const prompt = getSystemPromptForMode("review");
 
-      expect(prompt).toContain("Clive Review Mode");
-      expect(prompt).toContain("/clive-review");
-      expect(prompt).toContain("CRITICAL INSTRUCTION");
+      expect(prompt).toContain("Review Mode");
+      expect(prompt).toContain("6-Phase Review Workflow");
     });
 
-    it("includes verification instructions", () => {
+    it("includes verification phases", () => {
       const prompt = getSystemPromptForMode("review");
 
-      expect(prompt).toContain("Code review");
-      expect(prompt).toContain("Acceptance criteria");
-      expect(prompt).toContain("Browser testing");
+      expect(prompt).toContain("Code Review");
+      expect(prompt).toContain("Acceptance Criteria");
+      expect(prompt).toContain("Browser Testing");
     });
 
-    it("includes DO NOT instructions", () => {
+    it("does not reference skill invocation", () => {
       const prompt = getSystemPromptForMode("review");
 
-      expect(prompt).toContain("DO NOT");
-      expect(prompt).toContain("Review code yourself");
+      expect(prompt).not.toContain("invoke the /clive-review skill");
+      expect(prompt).not.toContain("Skill tool NOW");
     });
   });
 
@@ -118,33 +114,12 @@ describe("getSystemPromptForMode", () => {
 
 describe("getModelForMode", () => {
   describe("model selection", () => {
-    it("returns opus for plan mode", () => {
-      expect(getModelForMode("plan")).toBe("opus");
-    });
+    it("returns opus for all modes (inherits from Claude Code)", () => {
+      const modes: SessionMode[] = ["plan", "build", "review"];
 
-    it("returns sonnet for build mode", () => {
-      expect(getModelForMode("build")).toBe("sonnet");
-    });
-
-    it("returns opus for review mode", () => {
-      expect(getModelForMode("review")).toBe("opus");
-    });
-  });
-
-  describe("model rationale", () => {
-    it("uses expensive model for planning (comprehensive research)", () => {
-      // Plan mode requires thorough codebase exploration and interview design
-      expect(getModelForMode("plan")).toBe("opus");
-    });
-
-    it("uses efficient model for building (fast execution)", () => {
-      // Build mode executes predefined tasks, efficiency matters
-      expect(getModelForMode("build")).toBe("sonnet");
-    });
-
-    it("uses expensive model for review (thorough verification)", () => {
-      // Review mode needs careful analysis and gap detection
-      expect(getModelForMode("review")).toBe("opus");
+      for (const mode of modes) {
+        expect(getModelForMode(mode)).toBe("opus");
+      }
     });
   });
 
@@ -169,7 +144,7 @@ describe("Regression: systemPrompt undefined bug", () => {
    * defining it, causing: ReferenceError: systemPrompt is not defined
    *
    * The fix was to:
-   * 1. Call getSystemPromptForMode(mode) to get the prompt
+   * 1. Call getSystemPromptForMode(mode) to load from command files
    * 2. Pass it to createExecutionProgram as a parameter
    * 3. Use getModelForMode(mode) for default model selection
    */
@@ -204,7 +179,7 @@ describe("Regression: systemPrompt undefined bug", () => {
 
     expect(systemPrompt).toBeDefined();
     expect(systemPrompt.length).toBeGreaterThan(0);
-    expect(model).toBe("sonnet");
+    expect(model).toBe("opus");
   });
 
   it("review mode configuration is complete", () => {

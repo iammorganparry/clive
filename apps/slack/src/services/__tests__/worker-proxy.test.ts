@@ -269,4 +269,207 @@ describe("WorkerProxy Session Resume", () => {
       expect(store.getOriginalWorkerId("thread-123")).toBe("worker-123");
     });
   });
+
+  describe("sendPrFeedback", () => {
+    it("sends pr_feedback message to the specified worker", () => {
+      const socket = createMockSocket();
+
+      registry.register(
+        {
+          workerId: "worker-123",
+          apiToken: "test-token",
+          projects: [],
+        },
+        socket as any,
+      );
+
+      const onEvent = vi.fn();
+      const result = proxy.sendPrFeedback(
+        "worker-123",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          projectId: "proj-1",
+          feedbackType: "changes_requested",
+          feedback: [{ author: "reviewer", body: "Fix this" }],
+        },
+        onEvent,
+      );
+
+      expect(result).toBe(true);
+      expect(socket.send).toHaveBeenCalledTimes(1);
+
+      const sentMessage = JSON.parse(socket.send.mock.calls[0]?.[0]);
+      expect(sentMessage.type).toBe("pr_feedback");
+      expect(sentMessage.payload.prNumber).toBe(42);
+      expect(sentMessage.payload.claudeSessionId).toBe("claude-abc");
+      expect(sentMessage.payload.feedbackType).toBe("changes_requested");
+    });
+
+    it("tracks the feedback session in pendingInterviews", () => {
+      const socket = createMockSocket();
+
+      registry.register(
+        {
+          workerId: "worker-123",
+          apiToken: "test-token",
+          projects: [],
+        },
+        socket as any,
+      );
+
+      const onEvent = vi.fn();
+      proxy.sendPrFeedback(
+        "worker-123",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          feedbackType: "review_comment",
+          feedback: [],
+        },
+        onEvent,
+      );
+
+      // Verify event routing works by simulating a worker event
+      const event = {
+        sessionId: "feedback-session-1",
+        type: "text" as const,
+        payload: { type: "text" as const, content: "Working on it..." },
+        timestamp: new Date().toISOString(),
+      };
+
+      proxy.handleWorkerEvent(event);
+      expect(onEvent).toHaveBeenCalledWith(event);
+    });
+
+    it("returns false when worker is not found", () => {
+      const onEvent = vi.fn();
+      const result = proxy.sendPrFeedback(
+        "worker-nonexistent",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          feedbackType: "comment",
+          feedback: [],
+        },
+        onEvent,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("returns false when worker socket is not open", () => {
+      const socket = createMockSocket(0); // CONNECTING state, not OPEN
+
+      registry.register(
+        {
+          workerId: "worker-123",
+          apiToken: "test-token",
+          projects: [],
+        },
+        socket as any,
+      );
+
+      const onEvent = vi.fn();
+      const result = proxy.sendPrFeedback(
+        "worker-123",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          feedbackType: "comment",
+          feedback: [],
+        },
+        onEvent,
+      );
+
+      // sendToWorker checks readyState !== 1 (OPEN)
+      expect(socket.send).not.toHaveBeenCalled();
+    });
+
+    it("stores claudeSessionId in pending interview for event routing", () => {
+      const socket = createMockSocket();
+
+      registry.register(
+        {
+          workerId: "worker-123",
+          apiToken: "test-token",
+          projects: [],
+        },
+        socket as any,
+      );
+
+      const onEvent = vi.fn();
+      proxy.sendPrFeedback(
+        "worker-123",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          feedbackType: "changes_requested",
+          feedback: [],
+        },
+        onEvent,
+      );
+
+      // Access internal state to verify claudeSessionId is tracked
+      const pending = (proxy as any).pendingInterviews.get("feedback-session-1");
+      expect(pending).toBeDefined();
+      expect(pending.claudeSessionId).toBe("claude-abc");
+      expect(pending.workerId).toBe("worker-123");
+    });
+
+    it("cleans up pending interview on completion event", () => {
+      const socket = createMockSocket();
+
+      registry.register(
+        {
+          workerId: "worker-123",
+          apiToken: "test-token",
+          projects: [],
+        },
+        socket as any,
+      );
+
+      router.assignSession("feedback-session-1");
+
+      const onEvent = vi.fn();
+      proxy.sendPrFeedback(
+        "worker-123",
+        {
+          sessionId: "feedback-session-1",
+          prUrl: "https://github.com/owner/repo/pull/42",
+          prNumber: 42,
+          repo: "owner/repo",
+          claudeSessionId: "claude-abc",
+          feedbackType: "changes_requested",
+          feedback: [],
+        },
+        onEvent,
+      );
+
+      // Simulate completion
+      proxy.handleWorkerEvent({
+        sessionId: "feedback-session-1",
+        type: "complete",
+        payload: { type: "complete" },
+        timestamp: new Date().toISOString(),
+      });
+
+      expect((proxy as any).pendingInterviews.has("feedback-session-1")).toBe(false);
+    });
+  });
 });

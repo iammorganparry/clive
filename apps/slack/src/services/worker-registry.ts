@@ -23,6 +23,7 @@ interface RegisteredWorker {
   hostname?: string;
   projects: WorkerProject[];
   defaultProject?: string;
+  maxConcurrentSessions: number;
   activeSessions: Set<string>;
   socket: WebSocket;
   connectedAt: Date;
@@ -78,6 +79,7 @@ export class WorkerRegistry extends EventEmitter {
       hostname,
       projects,
       defaultProject,
+      maxConcurrentSessions: registration.maxConcurrentSessions ?? 1,
       activeSessions: new Set(),
       socket,
       connectedAt: new Date(),
@@ -190,11 +192,13 @@ export class WorkerRegistry extends EventEmitter {
   }
 
   /**
-   * Get all available workers (ready status)
+   * Get all available workers (ready or busy but below capacity)
    */
   getAvailableWorkers(): RegisteredWorker[] {
     return Array.from(this.workers.values()).filter(
-      (w) => w.status === "ready",
+      (w) =>
+        w.status === "ready" ||
+        (w.status === "busy" && w.activeSessions.size < w.maxConcurrentSessions),
     );
   }
 
@@ -241,7 +245,11 @@ export class WorkerRegistry extends EventEmitter {
     projectQuery: string,
   ): RegisteredWorker | undefined {
     const workers = this.getWorkersForProject(projectQuery);
-    const available = workers.filter((w) => w.status === "ready");
+    const available = workers.filter(
+      (w) =>
+        w.status === "ready" ||
+        (w.status === "busy" && w.activeSessions.size < w.maxConcurrentSessions),
+    );
 
     if (available.length === 0) {
       return undefined;
@@ -292,7 +300,7 @@ export class WorkerRegistry extends EventEmitter {
     const worker = this.workers.get(workerId);
     if (worker) {
       worker.activeSessions.add(sessionId);
-      if (worker.status === "ready") {
+      if (worker.activeSessions.size >= worker.maxConcurrentSessions && worker.status !== "busy") {
         worker.status = "busy";
         this.emit("workerStatusChanged", workerId, "busy");
       }
@@ -306,7 +314,7 @@ export class WorkerRegistry extends EventEmitter {
     const worker = this.workers.get(workerId);
     if (worker) {
       worker.activeSessions.delete(sessionId);
-      if (worker.activeSessions.size === 0 && worker.status === "busy") {
+      if (worker.activeSessions.size < worker.maxConcurrentSessions && worker.status === "busy") {
         worker.status = "ready";
         this.emit("workerStatusChanged", workerId, "ready");
       }

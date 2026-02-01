@@ -1,6 +1,26 @@
 {
   "issueTracker": "linear",
   "linear": {
-    "teamID": "820895fa-6dca-4faa-85be-81106080397a"
+    "teamID": "296f8801-a4a3-46d8-a391-b690a7c5ecbb"
+  },
+  "memory": {
+    "enabled": true,
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "search": {
+      "maxResults": 6,
+      "minScore": 0.35,
+      "vectorWeight": 0.7,
+      "bm25Weight": 0.3
+    },
+    "indexing": {
+      "chunkSize": 400,
+      "chunkOverlap": 80,
+      "debounceMs": 1500
+    },
+    "compaction": {
+      "memoryFlush": true,
+      "softThresholdTokens": 4000
+    }
   }
 }

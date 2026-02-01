@@ -28,6 +28,11 @@ export interface CliManagerOptions {
   systemPrompt?: string;
   mode?: "plan" | "build" | "review";
   resumeSessionId?: string;
+  permissionMode?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  epicId?: string;
+  epicIdentifier?: string;
 }
 
 export class CliManager extends EventEmitter {
@@ -43,7 +48,7 @@ export class CliManager extends EventEmitter {
   private toolInputs = new Map<string, any>();
 
   // Track active agent session for persistent modes
-  private activeMode: "plan" | "build" | null = null;
+  private activeMode: "plan" | "build" | "review" | null = null;
 
   // Track pending question to keep handle alive
   private pendingQuestionId: string | null = null;
@@ -53,6 +58,12 @@ export class CliManager extends EventEmitter {
 
   // Track which tool results have already been sent to prevent duplicates
   private sentToolResults = new Set<string>();
+
+  // Accumulation buffer for completion marker detection across streaming chunks
+  private accumulatedText = "";
+
+  // Set when stopForIteration() kills the process; suppresses the expected SIGTERM error
+  private stoppingForIteration = false;
 
   // Track if we've already sent a tool_result this turn (only ONE per turn to prevent 400 errors)
   private hasAnsweredQuestionThisTurn = false;
@@ -113,15 +124,30 @@ export class CliManager extends EventEmitter {
       );
       debugLog("CliManager", "Execution completed successfully");
     } catch (error) {
-      debugLog("CliManager", "Execution error", { error: String(error) });
-      this.emit("output", {
-        text: `Execution error: ${error}`,
-        type: "stderr",
-      } as OutputLine);
+      debugLog("CliManager", "Execution error", {
+        error: String(error),
+        stoppingForIteration: this.stoppingForIteration,
+      });
+      // Suppress expected SIGTERM errors when stopForIteration() killed the process
+      if (!this.stoppingForIteration) {
+        this.emit("output", {
+          text: `Execution error: ${error}`,
+          type: "stderr",
+        } as OutputLine);
+      }
     } finally {
+      this.stoppingForIteration = false;
+
       // Stop conversation logging
       this.conversationLogger.stop();
       debugLog("CliManager", "Stopped conversation logging");
+
+      // Always emit "complete" so listeners (e.g. the build loop) can advance.
+      // When stopForIteration() kills the process, SIGTERM causes a non-zero
+      // exit code → emit.fail() → Stream.runForEach throws → the generator
+      // never reaches the end of the stream.
+      // Emitting here in finally ensures the build loop always gets notified.
+      this.emit("complete");
     }
   }
 
@@ -139,8 +165,13 @@ export class CliManager extends EventEmitter {
         prompt,
         systemPrompt: options.systemPrompt,
         workspaceRoot: options.workspaceRoot,
-        model: options.model || "sonnet",
+        model: options.model,
         resumeSessionId: options.resumeSessionId,
+        permissionMode: options.permissionMode,
+        allowedTools: options.allowedTools,
+        disallowedTools: options.disallowedTools,
+        epicId: options.epicId,
+        epicIdentifier: options.epicIdentifier,
       });
 
       self.currentHandle = handle;
@@ -178,14 +209,12 @@ export class CliManager extends EventEmitter {
         ),
       );
 
-      // Execution complete
-      // Keep handle alive if:
-      // 1. In persistent modes (plan/build)
-      // 2. There's a pending question waiting for user response
+      // Clean up handle if not in a persistent mode with pending interaction.
+      // The "complete" event is emitted from the execute() finally block
+      // so it fires even when the stream fails (e.g. SIGTERM from stopForIteration).
       if (!self.activeMode && !self.pendingQuestionId) {
         self.currentHandle = null;
       }
-      self.emit("complete");
     };
   }
 
@@ -211,6 +240,15 @@ export class CliManager extends EventEmitter {
         this.toolTimings.set(event.id, new Date());
         this.toolNames.set(event.id, event.name);
         this.toolInputs.set(event.id, event.input);
+
+        // Detect Linear issue updates and emit event for sidebar sync
+        if (event.name === "mcp__linear__update_issue") {
+          const input = event.input as Record<string, unknown>;
+          this.emit("linear-updated", {
+            issueId: input?.id,
+            state: input?.state,
+          });
+        }
 
         // Check for special tool types
         if (event.name === "AskUserQuestion") {
@@ -354,12 +392,14 @@ export class CliManager extends EventEmitter {
           : undefined;
 
         // Generate file diff if applicable
-        const diff = this.diffDetector.generateDiff(toolName, toolInput);
-        if (diff) {
+        const diffData = this.diffDetector.generateDiff(toolName, toolInput);
+        if (diffData) {
           outputs.push({
-            text: diff,
+            text: `${diffData.operation === "create" ? "Create" : "Edit"}(${diffData.fileName}) +${diffData.stats.additions}/-${diffData.stats.deletions}`,
             type: "file_diff",
             toolUseID: event.id,
+            diffData,
+            duration,
           });
         }
 
@@ -400,6 +440,41 @@ export class CliManager extends EventEmitter {
           type: "assistant",
         });
 
+        // Detect completion markers in streaming text
+        this.accumulatedText += event.content;
+
+        if (
+          this.accumulatedText.includes(
+            "<promise>ALL_TASKS_COMPLETE</promise>",
+          )
+        ) {
+          debugLog("CliManager", "ALL_TASKS_COMPLETE marker detected — stopping process");
+          this.accumulatedText = "";
+          this.emit("all-tasks-complete");
+          // Kill the process so the stream ends and "complete" fires.
+          // Use stopForIteration to avoid emitting "killed" (which resets loop state).
+          this.stopForIteration();
+        } else if (
+          this.accumulatedText.includes("<promise>TASK_COMPLETE</promise>")
+        ) {
+          debugLog("CliManager", "TASK_COMPLETE marker detected — stopping process");
+          this.accumulatedText = "";
+          this.emit("task-complete");
+          this.stopForIteration();
+        } else if (
+          this.accumulatedText.includes("<promise>REVIEW_COMPLETE</promise>")
+        ) {
+          debugLog("CliManager", "REVIEW_COMPLETE marker detected — stopping process");
+          this.accumulatedText = "";
+          this.emit("review-complete");
+          this.stopForIteration();
+        }
+
+        // Keep buffer bounded to handle markers spanning chunks
+        if (this.accumulatedText.length > 200) {
+          this.accumulatedText = this.accumulatedText.slice(-100);
+        }
+
         // Track assistant response in conversation history
         const lastMessage =
           this.conversationHistory[this.conversationHistory.length - 1];
@@ -434,24 +509,18 @@ export class CliManager extends EventEmitter {
       }
 
       case "done": {
-        // Clear current turn questions - any answers sent after this are invalid
-        if (this.currentTurnQuestionIds.size > 0) {
-          debugLog(
-            "CliManager",
-            "Turn ended with unanswered questions - clearing",
-            {
-              questionIds: Array.from(this.currentTurnQuestionIds),
-            },
-          );
-          this.currentTurnQuestionIds.clear();
-
-          // Clear pending question to unblock UI
-          this.pendingQuestionId = null;
-        }
+        // NOTE: Do NOT clear currentTurnQuestionIds or pendingQuestionId here.
+        // A done event with stop_reason="tool_use" fires when Claude requests a
+        // tool result (e.g. AskUserQuestion). Clearing question state at this
+        // point would prevent the user from answering. These are already cleaned
+        // up by sendToolResult(), clear(), and kill().
 
         // Reset turn flag - allow answering questions in next turn
         this.hasAnsweredQuestionThisTurn = false;
-        debugLog("CliManager", "Turn ended - reset question answer flag");
+        debugLog("CliManager", "Turn ended - reset question answer flag", {
+          pendingQuestionId: this.pendingQuestionId,
+          currentTurnQuestions: Array.from(this.currentTurnQuestionIds),
+        });
 
         outputs.push({
           text: "",
@@ -663,6 +732,19 @@ export class CliManager extends EventEmitter {
       throw new Error("No active CLI handle");
     }
 
+    // Block free-text messages while a question (AskUserQuestion) is pending.
+    // Sending a plain user message while a tool_use is awaiting a tool_result
+    // causes the Claude API to receive duplicate tool_result blocks (the message
+    // gets interpreted as a response, then the actual answer sends another),
+    // resulting in a 400 error that puts the conversation out of sync.
+    if (this.pendingQuestionId) {
+      debugLog("CliManager", "Rejecting message — question pending", {
+        pendingQuestionId: this.pendingQuestionId,
+        message: message.substring(0, 50),
+      });
+      return;
+    }
+
     // Add message to history
     this.conversationHistory.push({ role: "user", content: message });
 
@@ -694,7 +776,7 @@ export class CliManager extends EventEmitter {
   /**
    * Get the current active mode
    */
-  getActiveMode(): "plan" | "build" | null {
+  getActiveMode(): "plan" | "build" | "review" | null {
     return this.hasActiveSession() ? this.activeMode : null;
   }
 
@@ -708,6 +790,23 @@ export class CliManager extends EventEmitter {
       this.activeMode = null;
       this.pendingQuestionId = null;
       this.emit("killed");
+    }
+  }
+
+  /**
+   * Stop the CLI process without emitting "killed" event.
+   * Used by the build loop when a completion marker is detected —
+   * the process needs to stop but the loop should continue, not reset.
+   */
+  stopForIteration(): void {
+    if (this.currentHandle) {
+      debugLog("CliManager", "Stopping process for iteration (no kill event)");
+      this.stoppingForIteration = true;
+      this.currentHandle.kill();
+      this.currentHandle = null;
+      this.activeMode = null;
+      this.pendingQuestionId = null;
+      // Do NOT emit "killed" — "complete" is emitted from the execute() finally block
     }
   }
 
@@ -732,6 +831,7 @@ export class CliManager extends EventEmitter {
     this.currentTurnQuestionIds.clear();
     this.sentToolResults.clear();
     this.hasAnsweredQuestionThisTurn = false;
+    this.accumulatedText = "";
   }
 
   /**

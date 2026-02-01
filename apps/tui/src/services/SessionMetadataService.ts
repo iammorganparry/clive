@@ -14,6 +14,9 @@ import { Context, Data, Effect, Layer } from "effect";
 
 export interface SessionMetadata {
   sessionId: string;
+  mode?: "plan" | "build" | "review";
+  project?: string; // Workspace path (for immediate conversation visibility)
+  display?: string; // Initial prompt (for immediate conversation visibility)
   linearProjectId?: string;
   linearProjectIdentifier?: string; // e.g., "CLIVE-123"
   linearTaskId?: string;
@@ -200,6 +203,16 @@ class SessionMetadataServiceImpl {
       linearProjectId: projectId,
       linearProjectIdentifier: projectIdentifier,
     });
+  }
+
+  /**
+   * Set the mode (plan/build/review) for a session
+   */
+  setMode(
+    sessionId: string,
+    mode: "plan" | "build" | "review",
+  ): Effect.Effect<SessionMetadata, SessionMetadataError> {
+    return this.setMetadata(sessionId, { mode });
   }
 
   /**

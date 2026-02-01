@@ -320,8 +320,9 @@ describe("useWorkerConnection", () => {
 
       const event = {
         sessionId: "session-123",
-        type: "assistant" as const,
-        content: "Hello",
+        type: "text" as const,
+        payload: { type: "text" as const, content: "Hello" },
+        timestamp: new Date().toISOString(),
       };
 
       act(() => {

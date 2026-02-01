@@ -20,6 +20,7 @@ export interface Conversation {
   timestamp: number;
   slug?: string; // Human-readable name from conversation file
   gitBranch?: string;
+  mode?: "plan" | "build" | "review";
   linearProjectId?: string;
   linearProjectIdentifier?: string;
   linearTaskId?: string;
@@ -122,7 +123,7 @@ class ConversationServiceImpl {
 
       // Process in reverse order (newest first)
       for (let i = historyEntries.length - 1; i >= 0; i--) {
-        const entry = historyEntries[i];
+        const entry = historyEntries[i]!;
 
         // Only keep the first (earliest) entry for each session
         // which represents the initial prompt
@@ -135,6 +136,11 @@ class ConversationServiceImpl {
           });
         }
       }
+
+      // Inject sessions from SessionMetadataService that aren't yet in history.jsonl.
+      // This ensures conversations appear immediately when execution starts,
+      // before Claude CLI writes to history.jsonl.
+      yield* this.injectPendingSessions(sessionMap);
 
       // Convert to array and sort by timestamp (newest first)
       const conversations = Array.from(sessionMap.values())
@@ -232,14 +238,52 @@ class ConversationServiceImpl {
         const metadata = yield* metadataEffect;
 
         if (metadata) {
-          // Merge Linear metadata into conversation
+          // Merge session metadata into conversation
+          conv.mode = metadata.mode;
           conv.linearProjectId = metadata.linearProjectId;
           conv.linearProjectIdentifier = metadata.linearProjectIdentifier;
           conv.linearTaskId = metadata.linearTaskId;
           conv.linearTaskIdentifier = metadata.linearTaskIdentifier;
         }
       }
-    });
+    }).pipe(Effect.provide(SessionMetadataService.Default));
+  }
+
+  /**
+   * Inject sessions from SessionMetadataService that aren't yet in history.jsonl.
+   * When a /plan or /build session starts, we save metadata immediately.
+   * This makes the conversation visible in the selection view before Claude CLI
+   * writes to history.jsonl (which can lag several seconds behind).
+   */
+  private injectPendingSessions(
+    sessionMap: Map<string, Conversation>,
+  ): Effect.Effect<void, never> {
+    return Effect.gen(this, function* () {
+      const metadataService = yield* SessionMetadataService;
+      const allMetadata = yield* metadataService
+        .getAllMetadata()
+        .pipe(Effect.catchAll(() => Effect.succeed({} as Record<string, import("./SessionMetadataService").SessionMetadata>)));
+
+      for (const [sessionId, metadata] of Object.entries(allMetadata)) {
+        // Skip sessions already in history.jsonl
+        if (sessionMap.has(sessionId)) continue;
+
+        // Only inject sessions that have project and display (set by startExecution)
+        if (!metadata.project || !metadata.display) continue;
+
+        sessionMap.set(sessionId, {
+          sessionId,
+          project: metadata.project,
+          display: metadata.display,
+          timestamp: metadata.createdAt,
+          mode: metadata.mode,
+          linearProjectId: metadata.linearProjectId,
+          linearProjectIdentifier: metadata.linearProjectIdentifier,
+          linearTaskId: metadata.linearTaskId,
+          linearTaskIdentifier: metadata.linearTaskIdentifier,
+        });
+      }
+    }).pipe(Effect.provide(SessionMetadataService.Default));
   }
 
   /**

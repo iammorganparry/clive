@@ -4,21 +4,35 @@ import { useCommandHistory } from "../hooks/useCommandHistory";
 import { usePaste } from "../hooks/usePaste";
 import { OneDarkPro } from "../styles/theme";
 import type { QuestionData } from "../types";
-import { QuestionPanel } from "./QuestionPanel";
+import { QuestionPanel, calculateQuestionHeight } from "./QuestionPanel";
 import { type CommandSuggestion, SuggestionsPanel } from "./SuggestionsPanel";
 
-// Available commands
-const COMMANDS: CommandSuggestion[] = [
-  { cmd: "/plan", desc: "Create a work plan (enter plan mode)" },
-  { cmd: "/build", desc: "Execute work plan (enter build mode)" },
-  { cmd: "/resume", desc: "Resume a previous conversation" },
-  { cmd: "/exit", desc: "Exit current mode" },
-  { cmd: "/add", desc: "Add task to epic (build mode)" },
+// Available commands with optional mode visibility rules
+const COMMANDS: (CommandSuggestion & {
+  /** Modes where this command should be hidden */
+  hideInModes?: Array<"none" | "plan" | "build">;
+  /** Modes where this command should be shown (if set, only shown in these) */
+  showInModes?: Array<"none" | "plan" | "build">;
+})[] = [
+  { cmd: "/plan", desc: "Create a work plan (enter plan mode)", hideInModes: ["plan", "build"] },
+  { cmd: "/build", desc: "Execute work plan (enter build mode)", hideInModes: ["build"] },
+  { cmd: "/resume", desc: "Resume a previous conversation", hideInModes: ["plan", "build"] },
+  { cmd: "/exit", desc: "Exit current mode", showInModes: ["plan", "build"] },
+  { cmd: "/add", desc: "Add task to epic (build mode)", showInModes: ["build"] },
   { cmd: "/cancel", desc: "Cancel running process" },
   { cmd: "/clear", desc: "Clear output" },
   { cmd: "/status", desc: "Show current status" },
   { cmd: "/help", desc: "Show help" },
 ];
+
+/** Filter commands based on the current active mode */
+function getVisibleCommands(mode: "none" | "plan" | "build"): CommandSuggestion[] {
+  return COMMANDS.filter((c) => {
+    if (c.hideInModes?.includes(mode)) return false;
+    if (c.showInModes && !c.showInModes.includes(mode)) return false;
+    return true;
+  });
+}
 
 interface DynamicInputProps {
   width: number;
@@ -33,6 +47,7 @@ interface DynamicInputProps {
   onQuestionCancel?: () => void;
   rawInputMode?: boolean; // When true, forward all keys directly to PTY
   onRawKeyPress?: (key: string) => void; // Handler for raw key events
+  mode?: "none" | "plan" | "build"; // Current active mode for contextual suggestions
 }
 
 export function DynamicInput({
@@ -48,6 +63,7 @@ export function DynamicInput({
   onQuestionCancel,
   rawInputMode = false,
   onRawKeyPress,
+  mode = "none",
 }: DynamicInputProps) {
   const [value, setValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -63,10 +79,19 @@ export function DynamicInput({
     }
   }, [preFillValue, inputFocused]);
 
-  // Filter suggestions based on input (disabled in raw input mode)
+  // Clear displayed text when input becomes disabled (e.g., question panel shown).
+  // Without this, the previously submitted command text can linger in the input.
+  useEffect(() => {
+    if (disabled) {
+      setValue("");
+    }
+  }, [disabled]);
+
+  // Filter suggestions based on input and current mode (disabled in raw input mode)
+  const visibleCommands = getVisibleCommands(mode);
   const filteredSuggestions =
     !rawInputMode && value.startsWith("/") && !value.includes(" ")
-      ? COMMANDS.filter((c) => c.cmd.startsWith(value))
+      ? visibleCommands.filter((c) => c.cmd.startsWith(value))
       : [];
 
   // Show suggestions when typing "/" commands (disabled in raw input mode)
@@ -229,7 +254,9 @@ export function DynamicInput({
 
   // Calculate dynamic height
   const baseHeight = 3;
-  const questionHeight = pendingQuestion ? Math.min(25, 20) : 0; // Cap at 25, typical height ~20
+  const questionHeight = pendingQuestion
+    ? calculateQuestionHeight(pendingQuestion)
+    : 0;
   const suggestionsHeight = showSuggestions
     ? Math.min(filteredSuggestions.length + 2, 8)
     : 0;
@@ -248,6 +275,7 @@ export function DynamicInput({
       {/* Question Panel (appears above input) */}
       {pendingQuestion && onQuestionAnswer && (
         <QuestionPanel
+          key={pendingQuestion.toolUseID}
           width={width - 2}
           height={questionHeight}
           question={pendingQuestion}
@@ -293,7 +321,6 @@ export function DynamicInput({
             value={rawInputMode ? "" : value}
             placeholder={placeholder}
             focused={inputFocused && !disabled && !rawInputMode}
-            disabled={disabled || rawInputMode}
             onInput={handleInput}
             onSubmit={handleSubmit}
             style={{

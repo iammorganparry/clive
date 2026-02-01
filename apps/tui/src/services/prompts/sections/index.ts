@@ -2,7 +2,9 @@ import type { Effect } from "effect";
 import type { BuildConfig, PromptBuildError } from "../types";
 import { commandFile } from "./command-file";
 import { conversationContext } from "./conversation-context";
+import { epicContext } from "./epic-context";
 import { issueTrackerContext } from "./issue-tracker-context";
+import { iterationContext } from "./iteration-context";
 import { terminalFormatting } from "./terminal-formatting";
 import { workspaceContext } from "./workspace-context";
 
@@ -19,7 +21,9 @@ export type Section = (
 export const SectionId = {
   CommandFile: "COMMAND_FILE",
   WorkspaceContext: "WORKSPACE_CONTEXT",
+  EpicContext: "EPIC_CONTEXT",
   IssueTrackerContext: "ISSUE_TRACKER_CONTEXT",
+  IterationContext: "ITERATION_CONTEXT",
   TerminalFormatting: "TERMINAL_FORMATTING",
   ConversationContext: "CONVERSATION_CONTEXT",
 } as const;
@@ -32,7 +36,9 @@ export type SectionId = (typeof SectionId)[keyof typeof SectionId];
 export const sections: Record<SectionId, Section> = {
   [SectionId.CommandFile]: commandFile,
   [SectionId.WorkspaceContext]: workspaceContext,
+  [SectionId.EpicContext]: epicContext,
   [SectionId.IssueTrackerContext]: issueTrackerContext,
+  [SectionId.IterationContext]: iterationContext,
   [SectionId.TerminalFormatting]: terminalFormatting,
   [SectionId.ConversationContext]: conversationContext,
 };

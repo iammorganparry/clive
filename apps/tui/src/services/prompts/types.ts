@@ -23,6 +23,26 @@ export interface BuildConfig {
    * Previous conversation context
    */
   readonly previousContext?: string;
+
+  /**
+   * Linear issue UUID of active epic
+   */
+  readonly epicId?: string;
+
+  /**
+   * Linear issue identifier (e.g. "CLIVE-123") for branch naming
+   */
+  readonly epicIdentifier?: string;
+
+  /**
+   * Current iteration number (1-based) for build loop
+   */
+  readonly iteration?: number;
+
+  /**
+   * Maximum iterations before stopping the build loop
+   */
+  readonly maxIterations?: number;
 }
 
 /**

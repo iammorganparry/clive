@@ -27,11 +27,37 @@ export interface Session {
   linearData?: LinearIssue;
 }
 
+export interface DiffLine {
+  type: "add" | "remove" | "context";
+  content: string;
+  oldLineNumber?: number;
+  newLineNumber?: number;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+export interface FileDiffData {
+  filePath: string;
+  fileName: string;
+  operation: "create" | "edit";
+  hunks: DiffHunk[];
+  stats: { additions: number; deletions: number; totalLines?: number };
+  newFilePreview?: string[];
+  previewTruncated?: boolean;
+}
+
 export interface OutputLine {
   text: string;
   type:
     | "stdout"
     | "stderr"
+    | "error"
     | "tool_call"
     | "tool_result"
     | "assistant"
@@ -51,6 +77,7 @@ export interface OutputLine {
   closeStdin?: boolean;
   question?: QuestionData;
   debugInfo?: string;
+  diffData?: FileDiffData;
 
   // Metadata
   duration?: number; // milliseconds

@@ -79,9 +79,12 @@ export function SetupView({
                 padding={1}
                 marginBottom={1}
               >
-                <text fg={option.color} bold={isSelected}>
-                  {isSelected ? "▸ " : "  "}
-                  {option.name}
+                <text fg={option.color}>
+                  {isSelected ? (
+                    <b>{"▸ "}{option.name}</b>
+                  ) : (
+                    <>{"  "}{option.name}</>
+                  )}
                 </text>
                 <text fg={OneDarkPro.foreground.muted}>
                   {"  "}
