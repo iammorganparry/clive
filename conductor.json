@@ -1,0 +1,4 @@
+{
+  "setup": "yarn install && curl -sf http://localhost:8741/health > /dev/null || echo 'WARNING: Memory server not running. Start with: cd apps/memory && docker compose up -d'",
+  "run": "yarn dev"
+}

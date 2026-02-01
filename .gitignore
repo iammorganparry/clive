@@ -74,3 +74,6 @@ docs/repos
 .claude/.cancel-test-loop
 .claude/current-plan.md
 .claude/progress.txt
+
+# Conductor
+.context/
