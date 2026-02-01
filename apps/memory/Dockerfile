@@ -17,7 +17,6 @@ ENV OLLAMA_BASE_URL=http://ollama:11434
 ENV QDRANT_URL=http://qdrant:6333
 ENV PORT=8741
 EXPOSE 8741
-VOLUME ["/data"]
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
   CMD curl -f http://localhost:8741/health || exit 1
 ENTRYPOINT ["memory-server"]
