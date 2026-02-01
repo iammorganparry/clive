@@ -647,6 +647,7 @@ function makeWorkerClient(
                   ws,
                   isConnecting: false,
                   reconnectAttempts: 0,
+                  status: "ready" as WorkerStatus,
                 }));
                 yield* register().pipe(Effect.catchAll(() => Effect.void));
                 yield* startHeartbeat();
