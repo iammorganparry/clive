@@ -46,6 +46,7 @@ func NewRouter(
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(BearerAuth(apiKey))
+		r.Use(NamespaceExtractor)
 
 		r.Route("/memories", func(r chi.Router) {
 			r.Get("/", memoryH.List)

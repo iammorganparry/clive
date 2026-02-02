@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Shared utilities for Claude Code memory hooks.
 
+# Source env file if it exists (written by setup.sh or install.sh)
+# Check plugin root first, then fallback to global location.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/env" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/env"
+elif [ -f "${HOME}/.claude/memory/env" ]; then
+  source "${HOME}/.claude/memory/env"
+fi
+
 MEMORY_SERVER="${CLIVE_MEMORY_URL:-http://localhost:8741}"
 MEMORY_API_KEY="${CLIVE_MEMORY_API_KEY:-}"
+CLIVE_NAMESPACE="${CLIVE_NAMESPACE:-}"
 HOOK_TIMEOUT=5  # seconds
 
 # Read stdin JSON once and cache it. Call early in each hook.
@@ -50,6 +59,11 @@ api_call() {
   # Add auth header if API key is set
   if [ -n "$MEMORY_API_KEY" ]; then
     args+=(-H "Authorization: Bearer ${MEMORY_API_KEY}")
+  fi
+
+  # Add namespace header if set
+  if [ -n "$CLIVE_NAMESPACE" ]; then
+    args+=(-H "X-Clive-Namespace: ${CLIVE_NAMESPACE}")
   fi
 
   if [ -n "$body" ]; then

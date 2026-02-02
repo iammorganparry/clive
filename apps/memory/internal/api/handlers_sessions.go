@@ -9,6 +9,7 @@ import (
 	"github.com/anthropics/clive/apps/memory/internal/memory"
 	"github.com/anthropics/clive/apps/memory/internal/models"
 	"github.com/anthropics/clive/apps/memory/internal/sessions"
+	"github.com/anthropics/clive/apps/memory/internal/store"
 )
 
 // SessionHandler handles session-related HTTP requests.
@@ -41,6 +42,7 @@ func (h *SessionHandler) Summarize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if req.SessionID == "" {
 		writeError(w, http.StatusBadRequest, "sessionId is required")
@@ -52,7 +54,7 @@ func (h *SessionHandler) Summarize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure session exists
-	workspaceID := models.GlobalWorkspaceID
+	workspaceID := store.NamespacedGlobalID(req.Namespace)
 	if req.Workspace != "" {
 		// Use service to resolve workspace
 		// For simplicity, resolve through session store
@@ -84,6 +86,7 @@ func (h *SessionHandler) Summarize(w http.ResponseWriter, r *http.Request) {
 
 	// Store as SESSION_SUMMARY memory
 	storeReq := &models.StoreRequest{
+		Namespace:  req.Namespace,
 		Workspace:  req.Workspace,
 		Content:    summary,
 		MemoryType: models.MemoryTypeSessionSummary,

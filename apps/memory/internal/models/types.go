@@ -72,6 +72,7 @@ const (
 
 // StoreRequest is the payload for POST /memories.
 type StoreRequest struct {
+	Namespace        string           `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	Workspace        string           `json:"workspace"`
 	Content          string           `json:"content"`
 	MemoryType       MemoryType       `json:"memoryType"`
@@ -98,6 +99,7 @@ type StoreResponse struct {
 
 // SearchRequest is the payload for POST /memories/search.
 type SearchRequest struct {
+	Namespace      string           `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	Workspace      string           `json:"workspace"`
 	Query          string           `json:"query"`
 	MaxResults     int              `json:"maxResults"`
@@ -141,6 +143,7 @@ type SearchMeta struct {
 
 // BulkStoreRequest is the payload for POST /memories/bulk.
 type BulkStoreRequest struct {
+	Namespace string         `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	Workspace string         `json:"workspace"`
 	Memories  []BulkMemory   `json:"memories"`
 	SessionID string         `json:"sessionId"`
@@ -165,6 +168,7 @@ type BulkStoreResponse struct {
 
 // CompactRequest is the payload for POST /memories/compact.
 type CompactRequest struct {
+	Namespace string `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	Workspace string `json:"workspace"`
 }
 
@@ -302,6 +306,7 @@ type SearchIndexResponse struct {
 
 // TimelineRequest is the payload for POST /memories/timeline (Layer 2).
 type TimelineRequest struct {
+	Namespace    string `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	MemoryID     string `json:"memoryId"`
 	Workspace    string `json:"workspace"`
 	WindowMinutes int   `json:"windowMinutes"`
@@ -340,6 +345,7 @@ type Session struct {
 
 // SummarizeRequest is the payload for POST /sessions/summarize.
 type SummarizeRequest struct {
+	Namespace  string `json:"-"` // Set from X-Clive-Namespace header, not JSON body
 	SessionID  string `json:"sessionId"`
 	Workspace  string `json:"workspace"`
 	Transcript string `json:"transcript"`

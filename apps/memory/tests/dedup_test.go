@@ -20,7 +20,7 @@ func TestDeduplicator(t *testing.T) {
 	ws := store.NewWorkspaceStore(db)
 	dedup := memoryPkg.NewDeduplicator(ms, 0.92)
 
-	wsID, _ := ws.EnsureWorkspace("/tmp/dedup-test")
+	wsID, _ := ws.EnsureWorkspace("default", "/tmp/dedup-test")
 
 	t.Run("detects exact content hash duplicate", func(t *testing.T) {
 		content := "Use npm ci instead of npm install in CI"

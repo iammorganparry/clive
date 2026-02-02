@@ -17,13 +17,15 @@ const protocolVersion = "2024-11-05"
 // Server implements an MCP stdio server that delegates to the HTTP memory server.
 type Server struct {
 	serverURL string
+	namespace string
 	client    *http.Client
 }
 
 // NewServer creates a new MCP server.
-func NewServer(serverURL string) *Server {
+func NewServer(serverURL, namespace string) *Server {
 	return &Server{
 		serverURL: strings.TrimRight(serverURL, "/"),
+		namespace: namespace,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -215,7 +217,16 @@ func (s *Server) httpPost(path string, body interface{}) (string, bool) {
 	}
 
 	url := s.serverURL + path
-	resp, err := s.client.Post(url, "application/json", bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Sprintf("request error: %s", err), true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.namespace != "" {
+		req.Header.Set("X-Clive-Namespace", s.namespace)
+	}
+
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Sprintf("HTTP error: %s", err), true
 	}

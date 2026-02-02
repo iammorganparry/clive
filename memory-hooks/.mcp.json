@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "clive-memory": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/memory-mcp",
+      "env": {
+        "MEMORY_SERVER_URL": "https://memory-production-23b6.up.railway.app"
+      }
+    }
+  }
+}

@@ -13,7 +13,9 @@ func main() {
 		serverURL = "http://localhost:8741"
 	}
 
-	server := mcp.NewServer(serverURL)
+	namespace := os.Getenv("CLIVE_NAMESPACE")
+
+	server := mcp.NewServer(serverURL, namespace)
 	if err := server.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp server error: %s\n", err)
 		os.Exit(1)

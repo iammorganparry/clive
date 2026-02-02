@@ -33,7 +33,7 @@ func TestWorkspaceStore(t *testing.T) {
 	ws := store.NewWorkspaceStore(db)
 
 	t.Run("EnsureWorkspace creates new workspace", func(t *testing.T) {
-		id, err := ws.EnsureWorkspace("/tmp/test-project")
+		id, err := ws.EnsureWorkspace("default","/tmp/test-project")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -42,7 +42,7 @@ func TestWorkspaceStore(t *testing.T) {
 		}
 
 		// Same path should return same ID
-		id2, err := ws.EnsureWorkspace("/tmp/test-project")
+		id2, err := ws.EnsureWorkspace("default","/tmp/test-project")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -52,7 +52,7 @@ func TestWorkspaceStore(t *testing.T) {
 	})
 
 	t.Run("GetWorkspace returns workspace", func(t *testing.T) {
-		id := store.WorkspaceID("/tmp/test-project")
+		id := store.WorkspaceID("default", "/tmp/test-project")
 		w, err := ws.GetWorkspace(id)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -66,7 +66,7 @@ func TestWorkspaceStore(t *testing.T) {
 	})
 
 	t.Run("ListWorkspaces returns all", func(t *testing.T) {
-		_, _ = ws.EnsureWorkspace("/tmp/another-project")
+		_, _ = ws.EnsureWorkspace("default","/tmp/another-project")
 		list, err := ws.ListWorkspaces()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -85,7 +85,7 @@ func TestMemoryStore(t *testing.T) {
 	ws := store.NewWorkspaceStore(db)
 
 	// Create workspace
-	wsID, _ := ws.EnsureWorkspace("/tmp/test-project")
+	wsID, _ := ws.EnsureWorkspace("default","/tmp/test-project")
 
 	t.Run("Insert and GetByID", func(t *testing.T) {
 		id := uuid.New().String()

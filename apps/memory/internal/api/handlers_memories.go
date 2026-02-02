@@ -63,6 +63,7 @@ func (h *MemoryHandler) Store(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if req.Content == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
@@ -93,6 +94,7 @@ func (h *MemoryHandler) Search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if req.Query == "" {
 		writeError(w, http.StatusBadRequest, "query is required")
@@ -230,6 +232,7 @@ func (h *MemoryHandler) SearchIndex(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if req.Query == "" {
 		writeError(w, http.StatusBadRequest, "query is required")
@@ -252,6 +255,7 @@ func (h *MemoryHandler) Timeline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if req.MemoryID == "" {
 		writeError(w, http.StatusBadRequest, "memoryId is required")

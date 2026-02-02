@@ -68,9 +68,14 @@ func (s *Service) Store(req *models.StoreRequest) (*models.StoreResponse, error)
 	req.Content = privacy.StripPrivateTags(req.Content)
 
 	// Determine workspace
-	workspaceID := models.GlobalWorkspaceID
+	namespace := req.Namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	workspaceID := store.NamespacedGlobalID(namespace)
 	if !req.Global && req.Workspace != "" {
-		id, err := s.workspaceStore.EnsureWorkspace(req.Workspace)
+		id, err := s.workspaceStore.EnsureWorkspace(namespace, req.Workspace)
 		if err != nil {
 			return nil, fmt.Errorf("ensure workspace: %w", err)
 		}
@@ -209,16 +214,21 @@ func (s *Service) Supersede(oldID, newID string) (*models.SupersedeResponse, err
 
 // Search performs hybrid search.
 func (s *Service) Search(req *models.SearchRequest) (*models.SearchResponse, error) {
+	namespace := req.Namespace
+	if namespace == "" {
+		namespace = "default"
+	}
+
 	workspaceIDs := []string{}
 	if req.Workspace != "" {
-		id, err := s.workspaceStore.EnsureWorkspace(req.Workspace)
+		id, err := s.workspaceStore.EnsureWorkspace(namespace, req.Workspace)
 		if err != nil {
 			return nil, fmt.Errorf("ensure workspace: %w", err)
 		}
 		workspaceIDs = append(workspaceIDs, id)
 	}
 	if req.IncludeGlobal {
-		workspaceIDs = append(workspaceIDs, models.GlobalWorkspaceID)
+		workspaceIDs = append(workspaceIDs, store.NamespacedGlobalID(namespace))
 	}
 	if len(workspaceIDs) == 0 {
 		return &models.SearchResponse{Results: []models.SearchResult{}}, nil
@@ -377,6 +387,7 @@ func (s *Service) BulkStore(req *models.BulkStoreRequest) (*models.BulkStoreResp
 
 	for _, bm := range req.Memories {
 		storeReq := &models.StoreRequest{
+			Namespace:  req.Namespace,
 			Workspace:  req.Workspace,
 			Content:    bm.Content,
 			MemoryType: bm.MemoryType,

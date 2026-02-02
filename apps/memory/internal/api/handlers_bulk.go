@@ -22,6 +22,7 @@ func (h *BulkHandler) BulkStore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	req.Namespace = GetNamespace(r)
 
 	if len(req.Memories) == 0 {
 		writeError(w, http.StatusBadRequest, "memories array is required")

@@ -1,0 +1,14 @@
+{
+  "name": "clive-memory",
+  "version": "1.0.0",
+  "description": "Persistent semantic memory for Claude Code — decisions, gotchas, patterns, and failures carry forward across sessions automatically.",
+  "author": {
+    "name": "Morgan Parry",
+    "email": "morgan@clive.dev"
+  },
+  "repository": "https://github.com/iammorganparry/clive",
+  "license": "MIT",
+  "keywords": ["memory", "hooks", "mcp", "context", "persistence"],
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}
