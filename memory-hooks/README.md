@@ -17,13 +17,13 @@ Claude can also store memories directly during sessions using helper scripts:
 
 ```bash
 # Store a memory
-bash ~/.clive/hooks/remember.sh GOTCHA "content" "tags" 0.9
+bash ~/.claude/memory/hooks/remember.sh GOTCHA "content" "tags" 0.9
 
 # Signal a memory was helpful
-bash ~/.clive/hooks/promote.sh MEMORY_ID helpful
+bash ~/.claude/memory/hooks/promote.sh MEMORY_ID helpful
 
 # Replace an outdated memory
-bash ~/.clive/hooks/supersede.sh OLD_ID NEW_ID
+bash ~/.claude/memory/hooks/supersede.sh OLD_ID NEW_ID
 ```
 
 ## Quick Start
@@ -75,10 +75,12 @@ bash install.sh
 ```
 
 The installer:
-1. Copies hook scripts to `~/.clive/hooks/`
-2. Builds the MCP server binary to `~/.clive/bin/memory-mcp` (requires Go 1.21+; skipped with warning if unavailable)
-3. Merges hook and MCP entries into `~/.claude/settings.json` (non-destructive)
-4. Runs a health check against the memory server
+1. Copies hook scripts to `~/.claude/memory/hooks/`
+2. Builds the MCP server binary to `~/.claude/memory/bin/memory-mcp` (requires Go 1.21+; skipped with warning if unavailable)
+3. Auto-generates a namespace from your system username (can be customized)
+4. Writes config to `~/.claude/memory/env`
+5. Merges hook and MCP entries into `~/.claude/settings.json` (non-destructive)
+6. Runs a health check against the memory server
 
 ### Option C: Manual Setup
 
@@ -143,27 +145,27 @@ Add these entries to `~/.claude/settings.json`:
 {
   "hooks": {
     "SessionStart": [
-      { "type": "command", "command": "bash ~/.clive/hooks/session-start.sh" }
+      { "type": "command", "command": "bash ~/.claude/memory/hooks/session-start.sh" }
     ],
     "UserPromptSubmit": [
-      { "type": "command", "command": "bash ~/.clive/hooks/user-prompt-submit.sh" }
+      { "type": "command", "command": "bash ~/.claude/memory/hooks/user-prompt-submit.sh" }
     ],
     "PreToolUse": [
-      { "matcher": "Write|Edit|MultiEdit", "type": "command", "command": "bash ~/.clive/hooks/pre-tool-use.sh" }
+      { "matcher": "Write|Edit|MultiEdit", "type": "command", "command": "bash ~/.claude/memory/hooks/pre-tool-use.sh" }
     ],
     "PreCompact": [
-      { "type": "command", "command": "bash ~/.clive/hooks/pre-compact.sh" }
+      { "type": "command", "command": "bash ~/.claude/memory/hooks/pre-compact.sh" }
     ],
     "Stop": [
-      { "type": "command", "command": "bash ~/.clive/hooks/stop.sh" }
+      { "type": "command", "command": "bash ~/.claude/memory/hooks/stop.sh" }
     ],
     "PostToolUse": [
-      { "type": "command", "command": "bash ~/.clive/hooks/post-tool-use.sh" }
+      { "type": "command", "command": "bash ~/.claude/memory/hooks/post-tool-use.sh" }
     ]
   },
   "mcpServers": {
     "clive-memory": {
-      "command": "~/.clive/bin/memory-mcp",
+      "command": "~/.claude/memory/bin/memory-mcp",
       "env": { "MEMORY_SERVER_URL": "https://memory-production-23b6.up.railway.app" }
     }
   }
@@ -177,10 +179,11 @@ bash uninstall.sh
 ```
 
 This removes:
-- Hook scripts from `~/.clive/hooks/`
-- MCP binary from `~/.clive/bin/`
+- Hook scripts from `~/.claude/memory/hooks/`
+- MCP binary from `~/.claude/memory/bin/`
+- Config from `~/.claude/memory/env`
 - Hook and MCP entries from `~/.claude/settings.json`
-- Empty `~/.clive/` directory (if nothing else is in it)
+- Empty `~/.claude/memory/` directory (if nothing else is in it)
 
 Your existing Claude Code settings are preserved.
 
@@ -193,7 +196,7 @@ After installation, verify everything is working:
 curl https://memory-production-23b6.up.railway.app/health
 
 # 2. Check hooks are installed
-ls ~/.clive/hooks/
+ls ~/.claude/memory/hooks/
 
 # 3. Check settings were updated
 cat ~/.claude/settings.json | jq '.hooks'
@@ -204,7 +207,8 @@ cat ~/.claude/settings.json | jq '.hooks'
 ## Architecture
 
 ```
-~/.clive/
+~/.claude/memory/
+├── env                     # Config: CLIVE_MEMORY_URL, API key, namespace
 ├── hooks/                  # Hook scripts (bash, sourcing lib.sh)
 │   ├── lib.sh              # Shared utilities, API client, server URL
 │   ├── session-start.sh    # SessionStart hook

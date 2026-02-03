@@ -57,26 +57,23 @@ if [ -t 0 ]; then
     API_KEY="${API_KEY_INPUT:-}"
   fi
 
-  # Namespace
+  # Namespace — auto-generate from username if not set
   if [ -z "$NAMESPACE" ]; then
+    # Generate default from system username (sanitized to valid chars)
+    DEFAULT_NAMESPACE=$(whoami | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g' | cut -c1-64)
     echo ""
     info "Namespace isolates your memories from other users on the same server."
-    info "Leave blank for the default namespace (single-user or personal use)."
-    printf "  Enter namespace (e.g. team-alpha, your-name) [default]: "
+    printf "  Enter namespace [${DEFAULT_NAMESPACE}]: "
     read -r NAMESPACE_INPUT
-    NAMESPACE="${NAMESPACE_INPUT:-}"
+    NAMESPACE="${NAMESPACE_INPUT:-$DEFAULT_NAMESPACE}"
   fi
 fi
 
-if [ -n "$NAMESPACE" ]; then
-  # Validate: alphanumeric, hyphens, underscores, max 64 chars
-  if ! echo "$NAMESPACE" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
-    fail "Invalid namespace '${NAMESPACE}': must be alphanumeric, hyphens, underscores only (max 64 chars)"
-  fi
-  ok "Namespace: ${NAMESPACE}"
-else
-  ok "Namespace: default (no isolation)"
+# Validate: alphanumeric, hyphens, underscores, max 64 chars
+if ! echo "$NAMESPACE" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
+  fail "Invalid namespace '${NAMESPACE}': must be alphanumeric, hyphens, underscores only (max 64 chars)"
 fi
+ok "Namespace: ${NAMESPACE}"
 
 if [ -n "$API_KEY" ]; then
   ok "API key: configured"
@@ -109,7 +106,7 @@ done
 ok "Installed ${#HOOK_FILES[@]} hook scripts"
 
 # ── Step 2b: Write env file ──────────────────────────────────────────────────
-# All config lives in ~/.clive/env — hooks source this automatically.
+# All config lives in ~/.claude/memory/env — hooks source this automatically.
 # No shell profile changes needed.
 
 info "Writing config to ${ENV_FILE}"

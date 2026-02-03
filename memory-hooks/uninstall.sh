@@ -3,9 +3,10 @@
 # Removes hooks, MCP binary, and cleans Claude Code settings.
 set -euo pipefail
 
-INSTALL_DIR="${HOME}/.clive"
+INSTALL_DIR="${HOME}/.claude/memory"
 HOOKS_DIR="${INSTALL_DIR}/hooks"
 BIN_DIR="${INSTALL_DIR}/bin"
+ENV_FILE="${INSTALL_DIR}/env"
 SETTINGS_FILE="${HOME}/.claude/settings.json"
 
 # Colors
@@ -44,7 +45,15 @@ else
   info "No MCP binary found"
 fi
 
-# ── Clean up ~/.clive if empty ────────────────────────────────────────────────
+# ── Remove env file ──────────────────────────────────────────────────────────
+
+if [ -f "$ENV_FILE" ]; then
+  info "Removing config file..."
+  rm -f "$ENV_FILE"
+  ok "Config removed"
+fi
+
+# ── Clean up ~/.claude/memory if empty ────────────────────────────────────────
 
 if [ -d "$INSTALL_DIR" ]; then
   if [ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
