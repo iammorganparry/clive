@@ -4,6 +4,7 @@ import { useCommandHistory } from "../hooks/useCommandHistory";
 import { usePaste } from "../hooks/usePaste";
 import { OneDarkPro } from "../styles/theme";
 import type { QuestionData } from "../types";
+import { ModeIndicator } from "./ModeIndicator";
 import { QuestionPanel, calculateQuestionHeight } from "./QuestionPanel";
 import { type CommandSuggestion, SuggestionsPanel } from "./SuggestionsPanel";
 
@@ -184,8 +185,9 @@ export function DynamicInput({
         return;
       }
 
-      // Tab or Enter to accept suggestion when suggestions are showing
-      if (event.name === "tab" || event.name === "return") {
+      // Enter to accept suggestion when suggestions are showing
+      // (Tab is repurposed for focus zone cycling at the App level)
+      if (event.name === "return") {
         event.preventDefault?.(); // Prevent default behavior
         const suggestion = filteredSuggestions[selectedSuggestion];
         if (suggestion) {
@@ -311,6 +313,7 @@ export function DynamicInput({
         opacity={rawInputMode ? 0.5 : 1.0}
       >
         <box flexDirection="row" width="100%">
+          {!rawInputMode && <ModeIndicator mode={mode} />}
           <text
             fg={rawInputMode ? OneDarkPro.ui.border : OneDarkPro.syntax.green}
           >

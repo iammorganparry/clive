@@ -16,7 +16,7 @@ interface OutputPanelProps {
   height: number;
   lines: OutputLineType[];
   isRunning?: boolean;
-  mode?: "none" | "plan" | "build";
+  mode?: "none" | "plan" | "build" | "review";
   modeColor?: string;
   /** Enable auto-scroll to bottom when new content is added (default: true) */
   stickyScroll?: boolean;

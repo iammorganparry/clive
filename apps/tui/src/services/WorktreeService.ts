@@ -22,6 +22,19 @@ export interface WorktreeCreationResult {
 }
 
 /**
+ * Info about a git worktree, enriched with epic metadata if available.
+ */
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  isMain: boolean;
+  epicId?: string;
+  epicIdentifier?: string;
+  metadata: WorktreeMetadata | null;
+}
+
+/**
  * WorktreeService - manages worktree metadata for epic-based builds
  *
  * Reads existing worktree metadata and creates new worktrees when needed.
@@ -134,6 +147,202 @@ export class WorktreeService {
       const message =
         err instanceof Error ? err.message : "Unknown error creating worktree";
       return { success: false, error: message };
+    }
+  }
+
+  /**
+   * List all git worktrees for the repository, enriched with epic metadata.
+   * Parses `git worktree list --porcelain` and cross-references .claude/epics/ metadata.
+   */
+  static listWorktrees(mainWorkspaceRoot: string): WorktreeInfo[] {
+    try {
+      const output = execSync("git worktree list --porcelain", {
+        cwd: mainWorkspaceRoot,
+        stdio: "pipe",
+        encoding: "utf-8",
+      });
+
+      // Parse porcelain output: blocks separated by blank lines
+      // Each block has: worktree <path>, HEAD <sha>, branch refs/heads/<name>
+      const worktrees: WorktreeInfo[] = [];
+      const blocks = output.split("\n\n").filter((b) => b.trim());
+
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let wtPath = "";
+        let head = "";
+        let branch = "";
+        let isBare = false;
+
+        for (const line of lines) {
+          if (line.startsWith("worktree ")) {
+            wtPath = line.slice("worktree ".length);
+          } else if (line.startsWith("HEAD ")) {
+            head = line.slice("HEAD ".length);
+          } else if (line.startsWith("branch ")) {
+            branch = line.slice("branch refs/heads/".length);
+          } else if (line === "bare") {
+            isBare = true;
+          }
+        }
+
+        if (!wtPath || isBare) continue;
+
+        // Find matching epic metadata by scanning .claude/epics/*/worktree.json
+        const metadata = WorktreeService.findMetadataForPath(
+          mainWorkspaceRoot,
+          wtPath,
+        );
+
+        worktrees.push({
+          path: wtPath,
+          branch: branch || "HEAD",
+          head,
+          isMain: path.resolve(wtPath) === path.resolve(mainWorkspaceRoot),
+          epicId: metadata?.epicId,
+          epicIdentifier: metadata?.epicIdentifier,
+          metadata,
+        });
+      }
+
+      // Sort: main worktree first, then alphabetically by branch
+      worktrees.sort((a, b) => {
+        if (a.isMain && !b.isMain) return -1;
+        if (!a.isMain && b.isMain) return 1;
+        return a.branch.localeCompare(b.branch);
+      });
+
+      return worktrees;
+    } catch {
+      // If git command fails, return just the main workspace
+      return [
+        {
+          path: mainWorkspaceRoot,
+          branch: WorktreeService.getCurrentBranch(mainWorkspaceRoot),
+          head: "",
+          isMain: true,
+          metadata: null,
+        },
+      ];
+    }
+  }
+
+  /**
+   * Create a standalone git worktree without requiring an epicId.
+   * Used when starting a new chat without a Linear issue context.
+   * Branch defaults to clive/chat-<YYYYMMDD-HHmm>.
+   */
+  static createStandaloneWorktree(
+    mainWorkspaceRoot: string,
+    branchName?: string,
+  ): WorktreeCreationResult {
+    const repoName = path.basename(mainWorkspaceRoot);
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    const effectiveBranch = branchName || `clive/chat-${timestamp}`;
+    const slug = effectiveBranch.replace(/^clive\//, "");
+    const worktreeDir = path.resolve(
+      mainWorkspaceRoot,
+      "..",
+      `${repoName}-worktrees`,
+      slug,
+    );
+
+    try {
+      if (!fs.existsSync(worktreeDir)) {
+        const branchExists = WorktreeService.branchExists(
+          mainWorkspaceRoot,
+          effectiveBranch,
+        );
+
+        if (branchExists) {
+          execSync(`git worktree add ${worktreeDir} ${effectiveBranch}`, {
+            cwd: mainWorkspaceRoot,
+            stdio: "pipe",
+          });
+        } else {
+          execSync(
+            `git worktree add -b ${effectiveBranch} ${worktreeDir} HEAD`,
+            {
+              cwd: mainWorkspaceRoot,
+              stdio: "pipe",
+            },
+          );
+        }
+      }
+
+      // Write state files in worktree
+      WorktreeService.writeStateFiles(
+        worktreeDir,
+        effectiveBranch,
+        mainWorkspaceRoot,
+      );
+
+      // Sync config files from main repo
+      WorktreeService.syncConfigToWorktree(mainWorkspaceRoot, worktreeDir);
+
+      const metadata: WorktreeMetadata = {
+        worktreePath: worktreeDir,
+        branchName: effectiveBranch,
+        epicId: "",
+        epicIdentifier: slug,
+        createdAt: now.toISOString(),
+      };
+
+      return { success: true, metadata };
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unknown error creating worktree";
+      return { success: false, error: message };
+    }
+  }
+
+  /**
+   * Scan .claude/epics/{epicId}/worktree.json to find metadata matching a worktree path.
+   */
+  private static findMetadataForPath(
+    mainWorkspaceRoot: string,
+    worktreePath: string,
+  ): WorktreeMetadata | null {
+    const epicsDir = path.join(mainWorkspaceRoot, ".claude", "epics");
+    if (!fs.existsSync(epicsDir)) return null;
+
+    try {
+      const epicDirs = fs.readdirSync(epicsDir, { withFileTypes: true });
+      const resolvedPath = path.resolve(worktreePath);
+
+      for (const entry of epicDirs) {
+        if (!entry.isDirectory()) continue;
+        const metaPath = path.join(epicsDir, entry.name, "worktree.json");
+        if (!fs.existsSync(metaPath)) continue;
+
+        try {
+          const raw = fs.readFileSync(metaPath, "utf-8");
+          const meta: WorktreeMetadata = JSON.parse(raw);
+          if (path.resolve(meta.worktreePath) === resolvedPath) {
+            return meta;
+          }
+        } catch {
+          // Skip malformed metadata
+        }
+      }
+    } catch {
+      // Skip if epics dir can't be read
+    }
+
+    return null;
+  }
+
+  /** Get the current branch name for a repo */
+  private static getCurrentBranch(cwd: string): string {
+    try {
+      return execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim();
+    } catch {
+      return "unknown";
     }
   }
 

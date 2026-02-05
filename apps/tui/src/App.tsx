@@ -19,11 +19,15 @@ import { SelectionView } from "./components/SelectionView";
 import { SetupView } from "./components/SetupView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import { TabBar, type TabInfo } from "./components/TabBar";
 import { WorkerConfigFlow } from "./components/WorkerConfigFlow";
+import { WorktreeSidebar } from "./components/WorktreeSidebar";
 import { useAppState } from "./hooks/useAppState";
+import { useChatManager } from "./hooks/useChatManager";
 import { useAllConversations } from "./hooks/useConversations";
 import { useSelectionState } from "./hooks/useSelectionState";
 import { useViewMode } from "./hooks/useViewMode";
+import { useWorktreeList } from "./hooks/useWorktreeList";
 import {
   type InterviewRequest,
   useWorkerConnection,
@@ -34,7 +38,7 @@ import {
   WorkerSessionManager,
 } from "./services/WorkerSessionManager";
 import { OneDarkPro } from "./styles/theme";
-import type { OutputLine, QuestionData, Session } from "./types";
+import type { FocusZone, OutputLine, QuestionData, Session, Task } from "./types";
 import type { WorkerConfig } from "./types/views";
 
 // Create QueryClient instance
@@ -127,6 +131,9 @@ function AppContent() {
   // Output panel ref for scroll control
   const outputPanelRef = useRef<OutputPanelRef>(null);
 
+  // Pending resume command (set when resuming a conversation before chat exists)
+  const pendingResumeRef = useRef<string | null>(null);
+
   // Worker mode state - per-session tracking for multi-session support
   const [workerSessionOutputs, setWorkerSessionOutputs] = useState<
     Map<string, OutputLine[]>
@@ -153,19 +160,34 @@ function AppContent() {
     }
   }, [preFillValue, inputFocused]);
 
-  // Auto-focus input on main view, unfocus on other views
-  useEffect(() => {
-    if (viewMode === "main" || viewMode === "worker") {
-      setInputFocused(true);
-    } else {
-      setInputFocused(false);
-    }
-  }, [viewMode]);
-
   // State management
   // Get workspace root from user's current terminal directory
   // In development, this can be overridden via --workspace flag
   const workspaceRoot = process.env.CLIVE_WORKSPACE || process.cwd();
+
+  // Chat manager for multi-chat/worktree support (used in main view)
+  const chatManager = useChatManager(workspaceRoot, config?.issueTracker);
+
+  // Auto-focus input on main view (follows focus zone), unfocus on other views
+  useEffect(() => {
+    if (viewMode === "main") {
+      setInputFocused(chatManager.focusZone === "main");
+    } else if (viewMode === "worker") {
+      setInputFocused(true);
+    } else {
+      setInputFocused(false);
+    }
+  }, [viewMode, chatManager.focusZone]);
+
+  // Worktree list for sidebar
+  const { data: worktreeList = [] } = useWorktreeList(workspaceRoot);
+
+  // Sidebar navigation state
+  const [sidebarSelectedIndex, setSidebarSelectedIndex] = useState(0);
+  const [sidebarExpandedPaths, setSidebarExpandedPaths] = useState<Set<string>>(
+    () => new Set([workspaceRoot]),
+  );
+  const [tabSelectedIndex, setTabSelectedIndex] = useState(0);
 
   // Worker callbacks for handling messages from central service
   const handleWorkerInterviewRequest = useCallback(
@@ -438,6 +460,16 @@ function AppContent() {
     cleanup,
   } = useAppState(workspaceRoot, config?.issueTracker);
 
+  // Tasks per worktree (for sidebar display)
+  const tasksPerWorktree = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    // For now, associate all tasks with the active worktree
+    if (chatManager.activeWorktreePath) {
+      map.set(chatManager.activeWorktreePath, tasks);
+    }
+    return map;
+  }, [chatManager.activeWorktreePath, tasks]);
+
   // Note: Auto-scrolling is handled by scrollbox's stickyScroll prop in OutputPanel
 
   // Selection state using XState machine
@@ -448,16 +480,33 @@ function AppContent() {
     (conversation: Conversation) => {
       console.log("[Clive TUI] Resuming conversation:", conversation.sessionId);
       const resumeMode = conversation.mode || "plan"; // fallback for old sessions
-      executeCommand(`/${resumeMode} --resume=${conversation.sessionId}`);
+      const resumeCmd = `/${resumeMode} --resume=${conversation.sessionId}`;
+
+      if (chatManager.activeChatId) {
+        chatManager.executeCommand(resumeCmd);
+      } else {
+        chatManager.createChat();
+        pendingResumeRef.current = resumeCmd;
+      }
       goToMain();
     },
-    [executeCommand, goToMain],
+    [chatManager, goToMain],
   );
+
+  // Execute pending resume command when a chat becomes available
+  useEffect(() => {
+    if (pendingResumeRef.current && chatManager.activeChatId) {
+      const cmd = pendingResumeRef.current;
+      pendingResumeRef.current = null;
+      chatManager.executeCommand(cmd);
+    }
+  }, [chatManager.activeChatId, chatManager.executeCommand]);
 
   // Cleanup on process exit (only 'exit' event, SIGINT/SIGTERM handled by main.tsx)
   useEffect(() => {
     const handleExit = () => {
       cleanup();
+      chatManager.cleanup();
     };
 
     process.on("exit", handleExit);
@@ -465,7 +514,7 @@ function AppContent() {
     return () => {
       process.off("exit", handleExit);
     };
-  }, [cleanup]);
+  }, [cleanup, chatManager.cleanup]);
 
   // Keyboard handling using OpenTUI's useKeyboard hook
   // This properly integrates with OpenTUI's stdin management
@@ -785,30 +834,65 @@ function AppContent() {
         return;
       }
     } else if (viewMode === "main") {
-      if (event.name === "escape") {
-        goToSelection();
+      // Shift+Tab: cycle mode (plan → build → review → none)
+      if (event.shift && event.name === "tab") {
+        chatManager.cycleMode();
+        return;
       }
+
+      // Tab: cycle focus zone (sidebar → tabs → main)
+      if (event.name === "tab") {
+        chatManager.cycleFocusZone();
+        return;
+      }
+
+      // Ctrl+C: two-stage handling
       if (event.ctrl && event.name === "c") {
-        // Two-stage Ctrl+C handling:
-        // 1. First Ctrl+C: Kill active TTY session
-        // 2. Second Ctrl+C (when idle): Exit Clive
-        if (isRunning) {
-          // TTY is active - interrupt it
-          interrupt();
+        if (chatManager.currentIsRunning) {
+          chatManager.interrupt();
         } else {
-          // No active session - exit Clive immediately
+          chatManager.cleanup();
           cleanup();
           process.exit(0);
         }
+        return;
       }
-      // Input focus shortcuts
-      if (event.sequence === "/") {
-        setInputFocused(true);
-        setPreFillValue("/");
+
+      // Ctrl+1-9: direct tab selection
+      if (event.ctrl && event.sequence && /^[1-9]$/.test(event.sequence)) {
+        const index = parseInt(event.sequence, 10) - 1;
+        const activeWt = chatManager.worktrees.find(
+          (w) => w.path === chatManager.activeWorktreePath,
+        );
+        const chats = activeWt?.chats ?? [];
+        if (index < chats.length) {
+          chatManager.selectChat(chats[index]!.id);
+        }
+        return;
       }
-      if (event.sequence === "i" || event.sequence === ":") {
-        setInputFocused(true);
-        setPreFillValue(event.sequence === ":" ? ":" : undefined);
+
+      // Escape: context-dependent
+      if (event.name === "escape") {
+        if (chatManager.focusZone !== "main") {
+          chatManager.setFocusZone("main");
+        } else {
+          goToSelection();
+        }
+        return;
+      }
+
+      // Input focus shortcuts (only when main zone is active)
+      if (chatManager.focusZone === "main") {
+        if (event.sequence === "/") {
+          setInputFocused(true);
+          setPreFillValue("/");
+          return;
+        }
+        if (event.sequence === "i" || event.sequence === ":") {
+          setInputFocused(true);
+          setPreFillValue(event.sequence === ":" ? ":" : undefined);
+          return;
+        }
       }
     } else if (viewMode === "help") {
       if (event.name === "escape") {
@@ -849,15 +933,17 @@ function AppContent() {
 
   // Handler for creating new session without issue
   const handleCreateNewWithoutIssue = () => {
+    chatManager.createChat();
+    chatManager.setFocusZone("main");
     goToMain();
-    setInputFocused(true);
   };
 
   // Handler for creating new session for specific issue
   const handleCreateNewForIssue = (issue: Session) => {
-    setActiveSession(issue);
+    chatManager.setActiveSession(issue);
+    chatManager.createChat();
+    chatManager.setFocusZone("main");
     goToMain();
-    setInputFocused(true);
   };
 
   // Wrapper for executeCommand to handle special commands and message forwarding
@@ -871,18 +957,18 @@ function AppContent() {
         goToSelection();
         return;
       }
-      executeCommand(cmd);
+      chatManager.executeCommand(cmd);
       return;
     }
 
     // If running, send as message to guide the agent
-    if (isRunning) {
-      sendMessage(trimmed);
+    if (chatManager.currentIsRunning) {
+      chatManager.sendMessage(trimmed);
       return;
     }
 
     // Otherwise, execute as new command
-    executeCommand(cmd);
+    chatManager.executeCommand(cmd);
   };
 
   // Handler for config flow completion
@@ -1041,31 +1127,151 @@ function AppContent() {
     return <HelpView width={width} height={height} onClose={goBack} />;
   }
 
-  // Main view (chat interface) - also handles worker mode with unified layout
-  const isWorkerMode = viewMode === "worker";
+  // ── Worker Mode (separate early return) ──
+  if (viewMode === "worker") {
+    const workerQuestion = activeWorkerSessionId
+      ? workerPendingQuestions.get(activeWorkerSessionId)
+      : undefined;
+    const workerDisplayQuestion = workerQuestion?.question ?? null;
 
-  // Choose data source based on mode
-  const displayOutputLines = isWorkerMode
-    ? activeWorkerOutputLines
-    : outputLines;
-  const displayIsRunning = isWorkerMode ? activeWorkerIsRunning : isRunning;
-  const displayMode = isWorkerMode ? "none" : mode;
+    const baseInputHeight = 3;
+    const statusHeight = 1;
+    const wQuestionHeight = workerDisplayQuestion
+      ? calculateQuestionHeight(workerDisplayQuestion)
+      : 0;
+    const wDynamicInputHeight = baseInputHeight + wQuestionHeight;
+    const wInnerWidth = width;
+    const wInnerHeight = height;
+    const wBodyHeight = wInnerHeight - wDynamicInputHeight - statusHeight;
 
-  // Get pending question for worker mode from dedicated state
-  const activeWorkerQuestion = isWorkerMode && activeWorkerSessionId
-    ? workerPendingQuestions.get(activeWorkerSessionId)
-    : undefined;
-  const displayPendingQuestion = isWorkerMode
-    ? activeWorkerQuestion?.question
-    : pendingQuestion;
+    const COMPACT_BREAKPOINT = 80;
+    const wIsCompact = wInnerWidth < COMPACT_BREAKPOINT;
+    const wSidebarWidth = wIsCompact ? wInnerWidth : 30;
+    const wSidebarHeight = wIsCompact ? Math.min(8, Math.floor(wBodyHeight * 0.3)) : wBodyHeight;
+    const wOutputWidth = wIsCompact ? wInnerWidth : wInnerWidth - wSidebarWidth;
+    const wOutputHeight = wIsCompact ? wBodyHeight - wSidebarHeight : wBodyHeight;
+
+    const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
+      if (workerQuestion && activeWorkerSessionId) {
+        sessionManagerRef.current?.sendAnswer(
+          activeWorkerSessionId,
+          workerQuestion.toolUseID,
+          answers,
+        );
+        setWorkerPendingQuestions((prev) => {
+          const next = new Map(prev);
+          next.delete(activeWorkerSessionId);
+          return next;
+        });
+      }
+    };
+
+    return (
+      <box
+        width={width}
+        height={height}
+        backgroundColor={OneDarkPro.background.primary}
+        flexDirection="column"
+      >
+        <box width={wInnerWidth} height={wBodyHeight} flexDirection={wIsCompact ? "column" : "row"}>
+          <Sidebar
+            width={wSidebarWidth}
+            height={wSidebarHeight}
+            tasks={tasks}
+            activeSession={activeSession}
+            layout={wIsCompact ? "horizontal" : "vertical"}
+          />
+          {activeWorkerOutputLines.length > 0 ? (
+            <OutputPanel
+              ref={outputPanelRef}
+              width={wOutputWidth}
+              height={wOutputHeight}
+              lines={activeWorkerOutputLines}
+              isRunning={activeWorkerIsRunning}
+              mode="none"
+            />
+          ) : (
+            <box
+              width={wOutputWidth}
+              height={wOutputHeight}
+              alignItems="center"
+              justifyContent="center"
+              flexDirection="column"
+              backgroundColor={OneDarkPro.background.primary}
+            >
+              <Logo />
+              <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+                Worker Mode
+              </text>
+              <text fg={OneDarkPro.foreground.muted} marginTop={3}>
+                Waiting for Slack requests...
+              </text>
+              <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+                Mention @clive in Slack to start a planning session
+              </text>
+              {workerConnection.status === "ready" && (
+                <box marginTop={3} padding={1} backgroundColor={OneDarkPro.background.secondary}>
+                  <text fg={OneDarkPro.syntax.green}>Ready to receive requests</text>
+                </box>
+              )}
+              {workerConnection.error && (
+                <text fg={OneDarkPro.syntax.red} marginTop={2}>
+                  Error: {workerConnection.error}
+                </text>
+              )}
+            </box>
+          )}
+        </box>
+        <DynamicInput
+          width={wInnerWidth}
+          onSubmit={(msg) => {
+            if (activeWorkerSessionId) {
+              sessionManagerRef.current?.sendMessage(activeWorkerSessionId, msg);
+            }
+          }}
+          disabled={!workerQuestion}
+          isRunning={activeWorkerIsRunning}
+          inputFocused={inputFocused}
+          onFocusChange={setInputFocused}
+          preFillValue={preFillValue}
+          pendingQuestion={workerDisplayQuestion}
+          onQuestionAnswer={handleWorkerQuestionAnswer}
+          onQuestionCancel={() => {
+            if (activeWorkerSessionId) {
+              sessionManagerRef.current?.cancelSession(activeWorkerSessionId);
+            }
+          }}
+          mode="none"
+        />
+        <StatusBar
+          width={wInnerWidth}
+          height={statusHeight}
+          isRunning={activeWorkerIsRunning}
+          inputFocused={inputFocused}
+          workspaceRoot={workspaceRoot}
+          workerMode={true}
+          workerStatus={workerConnection.status}
+          workerId={workerConnection.workerId}
+          activeSessions={workerConnection.activeSessions}
+          activeSessionId={activeWorkerSessionId}
+          workerError={workerConnection.error}
+        />
+      </box>
+    );
+  }
+
+  // ── Main View — Conductor-like layout ──
+
+  const displayMode = chatManager.currentMode;
+  const isInMode = displayMode !== "none";
 
   const baseInputHeight = 3;
   const statusHeight = 1;
-  const isInMode = displayMode !== "none";
+  const tabBarHeight = 1;
 
   // Calculate dynamic input height based on pending question
-  const questionHeight = displayPendingQuestion
-    ? calculateQuestionHeight(displayPendingQuestion)
+  const questionHeight = chatManager.currentPendingQuestion
+    ? calculateQuestionHeight(chatManager.currentPendingQuestion)
     : 0;
   const dynamicInputHeight = baseInputHeight + questionHeight;
 
@@ -1079,35 +1285,30 @@ function AppContent() {
   const COMPACT_BREAKPOINT = 80;
   const isCompact = innerWidth < COMPACT_BREAKPOINT;
 
-  const sidebarWidth = isCompact ? innerWidth : 30;
-  const sidebarHeight = isCompact ? Math.min(8, Math.floor(bodyHeight * 0.3)) : bodyHeight;
-  const outputWidth = isCompact ? innerWidth : innerWidth - sidebarWidth;
-  const outputHeight = isCompact ? bodyHeight - sidebarHeight : bodyHeight;
+  const sidebarWidth = isCompact ? 0 : 30;
+  const mainWidth = innerWidth - sidebarWidth;
+  const mainOutputHeight = bodyHeight - tabBarHeight;
 
   // Mode colors
   const getModeColor = () => {
     if (displayMode === "plan") return "#3B82F6"; // blue-500
     if (displayMode === "build") return "#F59E0B"; // amber-500
+    if (displayMode === "review") return "#10B981"; // green-500
     return undefined;
   };
 
-  // Handle worker mode question answers
-  const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
-    if (isWorkerMode && activeWorkerQuestion && activeWorkerSessionId) {
-      const { toolUseID } = activeWorkerQuestion;
-      sessionManagerRef.current?.sendAnswer(
-        activeWorkerSessionId,
-        toolUseID,
-        answers,
-      );
-      // Clear the question state after answering
-      setWorkerPendingQuestions((prev) => {
-        const next = new Map(prev);
-        next.delete(activeWorkerSessionId);
-        return next;
-      });
-    }
-  };
+  // Derive tab info from chatManager
+  const activeWorktreeObj = chatManager.worktrees.find(
+    (w) => w.path === chatManager.activeWorktreePath,
+  );
+  const currentBranchName = activeWorktreeObj?.branch;
+  const chatTabs: TabInfo[] = (activeWorktreeObj?.chats ?? []).map((c) => ({
+    id: c.id,
+    label: c.label,
+    mode: c.mode,
+    isRunning: c.isRunning,
+    hasQuestion: c.pendingQuestion !== null,
+  }));
 
   return (
     <box
@@ -1118,99 +1319,79 @@ function AppContent() {
       borderStyle={isInMode ? "rounded" : undefined}
       borderColor={isInMode ? getModeColor() : undefined}
     >
-      {/* Body (Sidebar + Output) */}
-      <box width={innerWidth} height={bodyHeight} flexDirection={isCompact ? "column" : "row"}>
-        {/* Sidebar */}
-        <Sidebar
-          width={sidebarWidth}
-          height={sidebarHeight}
-          tasks={tasks}
-          activeSession={activeSession}
-          layout={isCompact ? "horizontal" : "vertical"}
-        />
+      {/* Body: Sidebar + (TabBar + Output) */}
+      <box width={innerWidth} height={bodyHeight} flexDirection="row">
+        {/* WorktreeSidebar (hidden on compact) */}
+        {!isCompact && (
+          <WorktreeSidebar
+            width={sidebarWidth}
+            height={bodyHeight}
+            worktrees={worktreeList}
+            tasksPerWorktree={tasksPerWorktree}
+            activeWorktreePath={chatManager.activeWorktreePath}
+            focused={chatManager.focusZone === "sidebar"}
+            selectedIndex={sidebarSelectedIndex}
+            expandedPaths={sidebarExpandedPaths}
+            onSelect={(path) => {
+              chatManager.selectWorktree(path);
+              chatManager.setFocusZone("main");
+            }}
+            onCreateNew={() => chatManager.createChat()}
+            onNavigate={setSidebarSelectedIndex}
+            onToggleExpand={(path) => {
+              setSidebarExpandedPaths((prev) => {
+                const next = new Set(prev);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              });
+            }}
+          />
+        )}
 
-        {/* Output Panel */}
-        {displayOutputLines.length > 0 || !isWorkerMode ? (
+        {/* Main column: Tabs + Output */}
+        <box width={mainWidth} height={bodyHeight} flexDirection="column">
+          {/* Tab Bar */}
+          <TabBar
+            width={mainWidth}
+            tabs={chatTabs}
+            activeTabId={chatManager.activeChatId}
+            focused={chatManager.focusZone === "tabs"}
+            selectedIndex={tabSelectedIndex}
+            onSelectTab={(id) => {
+              chatManager.selectChat(id);
+              chatManager.setFocusZone("main");
+            }}
+            onCloseTab={chatManager.closeChat}
+            onNewTab={() => chatManager.createChat()}
+            onNavigate={setTabSelectedIndex}
+          />
+
+          {/* Output Panel */}
           <OutputPanel
             ref={outputPanelRef}
-            width={outputWidth}
-            height={outputHeight}
-            lines={displayOutputLines}
-            isRunning={displayIsRunning}
+            width={mainWidth}
+            height={mainOutputHeight}
+            lines={chatManager.currentOutputLines}
+            isRunning={chatManager.currentIsRunning}
             mode={displayMode}
             modeColor={getModeColor()}
           />
-        ) : (
-          // Worker mode waiting state
-          <box
-            width={outputWidth}
-            height={outputHeight}
-            alignItems="center"
-            justifyContent="center"
-            flexDirection="column"
-            backgroundColor={OneDarkPro.background.primary}
-          >
-            <Logo />
-            <text fg={OneDarkPro.foreground.muted} marginTop={2}>
-              Worker Mode
-            </text>
-            <text fg={OneDarkPro.foreground.muted} marginTop={3}>
-              Waiting for Slack requests...
-            </text>
-            <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-              Mention @clive in Slack to start a planning session
-            </text>
-            {workerConnection.status === "ready" && (
-              <box
-                marginTop={3}
-                padding={1}
-                backgroundColor={OneDarkPro.background.secondary}
-              >
-                <text fg={OneDarkPro.syntax.green}>
-                  Ready to receive requests
-                </text>
-              </box>
-            )}
-            {workerConnection.error && (
-              <text fg={OneDarkPro.syntax.red} marginTop={2}>
-                Error: {workerConnection.error}
-              </text>
-            )}
-          </box>
-        )}
+        </box>
       </box>
 
       {/* Input Bar */}
       <DynamicInput
         width={innerWidth}
-        onSubmit={
-          isWorkerMode
-            ? (msg) => {
-                if (activeWorkerSessionId) {
-                  sessionManagerRef.current?.sendMessage(
-                    activeWorkerSessionId,
-                    msg,
-                  );
-                }
-              }
-            : handleExecuteCommand
-        }
-        disabled={isWorkerMode ? !activeWorkerQuestion : !!pendingQuestion}
-        isRunning={displayIsRunning}
+        onSubmit={handleExecuteCommand}
+        disabled={!!chatManager.currentPendingQuestion}
+        isRunning={chatManager.currentIsRunning}
         inputFocused={inputFocused}
         onFocusChange={setInputFocused}
         preFillValue={preFillValue}
-        pendingQuestion={displayPendingQuestion}
-        onQuestionAnswer={
-          isWorkerMode ? handleWorkerQuestionAnswer : handleQuestionAnswer
-        }
-        onQuestionCancel={() => {
-          if (isWorkerMode && activeWorkerSessionId) {
-            sessionManagerRef.current?.cancelSession(activeWorkerSessionId);
-          } else {
-            interrupt();
-          }
-        }}
+        pendingQuestion={chatManager.currentPendingQuestion}
+        onQuestionAnswer={chatManager.handleQuestionAnswer}
+        onQuestionCancel={() => chatManager.interrupt()}
         mode={displayMode}
       />
 
@@ -1218,17 +1399,12 @@ function AppContent() {
       <StatusBar
         width={innerWidth}
         height={statusHeight}
-        isRunning={displayIsRunning}
+        isRunning={chatManager.currentIsRunning}
         inputFocused={inputFocused}
-        workspaceRoot={workspaceRoot}
-        workerMode={isWorkerMode}
-        workerStatus={isWorkerMode ? workerConnection.status : undefined}
-        workerId={isWorkerMode ? workerConnection.workerId : undefined}
-        activeSessions={
-          isWorkerMode ? workerConnection.activeSessions : undefined
-        }
-        activeSessionId={isWorkerMode ? activeWorkerSessionId : undefined}
-        workerError={isWorkerMode ? workerConnection.error : undefined}
+        workspaceRoot={chatManager.activeWorktreePath || workspaceRoot}
+        branchName={currentBranchName}
+        mode={displayMode}
+        focusZone={chatManager.focusZone}
       />
     </box>
   );
