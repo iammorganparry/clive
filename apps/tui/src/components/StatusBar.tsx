@@ -12,6 +12,12 @@ interface StatusBarProps {
   isRunning: boolean;
   inputFocused?: boolean;
   workspaceRoot?: string;
+  /** Current git branch name */
+  branchName?: string;
+  /** Current mode */
+  mode?: "none" | "plan" | "build" | "review";
+  /** Current focus zone */
+  focusZone?: "sidebar" | "tabs" | "main";
   /** Worker connection status */
   workerStatus?: WorkerStatus;
   /** Number of active Slack sessions on this worker */
@@ -34,6 +40,9 @@ export function StatusBar({
   isRunning,
   inputFocused = false,
   workspaceRoot,
+  branchName,
+  mode = "none",
+  focusZone,
   workerStatus,
   workerSessions = 0,
   workerMode = false,
@@ -136,11 +145,11 @@ export function StatusBar({
       helpHint = "q Exit  •  Ctrl+C Quit";
     }
   } else if (inputFocused) {
-    helpHint = "Enter execute  •  Tab complete  •  Esc unfocus  •  Ctrl+C quit";
+    helpHint = "Enter execute  •  Esc unfocus  •  ⇧Tab mode  •  Ctrl+C quit";
   } else if (isRunning) {
-    helpHint = "Ctrl+G scroll bottom  •  Ctrl+C quit";
+    helpHint = "Tab focus  •  ⇧Tab mode  •  Ctrl+C interrupt";
   } else {
-    helpHint = "/ input  •  ? help  •  Esc back  •  Ctrl+C quit";
+    helpHint = "/ input  •  Tab focus  •  ⇧Tab mode  •  ? help";
   }
 
   return (
@@ -191,10 +200,16 @@ export function StatusBar({
           <>
             {/* Normal mode: Show execution status */}
             <text fg={statusColor}>{statusText}</text>
-            {workspaceRoot && (
+            {branchName && (
               <>
                 <text fg={OneDarkPro.foreground.muted}> • </text>
-                <text fg={OneDarkPro.syntax.cyan}>📁 {workspaceName}</text>
+                <text fg={OneDarkPro.syntax.magenta}>{branchName}</text>
+              </>
+            )}
+            {!branchName && workspaceRoot && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.cyan}>{workspaceName}</text>
               </>
             )}
             {workerDisplay && (

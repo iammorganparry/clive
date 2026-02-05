@@ -123,3 +123,38 @@ export interface Config {
   beads?: Record<string, unknown>;
   worker?: WorkerConfig;
 }
+
+/**
+ * Focus zone for keyboard navigation between sidebar, tabs, and main content.
+ */
+export type FocusZone = "sidebar" | "tabs" | "main";
+
+/**
+ * A single chat session within a worktree.
+ * Each chat has its own CliManager, output history, mode, and question state.
+ */
+export interface ChatContext {
+  id: string;
+  worktreePath: string;
+  sessionId?: string;
+  mode: "none" | "plan" | "build" | "review";
+  label: string;
+  outputLines: OutputLine[];
+  pendingQuestion: QuestionData | null;
+  questionQueue: QuestionData[];
+  isRunning: boolean;
+  createdAt: Date;
+}
+
+/**
+ * A worktree with its associated chats and epic context.
+ */
+export interface WorktreeContext {
+  path: string;
+  branch: string;
+  isMain: boolean;
+  epicId?: string;
+  epicIdentifier?: string;
+  chats: ChatContext[];
+  activeChatId: string | null;
+}

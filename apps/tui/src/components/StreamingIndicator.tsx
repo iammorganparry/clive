@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { OneDarkPro } from "../styles/theme";
 
 interface StreamingIndicatorProps {
-  mode?: "plan" | "build" | "none";
+  mode?: "plan" | "build" | "review" | "none";
 }
 
 export function StreamingIndicator({ mode = "none" }: StreamingIndicatorProps) {
