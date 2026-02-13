@@ -45,11 +45,11 @@ export function registerAssistantHandler(
     threadStarted: async ({ saveThreadContext, setSuggestedPrompts, say }) => {
       await saveThreadContext();
 
-      await say("Hi there! I'm Clive, your AI planning assistant. How can I help you today?");
+      await say("What's up boys! I'm Ricky, your planning assistant. Listen, this isn't rocket appliances — just tell me what you need and we'll get two birds stoned at once.");
 
       await setSuggestedPrompts({
         prompts: getContextAwarePrompts(),
-        title: "Here are some things I can help with:",
+        title: "Here's what I can do for you, bud:",
       });
     },
 
@@ -113,7 +113,7 @@ export function registerAssistantHandler(
         // Set up timeout handler
         store.onTimeout(sessionKey, async (timedOutSession) => {
           console.log(`[AssistantHandler] Session ${sessionKey} timed out`);
-          await say("This session has timed out after 30 minutes of inactivity. Start a new conversation to continue.");
+          await say("Alright bud, this thing's been sitting here longer than Julian nurses a rum and coke. Session's done — come back and start a new one whenever you want.");
           store.close(sessionKey);
         });
       }
@@ -200,11 +200,11 @@ export function registerAssistantHandlerDistributed(
     threadStarted: async ({ saveThreadContext, setSuggestedPrompts, say }) => {
       await saveThreadContext();
 
-      await say("Hi there! I'm Clive, your AI planning assistant. How can I help you today?");
+      await say("What's up boys! I'm Ricky, your planning assistant. Listen, this isn't rocket appliances — just tell me what you need and we'll get two birds stoned at once.");
 
       await setSuggestedPrompts({
         prompts: getContextAwarePrompts(),
-        title: "Here are some things I can help with:",
+        title: "Here's what I can do for you, bud:",
       });
     },
 
@@ -269,7 +269,7 @@ export function registerAssistantHandlerDistributed(
         store.onTimeout(sessionKey, async (timedOutSession) => {
           console.log(`[AssistantHandler] Session ${sessionKey} timed out`);
           workerProxy.cancelSession(sessionKey, "timeout");
-          await say("This session has timed out after 30 minutes of inactivity. Start a new conversation to continue.");
+          await say("Alright bud, this thing's been sitting here longer than Julian nurses a rum and coke. Session's done — come back and start a new one whenever you want.");
           store.close(sessionKey);
         });
       }

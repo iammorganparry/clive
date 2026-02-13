@@ -6,6 +6,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type {
   CentralToWorkerMessage,
   InterviewEvent,
@@ -123,6 +126,18 @@ function makeWorkerClient(
         config.projects.find((p) => p.id === config.defaultProject) ||
         config.projects[0];
       workspaceRoot = defaultProject.path;
+
+      // Enable per-session worktrees for local repos when CLIVE_ENABLE_WORKTREES is set
+      if (process.env.CLIVE_ENABLE_WORKTREES === "true") {
+        const worktreeBaseDir =
+          process.env.CLIVE_WORKTREE_DIR ||
+          path.join(os.homedir(), ".clive", "worktrees");
+        fs.mkdirSync(worktreeBaseDir, { recursive: true });
+        worktreeManager = new WorktreeManager(workspaceRoot, worktreeBaseDir);
+        console.log(
+          `[WorkerClient] Worktrees enabled for local repo at ${workspaceRoot} (worktrees: ${worktreeBaseDir})`,
+        );
+      }
     }
 
     const executor = new LocalExecutor(workspaceRoot, worktreeManager);

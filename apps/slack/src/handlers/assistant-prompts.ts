@@ -8,11 +8,11 @@
  * Rotating loading status messages shown while Clive is working
  */
 export const LOADING_MESSAGES = [
-  "Thinking...",
-  "Analyzing your request...",
-  "Working on it...",
-  "Processing...",
-  "Almost there...",
+  "Hold on bud, I'm thinkin here...",
+  "Workin on it, it's not rocket appliances...",
+  "Just give me a sec boys...",
+  "Almost got it figured out, worst case Ontario...",
+  "I'm on it like a frigging hawk...",
 ];
 
 /**

@@ -220,18 +220,19 @@ export function formatWelcomeMessage(hasDescription: boolean, userId?: string): 
   if (hasDescription) {
     return [
       section(
-        `${mention}:wave: *Starting Planning Interview*\n\n` +
-          "I'll guide you through a structured interview to understand your requirements. " +
-          "Please answer each question to help me create a detailed plan.",
+        `${mention}:wave: *Alright boys, let's get this planning interview going*\n\n` +
+          "I'm gonna ask you some questions so I can figure out what we're dealing with here. " +
+          "It's not rocket appliances, just answer 'em and we'll get this done.",
       ),
     ];
   }
 
   return [
     section(
-      `${mention}:wave: *Hi! I'm Clive, your planning assistant.*\n\n` +
-        "I'll help you plan your next feature or project through a structured interview. " +
-        "What would you like to build?",
+      `${mention}:wave: *What's up! I'm Ricky, your planning assistant.*\n\n` +
+        "Listen, I'll help you plan your next feature through a structured interview. " +
+        "It's basically supply and command — you tell me what to build and I'll make it happen. " +
+        "So what are we workin with, bud?",
     ),
   ];
 }
@@ -244,12 +245,12 @@ export function formatCompletionMessage(linearUrls: string[], userId?: string): 
   const urlList = linearUrls.map((url) => `• <${url}|View Issue>`).join("\n");
 
   return blocks(
-    section(`${mention}:white_check_mark: *Planning Complete!*`),
+    section(`${mention}:white_check_mark: *Friggin' nailed it boys! Planning's done!*`),
     section(
-      "Your plan has been created and Linear issues have been generated:\n\n" +
+      "Got your plan all figured out and the Linear issues are good to go:\n\n" +
         urlList,
     ),
-    context(["Start a new planning session anytime by mentioning @clive."]),
+    context(["Hit me up anytime bud, just mention @clive and we'll get 'er done."])
   );
 }
 

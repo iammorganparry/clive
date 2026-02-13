@@ -41,6 +41,9 @@ export class WorktreeManager {
     this.installPrePushHook(worktreePath);
     this.configureGitDefaults(worktreePath);
 
+    // Symlink node_modules from main repo to avoid expensive reinstalls
+    this.symlinkNodeModules(worktreePath);
+
     console.log(
       `[WorktreeManager] Created worktree at ${worktreePath} on branch ${branchName}`,
     );
@@ -120,6 +123,26 @@ exit 0
       cwd: worktreePath,
       stdio: "pipe",
     });
+  }
+
+  /** Symlink node_modules from the main repo to avoid reinstalling per-worktree */
+  private symlinkNodeModules(worktreePath: string): void {
+    const mainNodeModules = path.join(this.repoPath, "node_modules");
+    const wtNodeModules = path.join(worktreePath, "node_modules");
+
+    if (fs.existsSync(mainNodeModules) && !fs.existsSync(wtNodeModules)) {
+      try {
+        fs.symlinkSync(mainNodeModules, wtNodeModules, "dir");
+        console.log(
+          `[WorktreeManager] Symlinked node_modules from main repo`,
+        );
+      } catch (error) {
+        console.warn(
+          `[WorktreeManager] Failed to symlink node_modules:`,
+          error,
+        );
+      }
+    }
   }
 
   /** Prune stale worktrees */

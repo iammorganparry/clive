@@ -27,7 +27,7 @@ interface WorkerConfigFlowProps {
 type Step =
   | "intro"
   | "url"
-  | "fetching_token"
+  | "token"
   | "testing"
   | "success"
   | "error";
@@ -111,13 +111,13 @@ export function WorkerConfigFlow({
     // Error step - retry on Enter
     if (step === "error" && event.name === "return") {
       setError("");
-      setStep("fetching_token");
+      setStep("testing");
     }
   });
 
-  // Handle paste events for URL input
+  // Handle paste events for URL and token input
   usePaste((event) => {
-    if (step === "url" && inputRef.current) {
+    if ((step === "url" || step === "token") && inputRef.current) {
       if (event.text) {
         inputRef.current.insertText(event.text);
         setInputValue(inputRef.current.value);
@@ -162,52 +162,26 @@ export function WorkerConfigFlow({
 
     setCentralUrl(inputValue);
     setError("");
-    setStep("fetching_token");
+    // Check if token is available from environment
+    const envToken = process.env.CLIVE_WORKER_TOKEN;
+    if (envToken) {
+      setToken(envToken);
+      setStep("testing");
+    } else {
+      setInputValue(token || "");
+      setStep("token");
+    }
   };
 
-  // Auto-fetch token when entering fetching_token step
-  useEffect(() => {
-    if (step !== "fetching_token") return;
-
-    let cancelled = false;
-    const fetchToken = async () => {
-      try {
-        // Convert WebSocket URL to HTTP URL for token fetch
-        // wss://example.com/ws -> https://example.com/api/worker-token
-        // ws://example.com/ws -> http://example.com/api/worker-token
-        const httpUrl = centralUrl
-          .replace(/^wss:/, "https:")
-          .replace(/^ws:/, "http:")
-          .replace(/\/ws$/, "/api/worker-token");
-
-        const response = await fetch(httpUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch token: ${response.status}`);
-        }
-
-        const data = (await response.json()) as { token: string };
-        if (!data.token) {
-          throw new Error("No token returned from server");
-        }
-
-        if (!cancelled) {
-          setToken(data.token);
-          setStep("testing");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError((err as Error).message || "Failed to fetch worker token");
-          setStep("error");
-        }
-      }
-    };
-
-    fetchToken();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [step, centralUrl]);
+  const handleTokenSubmit = () => {
+    if (!inputValue.trim()) {
+      setError("Worker token is required");
+      return;
+    }
+    setToken(inputValue.trim());
+    setError("");
+    setStep("testing");
+  };
 
   // Test connection when entering testing step
   useEffect(() => {
@@ -397,14 +371,43 @@ export function WorkerConfigFlow({
           </>
         )}
 
-        {/* Step: Fetching Token */}
-        {step === "fetching_token" && (
-          <box marginTop={4}>
-            <LoadingSpinner
-              text="Fetching worker token from central service..."
-              color={OneDarkPro.syntax.yellow}
-            />
-          </box>
+        {/* Step: Token Input */}
+        {step === "token" && (
+          <>
+            <text fg={OneDarkPro.foreground.primary} marginTop={2}>
+              Worker Token:
+            </text>
+            <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+              Paste the CLIVE_WORKER_TOKEN shared with the central service
+            </text>
+
+            <box
+              marginTop={2}
+              width={60}
+              padding={1}
+              backgroundColor={OneDarkPro.background.secondary}
+            >
+              <input
+                ref={inputRef}
+                placeholder="Paste worker token here..."
+                focused={true}
+                onInput={setInputValue}
+                onSubmit={handleTokenSubmit}
+                value={inputValue}
+                style={{
+                  textColor: OneDarkPro.foreground.primary,
+                  backgroundColor: OneDarkPro.background.secondary,
+                  focusedBackgroundColor: OneDarkPro.background.secondary,
+                }}
+              />
+            </box>
+
+            {error && (
+              <text fg={OneDarkPro.syntax.red} marginTop={1}>
+                {error}
+              </text>
+            )}
+          </>
         )}
 
         {/* Step: Testing */}
@@ -469,7 +472,7 @@ export function WorkerConfigFlow({
           </box>
         )}
 
-        {step === "url" && (
+        {(step === "url" || step === "token") && (
           <box marginTop={4} flexDirection="column" alignItems="center">
             <text fg={OneDarkPro.foreground.secondary}>
               Enter Submit | Esc Cancel
