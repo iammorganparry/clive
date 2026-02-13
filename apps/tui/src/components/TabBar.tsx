@@ -25,6 +25,8 @@ interface TabBarProps {
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
   onNavigate: (index: number) => void;
+  /** When true, hides the [+] button and disables t/w shortcuts (used in worker mode) */
+  readonly?: boolean;
 }
 
 function getModeColor(mode: TabInfo["mode"]): string {
@@ -63,6 +65,7 @@ export function TabBar({
   onCloseTab,
   onNewTab,
   onNavigate,
+  readonly = false,
 }: TabBarProps) {
   // Keyboard handling when tabs zone is focused
   useKeyboard((event) => {
@@ -73,12 +76,13 @@ export function TabBar({
       return;
     }
     if (event.name === "right" || event.sequence === "l") {
-      // +1 for the [+] button
-      onNavigate(Math.min(tabs.length, selectedIndex + 1));
+      // +1 for the [+] button (only when not readonly)
+      const maxIndex = readonly ? tabs.length - 1 : tabs.length;
+      onNavigate(Math.min(maxIndex, selectedIndex + 1));
       return;
     }
     if (event.name === "return") {
-      if (selectedIndex === tabs.length) {
+      if (!readonly && selectedIndex === tabs.length) {
         // [+] button selected
         onNewTab();
       } else {
@@ -87,11 +91,11 @@ export function TabBar({
       }
       return;
     }
-    if (event.sequence === "t") {
+    if (event.sequence === "t" && !readonly) {
       onNewTab();
       return;
     }
-    if (event.sequence === "w") {
+    if (event.sequence === "w" && !readonly) {
       const tab = tabs[selectedIndex];
       if (tab) onCloseTab(tab.id);
       return;
@@ -99,7 +103,7 @@ export function TabBar({
   });
 
   // Calculate max width per tab
-  const newButtonWidth = 5; // " [+] "
+  const newButtonWidth = readonly ? 0 : 5; // " [+] "
   const availableWidth = width - newButtonWidth - 1;
   const maxTabWidth = tabs.length > 0
     ? Math.max(12, Math.floor(availableWidth / tabs.length))
@@ -159,21 +163,23 @@ export function TabBar({
         );
       })}
 
-      {/* New tab button */}
-      <text
-        fg={
-          focused && selectedIndex === tabs.length
-            ? OneDarkPro.syntax.green
-            : OneDarkPro.foreground.muted
-        }
-        bg={
-          focused && selectedIndex === tabs.length
-            ? OneDarkPro.background.highlight
-            : undefined
-        }
-      >
-        {" [+]"}
-      </text>
+      {/* New tab button (hidden in readonly mode) */}
+      {!readonly && (
+        <text
+          fg={
+            focused && selectedIndex === tabs.length
+              ? OneDarkPro.syntax.green
+              : OneDarkPro.foreground.muted
+          }
+          bg={
+            focused && selectedIndex === tabs.length
+              ? OneDarkPro.background.highlight
+              : undefined
+          }
+        >
+          {" [+]"}
+        </text>
+      )}
     </box>
   );
 }

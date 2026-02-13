@@ -17,7 +17,6 @@ import { ModeSelectionView } from "./components/ModeSelectionView";
 import { OutputPanel, type OutputPanelRef } from "./components/OutputPanel";
 import { SelectionView } from "./components/SelectionView";
 import { SetupView } from "./components/SetupView";
-import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TabBar, type TabInfo } from "./components/TabBar";
 import { WorkerConfigFlow } from "./components/WorkerConfigFlow";
@@ -33,10 +32,13 @@ import {
   useWorkerConnection,
 } from "./hooks/useWorkerConnection";
 import type { Conversation } from "./services/ConversationService";
+import type { WorktreeInfo } from "./services/WorktreeService";
 import {
   type ChatMessage,
+  type SessionMode,
   WorkerSessionManager,
 } from "./services/WorkerSessionManager";
+import { WorktreeManager } from "./services/WorktreeManager";
 import { OneDarkPro } from "./styles/theme";
 import type { FocusZone, OutputLine, QuestionData, Session, Task } from "./types";
 import type { WorkerConfig } from "./types/views";
@@ -151,6 +153,17 @@ function AppContent() {
     Map<string, { question: QuestionData; toolUseID: string }>
   >(new Map());
 
+  // Worker mode: per-session mode and worktree tracking
+  const [workerSessionModes, setWorkerSessionModes] = useState<
+    Map<string, SessionMode | "none">
+  >(new Map());
+  const [workerSessionWorktrees, setWorkerSessionWorktrees] = useState<
+    Map<string, string>
+  >(new Map());
+  const [workerFocusZone, setWorkerFocusZone] = useState<FocusZone>("main");
+  const [workerTabSelectedIndex, setWorkerTabSelectedIndex] = useState(0);
+  const worktreeManagerRef = useRef<WorktreeManager | null>(null);
+
   // Clear preFillValue after it's been used
   useEffect(() => {
     if (preFillValue && inputFocused) {
@@ -173,11 +186,11 @@ function AppContent() {
     if (viewMode === "main") {
       setInputFocused(chatManager.focusZone === "main");
     } else if (viewMode === "worker") {
-      setInputFocused(true);
+      setInputFocused(workerFocusZone === "main");
     } else {
       setInputFocused(false);
     }
-  }, [viewMode, chatManager.focusZone]);
+  }, [viewMode, chatManager.focusZone, workerFocusZone]);
 
   // Worktree list for sidebar
   const { data: worktreeList = [] } = useWorktreeList(workspaceRoot);
@@ -193,6 +206,8 @@ function AppContent() {
   const handleWorkerInterviewRequest = useCallback(
     (request: InterviewRequest) => {
       const sessionId = request.sessionId;
+      const mode: SessionMode | "none" = (request.mode === "greeting" || !request.mode) ? "plan" : request.mode as SessionMode;
+
       // Initialize session output and mark as running
       setWorkerSessionOutputs((prev) => {
         const next = new Map(prev);
@@ -204,10 +219,27 @@ function AppContent() {
         next.set(sessionId, true);
         return next;
       });
+      // Track session mode
+      setWorkerSessionModes((prev) => {
+        const next = new Map(prev);
+        next.set(sessionId, mode);
+        return next;
+      });
       // Auto-select new session if no active session
       setActiveWorkerSessionId((current) => current ?? sessionId);
+
       sessionManagerRef.current?.startInterview(request, (event) => {
         workerConnectionRef.current?.sendEvent(event);
+      }).then(() => {
+        // After session starts, capture worktree path
+        const wtPath = sessionManagerRef.current?.getWorktreePath(sessionId);
+        if (wtPath) {
+          setWorkerSessionWorktrees((prev) => {
+            const next = new Map(prev);
+            next.set(sessionId, wtPath);
+            return next;
+          });
+        }
       }).catch((error) => {
         // Handle any unhandled errors from startInterview
         console.error(`[App] Interview ${sessionId} failed to start:`, error);
@@ -279,6 +311,16 @@ function AppContent() {
       next.set(sessionId, false);
       return next;
     });
+    setWorkerSessionModes((prev) => {
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setWorkerSessionWorktrees((prev) => {
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
   }, []);
 
   // Worker connection (only active when in worker mode or when config.worker.enabled)
@@ -330,7 +372,13 @@ function AppContent() {
   // Initialize WorkerSessionManager when in worker mode
   useEffect(() => {
     if (viewMode === "worker") {
-      const sessionManager = new WorkerSessionManager(workspaceRoot);
+      // Create WorktreeManager for per-session worktree isolation
+      const homedir = process.env.HOME || process.env.USERPROFILE || "~";
+      const worktreeBaseDir = `${homedir}/.clive/worktrees`;
+      const worktreeMgr = new WorktreeManager(workspaceRoot, worktreeBaseDir);
+      worktreeManagerRef.current = worktreeMgr;
+
+      const sessionManager = new WorkerSessionManager(workspaceRoot, worktreeMgr);
       sessionManagerRef.current = sessionManager;
 
       // Listen for messages from session manager - store per-session
@@ -367,6 +415,16 @@ function AppContent() {
           next.delete(sessionId);
           return next;
         });
+        setWorkerSessionModes((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
+          return next;
+        });
+        setWorkerSessionWorktrees((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
+          return next;
+        });
         workerConnectionRef.current?.completeSession(sessionId);
       };
 
@@ -381,6 +439,16 @@ function AppContent() {
           return next;
         });
         setWorkerPendingQuestions((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
+          return next;
+        });
+        setWorkerSessionModes((prev) => {
+          const next = new Map(prev);
+          next.delete(sessionId);
+          return next;
+        });
+        setWorkerSessionWorktrees((prev) => {
           const next = new Map(prev);
           next.delete(sessionId);
           return next;
@@ -410,6 +478,14 @@ function AppContent() {
         sessionManager.off("error", handleError);
         sessionManager.closeAll();
         sessionManagerRef.current = null;
+
+        // Prune stale worktrees on cleanup
+        try {
+          worktreeMgr.prune();
+        } catch {
+          // Ignore prune errors on cleanup
+        }
+        worktreeManagerRef.current = null;
       };
     }
     return undefined;
@@ -645,12 +721,25 @@ function AppContent() {
       // LinearSettingsView handles its own keyboard events
       return;
     } else if (viewMode === "worker") {
-      // Allow escape to unfocus input OR exit worker mode
-      if (event.name === "escape") {
-        goToModeSelection();
+      // Tab: cycle focus zones (sidebar -> tabs -> main)
+      if (event.name === "tab" && !event.shift) {
+        setWorkerFocusZone((prev) => {
+          const zones: FocusZone[] = ["sidebar", "tabs", "main"];
+          const idx = zones.indexOf(prev);
+          return zones[(idx + 1) % zones.length]!;
+        });
         return;
       }
-      if (event.sequence === "q") {
+      // Escape: unfocus sidebar/tabs to main, or exit worker mode from main
+      if (event.name === "escape") {
+        if (workerFocusZone !== "main") {
+          setWorkerFocusZone("main");
+        } else {
+          goToModeSelection();
+        }
+        return;
+      }
+      if (event.sequence === "q" && workerFocusZone === "main") {
         goToModeSelection();
         return;
       }
@@ -666,17 +755,17 @@ function AppContent() {
         workerConnection.disconnect();
         process.exit(0);
       }
-      // Session cycling: Tab or n for next, Shift+Tab or p for previous
-      if (event.name === "tab" || event.sequence === "n") {
+      // n/p for session cycling (kept for compatibility)
+      if (event.sequence === "n" && workerFocusZone === "main") {
         cycleWorkerSession("next");
         return;
       }
-      if ((event.shift && event.name === "tab") || event.sequence === "p") {
+      if (event.sequence === "p" && workerFocusZone === "main") {
         cycleWorkerSession("prev");
         return;
       }
-      // Number keys 1-9 for direct session jump
-      if (event.sequence && /^[1-9]$/.test(event.sequence)) {
+      // Number keys 1-9 for direct session jump (only in main zone)
+      if (event.sequence && /^[1-9]$/.test(event.sequence) && workerFocusZone === "main") {
         const index = parseInt(event.sequence, 10) - 1;
         if (index < workerConnection.activeSessions.length) {
           setActiveWorkerSessionId(
@@ -685,8 +774,8 @@ function AppContent() {
         }
         return;
       }
-      // Allow input focus when there's a pending question (i or : to focus)
-      if (event.sequence === "i" || event.sequence === ":") {
+      // Input focus (only when main zone is active)
+      if (workerFocusZone === "main" && (event.sequence === "i" || event.sequence === ":")) {
         setInputFocused(true);
         return;
       }
@@ -1127,29 +1216,95 @@ function AppContent() {
     return <HelpView width={width} height={height} onClose={goBack} />;
   }
 
-  // ── Worker Mode (separate early return) ──
+  // ── Worker Mode (Conductor-like layout with session tabs) ──
   if (viewMode === "worker") {
     const workerQuestion = activeWorkerSessionId
       ? workerPendingQuestions.get(activeWorkerSessionId)
       : undefined;
     const workerDisplayQuestion = workerQuestion?.question ?? null;
 
-    const baseInputHeight = 3;
-    const statusHeight = 1;
+    // Active session's mode for border color
+    const activeSessionMode = activeWorkerSessionId
+      ? (workerSessionModes.get(activeWorkerSessionId) ?? "none")
+      : "none";
+    const wIsInMode = activeSessionMode !== "none";
+
+    // Mode colors (same as main view)
+    const getWorkerModeColor = () => {
+      if (activeSessionMode === "plan") return "#3B82F6";
+      if (activeSessionMode === "build") return "#F59E0B";
+      if (activeSessionMode === "review") return "#10B981";
+      return undefined;
+    };
+
+    const wBaseInputHeight = 3;
+    const wStatusHeight = 1;
+    const wTabBarHeight = 1;
     const wQuestionHeight = workerDisplayQuestion
       ? calculateQuestionHeight(workerDisplayQuestion)
       : 0;
-    const wDynamicInputHeight = baseInputHeight + wQuestionHeight;
-    const wInnerWidth = width;
-    const wInnerHeight = height;
-    const wBodyHeight = wInnerHeight - wDynamicInputHeight - statusHeight;
+    const wDynamicInputHeight = wBaseInputHeight + wQuestionHeight;
 
+    // Border adjustment when in a mode
+    const wBorderAdjustment = wIsInMode ? 2 : 0;
+    const wInnerWidth = width - wBorderAdjustment;
+    const wInnerHeight = height - wBorderAdjustment;
+    const wBodyHeight = wInnerHeight - wDynamicInputHeight - wStatusHeight;
+
+    // Sidebar layout — responsive breakpoint
     const COMPACT_BREAKPOINT = 80;
     const wIsCompact = wInnerWidth < COMPACT_BREAKPOINT;
-    const wSidebarWidth = wIsCompact ? wInnerWidth : 30;
-    const wSidebarHeight = wIsCompact ? Math.min(8, Math.floor(wBodyHeight * 0.3)) : wBodyHeight;
-    const wOutputWidth = wIsCompact ? wInnerWidth : wInnerWidth - wSidebarWidth;
-    const wOutputHeight = wIsCompact ? wBodyHeight - wSidebarHeight : wBodyHeight;
+    const wSidebarWidth = wIsCompact ? 0 : 30;
+    const wMainWidth = wInnerWidth - wSidebarWidth;
+    const wMainOutputHeight = wBodyHeight - wTabBarHeight;
+
+    // Derive TabInfo[] from active sessions
+    const workerTabs: TabInfo[] = workerConnection.activeSessions.map((sessionId) => {
+      const sessionMode = workerSessionModes.get(sessionId) ?? "none";
+      const isRunning = workerSessionRunning.get(sessionId) ?? false;
+      const hasQuestion = workerPendingQuestions.has(sessionId);
+      const shortId = sessionId.slice(0, 8);
+      return {
+        id: sessionId,
+        label: shortId,
+        mode: sessionMode as TabInfo["mode"],
+        isRunning,
+        hasQuestion,
+      };
+    });
+
+    // Derive WorktreeInfo[] for the sidebar
+    const workerWorktreeInfos: WorktreeInfo[] = [
+      // Main workspace
+      {
+        path: workspaceRoot,
+        branch: "main",
+        head: "",
+        isMain: true,
+        metadata: null,
+      },
+      // Per-session worktrees
+      ...Array.from(workerSessionWorktrees.entries()).map(([sessionId, wtPath]) => ({
+        path: wtPath,
+        branch: worktreeManagerRef.current?.getBranchName(sessionId) ?? `clive/${sessionId.slice(0, 8)}`,
+        head: "",
+        isMain: false,
+        metadata: null,
+      })),
+    ];
+
+    // Active session's worktree path and branch
+    const activeWorkerWorktreePath = activeWorkerSessionId
+      ? workerSessionWorktrees.get(activeWorkerSessionId) ?? workspaceRoot
+      : workspaceRoot;
+    const activeWorkerBranchName = activeWorkerSessionId
+      ? worktreeManagerRef.current?.getBranchName(activeWorkerSessionId) ?? undefined
+      : undefined;
+
+    // Sync workerTabSelectedIndex with active session
+    const activeWorkerTabIndex = activeWorkerSessionId
+      ? workerConnection.activeSessions.indexOf(activeWorkerSessionId)
+      : 0;
 
     const handleWorkerQuestionAnswer = (answers: Record<string, string>) => {
       if (workerQuestion && activeWorkerSessionId) {
@@ -1172,56 +1327,110 @@ function AppContent() {
         height={height}
         backgroundColor={OneDarkPro.background.primary}
         flexDirection="column"
+        borderStyle={wIsInMode ? "rounded" : undefined}
+        borderColor={wIsInMode ? getWorkerModeColor() : undefined}
       >
-        <box width={wInnerWidth} height={wBodyHeight} flexDirection={wIsCompact ? "column" : "row"}>
-          <Sidebar
-            width={wSidebarWidth}
-            height={wSidebarHeight}
-            tasks={tasks}
-            activeSession={activeSession}
-            layout={wIsCompact ? "horizontal" : "vertical"}
-          />
-          {activeWorkerOutputLines.length > 0 ? (
-            <OutputPanel
-              ref={outputPanelRef}
-              width={wOutputWidth}
-              height={wOutputHeight}
-              lines={activeWorkerOutputLines}
-              isRunning={activeWorkerIsRunning}
-              mode="none"
+        {/* Body: Sidebar + (TabBar + Output) */}
+        <box width={wInnerWidth} height={wBodyHeight} flexDirection="row">
+          {/* WorktreeSidebar (hidden on compact) */}
+          {!wIsCompact && (
+            <WorktreeSidebar
+              width={wSidebarWidth}
+              height={wBodyHeight}
+              worktrees={workerWorktreeInfos}
+              tasksPerWorktree={new Map()}
+              activeWorktreePath={activeWorkerWorktreePath}
+              focused={workerFocusZone === "sidebar"}
+              selectedIndex={sidebarSelectedIndex}
+              expandedPaths={sidebarExpandedPaths}
+              onSelect={(path) => {
+                // Map worktree path back to sessionId
+                for (const [sid, wtPath] of workerSessionWorktrees.entries()) {
+                  if (wtPath === path) {
+                    setActiveWorkerSessionId(sid);
+                    break;
+                  }
+                }
+                setWorkerFocusZone("main");
+              }}
+              onCreateNew={() => {}}
+              onNavigate={setSidebarSelectedIndex}
+              onToggleExpand={(path) => {
+                setSidebarExpandedPaths((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(path)) next.delete(path);
+                  else next.add(path);
+                  return next;
+                });
+              }}
             />
-          ) : (
-            <box
-              width={wOutputWidth}
-              height={wOutputHeight}
-              alignItems="center"
-              justifyContent="center"
-              flexDirection="column"
-              backgroundColor={OneDarkPro.background.primary}
-            >
-              <Logo />
-              <text fg={OneDarkPro.foreground.muted} marginTop={2}>
-                Worker Mode
-              </text>
-              <text fg={OneDarkPro.foreground.muted} marginTop={3}>
-                Waiting for Slack requests...
-              </text>
-              <text fg={OneDarkPro.foreground.muted} marginTop={1}>
-                Mention @clive in Slack to start a planning session
-              </text>
-              {workerConnection.status === "ready" && (
-                <box marginTop={3} padding={1} backgroundColor={OneDarkPro.background.secondary}>
-                  <text fg={OneDarkPro.syntax.green}>Ready to receive requests</text>
-                </box>
-              )}
-              {workerConnection.error && (
-                <text fg={OneDarkPro.syntax.red} marginTop={2}>
-                  Error: {workerConnection.error}
-                </text>
-              )}
-            </box>
           )}
+
+          {/* Main column: Tabs + Output */}
+          <box width={wMainWidth} height={wBodyHeight} flexDirection="column">
+            {/* Tab Bar */}
+            <TabBar
+              width={wMainWidth}
+              tabs={workerTabs}
+              activeTabId={activeWorkerSessionId}
+              focused={workerFocusZone === "tabs"}
+              selectedIndex={activeWorkerTabIndex >= 0 ? activeWorkerTabIndex : workerTabSelectedIndex}
+              onSelectTab={(id) => {
+                setActiveWorkerSessionId(id);
+                setWorkerFocusZone("main");
+              }}
+              onCloseTab={() => {}}
+              onNewTab={() => {}}
+              onNavigate={setWorkerTabSelectedIndex}
+              readonly={true}
+            />
+
+            {/* Output Panel or Empty State */}
+            {activeWorkerOutputLines.length > 0 ? (
+              <OutputPanel
+                ref={outputPanelRef}
+                width={wMainWidth}
+                height={wMainOutputHeight}
+                lines={activeWorkerOutputLines}
+                isRunning={activeWorkerIsRunning}
+                mode={activeSessionMode as "none" | "plan" | "build" | "review"}
+                modeColor={getWorkerModeColor()}
+              />
+            ) : (
+              <box
+                width={wMainWidth}
+                height={wMainOutputHeight}
+                alignItems="center"
+                justifyContent="center"
+                flexDirection="column"
+                backgroundColor={OneDarkPro.background.primary}
+              >
+                <Logo />
+                <text fg={OneDarkPro.foreground.muted} marginTop={2}>
+                  Worker Mode
+                </text>
+                <text fg={OneDarkPro.foreground.muted} marginTop={3}>
+                  Waiting for Slack requests...
+                </text>
+                <text fg={OneDarkPro.foreground.muted} marginTop={1}>
+                  Mention @clive in Slack to start a planning session
+                </text>
+                {workerConnection.status === "ready" && (
+                  <box marginTop={3} padding={1} backgroundColor={OneDarkPro.background.secondary}>
+                    <text fg={OneDarkPro.syntax.green}>Ready to receive requests</text>
+                  </box>
+                )}
+                {workerConnection.error && (
+                  <text fg={OneDarkPro.syntax.red} marginTop={2}>
+                    Error: {workerConnection.error}
+                  </text>
+                )}
+              </box>
+            )}
+          </box>
         </box>
+
+        {/* Input Bar */}
         <DynamicInput
           width={wInnerWidth}
           onSubmit={(msg) => {
@@ -1241,20 +1450,25 @@ function AppContent() {
               sessionManagerRef.current?.cancelSession(activeWorkerSessionId);
             }
           }}
-          mode="none"
+          mode={activeSessionMode === "review" ? "none" : activeSessionMode as "none" | "plan" | "build"}
         />
+
+        {/* Status Bar */}
         <StatusBar
           width={wInnerWidth}
-          height={statusHeight}
+          height={wStatusHeight}
           isRunning={activeWorkerIsRunning}
           inputFocused={inputFocused}
-          workspaceRoot={workspaceRoot}
+          workspaceRoot={activeWorkerWorktreePath}
           workerMode={true}
           workerStatus={workerConnection.status}
           workerId={workerConnection.workerId}
           activeSessions={workerConnection.activeSessions}
           activeSessionId={activeWorkerSessionId}
           workerError={workerConnection.error}
+          workerBranchName={activeWorkerBranchName}
+          workerSessionMode={activeSessionMode as "none" | "plan" | "build" | "review"}
+          workerFocusZone={workerFocusZone}
         />
       </box>
     );

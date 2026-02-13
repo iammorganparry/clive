@@ -32,6 +32,12 @@ interface StatusBarProps {
   activeSessionId?: string | null;
   /** Connection error message */
   workerError?: string | null;
+  /** Active session's branch name (worker mode) */
+  workerBranchName?: string | null;
+  /** Active session's mode (worker mode) */
+  workerSessionMode?: "none" | "plan" | "build" | "review";
+  /** Focus zone in worker mode */
+  workerFocusZone?: "sidebar" | "tabs" | "main";
 }
 
 export function StatusBar({
@@ -50,6 +56,9 @@ export function StatusBar({
   activeSessions = [],
   activeSessionId,
   workerError,
+  workerBranchName,
+  workerSessionMode = "none",
+  workerFocusZone,
 }: StatusBarProps) {
   const statusText = isRunning ? "⏳ Executing..." : "✓ Ready";
   const statusColor = isRunning
@@ -133,6 +142,26 @@ export function StatusBar({
     ? activeSessions.indexOf(activeSessionId)
     : -1;
 
+  // Mode color helper
+  const getSessionModeColor = (m: string): string => {
+    switch (m) {
+      case "plan": return "#3B82F6"; // blue-500
+      case "build": return "#F59E0B"; // amber-500
+      case "review": return "#10B981"; // green-500
+      default: return OneDarkPro.foreground.muted;
+    }
+  };
+
+  // Focus zone display
+  const getFocusZoneDisplay = (zone?: string): string => {
+    switch (zone) {
+      case "sidebar": return "[sidebar]";
+      case "tabs": return "[tabs]";
+      case "main": return "[main]";
+      default: return "";
+    }
+  };
+
   // Context-sensitive help hints
   let helpHint = "";
   if (workerMode) {
@@ -140,9 +169,9 @@ export function StatusBar({
     if (workerStatus === "disconnected") {
       helpHint = "r Reconnect  •  q Exit  •  Ctrl+C Quit";
     } else if (hasMultipleSessions) {
-      helpHint = "n/p Cycle  •  q Exit  •  Ctrl+C Quit";
+      helpHint = "Tab focus  •  n/p Cycle  •  1-9 Jump  •  q Exit";
     } else {
-      helpHint = "q Exit  •  Ctrl+C Quit";
+      helpHint = "Tab focus  •  q Exit  •  Ctrl+C Quit";
     }
   } else if (inputFocused) {
     helpHint = "Enter execute  •  Esc unfocus  •  ⇧Tab mode  •  Ctrl+C quit";
@@ -166,10 +195,26 @@ export function StatusBar({
       <box flexDirection="row">
         {workerMode && workerModeDisplay ? (
           <>
-            {/* Worker mode: Show connection status prominently */}
+            {/* Worker mode: Show connection status */}
             <text fg={workerModeDisplay.color}>
               [{workerModeDisplay.icon}] {workerModeDisplay.text}
             </text>
+            {/* Show branch name if available */}
+            {workerBranchName && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.syntax.magenta}>{workerBranchName}</text>
+              </>
+            )}
+            {/* Show session mode with color */}
+            {workerSessionMode && workerSessionMode !== "none" && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={getSessionModeColor(workerSessionMode)}>
+                  {workerSessionMode.toUpperCase()}
+                </text>
+              </>
+            )}
             {/* Show session info if we have sessions */}
             {activeSessions.length > 0 && (
               <>
@@ -186,6 +231,15 @@ export function StatusBar({
               <>
                 <text fg={OneDarkPro.foreground.muted}> • </text>
                 <text fg={OneDarkPro.syntax.yellow}>⏳ Running</text>
+              </>
+            )}
+            {/* Show focus zone */}
+            {workerFocusZone && (
+              <>
+                <text fg={OneDarkPro.foreground.muted}> • </text>
+                <text fg={OneDarkPro.foreground.secondary}>
+                  {getFocusZoneDisplay(workerFocusZone)}
+                </text>
               </>
             )}
             {/* Show error if any */}

@@ -20,6 +20,7 @@ import type {
 } from "@clive/worker-protocol";
 import { Effect, type Runtime, Stream } from "effect";
 import { loadCommand } from "../utils/command-loader";
+import type { WorktreeManager } from "./WorktreeManager";
 
 /**
  * Session mode type
@@ -69,6 +70,8 @@ interface ActiveSession {
   handle: CliExecutionHandle;
   startedAt: Date;
   messages: ChatMessage[];
+  worktreePath?: string;
+  mode?: SessionMode;
 }
 
 /**
@@ -88,10 +91,12 @@ export class WorkerSessionManager extends EventEmitter {
   private runtime: Runtime.Runtime<ClaudeCliService>;
   private activeSessions = new Map<string, ActiveSession>();
   private workspaceRoot: string;
+  private worktreeManager?: WorktreeManager;
 
-  constructor(workspaceRoot: string) {
+  constructor(workspaceRoot: string, worktreeManager?: WorktreeManager) {
     super();
     this.workspaceRoot = workspaceRoot;
+    this.worktreeManager = worktreeManager;
 
     // Create Effect runtime with ClaudeCliService
     const layer = ClaudeCliService.Default;
@@ -146,8 +151,21 @@ export class WorkerSessionManager extends EventEmitter {
       ? `Plan the following: ${initialPrompt}`
       : "Help me plan a new feature. What would you like to build?";
 
-    const command = loadCommand(mode, this.workspaceRoot);
-    const systemPrompt = command?.content || getSystemPromptForMode(mode, this.workspaceRoot);
+    // Create worktree for session isolation if worktree manager is available
+    let worktreePath: string | undefined;
+    if (this.worktreeManager) {
+      try {
+        worktreePath = this.worktreeManager.create(sessionId);
+        console.log(`[WorkerSessionManager] Created worktree for ${sessionId} at ${worktreePath}`);
+      } catch (error) {
+        console.warn(`[WorkerSessionManager] Failed to create worktree for ${sessionId}, using main workspace:`, error);
+      }
+    }
+
+    const effectiveWorkspaceRoot = worktreePath || this.workspaceRoot;
+
+    const command = loadCommand(mode, effectiveWorkspaceRoot);
+    const systemPrompt = command?.content || getSystemPromptForMode(mode, effectiveWorkspaceRoot);
     const modelToUse = request.model || command?.metadata.model;
     const allowedTools = command?.metadata.allowedTools;
     const disallowedTools = command?.metadata.deniedTools;
@@ -162,6 +180,8 @@ export class WorkerSessionManager extends EventEmitter {
         [userMessage],
         allowedTools,
         disallowedTools,
+        worktreePath,
+        mode,
       ),
     );
 
@@ -198,6 +218,8 @@ export class WorkerSessionManager extends EventEmitter {
     initialMessages: ChatMessage[],
     allowedTools?: string[],
     disallowedTools?: string[],
+    worktreePath?: string,
+    mode?: SessionMode,
   ) {
     const self = this;
 
@@ -207,7 +229,7 @@ export class WorkerSessionManager extends EventEmitter {
       const handle = yield* cliService.execute({
         prompt,
         systemPrompt,
-        workspaceRoot: self.workspaceRoot,
+        workspaceRoot: worktreePath || self.workspaceRoot,
         model,
         allowedTools,
         disallowedTools,
@@ -218,6 +240,8 @@ export class WorkerSessionManager extends EventEmitter {
         handle,
         startedAt: new Date(),
         messages: [...initialMessages],
+        worktreePath,
+        mode,
       };
       self.activeSessions.set(sessionId, session);
 
@@ -237,6 +261,14 @@ export class WorkerSessionManager extends EventEmitter {
       );
 
       // Cleanup after stream ends
+      const completedSession = self.activeSessions.get(sessionId);
+      if (completedSession?.worktreePath && self.worktreeManager) {
+        try {
+          self.worktreeManager.remove(sessionId);
+        } catch (error) {
+          console.warn(`[WorkerSessionManager] Failed to remove worktree for ${sessionId}:`, error);
+        }
+      }
       self.activeSessions.delete(sessionId);
       console.log(`[WorkerSessionManager] Session ${sessionId} completed`);
     };
@@ -523,6 +555,16 @@ export class WorkerSessionManager extends EventEmitter {
     } catch {
       // Ignore errors during cleanup
     }
+
+    // Clean up worktree if one was created
+    if (session.worktreePath && this.worktreeManager) {
+      try {
+        this.worktreeManager.remove(sessionId);
+      } catch (error) {
+        console.warn(`[WorkerSessionManager] Failed to remove worktree for ${sessionId}:`, error);
+      }
+    }
+
     this.activeSessions.delete(sessionId);
   }
 
@@ -545,6 +587,20 @@ export class WorkerSessionManager extends EventEmitter {
    */
   get activeSessionCount(): number {
     return this.activeSessions.size;
+  }
+
+  /**
+   * Get the worktree path for a session
+   */
+  getWorktreePath(sessionId: string): string | undefined {
+    return this.activeSessions.get(sessionId)?.worktreePath;
+  }
+
+  /**
+   * Get the mode for a session
+   */
+  getMode(sessionId: string): SessionMode | undefined {
+    return this.activeSessions.get(sessionId)?.mode;
   }
 
   /**
