@@ -9,6 +9,14 @@
       "env": {
         "MEMORY_SERVER_URL": "http://localhost:8741"
       }
+    },
+    "inngest": {
+      "command": "npx",
+      "args": ["tsx", "../trigify-app/packages/inngest-mcp/src/index.ts"],
+      "env": {
+        "INNGEST_SIGNING_KEY": "${INNGEST_SIGNING_KEY}",
+        "INNGEST_EVENT_KEY": "${INNGEST_EVENT_KEY}"
+      }
     }
   }
 }

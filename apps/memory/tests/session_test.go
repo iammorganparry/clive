@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/anthropics/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
 )
 
 func TestSessionSummaryMemoryType(t *testing.T) {

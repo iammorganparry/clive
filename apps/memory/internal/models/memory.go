@@ -33,6 +33,9 @@ type Memory struct {
 
 	// Feature 5: Zeigarnik Effect
 	CompletionStatus *string `json:"completionStatus,omitempty"`
+
+	// Feature Thread association
+	ThreadID *string `json:"threadId,omitempty"`
 }
 
 // EncodingContext captures the context in which a memory was created,

@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
 )
 
 type MemoryHandler struct {

@@ -1,4 +1,4 @@
-module github.com/anthropics/clive/apps/memory
+module github.com/iammorganparry/clive/apps/memory
 
 go 1.24.0
 

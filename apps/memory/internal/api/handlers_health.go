@@ -3,10 +3,10 @@ package api
 import (
 	"net/http"
 
-	"github.com/anthropics/clive/apps/memory/internal/embedding"
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/embedding"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 type HealthHandler struct {

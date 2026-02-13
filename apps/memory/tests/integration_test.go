@@ -12,14 +12,15 @@ import (
 
 	"log/slog"
 
-	"github.com/anthropics/clive/apps/memory/internal/api"
-	"github.com/anthropics/clive/apps/memory/internal/embedding"
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/search"
-	"github.com/anthropics/clive/apps/memory/internal/sessions"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/api"
+	"github.com/iammorganparry/clive/apps/memory/internal/embedding"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/sessions"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/threads"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 // fakeOllamaServer returns a test HTTP server that mimics the Ollama embedding API.
@@ -121,7 +122,10 @@ func setupIntegrationTest(t *testing.T) (*httptest.Server, func()) {
 	obsStore := sessions.NewObservationStore(db)
 	summarizer := sessions.NewSummarizer(ollamaSrv.URL, "test-model", false, logger)
 
-	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, nil, sessStore, obsStore, summarizer, "", logger)
+	threadStore := store.NewThreadStore(db)
+	threadSvc := threads.NewService(threadStore, memoryStore, workspaceStore, logger)
+
+	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, nil, sessStore, obsStore, summarizer, threadSvc, "", logger)
 	srv := httptest.NewServer(router)
 
 	cleanup := func() {

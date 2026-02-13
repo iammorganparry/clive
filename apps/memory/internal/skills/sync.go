@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 // SyncResult reports what happened during a skill sync.

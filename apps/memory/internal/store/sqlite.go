@@ -90,6 +90,93 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// --- Migration v5: Feature threads ---
+	if err := runThreadsMigration(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// runThreadsMigration creates feature_threads and thread_entries tables,
+// and adds a thread_id column to the memories table (Migration v5).
+func runThreadsMigration(db *sql.DB) error {
+	// Create feature_threads table
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS feature_threads (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'active',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			closed_at INTEGER,
+			entry_count INTEGER NOT NULL DEFAULT 0,
+			token_budget INTEGER NOT NULL DEFAULT 4000,
+			summary TEXT NOT NULL DEFAULT '',
+			related_files TEXT,
+			tags TEXT,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create feature_threads table: %w", err)
+	}
+
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_threads_workspace ON feature_threads(workspace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_threads_status ON feature_threads(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_threads_name ON feature_threads(name)`,
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("create feature_threads index: %w", err)
+		}
+	}
+
+	// Create thread_entries table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS thread_entries (
+			id TEXT PRIMARY KEY,
+			thread_id TEXT NOT NULL,
+			memory_id TEXT NOT NULL,
+			sequence INTEGER NOT NULL,
+			section TEXT NOT NULL DEFAULT 'context',
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (thread_id) REFERENCES feature_threads(id) ON DELETE CASCADE,
+			FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create thread_entries table: %w", err)
+	}
+
+	entryIndexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_thread_entries_thread ON thread_entries(thread_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_entries_memory ON thread_entries(memory_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_entries_sequence ON thread_entries(thread_id, sequence)`,
+	}
+	for _, idx := range entryIndexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("create thread_entries index: %w", err)
+		}
+	}
+
+	// Add thread_id column to memories table
+	hasThreadID, err := columnExists(db, "memories", "thread_id")
+	if err != nil {
+		return fmt.Errorf("check thread_id column: %w", err)
+	}
+	if !hasThreadID {
+		if _, err := db.Exec(`ALTER TABLE memories ADD COLUMN thread_id TEXT REFERENCES feature_threads(id) ON DELETE SET NULL`); err != nil {
+			return fmt.Errorf("add thread_id to memories: %w", err)
+		}
+		if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_thread_id ON memories(thread_id)`); err != nil {
+			return fmt.Errorf("create memories thread_id index: %w", err)
+		}
+	}
+
 	return nil
 }
 

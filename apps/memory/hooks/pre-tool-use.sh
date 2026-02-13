@@ -2,7 +2,8 @@
 # Hook: PreToolUse
 # Trigger: Before Write, Edit, or MultiEdit tool calls.
 # Action: Search for known gotchas/failures related to the files being modified.
-set -euo pipefail
+set -uo pipefail
+trap 'echo "{}"; exit 0' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"

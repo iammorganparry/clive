@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/anthropics/clive/apps/memory/internal/privacy"
+	"github.com/iammorganparry/clive/apps/memory/internal/privacy"
 )
 
 func TestStripPrivateTags(t *testing.T) {

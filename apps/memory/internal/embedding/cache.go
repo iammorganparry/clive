@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/search"
-	"github.com/anthropics/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
 )
 
 // CachedEmbedder wraps an OllamaClient with content-hash caching via SQLite.

@@ -272,6 +272,14 @@ strip_private_tags() {
   echo "$content" | perl -0pe 's/<private>.*?<\/private>//gs' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+# Get the current git branch name. Returns empty string if not in a git repo.
+get_branch() {
+  local workspace="${1:-$(get_workspace 2>/dev/null || pwd)}"
+  if command -v git >/dev/null 2>&1 && [ -d "$workspace/.git" ]; then
+    git -C "$workspace" branch --show-current 2>/dev/null || true
+  fi
+}
+
 # Silently fail - hooks should never block Claude Code.
 safe_exit() {
   echo '{}'

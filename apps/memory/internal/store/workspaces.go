@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anthropics/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
 )
 
 // WorkspaceStore handles workspace registration and lookup.

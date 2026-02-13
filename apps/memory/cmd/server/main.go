@@ -10,15 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/clive/apps/memory/internal/api"
-	"github.com/anthropics/clive/apps/memory/internal/config"
-	"github.com/anthropics/clive/apps/memory/internal/embedding"
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/search"
-	"github.com/anthropics/clive/apps/memory/internal/sessions"
-	"github.com/anthropics/clive/apps/memory/internal/skills"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/api"
+	"github.com/iammorganparry/clive/apps/memory/internal/config"
+	"github.com/iammorganparry/clive/apps/memory/internal/embedding"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/sessions"
+	"github.com/iammorganparry/clive/apps/memory/internal/skills"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/threads"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 func main() {
@@ -98,8 +99,12 @@ func main() {
 		skillSync = skills.NewSyncService(svc, memoryStore, qdrantClient, cfg.SkillDirs, logger)
 	}
 
+	// Feature threads
+	threadStore := store.NewThreadStore(db)
+	threadSvc := threads.NewService(threadStore, memoryStore, workspaceStore, logger)
+
 	// Router
-	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, skillSync, sessStore, obsStore, summarizer, cfg.APIKey, logger)
+	router := api.NewRouter(db, svc, ollamaClient, qdrantClient, skillSync, sessStore, obsStore, summarizer, threadSvc, cfg.APIKey, logger)
 
 	// Server
 	addr := fmt.Sprintf(":%d", cfg.Port)

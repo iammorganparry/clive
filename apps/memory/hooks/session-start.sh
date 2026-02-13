@@ -2,7 +2,8 @@
 # Hook: SessionStart
 # Trigger: When a new Claude Code session begins.
 # Action: Check server health, inject recent workspace memories and last session summary.
-set -euo pipefail
+set -uo pipefail
+trap 'echo "{}"; exit 0' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
@@ -15,6 +16,49 @@ if ! is_server_healthy; then
 fi
 
 WORKSPACE=$(get_workspace)
+
+# --- Active Feature Threads (highest priority, branch-aware) ---
+THREAD_CONTEXT=""
+WS_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$WORKSPACE'))" 2>/dev/null || echo "$WORKSPACE")
+BRANCH=$(get_branch "$WORKSPACE")
+BRANCH_ENCODED=""
+if [ -n "$BRANCH" ]; then
+  BRANCH_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$BRANCH'))" 2>/dev/null || echo "$BRANCH")
+fi
+
+THREAD_RESPONSE=$(api_call GET "/threads/active/context?workspace=${WS_ENCODED}&branch=${BRANCH_ENCODED}") || true
+if [ -n "$THREAD_RESPONSE" ]; then
+  THREAD_CTX=$(echo "$THREAD_RESPONSE" | jq -r '.context // empty' 2>/dev/null) || true
+  if [ -n "$THREAD_CTX" ] && [ "$THREAD_CTX" != "null" ]; then
+    THREAD_CONTEXT="$THREAD_CTX"
+  fi
+fi
+
+# If on a feature branch with no matching thread, instruct Claude to create one
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
+  # Check if a thread exists for this branch (any status)
+  BRANCH_THREAD=$(api_call GET "/threads?workspace=${WS_ENCODED}&name=${BRANCH_ENCODED}" 2>/dev/null) || true
+  BRANCH_THREAD_COUNT=$(echo "$BRANCH_THREAD" | jq -r '.threads | length' 2>/dev/null) || BRANCH_THREAD_COUNT=0
+  if [ "$BRANCH_THREAD_COUNT" = "0" ] || [ -z "$BRANCH_THREAD_COUNT" ]; then
+    NO_THREAD_MSG="<branch-thread-required branch=\"${BRANCH}\">
+MANDATORY: You are on branch '${BRANCH}' but no feature thread exists for it.
+You MUST create a feature thread BEFORE starting any work:
+
+bash ${SCRIPT_DIR}/thread.sh start \"${BRANCH}\" \"<describe what this branch is for>\"
+
+Then append findings, decisions, and context as you work:
+bash ${SCRIPT_DIR}/thread.sh append \"${BRANCH}\" \"<what you learned>\" findings
+bash ${SCRIPT_DIR}/thread.sh append \"${BRANCH}\" \"<decision made>\" decisions
+
+This ensures context persists across sessions for this feature branch.
+</branch-thread-required>"
+    if [ -n "$THREAD_CONTEXT" ]; then
+      THREAD_CONTEXT="${NO_THREAD_MSG}"$'\n'"${THREAD_CONTEXT}"
+    else
+      THREAD_CONTEXT="$NO_THREAD_MSG"
+    fi
+  fi
+fi
 
 # Search for recent and high-confidence memories for this workspace
 BODY=$(jq -n \
@@ -95,8 +139,11 @@ if [ -n "$APP_KNOWLEDGE_RESPONSE" ]; then
   fi
 fi
 
-# Combine all contexts — app knowledge first for deep context
+# Combine all contexts — thread context first (highest priority), then app knowledge
 COMBINED=""
+if [ -n "$THREAD_CONTEXT" ]; then
+  COMBINED="$THREAD_CONTEXT"
+fi
 if [ -n "$APP_KNOWLEDGE_CONTEXT" ]; then
   COMBINED="<app-knowledge>The following memories describe the application you are building. Use this knowledge to inform all your work — architecture, data flow, component roles, and design decisions.</app-knowledge>"$'\n'"$APP_KNOWLEDGE_CONTEXT"
 fi

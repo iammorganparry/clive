@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/search"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 // LifecycleManager handles TTL expiry, short->long promotion, and compaction.

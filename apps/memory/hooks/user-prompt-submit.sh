@@ -2,7 +2,8 @@
 # Hook: UserPromptSubmit
 # Trigger: Every time the user sends a message.
 # Action: Search for relevant context using progressive disclosure (Layer 1 index → Layer 3 batch).
-set -euo pipefail
+set -uo pipefail
+trap 'echo "{}"; exit 0' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
@@ -79,7 +80,6 @@ if [ "$TOP_IDS" != "[]" ] && [ -n "$TOP_IDS" ]; then
   if [ -n "$BATCH_RESPONSE" ]; then
     # Format full memories as XML
     FULL_MEMORIES=$(echo "$BATCH_RESPONSE" | jq -c '.memories[]?' 2>/dev/null | while IFS= read -r mem; do
-      local mid mtype content impact
       mid=$(echo "$mem" | jq -r '.id // empty')
       mtype=$(echo "$mem" | jq -r '.memoryType // empty')
       content=$(echo "$mem" | jq -r '.content // empty')
@@ -91,7 +91,6 @@ fi
 
 # Format remaining index results (positions 2+) as compact previews
 PREVIEW_MEMORIES=$(echo "$INDEX_RESPONSE" | jq -c '.results[2:][]?' 2>/dev/null | while IFS= read -r result; do
-  local mid mtype preview score
   mid=$(echo "$result" | jq -r '.id // empty')
   mtype=$(echo "$result" | jq -r '.memoryType // empty')
   preview=$(echo "$result" | jq -r '.contentPreview // empty')
@@ -108,8 +107,34 @@ if [ -n "$FULL_MEMORIES" ] || [ -n "$PREVIEW_MEMORIES" ]; then
   CONTEXT="${CONTEXT}"$'\n'"</recalled-memories>"
 fi
 
+# Check if a branch thread exists and inject a reminder if Claude hasn't created one
+BRANCH_REMINDER=""
+BRANCH=$(get_branch "$WORKSPACE")
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
+  WS_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$WORKSPACE'))" 2>/dev/null || echo "$WORKSPACE")
+  BRANCH_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$BRANCH'))" 2>/dev/null || echo "$BRANCH")
+  BRANCH_THREAD=$(api_call GET "/threads?workspace=${WS_ENCODED}&name=${BRANCH_ENCODED}" 2>/dev/null) || true
+  BRANCH_THREAD_COUNT=$(echo "$BRANCH_THREAD" | jq -r '.threads | length' 2>/dev/null) || BRANCH_THREAD_COUNT=0
+  if [ "$BRANCH_THREAD_COUNT" = "0" ] || [ -z "$BRANCH_THREAD_COUNT" ]; then
+    BRANCH_REMINDER="<branch-thread-missing branch=\"${BRANCH}\">No feature thread for this branch. Create one NOW: bash ${SCRIPT_DIR}/thread.sh start \"${BRANCH}\" \"description\"</branch-thread-missing>"
+  fi
+fi
+
+# Combine branch reminder with recalled memories
+FINAL_CONTEXT=""
+if [ -n "$BRANCH_REMINDER" ]; then
+  FINAL_CONTEXT="$BRANCH_REMINDER"
+fi
 if [ -n "$CONTEXT" ]; then
-  hook_output "$CONTEXT"
+  if [ -n "$FINAL_CONTEXT" ]; then
+    FINAL_CONTEXT="${FINAL_CONTEXT}"$'\n'"${CONTEXT}"
+  else
+    FINAL_CONTEXT="$CONTEXT"
+  fi
+fi
+
+if [ -n "$FINAL_CONTEXT" ]; then
+  hook_output "$FINAL_CONTEXT"
 else
   echo '{}'
 fi

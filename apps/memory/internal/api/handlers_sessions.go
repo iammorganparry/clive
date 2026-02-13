@@ -6,10 +6,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/models"
-	"github.com/anthropics/clive/apps/memory/internal/sessions"
-	"github.com/anthropics/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/sessions"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
 )
 
 // SessionHandler handles session-related HTTP requests.

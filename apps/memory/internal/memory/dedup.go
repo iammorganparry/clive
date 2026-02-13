@@ -1,9 +1,9 @@
 package memory
 
 import (
-	"github.com/anthropics/clive/apps/memory/internal/embedding"
-	"github.com/anthropics/clive/apps/memory/internal/search"
-	"github.com/anthropics/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/embedding"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
 )
 
 // DedupResult captures the outcome of a duplicate check.

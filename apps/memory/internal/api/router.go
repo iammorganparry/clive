@@ -5,12 +5,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/anthropics/clive/apps/memory/internal/embedding"
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/sessions"
-	"github.com/anthropics/clive/apps/memory/internal/skills"
-	"github.com/anthropics/clive/apps/memory/internal/store"
-	"github.com/anthropics/clive/apps/memory/internal/vectorstore"
+	"github.com/iammorganparry/clive/apps/memory/internal/embedding"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/sessions"
+	"github.com/iammorganparry/clive/apps/memory/internal/skills"
+	"github.com/iammorganparry/clive/apps/memory/internal/store"
+	"github.com/iammorganparry/clive/apps/memory/internal/threads"
+	"github.com/iammorganparry/clive/apps/memory/internal/vectorstore"
 )
 
 // NewRouter creates the Chi router with all routes and middleware.
@@ -23,6 +24,7 @@ func NewRouter(
 	sessStore *sessions.SessionStore,
 	obsStore *sessions.ObservationStore,
 	summarizer *sessions.Summarizer,
+	threadSvc *threads.Service,
 	apiKey string,
 	logger *slog.Logger,
 ) *chi.Mux {
@@ -88,6 +90,22 @@ func NewRouter(
 			r.Route("/skills", func(r chi.Router) {
 				r.Post("/sync", skillH.Sync)
 				r.Get("/", skillH.List)
+			})
+		}
+
+		// Thread routes
+		if threadSvc != nil {
+			threadH := NewThreadHandler(threadSvc)
+			r.Route("/threads", func(r chi.Router) {
+				r.Post("/", threadH.Create)
+				r.Get("/", threadH.List)
+				r.Get("/active/context", threadH.GetActiveContext)
+				r.Get("/{id}", threadH.Get)
+				r.Patch("/{id}", threadH.Update)
+				r.Delete("/{id}", threadH.Delete)
+				r.Post("/{id}/entries", threadH.AppendEntry)
+				r.Post("/{id}/close", threadH.Close)
+				r.Get("/{id}/context", threadH.GetContext)
 			})
 		}
 	})

@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/anthropics/clive/apps/memory/internal/skills"
+	"github.com/iammorganparry/clive/apps/memory/internal/skills"
 )
 
 // SkillHandler handles skill-related API endpoints.

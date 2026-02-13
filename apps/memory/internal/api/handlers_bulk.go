@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/anthropics/clive/apps/memory/internal/memory"
-	"github.com/anthropics/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/memory"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
 )
 
 type BulkHandler struct {

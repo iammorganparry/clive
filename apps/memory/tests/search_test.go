@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/anthropics/clive/apps/memory/internal/search"
+	"github.com/iammorganparry/clive/apps/memory/internal/search"
 )
 
 func TestCosineSimilarity(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/clive/apps/memory/internal/models"
+	"github.com/iammorganparry/clive/apps/memory/internal/models"
 )
 
 // memoryColumns is the canonical column list for all SELECT queries.
@@ -19,7 +19,8 @@ const memoryColumns = `id, workspace_id, content, memory_type, tier, confidence,
 	stability, last_accessed_at,
 	encoding_context,
 	superseded_by,
-	completion_status`
+	completion_status,
+	thread_id`
 
 // MemoryStore handles Memory CRUD operations on SQLite.
 type MemoryStore struct {
@@ -49,8 +50,9 @@ func (s *MemoryStore) Insert(m *models.Memory) error {
 			stability, last_accessed_at,
 			encoding_context,
 			superseded_by,
-			completion_status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			completion_status,
+			thread_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		m.ID, m.WorkspaceID, m.Content, string(m.MemoryType), string(m.Tier),
 		m.Confidence, m.AccessCount, string(tagsJSON), m.Source, m.SessionID,
@@ -61,6 +63,7 @@ func (s *MemoryStore) Insert(m *models.Memory) error {
 		nullableString(encodingCtxJSON),
 		m.SupersededBy,
 		m.CompletionStatus,
+		m.ThreadID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert memory: %w", err)
@@ -241,9 +244,14 @@ func (s *MemoryStore) SetTier(id string, tier models.Tier, expiresAt *int64) err
 }
 
 // DeleteExpired removes all memories whose expires_at has passed.
+// Active thread entries are exempt from expiry.
 func (s *MemoryStore) DeleteExpired() (int64, error) {
 	res, err := s.db.Exec(`
-		DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?
+		DELETE FROM memories
+		WHERE expires_at IS NOT NULL AND expires_at < ?
+		  AND (thread_id IS NULL OR thread_id NOT IN (
+		    SELECT id FROM feature_threads WHERE status = 'active'
+		  ))
 	`, time.Now().Unix())
 	if err != nil {
 		return 0, fmt.Errorf("delete expired: %w", err)
@@ -636,6 +644,7 @@ func (s *MemoryStore) scanOne(row *sql.Row) (*models.Memory, error) {
 	var encodingCtxJSON sql.NullString
 	var supersededBy sql.NullString
 	var completionStatus sql.NullString
+	var threadID sql.NullString
 
 	err := row.Scan(
 		&m.ID, &m.WorkspaceID, &m.Content, &m.MemoryType, &m.Tier,
@@ -647,13 +656,14 @@ func (s *MemoryStore) scanOne(row *sql.Row) (*models.Memory, error) {
 		&encodingCtxJSON,
 		&supersededBy,
 		&completionStatus,
+		&threadID,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	populateMemoryNullables(&m, tagsJSON, source, sessionID, embModel, expiresAt,
-		relatedFilesJSON, lastAccessedAt, encodingCtxJSON, supersededBy, completionStatus)
+		relatedFilesJSON, lastAccessedAt, encodingCtxJSON, supersededBy, completionStatus, threadID)
 
 	return &m, nil
 }
@@ -670,6 +680,7 @@ func (s *MemoryStore) scanMany(rows *sql.Rows) ([]*models.Memory, error) {
 		var encodingCtxJSON sql.NullString
 		var supersededBy sql.NullString
 		var completionStatus sql.NullString
+		var threadID sql.NullString
 
 		if err := rows.Scan(
 			&m.ID, &m.WorkspaceID, &m.Content, &m.MemoryType, &m.Tier,
@@ -681,12 +692,13 @@ func (s *MemoryStore) scanMany(rows *sql.Rows) ([]*models.Memory, error) {
 			&encodingCtxJSON,
 			&supersededBy,
 			&completionStatus,
+			&threadID,
 		); err != nil {
 			return nil, fmt.Errorf("scan memory: %w", err)
 		}
 
 		populateMemoryNullables(&m, tagsJSON, source, sessionID, embModel, expiresAt,
-			relatedFilesJSON, lastAccessedAt, encodingCtxJSON, supersededBy, completionStatus)
+			relatedFilesJSON, lastAccessedAt, encodingCtxJSON, supersededBy, completionStatus, threadID)
 
 		result = append(result, &m)
 	}
@@ -700,7 +712,7 @@ func populateMemoryNullables(
 	expiresAt sql.NullInt64,
 	relatedFilesJSON sql.NullString,
 	lastAccessedAt sql.NullInt64,
-	encodingCtxJSON, supersededBy, completionStatus sql.NullString,
+	encodingCtxJSON, supersededBy, completionStatus, threadID sql.NullString,
 ) {
 	if tagsJSON.Valid {
 		json.Unmarshal([]byte(tagsJSON.String), &m.Tags)
@@ -734,6 +746,9 @@ func populateMemoryNullables(
 	}
 	if completionStatus.Valid {
 		m.CompletionStatus = &completionStatus.String
+	}
+	if threadID.Valid {
+		m.ThreadID = &threadID.String
 	}
 }
 

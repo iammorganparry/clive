@@ -64,6 +64,7 @@ export type ClaudeCliEvent =
   | { type: "text"; content: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; id: string; content: string }
+  | { type: "tool_rejected"; id: string; isAskUserQuestion: boolean }
   | { type: "thinking"; content: string }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -647,8 +648,15 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
             const permissionMode = options.permissionMode ?? "bypassPermissions";
             args.push("--permission-mode", permissionMode);
 
-            // Allowed tools — always include MCP tools, optionally add more from caller
-            const allowedTools = ["mcp__clive-tools__*"];
+            // Allowed tools — always include MCP tools + built-in interactive tools
+            // AskUserQuestion, EnterPlanMode, ExitPlanMode are built-in Claude tools
+            // that must be explicitly allowed or the CLI auto-rejects them with is_error: true
+            const allowedTools = [
+              "mcp__clive-tools__*",
+              "AskUserQuestion",
+              "EnterPlanMode",
+              "ExitPlanMode",
+            ];
             if (options.allowedTools?.length) {
               allowedTools.push(...options.allowedTools);
             }
@@ -895,6 +903,13 @@ export class ClaudeCliService extends Effect.Service<ClaudeCliService>()(
                           `[ClaudeCliService] Permission denial for tool: ${toolUseId}`,
                         );
                       }
+                      // Emit a tool_rejected event so CliManager can track
+                      // auto-rejected tools and prevent stale tool_results
+                      emit.single({
+                        type: "tool_rejected",
+                        id: toolUseId,
+                        isAskUserQuestion,
+                      });
                     },
                   );
 

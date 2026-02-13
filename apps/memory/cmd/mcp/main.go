@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/anthropics/clive/apps/memory/internal/mcp"
+	"github.com/iammorganparry/clive/apps/memory/internal/mcp"
 )
 
 func main() {

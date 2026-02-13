@@ -59,6 +59,10 @@ export class CliManager extends EventEmitter {
   // Track which tool results have already been sent to prevent duplicates
   private sentToolResults = new Set<string>();
 
+  // Track questions auto-rejected by the CLI (e.g. when not in --allowedTools)
+  // Prevents sending stale tool_results that would cause 400 API errors
+  private cliRejectedQuestions = new Set<string>();
+
   // Accumulation buffer for completion marker detection across streaming chunks
   private accumulatedText = "";
 
@@ -508,6 +512,30 @@ export class CliManager extends EventEmitter {
         break;
       }
 
+      case "tool_rejected": {
+        // CLI auto-rejected this tool (not in --allowedTools)
+        // Track it so we can block stale tool_results from being sent later
+        this.cliRejectedQuestions.add(event.id);
+        debugLog("CliManager", "Tool auto-rejected by CLI", {
+          toolId: event.id,
+          isAskUserQuestion: event.isAskUserQuestion,
+        });
+
+        if (event.isAskUserQuestion) {
+          // Clear pending question state since CLI already rejected it
+          if (this.pendingQuestionId === event.id) {
+            this.pendingQuestionId = null;
+          }
+          this.currentTurnQuestionIds.delete(event.id);
+        }
+
+        outputs.push({
+          text: `Tool rejected by CLI: ${event.id}`,
+          type: "system",
+        });
+        break;
+      }
+
       case "done": {
         // NOTE: Do NOT clear currentTurnQuestionIds or pendingQuestionId here.
         // A done event with stop_reason="tool_use" fires when Claude requests a
@@ -575,6 +603,27 @@ export class CliManager extends EventEmitter {
         "ERROR: Cannot send tool result - no active handle",
       );
       console.error("[CliManager] Cannot send tool result - no active handle");
+      return;
+    }
+
+    // Safety net: prevent sending tool_results for questions the CLI already auto-rejected
+    // This happens when AskUserQuestion wasn't in --allowedTools — the CLI rejects instantly,
+    // but the TUI may still show the question UI. Sending a stale answer causes 400 errors.
+    if (this.cliRejectedQuestions.has(toolId)) {
+      debugLog(
+        "CliManager",
+        "Tool result blocked - question was auto-rejected by CLI",
+        { toolId },
+      );
+
+      this.conversationLogger.log({
+        timestamp: new Date().toISOString(),
+        type: "tool_result_blocked",
+        toolId,
+        result,
+        reason: "Question was auto-rejected by CLI (not in --allowedTools)",
+      });
+
       return;
     }
 
@@ -830,6 +879,7 @@ export class CliManager extends EventEmitter {
     this.pendingQuestionId = null;
     this.currentTurnQuestionIds.clear();
     this.sentToolResults.clear();
+    this.cliRejectedQuestions.clear();
     this.hasAnsweredQuestionThisTurn = false;
     this.accumulatedText = "";
   }
