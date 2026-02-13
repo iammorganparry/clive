@@ -100,6 +100,14 @@ export interface InterviewSession {
   prUrl?: string;
   /** Error message if any */
   errorMessage?: string;
+  /** Whether this session originated from the AI assistant surface */
+  isAssistantThread?: boolean;
+  /** Assistant thread context (channel where user opened assistant) */
+  assistantContext?: {
+    channel_id?: string;
+    team_id?: string;
+    enterprise_id?: string | null;
+  };
 }
 
 /**

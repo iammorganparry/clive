@@ -109,6 +109,10 @@ import {
   registerActionHandlerDistributed,
 } from "./handlers/action-handler";
 import {
+  registerAssistantHandler,
+  registerAssistantHandlerDistributed,
+} from "./handlers/assistant-handler";
+import {
   registerMentionHandler,
   registerMentionHandlerDistributed,
 } from "./handlers/mention-handler";
@@ -175,6 +179,7 @@ async function startLocalMode(config: SlackConfig): Promise<void> {
   const slackService = new SlackService(slackApp.client);
 
   // Register handlers (local mode)
+  registerAssistantHandler(slackApp, interviewStore, claudeManager, slackService);
   registerMentionHandler(slackApp, interviewStore, claudeManager, slackService);
   registerMessageHandler(slackApp, interviewStore, claudeManager, slackService);
   registerActionHandler(slackApp, interviewStore, claudeManager, slackService);
@@ -349,6 +354,12 @@ async function startDistributedMode(config: SlackConfig): Promise<void> {
   }
 
   // Register handlers (distributed mode)
+  registerAssistantHandlerDistributed(
+    slackApp,
+    interviewStore,
+    workerProxy,
+    slackService,
+  );
   registerMentionHandlerDistributed(
     slackApp,
     interviewStore,

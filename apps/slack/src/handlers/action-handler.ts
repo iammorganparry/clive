@@ -312,6 +312,24 @@ export function registerActionHandler(
     }
   });
 
+  // Handle assistant feedback buttons (positive)
+  app.action(
+    /^assistant_feedback_positive/,
+    async ({ ack }) => {
+      await ack();
+      console.log("[ActionHandler] Positive assistant feedback received");
+    },
+  );
+
+  // Handle assistant feedback buttons (negative)
+  app.action(
+    /^assistant_feedback_negative/,
+    async ({ ack }) => {
+      await ack();
+      console.log("[ActionHandler] Negative assistant feedback received");
+    },
+  );
+
   // Handle plan approval
   app.action(ACTION_IDS.APPROVE_PLAN, async ({ body, ack, respond }) => {
     await ack();
@@ -698,6 +716,24 @@ export function registerActionHandlerDistributed(
       store.clearPendingQuestion(threadTs);
     }
   });
+
+  // Handle assistant feedback buttons (positive)
+  app.action(
+    /^assistant_feedback_positive/,
+    async ({ ack }) => {
+      await ack();
+      console.log("[ActionHandler] Positive assistant feedback received");
+    },
+  );
+
+  // Handle assistant feedback buttons (negative)
+  app.action(
+    /^assistant_feedback_negative/,
+    async ({ ack }) => {
+      await ack();
+      console.log("[ActionHandler] Negative assistant feedback received");
+    },
+  );
 
   // Handle plan approval
   app.action(ACTION_IDS.APPROVE_PLAN, async ({ body, ack, respond }) => {

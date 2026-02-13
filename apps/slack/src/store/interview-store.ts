@@ -68,6 +68,53 @@ export class InterviewStore {
   }
 
   /**
+   * Create a new assistant session (from AI App surface)
+   * Uses composite key ${channelId}:${threadTs} to avoid collisions with @mention sessions
+   */
+  createAssistantSession(
+    channelId: string,
+    threadTs: string,
+    userId: string,
+    assistantContext?: InterviewSession["assistantContext"],
+  ): InterviewSession {
+    const sessionKey = `${channelId}:${threadTs}`;
+
+    // Clear any existing session for this key
+    this.close(sessionKey);
+
+    const now = new Date();
+    const session: InterviewSession = {
+      threadTs,
+      channel: channelId,
+      initiatorId: userId,
+      phase: "greeting",
+      mode: "greeting",
+      answers: {},
+      createdAt: now,
+      lastActivityAt: now,
+      isAssistantThread: true,
+      assistantContext,
+    };
+
+    // Start timeout fiber
+    session.timeoutFiber = this.startTimeout(sessionKey);
+
+    this.sessions.set(sessionKey, session);
+    console.log(
+      `[InterviewStore] Created assistant session ${sessionKey}, initiator: ${userId}`,
+    );
+
+    return session;
+  }
+
+  /**
+   * Get the composite session key for assistant threads
+   */
+  getAssistantSessionKey(channelId: string, threadTs: string): string {
+    return `${channelId}:${threadTs}`;
+  }
+
+  /**
    * Set session mode
    */
   setMode(threadTs: string, mode: SessionMode): void {
