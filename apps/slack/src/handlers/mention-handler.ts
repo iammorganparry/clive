@@ -18,6 +18,7 @@ import {
   formatTimeoutMessage,
 } from "../formatters/question-formatter";
 import type { ClaudeManager } from "../services/claude-manager";
+import { ConductorClient } from "../services/conductor-client";
 import type { GitHubService } from "../services/github-service";
 import type { PrSubscriptionRegistry } from "../services/pr-subscription-registry";
 import type { SlackService } from "../services/slack-service";
@@ -75,6 +76,41 @@ export function extractProjectName(description: string): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Check if this is a conductor-mode request
+ * @clive conduct "build a login page"
+ * @clive orchestrate build a login page --linear URL1 URL2
+ */
+function isConductorRequest(description: string): {
+  isConductor: boolean;
+  prompt: string;
+  linearUrls?: string[];
+} {
+  const conductMatch = description.match(
+    /^(?:conduct|orchestrate)\s+(.+)$/i,
+  );
+  if (conductMatch) {
+    const prompt = conductMatch[1].replace(/^["']|["']$/g, "").trim();
+
+    // Check for --linear flag: @clive conduct --linear URL1 URL2
+    const linearMatch = prompt.match(/--linear\s+(.+)$/i);
+    if (linearMatch) {
+      const urls = linearMatch[1]
+        .split(/\s+/)
+        .filter((u) => u.startsWith("http"));
+      return {
+        isConductor: true,
+        prompt: prompt.replace(/--linear\s+.+$/, "").trim(),
+        linearUrls: urls,
+      };
+    }
+
+    return { isConductor: true, prompt };
+  }
+
+  return { isConductor: false, prompt: description };
 }
 
 /**
@@ -165,6 +201,43 @@ export function registerMentionHandler(
     // Extract description from mention
     const description = extractDescription(text, botUserId);
     console.log(`[MentionHandler] Description: "${description || "(none)"}"`);
+
+    // Check for conductor-mode request before normal handling
+    const conductorCheck = isConductorRequest(description);
+    if (conductorCheck.isConductor) {
+      const conductorClient = new ConductorClient();
+      const isHealthy = await conductorClient.isHealthy();
+
+      if (!isHealthy) {
+        await Effect.runPromise(
+          slackService.postMessage({
+            channel,
+            threadTs,
+            text: `<@${userId}> Conductor service is not available. Please try again later.`,
+          }),
+        );
+        return;
+      }
+
+      const task = await conductorClient.submitRequest({
+        prompt: conductorCheck.prompt,
+        linearIssueUrls: conductorCheck.linearUrls,
+        slackThread: {
+          channel,
+          threadTs,
+          initiatorId: userId,
+        },
+      });
+
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          threadTs,
+          text: `:rocket: Conductor task \`${task.id}\` started! I'll post updates in this thread as agents work.`,
+        }),
+      );
+      return;
+    }
 
     // Create new session
     const _session = store.create(threadTs, channel, userId, description);
@@ -565,6 +638,46 @@ export function registerMentionHandlerDistributed(
         // Extract description from mention
         const description = extractDescription(text, botUserId);
         console.log(`[MentionHandler] Description: "${description || "(none)"}"`);
+
+        // Check for conductor-mode request before normal handling
+        const conductorCheck = isConductorRequest(description);
+        if (conductorCheck.isConductor) {
+          const conductorClient = new ConductorClient();
+          const isHealthy = yield* Effect.tryPromise({
+            try: () => conductorClient.isHealthy(),
+            catch: () => new Error("Conductor health check failed"),
+          });
+
+          if (!isHealthy) {
+            yield* slackService.postMessage({
+              channel,
+              threadTs,
+              text: `<@${userId}> Conductor service is not available. Please try again later.`,
+            });
+            return;
+          }
+
+          const task = yield* Effect.tryPromise({
+            try: () =>
+              conductorClient.submitRequest({
+                prompt: conductorCheck.prompt,
+                linearIssueUrls: conductorCheck.linearUrls,
+                slackThread: {
+                  channel,
+                  threadTs,
+                  initiatorId: userId,
+                },
+              }),
+            catch: (error) => new Error(`Conductor submit failed: ${error}`),
+          });
+
+          yield* slackService.postMessage({
+            channel,
+            threadTs,
+            text: `:rocket: Conductor task \`${task.id}\` started! I'll post updates in this thread as agents work.`,
+          });
+          return;
+        }
 
         // Try to extract project name from description for routing
         const projectName = extractProjectName(description);

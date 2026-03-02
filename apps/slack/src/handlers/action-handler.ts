@@ -31,6 +31,7 @@ import {
 } from "../formatters/question-formatter";
 import { extractProjectName } from "./mention-handler";
 import type { ClaudeManager } from "../services/claude-manager";
+import { ConductorClient } from "../services/conductor-client";
 import type { SlackService } from "../services/slack-service";
 import type { WorkerProxy } from "../services/worker-proxy";
 import type { InterviewStore } from "../store/interview-store";
@@ -1126,6 +1127,107 @@ export function registerActionHandlerDistributed(
       }),
       "start_review_mode",
     );
+  });
+
+  // Handle "Start Conducting" button click for conductor orchestration
+  app.action("start_conduct_mode", async ({ body, ack, respond }) => {
+    await ack();
+
+    const action = (body as BlockAction).actions[0] as ButtonAction;
+    const userId = body.user.id;
+    const actionValue = parseActionValue(action.value);
+
+    if (!actionValue) {
+      console.error("[ActionHandler] Invalid action value for start_conduct_mode");
+      return;
+    }
+
+    const { threadTs, channel, prompt, urls } = actionValue as {
+      threadTs: string;
+      channel: string;
+      prompt?: string;
+      urls?: string[];
+    };
+
+    if (!threadTs || !channel) {
+      console.error("[ActionHandler] Missing threadTs or channel for conduct mode");
+      return;
+    }
+
+    // Check if user is initiator
+    if (!store.isInitiator(threadTs, userId)) {
+      const session = store.get(threadTs);
+      if (session) {
+        await Effect.runPromise(
+          slackService.postEphemeral({
+            channel,
+            user: userId,
+            text: "Only the interview initiator can start conduct mode.",
+            threadTs,
+            blocks: formatNonInitiatorNotice(session.initiatorId),
+          }),
+        );
+      }
+      return;
+    }
+
+    console.log(`[ActionHandler] Starting conduct mode for thread ${threadTs}`);
+
+    // Update the message to show transition
+    if (respond) {
+      await respond({
+        replace_original: true,
+        text: "Starting conductor orchestration...",
+        blocks: [section(":musical_score: *Starting Conductor Mode*\nOrchestrating agents...")],
+      });
+    }
+
+    const conductorClient = new ConductorClient();
+    const isHealthy = await conductorClient.isHealthy();
+
+    if (!isHealthy) {
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          threadTs,
+          text: `<@${userId}> Conductor service is not available. Please try again later.`,
+        }),
+      );
+      return;
+    }
+
+    try {
+      const task = await conductorClient.submitRequest({
+        prompt: prompt || "Execute the planned work.",
+        linearIssueUrls: urls,
+        slackThread: {
+          channel,
+          threadTs,
+          initiatorId: userId,
+        },
+      });
+
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          threadTs,
+          text: `:rocket: Conductor task \`${task.id}\` started! I'll post updates in this thread as agents work.`,
+        }),
+      );
+    } catch (error) {
+      console.error("[ActionHandler] Failed to start conduct mode:", error);
+      await Effect.runPromise(
+        slackService.postMessage({
+          channel,
+          threadTs,
+          text: `<@${userId}> Failed to start conductor: ${error instanceof Error ? error.message : String(error)}`,
+          blocks: formatErrorMessage(
+            error instanceof Error ? error.message : String(error),
+            userId,
+          ),
+        }),
+      );
+    }
   });
 
   // Handle "Done for Now" / "Done" button click to close session

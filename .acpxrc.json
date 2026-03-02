@@ -1,0 +1,7 @@
+{
+  "defaultAgent": "claude",
+  "defaultPermissions": "approve-all",
+  "nonInteractivePermissions": "deny",
+  "ttl": 3600,
+  "format": "text"
+}
