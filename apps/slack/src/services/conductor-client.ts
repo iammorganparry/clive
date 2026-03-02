@@ -42,7 +42,7 @@ export class ConductorClient {
       throw new Error(`Conductor request failed (${response.status}): ${error}`);
     }
 
-    return response.json();
+    return (await response.json()) as ConductorTask;
   }
 
   /** Get task status */
@@ -52,7 +52,7 @@ export class ConductorClient {
     if (!response.ok) {
       throw new Error(`Status check failed (${response.status})`);
     }
-    return response.json();
+    return (await response.json()) as ConductorTask;
   }
 
   /** Cancel a task */

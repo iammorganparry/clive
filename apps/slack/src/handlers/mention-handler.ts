@@ -91,12 +91,12 @@ function isConductorRequest(description: string): {
   const conductMatch = description.match(
     /^(?:conduct|orchestrate)\s+(.+)$/i,
   );
-  if (conductMatch) {
+  if (conductMatch?.[1]) {
     const prompt = conductMatch[1].replace(/^["']|["']$/g, "").trim();
 
     // Check for --linear flag: @clive conduct --linear URL1 URL2
     const linearMatch = prompt.match(/--linear\s+(.+)$/i);
-    if (linearMatch) {
+    if (linearMatch?.[1]) {
       const urls = linearMatch[1]
         .split(/\s+/)
         .filter((u) => u.startsWith("http"));

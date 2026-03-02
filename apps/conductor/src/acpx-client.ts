@@ -16,7 +16,7 @@ export class AcpxClient {
 
   /** Spawn a new agent session via acpx */
   async spawnAgent(opts: AcpxSpawnOptions): Promise<string> {
-    const args = [opts.agent || "claude"];
+    const args: string[] = [opts.agent || "claude"];
 
     if (opts.mode === "session") {
       args.push("--mode", "session");
