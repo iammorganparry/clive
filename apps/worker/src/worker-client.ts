@@ -29,7 +29,7 @@ import type { WorkerConfig } from "./config.js";
 import { LocalExecutor } from "./local-executor.js";
 import { setupRepo } from "./repo-setup.js";
 import { TunnelManager } from "./tunnel-manager.js";
-import { WorktreeManager } from "./worktree-manager.js";
+import { WorktreeManager } from "@clive/worktree-manager";
 
 /**
  * Error when WorkerClient operations fail

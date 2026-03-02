@@ -20,7 +20,7 @@ import type {
   QuestionData,
 } from "@clive/worker-protocol";
 import { Effect, type Runtime, Stream } from "effect";
-import type { WorktreeManager } from "./worktree-manager.js";
+import type { WorktreeManager } from "@clive/worktree-manager";
 
 /**
  * Planning skill system prompt

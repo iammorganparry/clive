@@ -17,6 +17,7 @@
     "@clive/claude-services": "*",
     "@clive/github-app": "*",
     "@clive/worker-protocol": "*",
+    "@clive/worktree-manager": "*",
     "@ngrok/ngrok": "^1.5.0",
     "dotenv": "^17.2.3",
     "effect": "^3.19.9",

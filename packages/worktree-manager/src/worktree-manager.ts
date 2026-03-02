@@ -9,6 +9,14 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/** Classify whether a string looks like a relative filesystem path */
+export function isRelativePath(value: string): boolean {
+  if (value.startsWith("./") || value.startsWith("../")) return true;
+  if (value.includes("/") && !value.startsWith("/") && !value.includes("://"))
+    return true;
+  return false;
+}
+
 export class WorktreeManager {
   constructor(
     private repoPath: string,
@@ -43,6 +51,10 @@ export class WorktreeManager {
 
     // Symlink node_modules from main repo to avoid expensive reinstalls
     this.symlinkNodeModules(worktreePath);
+
+    // Carry MCP and Claude settings into the worktree
+    this.resolveMcpConfig(worktreePath);
+    this.copyLocalSettings(worktreePath);
 
     console.log(
       `[WorktreeManager] Created worktree at ${worktreePath} on branch ${branchName}`,
@@ -142,6 +154,71 @@ exit 0
           error,
         );
       }
+    }
+  }
+
+  /**
+   * Resolve relative paths in .mcp.json so MCP servers work from the worktree.
+   * Rewrites the worktree's copy in-place (worktrees are ephemeral).
+   */
+  private resolveMcpConfig(worktreePath: string): void {
+    const mcpPath = path.join(worktreePath, ".mcp.json");
+    try {
+      if (!fs.existsSync(mcpPath)) return;
+
+      const raw = fs.readFileSync(mcpPath, "utf-8");
+      const config = JSON.parse(raw);
+      const servers = config.mcpServers ?? config.servers ?? {};
+      let changed = false;
+
+      for (const server of Object.values(servers) as Record<string, unknown>[]) {
+        // Skip HTTP-based servers — they don't have filesystem paths
+        if (server.type === "http" || typeof server.url === "string") continue;
+
+        // Resolve command if it's a relative path
+        if (typeof server.command === "string" && isRelativePath(server.command)) {
+          server.command = path.resolve(this.repoPath, server.command);
+          changed = true;
+        }
+
+        // Resolve relative paths in args array
+        if (Array.isArray(server.args)) {
+          for (let i = 0; i < server.args.length; i++) {
+            if (typeof server.args[i] === "string" && isRelativePath(server.args[i])) {
+              server.args[i] = path.resolve(this.repoPath, server.args[i]);
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (changed) {
+        fs.writeFileSync(mcpPath, JSON.stringify(config, null, 2) + "\n");
+        console.log("[WorktreeManager] Resolved relative paths in .mcp.json");
+      }
+    } catch (error) {
+      console.warn("[WorktreeManager] Failed to resolve .mcp.json:", error);
+    }
+  }
+
+  /**
+   * Copy .claude/settings.local.json into the worktree (it's gitignored so
+   * won't be present after `git worktree add`).
+   */
+  private copyLocalSettings(worktreePath: string): void {
+    const src = path.join(this.repoPath, ".claude", "settings.local.json");
+    const destDir = path.join(worktreePath, ".claude");
+    const dest = path.join(destDir, "settings.local.json");
+    try {
+      if (!fs.existsSync(src)) return;
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.copyFileSync(src, dest);
+      console.log("[WorktreeManager] Copied .claude/settings.local.json");
+    } catch (error) {
+      console.warn(
+        "[WorktreeManager] Failed to copy settings.local.json:",
+        error,
+      );
     }
   }
 
