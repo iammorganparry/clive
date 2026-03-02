@@ -1,0 +1,23 @@
+{
+  "name": "@clive/conductor",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenClaw Conductor — orchestration brain for multi-agent coding workflows",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@clive/worktree-manager": "*",
+    "@slack/web-api": "^7.9.1",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3"
+  }
+}
